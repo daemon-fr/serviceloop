@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -161,7 +162,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         }
         composable("business-profile") {
             LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
-            DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.saveStatus, padding, viewModel) }
+            DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) }
         }
         composable("record/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
@@ -169,7 +170,11 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         }
         composable("report/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
-            DetailScaffold("Customer report", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding) }
+            DetailScaffold("Customer report", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding, initialTextView = false) }
+        }
+        composable("report-text/{id}") { entry ->
+            val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
+            DetailScaffold("Customer report", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding, initialTextView = true) }
         }
         composable("scope/{title}") { entry ->
             DetailScaffold(entry.arguments?.getString("title") ?: "ServiceLoop", nav) { padding ->
@@ -235,7 +240,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, na
     if (home == null) return HonestPlaceholder(PaddingValues(), "Add a customer to create your first service obligation.")
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (home.workingVisitId != null) item {
-            SectionTitle("Unfinished visits · 1")
+            SectionTitle("Unfinished visits · ${home.workingVisitCount}")
             AccentCard {
                 Text(home.workingSite.orEmpty(), style = MaterialTheme.typography.titleMedium)
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
@@ -244,7 +249,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, na
             }
         }
         item {
-            SectionTitle("Booked visits · ${if (home.bookedVisitReference == null) 0 else 1}")
+            SectionTitle("Booked visits · ${home.bookedVisitCount}")
             SummaryRow(home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" } ?: "No booked visits", "Open") { nav.navigateToRoot(RootDestination.WORK) }
         }
         item { SectionTitle("Overdue services · ${home.overdueCount}"); Text("Booked service remains due until its obligation is explicitly fulfilled.", style = MaterialTheme.typography.bodyMedium) }
@@ -337,7 +342,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
             var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
             Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(work, { work = it }, label = { Text("Public work performed") }, minLines = 3, maxLines = 6, enabled = saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { viewModel.savePublicWork(draft.workItemId, work) }, enabled = saveStatus !is SaveStatus.Saving && work != draft.workPerformed, modifier = Modifier.fillMaxWidth()) { Text("Save work performed") }
+            Button(onClick = { viewModel.savePublicWork(draft.workItemId, work) }, enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth()) { Text("Save work performed") }
             LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
         }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
@@ -450,6 +455,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.PLAN_INELIGIBLE -> Text("Fulfillment unavailable — this plan is no longer active.", style = MaterialTheme.typography.bodyMedium)
+            FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.", style = MaterialTheme.typography.bodyMedium)
         }
         when {
             line.fulfillmentEligibility == FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date changes")
@@ -500,32 +506,32 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, e
     val report = detail.public
     val context = LocalContext.current
     val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded ${formatTime(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
+    LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
         items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
             Text(when (detail.report?.status) { "READY" -> if (reportPresent) "Ready · Version 1 · ${detail.report.byteSize} bytes" else "File missing · Version 1"; "FAILED" -> "Generation failed"; "GENERATING" -> "Generating…"; else -> "Not generated" })
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (detail.report?.status == "READY") Button(onClick = { nav.navigate("report/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
+            if (detail.report?.status == "READY") Button(onClick = { nav.navigate(if (reportPresent) "report/${report.recordId}" else "report-text/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
             else Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
         }
     }
 }
 
 @Composable
-private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues) {
+private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues, initialTextView: Boolean) {
     val rendition = detail?.report
     if (detail == null || rendition?.status != "READY") return HonestPlaceholder(padding, "Report file is not ready")
     val context = LocalContext.current; val file = remember(rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
-    var textView by rememberSaveable { mutableStateOf(false) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }
+    var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }
     LaunchedEffect(file, pageIndex, textView) {
         if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
     }
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    LazyColumn(Modifier.padding(padding).testTag("report-preview-list"), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "File missing" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}, modifier = Modifier.testTag("report-pdf-view")) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }, modifier = Modifier.testTag("report-pdf-view")) { Text("PDF view") }; if (textView) Button(onClick = {}, modifier = Modifier.testTag("report-text-view")) { Text("Text view") } else OutlinedButton(onClick = { textView = true }, modifier = Modifier.testTag("report-text-view")) { Text("Text view") } } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}, modifier = Modifier.testTag("report-pdf-view").semantics { selected = true }) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }, modifier = Modifier.testTag("report-pdf-view").semantics { selected = false }) { Text("PDF view") }; if (textView) Button(onClick = {}, modifier = Modifier.testTag("report-text-view").semantics { selected = true }) { Text("Text view") } else OutlinedButton(onClick = { textView = true }, modifier = Modifier.testTag("report-text-view").semantics { selected = false }) { Text("Text view") } } }
         if (textView) item { StructuredReportText(detail) }
         else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
@@ -563,6 +569,7 @@ private fun SaveStateBanner(status: SaveStatus) {
 @Composable private fun HonestPlaceholder(padding: PaddingValues, message: String) { Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text(message, style = MaterialTheme.typography.titleMedium) } }
 
 private fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: "not yet"
+private fun formatRecordedOn(epochMillis: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMillis))
 
 private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())
 

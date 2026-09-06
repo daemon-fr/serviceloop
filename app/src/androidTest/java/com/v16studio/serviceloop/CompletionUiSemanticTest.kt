@@ -2,10 +2,13 @@ package com.v16studio.serviceloop
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -86,10 +89,43 @@ class CompletionUiSemanticTest {
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("Visits").performClick()
         compose.onNodeWithText("V-UI · Finalized · 2026-09-05\nSite").performClick()
+        compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
         compose.onNodeWithText("View report text").performScrollTo().performClick()
-        compose.onNodeWithText("File missing").assertIsDisplayed()
-        compose.onNodeWithTag("report-text-view").performClick()
+        compose.onNodeWithText("File missing", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("report-text-view").assertIsSelected()
         compose.onNodeWithText("Service record V-UI · Revision 1").assertIsDisplayed()
         compose.onNodeWithTag("share-pdf").assertIsNotEnabled()
+    }
+
+    @Test fun homeRendersTrueMultipleWorkingAndBookedCounts() {
+        runBlocking {
+            database.serviceLoopDao().insertVisits(listOf(
+                WorkingVisitEntity("v2", "V-UI-2", "c", "s", "2026-09-06", "Customer", "Site", null, "WORKING", 3),
+                WorkingVisitEntity("b1", "B-1", "c", "s", "2026-09-07", "Customer", "Site", null, "BOOKED", 2),
+                WorkingVisitEntity("b2", "B-2", "c", "s", "2026-09-08", "Customer", "Site", null, "BOOKED", 2),
+                WorkingVisitEntity("b3", "B-3", "c", "s", "2026-09-09", "Customer", "Site", null, "BOOKED", 2),
+            ))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.onNodeWithText("Unfinished visits · 2").assertIsDisplayed()
+        compose.onNodeWithText("Booked visits · 3").assertIsDisplayed()
+    }
+
+    @Test fun staleObligationIsUnavailableInCompletionReview() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.updateCompletionDraft("w", "PERFORMED", true, null, "2026-12-05", true, null)
+            dao.insertObligations(listOf(ServiceObligationEntity("o2", "p", 2, "2026-12-05", 2)))
+            dao.setCurrentObligationForTest("p", "o2")
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.onNodeWithText("Resume visit").performClick()
+        compose.onNodeWithText("Review completion").performScrollTo().performClick()
+        compose.onNodeWithText("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("fulfills-w").assertCountEquals(0)
     }
 }

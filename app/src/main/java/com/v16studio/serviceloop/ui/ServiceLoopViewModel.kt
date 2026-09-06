@@ -42,6 +42,7 @@ data class UiState(
     val finalizing: Boolean = false,
     val generatingReport: Boolean = false,
     val saveStatus: SaveStatus = SaveStatus.Idle,
+    val businessProfileSaveStatus: SaveStatus = SaveStatus.Idle,
     val pendingResponseTransition: PendingResponseTransition? = null,
     val error: String? = null,
     val rootDataReady: Boolean = false,
@@ -122,13 +123,33 @@ class ServiceLoopViewModel(
     }
 
     fun loadVisits() = launchLoad { _state.value = _state.value.copy(visits = repository.visits()) }
-    fun loadBusinessProfile() = launchLoad { _state.value = _state.value.copy(businessProfile = repository.businessProfile()) }
+    fun loadBusinessProfile() = launchLoad {
+        val profile = repository.businessProfile()
+        _state.value = _state.value.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { SaveStatus.Saved(it) } ?: SaveStatus.Idle)
+    }
     fun loadFinalRecord(id: String) { _state.value = _state.value.copy(finalRecord = null); launchLoad { _state.value = _state.value.copy(finalRecord = repository.finalRecord(id)) } }
     fun consumeFinalizedNavigation() { _state.value = _state.value.copy(finalizedRecordId = null) }
 
     fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
     fun markChecklistReviewed(workItemId: String) = persistDraft({ repository.markChecklistReviewed(workItemId) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
-    fun saveBusinessProfile(profile: BusinessProfile) = persistDraft({ repository.saveBusinessProfile(profile) }) { _state.value = _state.value.copy(businessProfile = repository.businessProfile()) }
+    fun saveBusinessProfile(profile: BusinessProfile) {
+        val lastSaved = when (val status = _state.value.businessProfileSaveStatus) {
+            is SaveStatus.Saved -> status.atEpochMillis
+            is SaveStatus.Failed -> status.lastSavedAtEpochMillis
+            else -> _state.value.businessProfile?.modifiedAtEpochMillis
+        }
+        _state.value = _state.value.copy(businessProfileSaveStatus = SaveStatus.Saving, error = null)
+        viewModelScope.launch {
+            try {
+                val savedAt = repository.saveBusinessProfile(profile)
+                _state.value = _state.value.copy(businessProfileSaveStatus = SaveStatus.Saved(savedAt))
+                try { _state.value = _state.value.copy(businessProfile = repository.businessProfile(), contentRefreshError = null) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Profile was saved, but the screen could not refresh") }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.value = _state.value.copy(businessProfileSaveStatus = SaveStatus.Failed(failure.message ?: "Profile not saved", lastSaved)) }
+        }
+    }
     fun refreshVisitReportIdentity(visitId: String) = persistDraft({ repository.refreshVisitReportIdentity(visitId) }) { _state.value = _state.value.copy(visitReportIdentity = repository.visitReportIdentity(visitId)) }
     fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistDraft({
         repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason)
@@ -211,8 +232,8 @@ class ServiceLoopViewModel(
     ): Boolean {
         if (disposition != requestedDisposition) return false
         return when (requestedDisposition) {
-            ResponseDisposition.VALUE -> (if (responseType == "NUMBER") numberValue else textValue) == requestedValue
-            ResponseDisposition.ISSUE_FOUND -> reason.orEmpty() == requestedReason.orEmpty()
+            ResponseDisposition.VALUE -> (if (responseType == "NUMBER") numberValue else textValue) == requestedValue?.trim()
+            ResponseDisposition.ISSUE_FOUND -> reason.orEmpty() == requestedReason?.trim().orEmpty()
             else -> true
         }
     }

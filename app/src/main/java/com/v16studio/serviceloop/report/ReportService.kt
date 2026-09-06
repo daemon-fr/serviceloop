@@ -95,31 +95,38 @@ class AndroidReportService(
 }
 
 object FixedServiceRecordPdf {
-    private const val WIDTH = 595
-    private const val HEIGHT = 842
-    private const val LEFT = 42f
-    private const val TOP = 48f
-    private const val BOTTOM = 54f
-    private const val LINE = 15f
+    internal const val WIDTH = 595
+    internal const val HEIGHT = 842
+    internal const val LEFT = 42f
+    internal const val RIGHT = 42f
+    internal const val TOP = 48f
+    internal const val BOTTOM = 54f
+    internal const val CONTENT_WIDTH = WIDTH - LEFT - RIGHT
+    internal const val CONTENT_HEIGHT = HEIGHT - TOP - BOTTOM
+
+    internal enum class LineStyle(val textSize: Float, val height: Float, val bold: Boolean) {
+        TITLE(18f, 31f, true), SECTION(12f, 20f, true), BODY(10f, 15f, false), FOOTER(8f, 10f, false),
+    }
+
+    internal data class ReportDrawLine(val text: String, val style: LineStyle) { val height: Float get() = style.height }
+    internal data class ReportPage(val lines: List<ReportDrawLine>) { val contentHeight: Float get() = lines.sumOf { it.height.toDouble() }.toFloat() }
+    private data class RawLine(val text: String, val style: LineStyle)
 
     fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int {
-        val logical = buildLines(model)
-        val linesPerPage = ((HEIGHT - TOP - BOTTOM) / LINE).toInt()
-        val pages = logical.chunked(linesPerPage).ifEmpty { listOf(listOf("No public service content")) }
+        val pages = layout(model)
         val document = PdfDocument()
         try {
             pages.forEachIndexed { pageIndex, lines ->
                 val page = document.startPage(PdfDocument.PageInfo.Builder(WIDTH, HEIGHT, pageIndex + 1).create())
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(31, 42, 48); textSize = 10f; typeface = Typeface.create("sans", Typeface.NORMAL) }
                 var y = TOP
-                lines.forEach { line ->
-                    if (line.startsWith("# ")) { paint.textSize = 18f; paint.typeface = Typeface.DEFAULT_BOLD; page.canvas.drawText(line.removePrefix("# "), LEFT, y, paint); paint.textSize = 10f; paint.typeface = Typeface.DEFAULT; y += 8f }
-                    else if (line.startsWith("## ")) { paint.textSize = 12f; paint.typeface = Typeface.DEFAULT_BOLD; page.canvas.drawText(line.removePrefix("## "), LEFT, y, paint); paint.textSize = 10f; paint.typeface = Typeface.DEFAULT }
-                    else page.canvas.drawText(line, LEFT, y, paint)
-                    y += LINE
+                lines.lines.forEach { line ->
+                    page.canvas.drawText(line.text, LEFT, y + line.style.textSize, paint(line.style))
+                    y += line.height
                 }
-                paint.textSize = 8f; paint.color = Color.DKGRAY
-                page.canvas.drawText("Revision ${model.revisionNumber} · Report v1 · ${renditionId.take(8)} · Generated ${Instant.ofEpochMilli(generatedAtEpochMillis)} · Page ${pageIndex + 1} of ${pages.size}", LEFT, HEIGHT - 28f, paint)
+                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of ${pages.size}"
+                wrap(RawLine(footer, LineStyle.FOOTER)).take(4).forEachIndexed { footerIndex, line ->
+                    page.canvas.drawText(line.text, LEFT, HEIGHT - 44f + footerIndex * LineStyle.FOOTER.height + LineStyle.FOOTER.textSize, paint(LineStyle.FOOTER).apply { color = Color.DKGRAY })
+                }
                 document.finishPage(page)
             }
             FileOutputStream(file).use(document::writeTo)
@@ -127,20 +134,55 @@ object FixedServiceRecordPdf {
         return pages.size
     }
 
-    private fun buildLines(model: PublicReportModel): List<String> {
-        val raw = mutableListOf("# ${model.businessName}", "Service record ${model.visitReference} · Revision ${model.revisionNumber}", "Technician: ${model.technicianName}", model.businessContact, "Service date: ${model.actualServiceDate}", "## Customer and site", "${model.customerReference.orEmpty()} · ${model.customerName}", "${model.siteReference.orEmpty()} · ${model.siteName}", model.siteAddress.orEmpty())
-        model.lines.forEach { line ->
-            raw += listOf("## ${line.equipmentReference} · ${line.equipmentName}", line.equipmentIdentification, "Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", "Outcome: ${line.outcome.replace('_', ' ')}")
-            line.publicWorkNote?.let { raw += "Work: $it" }; line.notPerformedReason?.let { raw += "Reason: $it" }
-            raw += when { !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }
-            line.checklist.forEach { q -> raw += "${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}" }
+    internal fun layout(model: PublicReportModel): List<ReportPage> {
+        val lines = buildLines(model).ifEmpty { listOf(ReportDrawLine("No public service content", LineStyle.BODY)) }
+        val pages = mutableListOf<MutableList<ReportDrawLine>>(); var current = mutableListOf<ReportDrawLine>(); var used = 0f
+        fun newPage() { if (current.isNotEmpty()) pages += current; current = mutableListOf(); used = 0f }
+        lines.forEachIndexed { index, line ->
+            val keepWithNext = line.style == LineStyle.SECTION && index + 1 < lines.size
+            val required = line.height + if (keepWithNext) lines[index + 1].height else 0f
+            if (current.isNotEmpty() && used + required > CONTENT_HEIGHT) newPage()
+            if (current.isNotEmpty() && used + line.height > CONTENT_HEIGHT) newPage()
+            current += line; used += line.height
         }
-        return raw.filter(String::isNotBlank).flatMap { wrap(it, 86) }
+        newPage()
+        return pages.map(::ReportPage)
     }
 
-    private fun wrap(text: String, width: Int): List<String> {
-        val prefix = when { text.startsWith("# ") -> "# "; text.startsWith("## ") -> "## "; else -> "" }; val words = text.removePrefix(prefix).split(Regex("\\s+")); val result = mutableListOf<String>(); var line = prefix
-        words.forEach { word -> if (line.removePrefix(prefix).isNotEmpty() && line.length + word.length + 1 > width) { result += line; line = word } else line += (if (line.isEmpty() || line == prefix) "" else " ") + word }
-        if (line.isNotBlank()) result += line; return result
+    internal fun measuredWidth(line: ReportDrawLine): Float = paint(line.style).measureText(line.text)
+
+    private fun buildLines(model: PublicReportModel): List<ReportDrawLine> {
+        val raw = mutableListOf(RawLine(model.businessName, LineStyle.TITLE), RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.BODY), RawLine("Technician: ${model.technicianName}", LineStyle.BODY), RawLine(model.businessContact, LineStyle.BODY), RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY), RawLine("Customer and site", LineStyle.SECTION), RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY), RawLine("${model.siteReference.orEmpty()} · ${model.siteName}", LineStyle.BODY), RawLine(model.siteAddress.orEmpty(), LineStyle.BODY))
+        model.lines.forEach { line ->
+            raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
+            raw += listOf(RawLine(line.equipmentIdentification, LineStyle.BODY), RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY), RawLine("Outcome: ${line.outcome.replace('_', ' ')}", LineStyle.BODY))
+            line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
+            raw += RawLine(when { !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
+            line.checklist.forEach { q -> raw += RawLine("${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}", LineStyle.BODY) }
+        }
+        return raw.filter { it.text.isNotBlank() }.flatMap(::wrap)
     }
+
+    private fun wrap(raw: RawLine): List<ReportDrawLine> {
+        val paint = paint(raw.style); val result = mutableListOf<ReportDrawLine>(); var current = ""
+        fun flush() { if (current.isNotEmpty()) { result += ReportDrawLine(current, raw.style); current = "" } }
+        fun acceptWord(word: String) {
+            var remaining = word
+            while (remaining.isNotEmpty()) {
+                if (paint.measureText(remaining) <= CONTENT_WIDTH) { current = remaining; return }
+                val count = paint.breakText(remaining, true, CONTENT_WIDTH, null).coerceAtLeast(1)
+                result += ReportDrawLine(remaining.take(count), raw.style); remaining = remaining.drop(count)
+            }
+        }
+        raw.text.trim().split(Regex("\\s+")).filter(String::isNotEmpty).forEach { word ->
+            if (current.isEmpty()) acceptWord(word)
+            else {
+                val candidate = "$current $word"
+                if (paint.measureText(candidate) <= CONTENT_WIDTH) current = candidate else { flush(); acceptWord(word) }
+            }
+        }
+        flush(); return result
+    }
+
+    private fun paint(style: LineStyle) = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(31, 42, 48); textSize = style.textSize; typeface = Typeface.create("sans", if (style.bold) Typeface.BOLD else Typeface.NORMAL) }
 }

@@ -13,6 +13,8 @@ data class HomeSummary(
     val dueFollowUpTitle: String?,
     val overdueCount: Int,
     val dueSoonCount: Int,
+    val workingVisitCount: Int = 0,
+    val bookedVisitCount: Int = 0,
 )
 
 data class EquipmentSummary(
@@ -104,6 +106,7 @@ data class BusinessProfile(
     val email: String = "",
     val postalAddress: String = "",
     val zoneId: String,
+    val modifiedAtEpochMillis: Long? = null,
 ) {
     val ready: Boolean get() = businessName.isNotBlank() && technicianName.isNotBlank()
 }
@@ -134,6 +137,7 @@ enum class FulfillmentEligibility {
     OUTCOME_INELIGIBLE,
     CHECKLIST_NOT_REVIEWED,
     PLAN_INELIGIBLE,
+    CURRENT_OBLIGATION_CHANGED,
 }
 
 data class PublicChecklistItem(

@@ -66,6 +66,8 @@ class Sl2IntegrityTest {
     @Test fun staleCapturedObligationBlocksWithoutPartialRecord() = runTest {
         seed(); val dao = db.serviceLoopDao(); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
         dao.insertObligations(listOf(ServiceObligationEntity("obligation-2", "plan-1", 2, "2026-10-01", 2))); dao.setCurrentObligationForTest("plan-1", "obligation-2")
+        val projection = repo().completionLines("visit-1").single()
+        assertEquals(FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED, projection.fulfillmentEligibility); assertFalse(projection.fulfillsCurrentObligation); assertNull(projection.proposedNextDueDate); assertNull(projection.confirmedNextDueDate)
         val result = repo().finalizeVisit("visit-1") as FinalizeResult.Blocked
         assertTrue(result.message.contains("obligation changed")); assertEquals(0, dao.finalRecordCount()); assertNull(dao.obligation("obligation-1")!!.consumedAtEpochMillis); assertNull(dao.obligation("obligation-2")!!.consumedAtEpochMillis); assertEquals("WORKING", dao.visit("visit-1")!!.state)
     }
@@ -208,6 +210,103 @@ class Sl2IntegrityTest {
         assertEquals("READY", AndroidReportService(context, db, repository, writer = fakeWriter).generate(record).status)
     }
 
+    @Test fun blankCapturedBusinessNameBlocksFinalization() = runTest {
+        seed(businessName = "   ")
+        assertIdentityBlocked()
+    }
+
+    @Test fun blankCapturedTechnicianNameBlocksFinalization() = runTest {
+        seed(technicianName = " ")
+        assertIdentityBlocked()
+    }
+
+    @Test fun missingCapturedCustomerReferenceBlocksFinalization() = runTest {
+        seed(customerReference = null)
+        assertIdentityBlocked()
+    }
+
+    @Test fun missingCapturedSiteReferenceBlocksFinalization() = runTest {
+        seed(siteReference = null)
+        assertIdentityBlocked()
+    }
+
+    @Test fun malformedExplicitNotApplicableCannotFreezePartialWork() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-1", "NOT_APPLICABLE", null, null, " ", 2)))
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun malformedExplicitTextCannotFreezeNotPerformedWork() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Text", "TEXT", null, true, null)))
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-text", "VALUE", " ", null, null, 2)))
+        repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun malformedExplicitNumberCannotFreezePartialWork() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-1", 2, "Reading", "NUMBER", "bar", true, null)))
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-number", "VALUE", null, "NaN", null, 2)))
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun explicitIncompleteResponsesRemainAllowedForPartialAndNotPerformed() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        dao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-1", "NOT_CHECKED", null, null, null, 2)))
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        val partial = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        assertEquals("NOT_CHECKED", repo().finalRecord(partial)!!.public.lines.single().checklist.single().disposition)
+
+        db.close(); setup(); seed(withChecklist = true); val secondDao = db.serviceLoopDao()
+        secondDao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Text", "TEXT", null, true, null)))
+        secondDao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-text", "UNANSWERED", null, null, null, 2)))
+        repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        val notPerformed = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        assertTrue(repo().finalRecord(notPerformed)!!.public.lines.single().checklist.any { it.disposition == "UNANSWERED" })
+    }
+
+    @Test fun responseAndPublicWorkWhitespaceNormalizeBeforeNoOpComparison() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao(); var writes = 0
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-1", 2, "Reading", "NUMBER", "bar", false, null), ChecklistItemSnapshotEntity("check-text", "template-1", 3, "Note", "TEXT", null, false, null)))
+        val repository = RoomServiceLoopRepository(db, time, DraftWriteGate { writes++ })
+        repository.saveResponse("work-1", "check-number", ResponseDisposition.VALUE, " 12 ", null)
+        assertEquals("12", dao.responses("work-1").first { it.checklistItemSnapshotId == "check-number" }.numberValue)
+        val numericCheckpoint = dao.visit("visit-1")!!.modifiedAtEpochMillis
+        repository.saveResponse("work-1", "check-number", ResponseDisposition.VALUE, " 12 ", null)
+        assertEquals(1, writes); assertEquals(numericCheckpoint, dao.visit("visit-1")!!.modifiedAtEpochMillis)
+        repository.saveResponse("work-1", "check-text", ResponseDisposition.VALUE, " note ", null)
+        assertEquals("note", dao.responses("work-1").first { it.checklistItemSnapshotId == "check-text" }.textValue)
+        repository.saveResponse("work-1", "check-text", ResponseDisposition.VALUE, " note ", null)
+        assertEquals(2, writes)
+        repository.savePublicWork("work-1", " Done ")
+        assertEquals("Done", dao.inspection("work-1")!!.workPerformed); assertEquals(3, writes)
+        val workCheckpoint = dao.visit("visit-1")!!.modifiedAtEpochMillis
+        repository.savePublicWork("work-1", " Done ")
+        assertEquals(3, writes); assertEquals(workCheckpoint, dao.visit("visit-1")!!.modifiedAtEpochMillis)
+    }
+
+    @Test fun homeCountsAllWorkingAndBookedVisitsWhileKeepingDeterministicPreviews() = runTest {
+        seed(); val dao = db.serviceLoopDao()
+        dao.insertVisits(listOf(
+            WorkingVisitEntity("visit-2", "V-2", "customer-1", "site-1", "2026-09-06", "Customer", "Site", null, "WORKING", 10),
+            WorkingVisitEntity("booked-2", "B-2", "customer-1", "site-1", "2026-09-08", "Customer", "Site", null, "BOOKED", 2),
+            WorkingVisitEntity("booked-1", "B-1", "customer-1", "site-1", "2026-09-07", "Customer", "Site", null, "BOOKED", 2),
+            WorkingVisitEntity("booked-3", "B-3", "customer-1", "site-1", "2026-09-09", "Customer", "Site", null, "BOOKED", 2),
+        ))
+        val home = repo().home()
+        assertEquals(2, home.workingVisitCount); assertEquals(3, home.bookedVisitCount); assertEquals("V-2", home.workingVisitReference); assertEquals("B-1", home.bookedVisitReference)
+    }
+
+    @Test fun businessProfileProjectionKeepsItsOwnTimestampAndSemanticNoOp() = runTest {
+        seed(); var writes = 0; val repository = RoomServiceLoopRepository(db, time, DraftWriteGate { writes++ })
+        assertEquals(1L, repository.businessProfile()!!.modifiedAtEpochMillis)
+        assertEquals(1L, repository.saveBusinessProfile(BusinessProfile(" Service Business ", " Technician ", zoneId = " Europe/Bucharest ")))
+        assertEquals(0, writes)
+    }
+
     private fun repo() = RoomServiceLoopRepository(db, time)
 
     private suspend fun insertLine(id: String, outcome: String, work: String, reason: String? = null, oneOff: Boolean = false) {
@@ -216,7 +315,12 @@ class Sl2IntegrityTest {
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, work))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
     }
 
-    private suspend fun seed(withChecklist: Boolean = false) {
+    private suspend fun assertIdentityBlocked() {
+        val result = repo().finalizeVisit("visit-1") as FinalizeResult.Blocked
+        assertTrue(result.message.contains("identity is incomplete")); assertEquals(0, db.serviceLoopDao().finalRecordCount())
+    }
+
+    private suspend fun seed(withChecklist: Boolean = false, businessName: String? = "Service Business", technicianName: String? = "Technician", customerReference: String? = "CU-1", siteReference: String? = "ST-1") {
         val dao = db.serviceLoopDao()
         dao.insertCustomers(listOf(CustomerEntity("customer-1", "CU-1", "Current customer")))
         dao.insertSites(listOf(SiteEntity("site-1", "customer-1", "ST-1", "Current site", "Current address", "PRIVATE_ACCESS_SENTINEL")))
@@ -224,7 +328,7 @@ class Sl2IntegrityTest {
         dao.insertPlans(listOf(ServicePlanEntity("plan-1", "equipment-1", "P-1", "Inspection", 3, "MONTHS", "2026-09-01", "ACTIVE", "obligation-1")))
         dao.insertObligations(listOf(ServiceObligationEntity("obligation-1", "plan-1", 1, "2026-09-01", 1)))
         if (withChecklist) { dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("template-1", null, "Template", 1, 1))); dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-1", "template-1", 1, "Guard", "STATUS", null, true, "Private guidance"))) }
-        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-1", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 1, "CU-1", "ST-1", "Service Business", "Technician", null, null, null, "Europe/Bucharest")))
+        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-1", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 1, customerReference, siteReference, businessName, technicianName, null, null, null, "Europe/Bucharest")))
         dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", if (withChecklist) "template-1" else null, "Captured equipment", "EQ-1", "Captured service", "P-1", "2026-09-01", 3, "MONTHS", !withChecklist, "PERFORMED", false, equipmentIdentifierSnapshot = "T-1", equipmentMakeSnapshot = "Maker A", equipmentModelSnapshot = "Model A", equipmentSerialSnapshot = "Serial A")))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work completed"))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "PRIVATE_INTERNAL_SENTINEL")))
         dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Service Business", technicianName = "Technician", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 1))

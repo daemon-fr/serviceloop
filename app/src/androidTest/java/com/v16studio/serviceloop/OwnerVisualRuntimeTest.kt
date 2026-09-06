@@ -1,19 +1,26 @@
 package com.v16studio.serviceloop
 
+import android.graphics.Bitmap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
 import androidx.activity.compose.setContent
 import androidx.room.Room
+import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
 import com.v16studio.serviceloop.ui.ServiceLoopApp
@@ -21,6 +28,8 @@ import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import java.time.Instant
 import java.time.ZoneId
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +37,43 @@ import org.junit.Test
 class OwnerVisualRuntimeTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    private fun captureRenderedEvidence(name: String) {
+        composeRule.waitForIdle()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val screenshot = instrumentation.uiAutomation.takeScreenshot()
+        val evidenceDirectory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
+        FileOutputStream(File(evidenceDirectory, "closure-$name.png")).use {
+            check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        screenshot.recycle()
+    }
+
+    @Test
+    fun canonicalFinalRecordPdfAndTextOpenFromVisits() {
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onAllNodesWithTag("root-home").assertCountEquals(1) }.isSuccess
+        }
+        composeRule.onNodeWithText("Work").performClick()
+        composeRule.onNodeWithText("Visits").performClick()
+        composeRule.onNodeWithText("V-001", substring = true).performClick()
+        composeRule.onNodeWithText("V-001 · Finalized").assertIsDisplayed()
+        captureRenderedEvidence("final-record")
+
+        composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))
+        composeRule.onNodeWithText("View report").performClick()
+        composeRule.onNodeWithText("PDF view").assertIsDisplayed()
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onNodeWithContentDescription("Rendered customer report page 1").fetchSemanticsNode() }.isSuccess
+        }
+        composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasContentDescription("Rendered customer report page 1"))
+        composeRule.onNodeWithContentDescription("Rendered customer report page 1").assertIsDisplayed()
+        captureRenderedEvidence("pdf")
+
+        composeRule.onNodeWithText("Text view").performClick()
+        composeRule.onNodeWithText("Service record V-001 · Revision 1").assertIsDisplayed()
+        captureRenderedEvidence("text")
+    }
 
     @Test
     fun rootSwitchingLeavesExactlyOneRequestedRootVisible() {

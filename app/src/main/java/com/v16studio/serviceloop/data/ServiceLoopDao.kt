@@ -153,8 +153,14 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_visits WHERE state='WORKING' ORDER BY modifiedAtEpochMillis DESC LIMIT 1")
     suspend fun latestWorkingVisit(): WorkingVisitEntity?
 
+    @Query("SELECT COUNT(*) FROM working_visits WHERE state='WORKING'")
+    suspend fun workingVisitCount(): Int
+
     @Query("SELECT * FROM working_visits WHERE state='BOOKED' ORDER BY actualServiceDate LIMIT 1")
     suspend fun nextBookedVisit(): WorkingVisitEntity?
+
+    @Query("SELECT COUNT(*) FROM working_visits WHERE state='BOOKED'")
+    suspend fun bookedVisitCount(): Int
 
     @Query("SELECT v.id, v.reference, v.siteNameSnapshot siteName, v.actualServiceDate, v.state, f.id finalRecordId, (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.id LIMIT 1) resumeWorkItemId FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id ORDER BY v.actualServiceDate DESC, v.reference")
     suspend fun visits(): List<VisitSummaryRow>

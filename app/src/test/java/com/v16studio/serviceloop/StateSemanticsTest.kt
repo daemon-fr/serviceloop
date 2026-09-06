@@ -114,7 +114,6 @@ class StateSemanticsTest {
             { it.loadInspection("work-1"); it.savePublicWork("work-1", "changed") },
             { it.loadInspection("work-1"); it.markChecklistReviewed("work-1") },
             { it.loadCompletion("visit-1"); it.saveCompletion("work-1", "PARTLY_PERFORMED", false, null, null, null, null, "visit-1") },
-            { it.loadBusinessProfile(); it.saveBusinessProfile(BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest")) },
         )
         actions.forEach { action ->
             val viewModel = ServiceLoopViewModel(RefreshFailAfterWriteRepository(inspectionDraft())) {}
@@ -122,6 +121,29 @@ class StateSemanticsTest {
             assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
             assertEquals("refresh failed", viewModel.state.value.contentRefreshError)
         }
+    }
+
+    @Test fun businessProfileSaveStateIsIndependentTruthfulAndUsesItsOwnPersistedTimestamp() = runTest {
+        val successfulRepository = RefreshFailAfterWriteRepository(inspectionDraft())
+        val viewModel = ServiceLoopViewModel(successfulRepository) {}
+        viewModel.loadInspection("work-1"); viewModel.loadBusinessProfile()
+        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+        assertEquals(SaveStatus.Saved(75), viewModel.state.value.businessProfileSaveStatus)
+        viewModel.savePublicWork("work-1", "changed")
+        assertEquals(SaveStatus.Saved(75), viewModel.state.value.businessProfileSaveStatus)
+
+        val profileViewModel = ServiceLoopViewModel(RefreshFailAfterWriteRepository(inspectionDraft())) {}
+        profileViewModel.loadBusinessProfile()
+        profileViewModel.saveBusinessProfile(BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest"))
+        assertEquals(SaveStatus.Saved(200), profileViewModel.state.value.businessProfileSaveStatus)
+        assertEquals(SaveStatus.Idle, profileViewModel.state.value.saveStatus)
+        assertEquals("refresh failed", profileViewModel.state.value.contentRefreshError)
+
+        val failedViewModel = ServiceLoopViewModel(RefreshFailAfterWriteRepository(inspectionDraft(), failProfileWrite = true)) {}
+        failedViewModel.loadBusinessProfile()
+        failedViewModel.saveBusinessProfile(BusinessProfile("Changed", "Technician", zoneId = "Europe/Bucharest"))
+        val failed = failedViewModel.state.value.businessProfileSaveStatus as SaveStatus.Failed
+        assertEquals(75L, failed.lastSavedAtEpochMillis); assertEquals(SaveStatus.Idle, failedViewModel.state.value.saveStatus)
     }
 
     @Test fun successfulReportGenerationRemainsReadyWhenRecordRefreshFails() = runTest {
@@ -367,7 +389,7 @@ class StateSemanticsTest {
         }
     }
 
-    private class RefreshFailAfterWriteRepository(private val draft: InspectionDraft) : ServiceLoopRepository {
+    private class RefreshFailAfterWriteRepository(private val draft: InspectionDraft, private val failProfileWrite: Boolean = false) : ServiceLoopRepository {
         private var written = false
         override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
         override suspend fun equipment(id: String): EquipmentDetail? = null
@@ -375,11 +397,11 @@ class StateSemanticsTest {
         override suspend fun customerList(): List<CustomerSummary> = emptyList()
         override suspend fun inspection(workItemId: String): InspectionDraft { if (written) error("refresh failed"); return draft }
         override suspend fun completionLines(visitId: String): List<CompletionLine> { if (written) error("refresh failed"); return emptyList() }
-        override suspend fun businessProfile(): BusinessProfile? { if (written) error("refresh failed"); return BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest") }
+        override suspend fun businessProfile(): BusinessProfile? { if (written) error("refresh failed"); return BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 75) }
         override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = 200L
         override suspend fun savePublicWork(workItemId: String, text: String): Long { written = true; return 200 }
         override suspend fun markChecklistReviewed(workItemId: String): Long { written = true; return 200 }
         override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long { written = true; return 200 }
-        override suspend fun saveBusinessProfile(profile: BusinessProfile): Long { written = true; return 200 }
+        override suspend fun saveBusinessProfile(profile: BusinessProfile): Long { if (failProfileWrite) error("profile write failed"); written = true; return 200 }
     }
 }
