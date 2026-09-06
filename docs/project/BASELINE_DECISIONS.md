@@ -60,3 +60,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - For an ordinary inspection **Issue found** response, edit and view the primary public finding description directly beneath the inspection item rather than requiring navigation to another screen.
 - The field is a compact multiline editor by default with a visible control that expands the same field for long descriptions and collapses it again without changing its content.
 - This inline description remains the public corrective description source under B-007. Do not invent a second mandatory public description; later richer finding metadata, photographs, disposition, corrective-task planning, and lifecycle features remain permitted where adopted.
+
+## B-010 — Expanded multiline editing pattern
+
+- Keep the ordinary **Issue found** description compact and inline by default.
+- Its **Expand** action should eventually open the same text in a dedicated full-page or modal editing surface for long-form entry rather than merely making the inline box taller.
+- Longer multiline inputs should converge on one reusable editing component/pattern, including a visible bottom-right resize/expand affordance where appropriate, so long-text behavior is consistent across ServiceLoop.
+- This is a deferred UX refinement and does not block the accepted SL-2 workflow.
