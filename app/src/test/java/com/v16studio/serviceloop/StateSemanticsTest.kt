@@ -123,6 +123,53 @@ class StateSemanticsTest {
         }
     }
 
+    @Test fun genericDraftRepeatedFailuresPreserveLastDurableCheckpoint() = runTest {
+        val repository = CheckpointRepository(inspectionDraft(), draftWriteResults = mutableListOf<Long?>(null, null, null))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        repeat(3) { attempt ->
+            viewModel.savePublicWork("work-1", "attempt-$attempt")
+            val failed = viewModel.state.value.saveStatus as SaveStatus.Failed
+            assertEquals(100L, failed.lastSavedAtEpochMillis)
+        }
+    }
+
+    @Test fun genericDraftFailureThenSuccessThenFailureAdvancesAndPreservesCheckpoint() = runTest {
+        val repository = CheckpointRepository(inspectionDraft(), draftWriteResults = mutableListOf<Long?>(null, 200L, null))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.savePublicWork("work-1", "first")
+        assertEquals(100L, (viewModel.state.value.saveStatus as SaveStatus.Failed).lastSavedAtEpochMillis)
+        viewModel.savePublicWork("work-1", "second")
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+        viewModel.savePublicWork("work-1", "third")
+        assertEquals(200L, (viewModel.state.value.saveStatus as SaveStatus.Failed).lastSavedAtEpochMillis)
+    }
+
+    @Test fun responseRepeatedFailuresPreserveDurableInspectionCheckpoint() = runTest {
+        val repository = CheckpointRepository(inspectionDraft(), responseWriteResults = mutableListOf<Long?>(null, null, null))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        repeat(3) {
+            viewModel.requestResponseChange("check-1", ResponseDisposition.OK)
+            assertEquals(100L, (viewModel.state.value.saveStatus as SaveStatus.Failed).lastSavedAtEpochMillis)
+        }
+    }
+
+    @Test fun businessProfileRepeatedFailuresPreserveItsPersistedCheckpoint() = runTest {
+        val repository = CheckpointRepository(inspectionDraft(), profileWriteResults = mutableListOf<Long?>(null, null, null))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadBusinessProfile()
+
+        repeat(3) {
+            viewModel.saveBusinessProfile(BusinessProfile("Changed", "Technician", zoneId = "Europe/Bucharest"))
+            assertEquals(75L, (viewModel.state.value.businessProfileSaveStatus as SaveStatus.Failed).lastSavedAtEpochMillis)
+        }
+    }
+
     @Test fun businessProfileSaveStateIsIndependentTruthfulAndUsesItsOwnPersistedTimestamp() = runTest {
         val successfulRepository = RefreshFailAfterWriteRepository(inspectionDraft())
         val viewModel = ServiceLoopViewModel(successfulRepository) {}
@@ -403,5 +450,26 @@ class StateSemanticsTest {
         override suspend fun markChecklistReviewed(workItemId: String): Long { written = true; return 200 }
         override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long { written = true; return 200 }
         override suspend fun saveBusinessProfile(profile: BusinessProfile): Long { if (failProfileWrite) error("profile write failed"); written = true; return 200 }
+    }
+
+    private class CheckpointRepository(
+        private val draft: InspectionDraft,
+        private val draftWriteResults: MutableList<Long?> = mutableListOf(),
+        private val responseWriteResults: MutableList<Long?> = mutableListOf(),
+        private val profileWriteResults: MutableList<Long?> = mutableListOf(),
+    ) : ServiceLoopRepository {
+        override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
+        override suspend fun equipment(id: String): EquipmentDetail? = null
+        override suspend fun equipmentList(): List<EquipmentSummary> = emptyList()
+        override suspend fun customerList(): List<CustomerSummary> = emptyList()
+        override suspend fun inspection(workItemId: String) = draft
+        override suspend fun completionLines(visitId: String): List<CompletionLine> = emptyList()
+        override suspend fun businessProfile() = BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 75)
+        override suspend fun savePublicWork(workItemId: String, text: String) = next(draftWriteResults, "draft")
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = next(responseWriteResults, "response")
+        override suspend fun saveBusinessProfile(profile: BusinessProfile) = next(profileWriteResults, "profile")
+
+        private fun next(results: MutableList<Long?>, operation: String): Long =
+            results.removeAt(0) ?: error("$operation write failed")
     }
 }

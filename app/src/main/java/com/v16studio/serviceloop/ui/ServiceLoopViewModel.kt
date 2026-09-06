@@ -133,11 +133,7 @@ class ServiceLoopViewModel(
     fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
     fun markChecklistReviewed(workItemId: String) = persistDraft({ repository.markChecklistReviewed(workItemId) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
     fun saveBusinessProfile(profile: BusinessProfile) {
-        val lastSaved = when (val status = _state.value.businessProfileSaveStatus) {
-            is SaveStatus.Saved -> status.atEpochMillis
-            is SaveStatus.Failed -> status.lastSavedAtEpochMillis
-            else -> _state.value.businessProfile?.modifiedAtEpochMillis
-        }
+        val lastSaved = _state.value.businessProfileSaveStatus.lastSavedCheckpoint() ?: _state.value.businessProfile?.modifiedAtEpochMillis
         _state.value = _state.value.copy(businessProfileSaveStatus = SaveStatus.Saving, error = null)
         viewModelScope.launch {
             try {
@@ -190,7 +186,7 @@ class ServiceLoopViewModel(
     }
 
     private fun persistDraft(write: suspend () -> Long, refresh: suspend () -> Unit = {}) {
-        val lastSaved = (_state.value.saveStatus as? SaveStatus.Saved)?.atEpochMillis
+        val lastSaved = _state.value.saveStatus.lastSavedCheckpoint()
         _state.value = _state.value.copy(saveStatus = SaveStatus.Saving, error = null)
         viewModelScope.launch {
             try {
@@ -250,7 +246,7 @@ class ServiceLoopViewModel(
     }
 
     private fun persistResponse(draft: InspectionDraft, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) {
-        val lastSaved = (state.value.saveStatus as? SaveStatus.Saved)?.atEpochMillis ?: draft.modifiedAtEpochMillis
+        val lastSaved = state.value.saveStatus.lastSavedCheckpoint() ?: draft.modifiedAtEpochMillis
         _state.value = _state.value.copy(saveStatus = SaveStatus.Saving, error = null)
         viewModelScope.launch {
             try {
@@ -288,5 +284,11 @@ class ServiceLoopViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ServiceLoopViewModel(container.repository, container.reportService) { container.startup.await() } as T
+    }
+
+    private fun SaveStatus.lastSavedCheckpoint(): Long? = when (this) {
+        is SaveStatus.Saved -> atEpochMillis
+        is SaveStatus.Failed -> lastSavedAtEpochMillis
+        else -> null
     }
 }

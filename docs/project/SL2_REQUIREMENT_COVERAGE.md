@@ -6,7 +6,7 @@ Original implementation commit: `208f4ebd9bab22a74fc9a9bd4f938582bb406ff9`.
 
 Independent-review correction implementation: `52b59a8d86bbb98bdb3e1c7cb634f877d601f1a5`; pushed correction/evidence state: `1ba9ad5403d460ddb3f3f519e14671fcfecd305a`.
 
-Final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f86db9adb5`; the evidence-documentation commit containing this file is the final branch HEAD. Current verification totals are 63 unit tests and 13 canonical-AVD instrumentation tests, all passing.
+Broader final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f86db9adb5`. Final save-checkpoint closure: the commit containing this update and the final branch HEAD after its authorized push. Current verification totals are 67 unit tests and 13 canonical-AVD instrumentation tests, all passing.
 
 ## Traceability
 
@@ -26,7 +26,7 @@ Final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f86db9adb
 | Report semantics and availability | IMPLEMENTED / TESTED / HUMAN-RENDERED | Public model retains recurring/one-off and plan-reference semantics, customer/site references, outcome/reason/due effects, and Text parity. READY+missing derives File missing, keeps Text usable, disables Share, and never silently recreates v1. Metadata failure cleans an adopted orphan. Existing canonical bytes were not regenerated. |
 | Completion UI wiring | UI-INSTRUMENTED | Isolated deterministic Compose test uses semantic controls for outcome, fulfillment, calculated date, Finalize, and resulting Final Service Record navigation. Domain tests are reported separately; canonical history was not altered for this evidence. |
 | Stale obligation projection | IMPLEMENTED / TESTED / UI-INSTRUMENTED | Completion Review exposes `CURRENT_OBLIGATION_CHANGED`, sanitizes fulfillment and next-date effects, hides the control, and explains the required review. Finalization independently blocks the stale state. |
-| Save truth and counts | IMPLEMENTED / TESTED / UI-INSTRUMENTED | Response/public-work values normalize before comparison/storage; semantic no-ops bypass the write gate. Business Profile uses its own persisted timestamp/status. Home renders actual Working/Booked totals with deterministic preview identities. |
+| Save truth and counts | IMPLEMENTED / TESTED / UI-INSTRUMENTED | Response/public-work values normalize before comparison/storage; semantic no-ops bypass the write gate. Generic draft, response, and Business Profile failures retain their last durable checkpoint through repeated failures, advance it after a later success, and keep a committed write Saved when only its refresh fails. Business Profile uses its own persisted timestamp/status. Home renders actual Working/Booked totals with deterministic preview identities. |
 | Missing report and recorded time | IMPLEMENTED / TESTED / UI-INSTRUMENTED | “View report text” opens with Text selected immediately and Share disabled when READY bytes are absent. Normal present reports still open PDF. Final Record displays the full local recorded date/time. |
 | SL-1 navigation/atomicity regression | TESTED | No-transition NavHost retained; focused post-finalization canonical root-switch test passed. |
 
