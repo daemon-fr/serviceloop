@@ -1,12 +1,12 @@
 # ServiceLoop — SL-2 Requirement Coverage
 
-**Status:** Developer implementation and validation complete on `codex/sl-2-first-complete-service-loop`; owner acceptance and B-008 pilot remain outstanding.
+**Status:** OWNER ACCEPTED on 2026-09-06. The accepted user-facing SL-2 implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; the later documentation-only acceptance commits do not alter product behavior. B-008 real-technician pilot remains outstanding, so Stage 2 is accepted for continued development but is not yet product-valid for release preparation.
 
 Original implementation commit: `208f4ebd9bab22a74fc9a9bd4f938582bb406ff9`.
 
 Independent-review correction implementation: `52b59a8d86bbb98bdb3e1c7cb634f877d601f1a5`; pushed correction/evidence state: `1ba9ad5403d460ddb3f3f519e14671fcfecd305a`.
 
-Broader final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f86db9adb5`. Final save-checkpoint closure: the commit containing this update and the final branch HEAD after its authorized push. Current verification totals are 67 unit tests and 13 canonical-AVD instrumentation tests, all passing.
+Broader final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f86db9adb5`. Final save-checkpoint closure: `b56dd2edbcfd31f910e510ddce5df5d3c347778b`. Owner-review usability correction and fresh editable debug fixture: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`. Current verified pre-owner-review totals are 67 unit tests and 13 canonical-AVD instrumentation tests, all passing; the later owner-review correction was source-reviewed and owner-validated visually rather than rerun locally by the orchestrator.
 
 ## Traceability
 
@@ -28,8 +28,9 @@ Broader final technical closure implementation: `45d3856e3a9fa447c2f9d171236419f
 | Stale obligation projection | IMPLEMENTED / TESTED / UI-INSTRUMENTED | Completion Review exposes `CURRENT_OBLIGATION_CHANGED`, sanitizes fulfillment and next-date effects, hides the control, and explains the required review. Finalization independently blocks the stale state. |
 | Save truth and counts | IMPLEMENTED / TESTED / UI-INSTRUMENTED | Response/public-work values normalize before comparison/storage; semantic no-ops bypass the write gate. Generic draft, response, and Business Profile failures retain their last durable checkpoint through repeated failures, advance it after a later success, and keep a committed write Saved when only its refresh fails. Business Profile uses its own persisted timestamp/status. Home renders actual Working/Booked totals with deterministic preview identities. |
 | Missing report and recorded time | IMPLEMENTED / TESTED / UI-INSTRUMENTED | “View report text” opens with Text selected immediately and Share disabled when READY bytes are absent. Normal present reports still open PDF. Final Record displays the full local recorded date/time. |
+| Owner-review usability | OWNER ACCEPTED | Equipment-mode Add action is labelled Add equipment; Home has subtle ServiceLoop identity and booked-site context; recognized debug fixture receives one fresh V-003 Working inspection for direct Issue found/inline finding review without modifying finalized V-001. |
 | SL-1 navigation/atomicity regression | TESTED | No-transition NavHost retained; focused post-finalization canonical root-switch test passed. |
 
 ## Residual scope
 
-The milestone intentionally does not implement general master-data CRUD, plan editing, booking/rescheduling, richer findings/photos/parts, correction/void flows, recovery/import/export, reminders, search, signatures, or broader report design/customization. SL-2 is not owner accepted. B-008 requires a real technician/trade pilot before Stage 2 product validity or release preparation.
+SL-2 intentionally does not implement the Stage-3 ordinary-operation breadth: general master-data CRUD, plan editing, booking/rescheduling, reusable-template editing, corrective follow-up workflow, search/filter completion, broader visit setup, or richer findings/photos/parts. Corrections/voiding, recovery/import/export, reminders, broader report versions, and lifecycle/move rules remain Stage 4+ according to the staged plan. Owner approval is complete; B-008 still requires a real technician/trade pilot before Stage 2 is product-valid or release preparation begins.
