@@ -1,0 +1,302 @@
+[
+  {
+    "theme": "Light",
+    "fg": "text",
+    "bg": "surface",
+    "foreground": "#162328",
+    "background": "#FFFFFF",
+    "ratio": 16.089887978715996,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "text",
+    "bg": "canvas",
+    "foreground": "#162328",
+    "background": "#F5F7FA",
+    "ratio": 14.992118370540428,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "muted",
+    "bg": "surface",
+    "foreground": "#47565D",
+    "background": "#FFFFFF",
+    "ratio": 7.616707794091388,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "muted",
+    "bg": "secondary",
+    "foreground": "#47565D",
+    "background": "#EEF2F5",
+    "ratio": 6.766101179390557,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "onprimary",
+    "bg": "primary",
+    "foreground": "#FFFFFF",
+    "background": "#075E67",
+    "ratio": 7.4840425433606965,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "primary",
+    "bg": "surface",
+    "foreground": "#075E67",
+    "background": "#FFFFFF",
+    "ratio": 7.4840425433606965,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "onselection",
+    "bg": "selection",
+    "foreground": "#063D43",
+    "background": "#D8EFF1",
+    "ratio": 9.985000386363703,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "outline",
+    "bg": "surface",
+    "foreground": "#687B84",
+    "background": "#FFFFFF",
+    "ratio": 4.416419199606841,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "outline",
+    "bg": "canvas",
+    "foreground": "#687B84",
+    "background": "#F5F7FA",
+    "ratio": 4.115098843572991,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "outline",
+    "bg": "secondary",
+    "foreground": "#687B84",
+    "background": "#EEF2F5",
+    "ratio": 3.9232093396471988,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "primary",
+    "bg": "secondary",
+    "foreground": "#075E67",
+    "background": "#EEF2F5",
+    "ratio": 6.648251508154725,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "urg",
+    "bg": "urgbg",
+    "foreground": "#714600",
+    "background": "#FFF0CD",
+    "ratio": 7.213385352659915,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "flow",
+    "bg": "flowbg",
+    "foreground": "#164D8C",
+    "background": "#E5EFFB",
+    "ratio": 7.303401144827847,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "error",
+    "bg": "errorbg",
+    "foreground": "#A32628",
+    "background": "#FCE9E9",
+    "ratio": 6.272283266598118,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Light",
+    "fg": "success",
+    "bg": "successbg",
+    "foreground": "#225D3C",
+    "background": "#E3F2E8",
+    "ratio": 6.718130248349056,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "text",
+    "bg": "surface",
+    "foreground": "#EFF5F7",
+    "background": "#172126",
+    "ratio": 14.878898024055468,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "text",
+    "bg": "canvas",
+    "foreground": "#EFF5F7",
+    "background": "#11181C",
+    "ratio": 16.28524524258105,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "muted",
+    "bg": "surface",
+    "foreground": "#BAC9CF",
+    "background": "#172126",
+    "ratio": 9.628579783816477,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "muted",
+    "bg": "secondary",
+    "foreground": "#BAC9CF",
+    "background": "#253238",
+    "ratio": 7.75339874645128,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "onprimary",
+    "bg": "primary",
+    "foreground": "#063D43",
+    "background": "#80D4DD",
+    "ratio": 7.048562714023622,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "primary",
+    "bg": "surface",
+    "foreground": "#80D4DD",
+    "background": "#172126",
+    "ratio": 9.656542141101763,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "onselection",
+    "bg": "selection",
+    "foreground": "#B4EDF1",
+    "background": "#163E45",
+    "ratio": 9.023559551012392,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "outline",
+    "bg": "surface",
+    "foreground": "#8AA2AD",
+    "background": "#172126",
+    "ratio": 6.125150775706238,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "outline",
+    "bg": "canvas",
+    "foreground": "#8AA2AD",
+    "background": "#11181C",
+    "ratio": 6.704097465342623,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "outline",
+    "bg": "secondary",
+    "foreground": "#8AA2AD",
+    "background": "#253238",
+    "ratio": 4.932268040818158,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "primary",
+    "bg": "secondary",
+    "foreground": "#80D4DD",
+    "background": "#253238",
+    "ratio": 7.775915390732294,
+    "target": 3,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "urg",
+    "bg": "urgbg",
+    "foreground": "#FFD58A",
+    "background": "#45320C",
+    "ratio": 8.82816424617764,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "flow",
+    "bg": "flowbg",
+    "foreground": "#A9CEFF",
+    "background": "#163553",
+    "ratio": 7.768277458831324,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "error",
+    "bg": "errorbg",
+    "foreground": "#FFB4AB",
+    "background": "#512B2C",
+    "ratio": 7.142079536592001,
+    "target": 4.5,
+    "passed": true
+  },
+  {
+    "theme": "Dark",
+    "fg": "success",
+    "bg": "successbg",
+    "foreground": "#A6DFB8",
+    "background": "#203D2B",
+    "ratio": 7.862930379345297,
+    "target": 4.5,
+    "passed": true
+  }
+]

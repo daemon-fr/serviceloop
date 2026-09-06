@@ -1,0 +1,208 @@
+{
+  "title": "ServiceLoop UI/UX delivery audit",
+  "date": "2026-09-05",
+  "status": "Conceptual proposal; owner decisions and device/security/usability tests remain open",
+  "source_counts": {
+    "C": {
+      "actions": 357,
+      "parents": 53,
+      "original_table_enumeration_matches": true,
+      "html_missing_actions": [],
+      "edition_comparison": [
+        {
+          "op": "insert",
+          "md": "",
+          "html": "complete offline reading edition screen action rule and source references are clickable use your browser s find command to locate a feature or identifier",
+          "md_count": 0,
+          "html_count": 24
+        },
+        {
+          "op": "insert",
+          "md": "",
+          "html": "removed once a customer exists no permanent duplicate navigation section",
+          "md_count": 0,
+          "html_count": 10
+        },
+        {
+          "op": "insert",
+          "md": "",
+          "html": "reading edition of serviceloop_conceptual_app_map_v0_1 md no app implementation frozen specification or commercial approval is asserted",
+          "md_count": 0,
+          "html_count": 15
+        }
+      ]
+    },
+    "F": {
+      "actions": 375,
+      "parents": 48,
+      "original_table_enumeration_matches": true,
+      "html_missing_actions": [],
+      "edition_comparison": []
+    }
+  },
+  "source_hashes": {
+    "ServiceLoop_Conceptual_App_Map_v0_1.md": "a879480860386981983ba0665f1618976d4525751cc90d5da1ebde3b23e97148",
+    "ServiceLoop_Conceptual_App_Map_v0_1.html": "047654190e4f3a5fa07299a28f3570132c95801f870d1cfd7c0e1806bb050009",
+    "ServiceLoop_Complete_Functional_App_Map_v0_1.md": "83a3f594cb6619a6ec27300c8e7f7e666a50e0f71e3a97d9e2137f65525a7e8a",
+    "ServiceLoop_Complete_Functional_App_Map_v0_1.html": "f234b092c47b475bd573321287d3fcd9a130841afd872683950325727eb7665c"
+  },
+  "contrast": {
+    "pairs": 30,
+    "passed": 30,
+    "recomputed": true,
+    "metric": "sRGB relative luminance, full precision; thresholds 4.5 text / 3 nontext",
+    "not_verified": "Rendered app, all composited/disabled/transient combinations, print, assistive technology"
+  },
+  "structure": {
+    "ServiceLoop_Conceptual_UI_UX_Design_v0_1": {
+      "unique_ids": 184,
+      "duplicate_ids": [],
+      "links": 1321,
+      "broken_local_links": [],
+      "characters": 307549,
+      "sha256_md": "27ab6d3c84cc9a07ae75eb45d63871b22266c2d5af904b57adc8242c6d5e3c64",
+      "sha256_html": "aaa5b3077c57b9816fbc8c99a45534107fd772fd1922d4517a8e423aa898163c"
+    },
+    "ServiceLoop_UI_UX_Action_Coverage_v0_1": {
+      "unique_ids": 843,
+      "duplicate_ids": [],
+      "links": 3730,
+      "broken_local_links": [],
+      "characters": 375343,
+      "sha256_md": "5ee85632efdea6b6367842a4165544244a60bfdeeb793f66d0ace3026280d69f",
+      "sha256_html": "be63ad01a0dfa3245dfcb8f734a6319bbc9a7997b9657df681629db19899e009"
+    }
+  },
+  "browser_tests": {
+    "engine": "Headless installed Chromium via Playwright",
+    "scope": "HTML reading documents rendered from local file content injected directly into Chromium; not an Android app test",
+    "file_url_limitation": "Direct file URL navigation is blocked by the container browser administrator. No policy was changed. Relative cross-file links/anchors were checked structurally and target content rendered; ordinary downloaded-file navigation needs user-browser verification.",
+    "results": [
+      {
+        "viewport": 1440,
+        "bodyWidth": 1440,
+        "documentWidth": 1440,
+        "tables": 22,
+        "wireframes": 31,
+        "title": "ServiceLoop — Conceptual UI/UX Design · v0.1",
+        "file": "ServiceLoop_Conceptual_UI_UX_Design_v0_1.html",
+        "height": 1000,
+        "color_scheme": "light",
+        "page_errors": [],
+        "external_requests": [],
+        "anchor_test": "UI-24",
+        "body_horizontal_overflow": false
+      },
+      {
+        "viewport": 390,
+        "bodyWidth": 390,
+        "documentWidth": 390,
+        "tables": 22,
+        "wireframes": 31,
+        "title": "ServiceLoop — Conceptual UI/UX Design · v0.1",
+        "file": "ServiceLoop_Conceptual_UI_UX_Design_v0_1.html",
+        "height": 844,
+        "color_scheme": "light",
+        "page_errors": [],
+        "external_requests": [],
+        "anchor_test": "UI-58",
+        "body_horizontal_overflow": false
+      },
+      {
+        "viewport": 320,
+        "bodyWidth": 320,
+        "documentWidth": 320,
+        "tables": 22,
+        "wireframes": 31,
+        "title": "ServiceLoop — Conceptual UI/UX Design · v0.1",
+        "file": "ServiceLoop_Conceptual_UI_UX_Design_v0_1.html",
+        "height": 700,
+        "color_scheme": "dark",
+        "page_errors": [],
+        "external_requests": [],
+        "anchor_test": "UI-35",
+        "body_horizontal_overflow": false
+      },
+      {
+        "viewport": 1440,
+        "bodyWidth": 1440,
+        "documentWidth": 1440,
+        "tables": 101,
+        "wireframes": 0,
+        "title": "ServiceLoop — Action Coverage · v0.1",
+        "file": "ServiceLoop_UI_UX_Action_Coverage_v0_1.html",
+        "height": 1000,
+        "color_scheme": "light",
+        "page_errors": [],
+        "external_requests": [],
+        "anchor_test": "C-S24-A10",
+        "body_horizontal_overflow": false
+      },
+      {
+        "viewport": 390,
+        "bodyWidth": 390,
+        "documentWidth": 390,
+        "tables": 101,
+        "wireframes": 0,
+        "title": "ServiceLoop — Action Coverage · v0.1",
+        "file": "ServiceLoop_UI_UX_Action_Coverage_v0_1.html",
+        "height": 844,
+        "color_scheme": "light",
+        "page_errors": [],
+        "external_requests": [],
+        "anchor_test": "C-S24-A10",
+        "body_horizontal_overflow": false
+      },
+      {
+        "test": "no JavaScript",
+        "result": "Complete text, native contents disclosure and UI links available"
+      },
+      {
+        "test": "contents filtering, in-page navigation and cross-file target/anchor verification",
+        "matching_contents_rows": 1,
+        "result": "passed"
+      }
+    ]
+  },
+  "limitations": [
+    "Not an Android implementation or prototype",
+    "No target-user trials or measured task times",
+    "No Android accessibility/device/permission/storage/security/PDF-print tests",
+    "Material 3 full article was JS-only in browsing; official indexed 48dp passage checked; Android guidance independently checked",
+    "C provisional; X-01 through X-11 and FC-01 through FC-03 await owner review"
+  ],
+  "coverage": {
+    "ui_surfaces": 59,
+    "sections": "A through J",
+    "individual_actions": 732,
+    "missing_action_ids": [],
+    "extra_action_ids": [],
+    "source_journeys": {
+      "C": 8,
+      "F": 9
+    },
+    "automatic_behaviors": {
+      "C": 15,
+      "F": 14
+    },
+    "lifecycle_instances": 26
+  },
+  "fictional_example_arithmetic": {
+    "scope": "Arithmetic checks of the explicitly fictional T3 and alternative T4 examples; not service advice or app tests",
+    "T3_next_dates": [
+      "2026-12-05",
+      "2027-03-05"
+    ],
+    "T3_overdue_before": 4,
+    "T3_overdue_after": 2,
+    "T3_due_soon_after": 1,
+    "T3_open_followups": 2,
+    "T3_due_followups": 1,
+    "T4_alternative_next_dates": [
+      "2026-12-04",
+      "2027-03-04"
+    ],
+    "result": "passed"
+  },
+  "delivery_status": "Complete conceptual sections A–J, 59 UI surfaces and all 732 original-action dispositions; unresolved product decisions are explicitly registered, not omitted coverage."
+}

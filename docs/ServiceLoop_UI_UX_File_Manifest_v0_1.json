@@ -1,0 +1,59 @@
+{
+  "version": "0.1",
+  "date": "2026-09-05",
+  "algorithm": "SHA-256",
+  "files": {
+    "README_ServiceLoop_UI_UX_v0_1.md": {
+      "bytes": 3352,
+      "sha256": "082615a0d7a8925045a47db26890665722d05ae1749b89a1b765e63fd591394b"
+    },
+    "ServiceLoop_Conceptual_UI_UX_Design_v0_1.md": {
+      "bytes": 315518,
+      "sha256": "27ab6d3c84cc9a07ae75eb45d63871b22266c2d5af904b57adc8242c6d5e3c64"
+    },
+    "ServiceLoop_Conceptual_UI_UX_Design_v0_1.html": {
+      "bytes": 413969,
+      "sha256": "aaa5b3077c57b9816fbc8c99a45534107fd772fd1922d4517a8e423aa898163c"
+    },
+    "ServiceLoop_UI_UX_Action_Coverage_v0_1.md": {
+      "bytes": 425103,
+      "sha256": "5ee85632efdea6b6367842a4165544244a60bfdeeb793f66d0ace3026280d69f"
+    },
+    "ServiceLoop_UI_UX_Action_Coverage_v0_1.html": {
+      "bytes": 715521,
+      "sha256": "be63ad01a0dfa3245dfcb8f734a6319bbc9a7997b9657df681629db19899e009"
+    },
+    "ServiceLoop_UI_UX_Contrast_Checks_v0_1.json": {
+      "bytes": 5989,
+      "sha256": "85e26f786e1ff4f8658601a5d15618c93506d8e88026fbf8e5468e06bd19a83a"
+    },
+    "ServiceLoop_UI_UX_Delivery_Audit_v0_1.json": {
+      "bytes": 7471,
+      "sha256": "b186e8333f12e10e90d76d60af2e2c5c9643efd5b4c58f99dbc2c2902fbf2a3d"
+    },
+    "ServiceLoop_Conceptual_App_Map_v0_1.md": {
+      "bytes": 199223,
+      "sha256": "a879480860386981983ba0665f1618976d4525751cc90d5da1ebde3b23e97148"
+    },
+    "ServiceLoop_Conceptual_App_Map_v0_1.html": {
+      "bytes": 284705,
+      "sha256": "047654190e4f3a5fa07299a28f3570132c95801f870d1cfd7c0e1806bb050009"
+    },
+    "ServiceLoop_Complete_Functional_App_Map_v0_1.md": {
+      "bytes": 163518,
+      "sha256": "83a3f594cb6619a6ec27300c8e7f7e666a50e0f71e3a97d9e2137f65525a7e8a"
+    },
+    "ServiceLoop_Complete_Functional_App_Map_v0_1.html": {
+      "bytes": 237949,
+      "sha256": "f234b092c47b475bd573321287d3fcd9a130841afd872683950325727eb7665c"
+    },
+    "ServiceLoop_Functional_App_Map_Prompt_v1_1.md": {
+      "bytes": 24351,
+      "sha256": "4e94e2738458431cb383c5a4b251d9adcebc45db1fac16ece614725770b1de44"
+    },
+    "ServiceLoop_Research_and_Product_Context.md": {
+      "bytes": 40476,
+      "sha256": "33578b486be981af3b79d57454aea173dfd6d9587f1a6e22ae97d310ae8d01b6"
+    }
+  }
+}
