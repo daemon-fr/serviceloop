@@ -1,0 +1,147 @@
+package com.v16studio.serviceloop
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.v16studio.serviceloop.data.AttachmentEntity
+import com.v16studio.serviceloop.data.ChecklistItemSnapshotEntity
+import com.v16studio.serviceloop.data.CustomerEntity
+import com.v16studio.serviceloop.data.DraftWriteGate
+import com.v16studio.serviceloop.data.EquipmentEntity
+import com.v16studio.serviceloop.data.RoomServiceLoopRepository
+import com.v16studio.serviceloop.data.ServiceLoopDatabase
+import com.v16studio.serviceloop.data.ServiceObligationEntity
+import com.v16studio.serviceloop.data.ServicePlanEntity
+import com.v16studio.serviceloop.data.SiteEntity
+import com.v16studio.serviceloop.data.TemplateSnapshotEntity
+import com.v16studio.serviceloop.data.WorkItemEntity
+import com.v16studio.serviceloop.data.WorkItemPrivateDraftEntity
+import com.v16studio.serviceloop.data.WorkItemPublicDraftEntity
+import com.v16studio.serviceloop.data.WorkingVisitEntity
+import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.ResponseDisposition
+import java.time.Instant
+import java.time.ZoneId
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class PersistenceIntegrityTest {
+    private lateinit var database: ServiceLoopDatabase
+    private val time = object : BusinessTime {
+        override val zoneId: ZoneId = ZoneId.of("Europe/Bucharest")
+        override fun instant(): Instant = Instant.parse("2026-09-05T07:15:00Z")
+    }
+
+    @Before fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+    }
+
+    @After fun tearDown() = database.close()
+
+    @Test fun customerSiteEquipmentAndPlansPersistWithIndependentStableIdentity() = runTest {
+        seedFoundation()
+        val rows = database.serviceLoopDao().equipmentPlans("equipment-1")
+        assertEquals(1, rows.size)
+        assertEquals("customer-1", database.serviceLoopDao().site("site-1")?.customerId)
+        assertEquals("site-1", database.serviceLoopDao().equipment("equipment-1")?.siteId)
+        assertEquals("equipment-1", database.serviceLoopDao().plan("plan-1")?.equipmentId)
+
+        database.serviceLoopDao().renameCustomer("customer-1", "Renamed customer")
+        database.serviceLoopDao().renameEquipment("equipment-1", "Renamed machine")
+        assertEquals("customer-1", database.serviceLoopDao().customer("customer-1")?.id)
+        assertEquals("equipment-1", database.serviceLoopDao().equipment("equipment-1")?.id)
+        assertNotEquals(database.serviceLoopDao().equipment("equipment-1")?.name, database.serviceLoopDao().equipment("equipment-1")?.id)
+    }
+
+    @Test fun currentObligationIdentitySurvivesReloadAndIsNotDueDateOrDisplayText() = runTest {
+        seedFoundation()
+        val plan = database.serviceLoopDao().plan("plan-1")!!
+        val obligation = database.serviceLoopDao().obligation(plan.currentObligationId!!)!!
+        assertEquals("obligation-1", obligation.id)
+        assertEquals(plan.id, obligation.planId)
+        assertNotEquals(plan.currentDueDate, obligation.id)
+        assertNotEquals(plan.name, obligation.id)
+        val reconstructed = RoomServiceLoopRepository(database, time).equipment("equipment-1")!!
+        assertEquals("obligation-1", reconstructed.plans.single().currentObligationId)
+    }
+
+    @Test fun capturedSnapshotRemainsFixedWhenMasterDataIsRenamed() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        database.serviceLoopDao().renameCustomer("customer-1", "Current customer changed")
+        database.serviceLoopDao().renameEquipment("equipment-1", "Current equipment changed")
+        val draft = repository.inspection("work-1")!!
+        assertEquals("Captured customer", database.serviceLoopDao().visit("visit-1")?.customerNameSnapshot)
+        assertEquals("Captured equipment", draft.equipmentName)
+        assertEquals("Captured service", draft.serviceName)
+        assertEquals("Captured question", draft.questions.single().label)
+    }
+
+    @Test fun durableDraftSurvivesRepositoryReconstruction() = runTest {
+        seedFoundation()
+        val firstRepository = RoomServiceLoopRepository(database, time)
+        firstRepository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        val reconstructedRepository = RoomServiceLoopRepository(database, time)
+        assertEquals(ResponseDisposition.OK, reconstructedRepository.inspection("work-1")!!.questions.single().disposition)
+    }
+
+    @Test fun failedDraftWriteDoesNotPersistTheOptimisticAnswer() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time, DraftWriteGate { error("controlled write failure") })
+        try {
+            repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+            fail("Expected the controlled write failure")
+        } catch (expected: IllegalStateException) {
+            assertEquals("controlled write failure", expected.message)
+        }
+        assertEquals(ResponseDisposition.NOT_CHECKED, RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single().disposition)
+    }
+
+    @Test fun performedOutcomeDoesNotImplicitlyFulfillCurrentObligation() = runTest {
+        seedFoundation()
+        val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").single()
+        assertEquals("PERFORMED", line.outcome)
+        assertFalse(line.fulfillsCurrentObligation!!)
+        assertEquals("2026-09-01", line.dueDate)
+        assertEquals(null, line.proposedNextDueDate)
+    }
+
+    @Test fun attachmentUsesStableOwnerAndOwnedPathNotDisplayNameOrExternalUri() = runTest {
+        seedFoundation()
+        val attachment = AttachmentEntity("attachment-1", "WORK_ITEM", "work-1", "attachments/attachment-1/original.jpg", "sha256-content", "customer photo.jpg", "image/jpeg", false, "PRESENT")
+        database.serviceLoopDao().insertAttachments(listOf(attachment))
+        val reloaded = database.serviceLoopDao().attachment("attachment-1")!!
+        assertEquals("work-1", reloaded.ownerId)
+        assertNotEquals(reloaded.originalDisplayName, reloaded.id)
+        assertTrue(reloaded.storedRelativePath.startsWith("attachments/${reloaded.id}/"))
+        assertFalse(reloaded.storedRelativePath.contains("://"))
+    }
+
+    private suspend fun seedFoundation() {
+        val dao = database.serviceLoopDao()
+        dao.insertCustomers(listOf(CustomerEntity("customer-1", "CU-001", "Current customer")))
+        dao.insertSites(listOf(SiteEntity("site-1", "customer-1", "ST-001", "Current site", null, "Private access")))
+        dao.insertEquipment(listOf(EquipmentEntity("equipment-1", "site-1", "EQ-001", "T-01", "Current equipment", null, null, null, "Private equipment note")))
+        dao.insertPlans(listOf(ServicePlanEntity("plan-1", "equipment-1", "P-001", "Current plan", 3, "MONTHS", "2026-09-01", "ACTIVE", "obligation-1")))
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-1", "plan-1", 1, "2026-09-01", 1)))
+        dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("template-snapshot-1", "template-1", "Captured template", 2, 2)))
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-1", "template-snapshot-1", 1, "Captured question", "STATUS", null, true, "Private guidance")))
+        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-001", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 3)))
+        dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", "template-snapshot-1", "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", false, "PERFORMED", false)))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work")))
+        dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "Private work")))
+    }
+}

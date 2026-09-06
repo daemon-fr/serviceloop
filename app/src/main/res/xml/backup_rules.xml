@@ -6,8 +6,8 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- The future verified ServiceLoop package is the complete recovery contract. -->
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="attachments/" />
+    <exclude domain="file" path="reports/" />
 </full-backup-content>
