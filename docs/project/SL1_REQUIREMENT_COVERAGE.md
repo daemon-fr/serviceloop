@@ -1,7 +1,7 @@
 # SL-1 Requirement Coverage
 
-**Branch:** `codex/sl-1-foundation-visual-proof`  
-**Starting revision:** `33d350fbd6e46161616b630d766f46c4cf3b8dd7`  
+**Branch:** `codex/sl-1-foundation-visual-proof`
+**Starting revision:** `33d350fbd6e46161616b630d766f46c4cf3b8dd7`
 **Implementation commit:** `e92af2b8b715f5adcf97ddc31e9db1392470a52f`
 
 | SL-1 responsibility | Status | Evidence |
