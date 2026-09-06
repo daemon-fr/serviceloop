@@ -83,6 +83,13 @@ Use instrumented/device tests and actual rendered-screen inspection when the beh
 
 Tests must validate adopted business meaning rather than merely mirror implementation.
 
+## Execution/tooling fallbacks
+
+- If the managed patch/filesystem helper first fails with a sandbox refresh, access, or path-helper error, switch immediately to the functioning approved local shell/editing path. Do not investigate sandbox internals or retry path spellings; inspect `git diff` after shell edits and run `git diff --check` before commit.
+- For ServiceLoop-owned Compose UI, prefer stable `testTag`, `contentDescription`, or visible-label semantics and Compose actions such as `performClick`, `performTextInput`, `performTextReplacement`, `performTextClearance`, `performScrollTo`, and `performImeAction` over coordinate tapping or `adb input text`.
+- If handwriting, stylus, or IME UI intercepts coordinate text entry, switch promptly to semantic Compose instrumentation. Do not reset or globally reconfigure the canonical AVD for text entry. A production repository/domain instrumentation path is valid DOMAIN-INSTRUMENTED evidence, but remains distinct from UI-INSTRUMENTED and HUMAN/RENDERED evidence.
+- System surfaces such as the Sharesheet, picker, settings, or another app require actual system-handoff evidence when the handoff itself matters; a domain substitution is not equivalent.
+
 ## Git and handoff
 
 Inspect `git status`, branch and starting revision before substantial work. Keep diffs reviewable, preserve unrelated behavior, do not rewrite history, force-push, destructively reset known-good work, publish, or merge into the protected owner baseline unless explicitly authorized.

@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-2 first complete service loop developer validation
+**Updated:** 2026-09-06 — SL-2 independent-review correction developer validation
 
 ## Current state
 
@@ -8,6 +8,25 @@
 - SL-2 development branch: `codex/sl-2-first-complete-service-loop`, started exactly from the accepted SL-1 SHA.
 - SL-2 implementation commit: `208f4ebd9bab22a74fc9a9bd4f938582bb406ff9`.
 - SL-2 is implemented and developer-validated, but is not owner accepted and is not Stage 2 product-valid until the B-008 real-technician pilot occurs.
+
+## SL-2 independent-review correction pass
+
+**IMPLEMENTED / TESTED**
+
+- Room schema version 3, committed `3.json`, additive `MIGRATION_2_3`, retained `MIGRATION_1_2`, and verified v1→2→3 chaining. Legacy working equipment/customer/site snapshots are best-effort backfilled once; existing final records/report renditions are preserved and no destructive fallback exists.
+- Working items now own equipment identifier/make/model/serial start snapshots. Working visits own customer/site references and a business/report identity snapshot; finalization reads only these captured fields. Missing legacy visit identity is an explicit blocker with Use current identity and explicit Refresh actions.
+- Checklist semantics distinguish valid answers, Reviewed state, and attendance outcome. Any Issue found needs public detail; Performed with a checklist needs legitimate review; Partly performed/Not performed may finalize incomplete entries as explicit Not checked/Unanswered warnings. NUMBER values use a locale-independent finite signed-decimal contract.
+- Completion persistence canonically clears incompatible outcome/fulfillment/due fields, derives calculated-versus-override provenance from actual dates, requires an override reason, treats identical normalized saves as no-ops, and revalidates provenance inside finalization.
+- Successful writes publish Saved before post-write rereads. A failed reread remains a separate content-refresh problem. Successful report generation similarly remains successful if the screen reread fails.
+- Work → Visits carries each Working row's own resume work-item id. Public final/report models retain plan versus one-off identity, plan reference, customer/site references, outcome/reason/due semantics, and structured Text parity.
+- READY metadata is distinguished from current file presence: a missing PDF is labelled File missing, Text view remains usable, and Share is unavailable. A failure between file adoption and READY metadata removes the uncommitted orphan.
+- Real concurrent finalization coverage starts two coroutine callers and proves one record/revision, one consumption/advance, and a shared record id. Semantic Compose instrumentation drives the real outcome, fulfillment, calculated-date, Finalize, and resulting-record controls.
+
+**RUNTIME EVIDENCE**
+
+- Canonical `Pixel 10a ServiceLoop` (`Pixel_10a_ServiceLoop`, dynamically resolved `emulator-5556`) upgraded in place v2→v3 with `install -r`; V-001 remained Finalized, P-001 remained due `2026-12-05`, and the existing rendition remained READY.
+- Existing PDF `ec1c0f1c-a227-37ff-b12d-82e0863a8810` remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`. HUMAN/RENDERED inspection covered Work → Visits, Final Record, PDF preview, and structured Text view. UI-INSTRUMENTED evidence covers completion-button wiring; DOMAIN-INSTRUMENTED evidence covers finalization/migration/integrity behavior.
+- Owner visual/report review and the B-008 real-technician pilot remain outstanding. SL-2 is not owner accepted.
 
 - Repository: `daemon-fr/serviceloop`; protected owner baseline remains `master`.
 - SL-1 development branch: `codex/sl-1-foundation-visual-proof`.
@@ -29,7 +48,7 @@
 
 **IMPLEMENTED / TESTED**
 
-- Room schema version 2, exported schema, and explicit `MIGRATION_1_2`; all v1 business/draft tables are preserved and new provenance, completion-draft, business-profile, immutable final-record revision, final line/checklist snapshot, and report-rendition structures are additive.
+- Room schema version 3 with explicit additive `MIGRATION_1_2` and `MIGRATION_2_3`; all prior business, draft, final-record, and rendition data is preserved.
 - Required Business and report identity editor with explicit truthful Save, stored business zone, debug-only positively-recognized compatibility seed, and finalization blocker when issuer/technician identity is incomplete.
 - Editable durable public work performed field, required-checklist validation, explicit Mark checklist reviewed, and atomic invalidation of Reviewed when a saved answer/finding changes.
 - Durable Performed / Partly performed / Not performed outcomes, required non-performance reason, explicit recurring fulfillment, calculated completion-date-based next due, explicit confirmation, and reasoned manual override.
