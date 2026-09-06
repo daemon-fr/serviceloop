@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -25,6 +26,7 @@ class OwnerVisualRuntimeTest {
                 if (candidate == tag) composeRule.onAllNodesWithTag(candidate).assertCountEquals(1)
                 else composeRule.onAllNodesWithTag(candidate).assertCountEquals(0)
             }
+            composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         }
 
         composeRule.waitUntil(5_000) {
@@ -66,6 +68,8 @@ class OwnerVisualRuntimeTest {
         }
 
         composeRule.onNodeWithText("Back").performClick()
+        composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
+        composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         composeRule.onNodeWithText("Resume visit").performClick()
         composeRule.onNodeWithTag("finding-field-check-belt").performScrollTo().assertTextContains("Belt edge wear observed during inspection")
 

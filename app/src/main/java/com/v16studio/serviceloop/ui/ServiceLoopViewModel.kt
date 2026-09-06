@@ -14,6 +14,8 @@ import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +32,8 @@ data class UiState(
     val saveStatus: SaveStatus = SaveStatus.Idle,
     val pendingResponseTransition: PendingResponseTransition? = null,
     val error: String? = null,
+    val rootDataReady: Boolean = false,
+    val rootRefreshError: String? = null,
 )
 
 data class PendingResponseTransition(
@@ -46,6 +50,7 @@ class ServiceLoopViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+    private var rootRefreshJob: Job? = null
 
     init { loadInitialRootData() }
 
@@ -57,7 +62,31 @@ class ServiceLoopViewModel(
             home = home,
             equipmentList = equipmentList,
             customerList = customerList,
+            rootDataReady = true,
         )
+    }
+
+    internal fun refreshRootDataNonBlocking() {
+        if (!_state.value.rootDataReady) return
+        rootRefreshJob?.cancel()
+        rootRefreshJob = viewModelScope.launch {
+            try {
+                val home = repository.home()
+                val equipmentList = repository.equipmentList()
+                val customerList = repository.customerList()
+                ensureActive()
+                _state.value = _state.value.copy(
+                    home = home,
+                    equipmentList = equipmentList,
+                    customerList = customerList,
+                    rootRefreshError = null,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _state.value = _state.value.copy(rootRefreshError = failure.message ?: "Unable to refresh saved data")
+            }
+        }
     }
 
     fun loadEquipment(id: String) = launchLoad { _state.value = _state.value.copy(equipment = repository.equipment(id)) }

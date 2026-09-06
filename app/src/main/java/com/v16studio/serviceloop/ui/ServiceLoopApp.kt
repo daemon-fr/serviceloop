@@ -103,20 +103,23 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         popExitTransition = { ExitTransition.None },
     ) {
         composable(HOME) {
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                ScreenState(state.loading, state.error, padding, "root-home") { HomeScreen(state.home, state.equipmentList, nav) }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, nav) }
             }
         }
         composable(WORK) {
             var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading, state.error, padding, "root-work") { WorkScreen(state.home, nav, workTab) { workTab = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state.home, nav, workTab) { workTab = it } }
             }
         }
         composable(CUSTOMERS) {
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading, state.error, padding, "root-customers") { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers") { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
             }
         }
         composable("equipment/{id}") { entry ->

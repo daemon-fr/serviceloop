@@ -14,6 +14,7 @@ import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -36,6 +37,52 @@ class StateSemanticsTest {
         assertTrue(ResponseDisposition.UNANSWERED != ResponseDisposition.OK)
         assertTrue(ResponseDisposition.NOT_CHECKED != ResponseDisposition.OK)
         assertFalse(ResponseDisposition.NOT_CHECKED.name.contains("OK"))
+    }
+
+    @Test fun initialRootDataLoadsAsOneBlockingProjection() = runTest {
+        val repository = RootRefreshRepository(inspectionDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+
+        assertTrue(viewModel.state.value.rootDataReady)
+        assertFalse(viewModel.state.value.loading)
+        assertEquals(100L, viewModel.state.value.home?.savedAtEpochMillis)
+        assertEquals(1, repository.homeReads)
+        assertEquals(1, repository.equipmentReads)
+        assertEquals(1, repository.customerReads)
+    }
+
+    @Test fun quietRootRefreshKeepsUsableContentVisibleUntilAtomicReplacement() = runTest {
+        val repository = RootRefreshRepository(inspectionDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        repository.nextSavedAt = 200L
+        repository.refreshGate = CompletableDeferred()
+
+        viewModel.refreshRootDataNonBlocking()
+
+        assertFalse(viewModel.state.value.loading)
+        assertEquals(100L, viewModel.state.value.home?.savedAtEpochMillis)
+        repository.refreshGate?.complete(Unit)
+        assertEquals(200L, viewModel.state.value.home?.savedAtEpochMillis)
+        assertTrue(viewModel.state.value.equipmentList.isNotEmpty())
+        assertTrue(viewModel.state.value.customerList.isNotEmpty())
+    }
+
+    @Test fun quietRefreshFailurePreservesRootDataAndSuccessfulSaveState() = runTest {
+        val repository = RootRefreshRepository(inspectionDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+        viewModel.requestResponseChange("check-1", ResponseDisposition.OK)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+        repository.failRefresh = true
+
+        viewModel.refreshRootDataNonBlocking()
+
+        assertEquals(100L, viewModel.state.value.home?.savedAtEpochMillis)
+        assertTrue(viewModel.state.value.equipmentList.isNotEmpty())
+        assertTrue(viewModel.state.value.customerList.isNotEmpty())
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+        assertEquals("root refresh failed", viewModel.state.value.rootRefreshError)
+        assertFalse(viewModel.state.value.loading)
     }
 
     @Test fun viewModelReportsFailedNotSavedAfterPersistenceFailure() = runTest {
@@ -239,6 +286,37 @@ class StateSemanticsTest {
                 },
             )
             return 200
+        }
+    }
+
+    private class RootRefreshRepository(private var draft: InspectionDraft) : ServiceLoopRepository {
+        var homeReads = 0
+        var equipmentReads = 0
+        var customerReads = 0
+        var nextSavedAt = 100L
+        var refreshGate: CompletableDeferred<Unit>? = null
+        var failRefresh = false
+        override suspend fun home(): HomeSummary {
+            homeReads++
+            if (homeReads > 1) refreshGate?.await()
+            if (homeReads > 1 && failRefresh) error("root refresh failed")
+            return HomeSummary("visit-1", "V-001", "Site", nextSavedAt, "work-1", null, null, 0, null, null, 0, 0)
+        }
+        override suspend fun equipment(id: String): EquipmentDetail? = null
+        override suspend fun equipmentList(): List<EquipmentSummary> {
+            equipmentReads++
+            return listOf(EquipmentSummary("equipment-1", "Machine", "EQ-1", null, "Site", "Customer", null))
+        }
+        override suspend fun customerList(): List<CustomerSummary> {
+            customerReads++
+            return listOf(CustomerSummary("customer-1", "Customer", "CU-1", 1, 1))
+        }
+        override suspend fun inspection(workItemId: String): InspectionDraft = draft
+        override suspend fun completionLines(visitId: String): List<CompletionLine> = emptyList()
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long {
+            draft = draft.copy(modifiedAtEpochMillis = 200, questions = draft.questions.map { if (it.snapshotItemId == questionId) it.copy(disposition = disposition) else it })
+            nextSavedAt = 200L
+            return 200L
         }
     }
 }
