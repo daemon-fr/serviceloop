@@ -39,6 +39,8 @@ Current generated baseline:
 
 Do not casually modernize or downgrade working tooling. Keep the exact full Gradle wrapper distribution filename. ServiceLoop may reuse proven development practices from Routine Repeater, but never its application logic, visual identity, scheduler assumptions, or permissions without an explicit ServiceLoop requirement.
 
+For device testing, the canonical ServiceLoop AVD is the one whose display name is `Pixel 10a ServiceLoop`. Resolve its current adb serial dynamically from that AVD identity on every run; never assume `emulator-5554` or another fixed serial. Every device-directed adb command must use explicit `-s <resolved-serial>`. Do not substitute another emulator or a physical phone, and do not reset or recreate the AVD without explicit owner authorization.
+
 ## Architecture defaults
 
 Unless current accepted code establishes a better equivalent within scope:

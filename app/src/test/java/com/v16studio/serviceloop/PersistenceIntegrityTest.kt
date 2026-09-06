@@ -17,8 +17,10 @@ import com.v16studio.serviceloop.data.TemplateSnapshotEntity
 import com.v16studio.serviceloop.data.WorkItemEntity
 import com.v16studio.serviceloop.data.WorkItemPrivateDraftEntity
 import com.v16studio.serviceloop.data.WorkItemPublicDraftEntity
+import com.v16studio.serviceloop.data.WorkingResponseEntity
 import com.v16studio.serviceloop.data.WorkingVisitEntity
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import java.time.Instant
 import java.time.ZoneId
@@ -110,13 +112,76 @@ class PersistenceIntegrityTest {
         assertEquals(ResponseDisposition.NOT_CHECKED, RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single().disposition)
     }
 
+    @Test fun issueReasonCannotSurviveTransitionToOk() = runTest {
+        seedFoundation()
+        database.serviceLoopDao().upsertResponses(listOf(WorkingResponseEntity("response-1", "work-1", "check-1", "ISSUE_FOUND", null, null, "Fraying edge", 2)))
+
+        RoomServiceLoopRepository(database, time).saveResponse("work-1", "check-1", ResponseDisposition.OK, null, "Fraying edge")
+
+        val question = RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single()
+        assertEquals(ResponseDisposition.OK, question.disposition)
+        assertEquals(null, question.reason)
+        assertEquals(null, question.textValue)
+        assertEquals(null, question.numberValue)
+    }
+
+    @Test fun savedNumericValueCannotSurviveIncompatibleDisposition() = runTest {
+        seedFoundation()
+        val dao = database.serviceLoopDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-snapshot-1", 2, "Reading", "NUMBER", "km", true, null)))
+        dao.upsertResponses(listOf(WorkingResponseEntity("response-number", "work-1", "check-number", "VALUE", null, "1240.5", null, 2)))
+
+        RoomServiceLoopRepository(database, time).saveResponse("work-1", "check-number", ResponseDisposition.NOT_APPLICABLE, "1240.5", "Not fitted")
+
+        val question = RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.first { it.snapshotItemId == "check-number" }
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, question.disposition)
+        assertEquals(null, question.numberValue)
+        assertEquals("Not fitted", question.reason)
+    }
+
+    @Test fun harmlessStatusChangePersistsWithoutContradictoryFields() = runTest {
+        seedFoundation()
+
+        RoomServiceLoopRepository(database, time).saveResponse("work-1", "check-1", ResponseDisposition.OK, "stale", "stale")
+
+        val question = RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single()
+        assertEquals(ResponseDisposition.OK, question.disposition)
+        assertEquals(null, question.textValue)
+        assertEquals(null, question.numberValue)
+        assertEquals(null, question.reason)
+    }
+
     @Test fun performedOutcomeDoesNotImplicitlyFulfillCurrentObligation() = runTest {
         seedFoundation()
         val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").single()
         assertEquals("PERFORMED", line.outcome)
-        assertFalse(line.fulfillsCurrentObligation!!)
+        assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
+        assertFalse(line.fulfillsCurrentObligation)
         assertEquals("2026-09-01", line.dueDate)
         assertEquals(null, line.proposedNextDueDate)
+    }
+
+    @Test fun fulfillmentEligibilityRejectsPartialAndNotPerformedEvenIfPersistedTrue() = runTest {
+        seedFoundation()
+        insertAdditionalWorkItem("work-partial", "PARTLY_PERFORMED", true)
+        insertAdditionalWorkItem("work-not-performed", "NOT_PERFORMED", true)
+
+        val lines = RoomServiceLoopRepository(database, time).completionLines("visit-1").associateBy { it.workItemId }
+        listOf("work-partial", "work-not-performed").forEach { id ->
+            assertEquals(FulfillmentEligibility.OUTCOME_INELIGIBLE, lines.getValue(id).fulfillmentEligibility)
+            assertFalse(lines.getValue(id).fulfillsCurrentObligation)
+            assertEquals(null, lines.getValue(id).proposedNextDueDate)
+        }
+    }
+
+    @Test fun explicitEligibleFulfillmentUsesCapturedIntervalFromActualServiceDate() = runTest {
+        seedFoundation()
+        insertAdditionalWorkItem("work-fulfilled", "PERFORMED", true)
+
+        val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").first { it.workItemId == "work-fulfilled" }
+        assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
+        assertTrue(line.fulfillsCurrentObligation)
+        assertEquals("2026-12-05", line.proposedNextDueDate)
     }
 
     @Test fun attachmentUsesStableOwnerAndOwnedPathNotDisplayNameOrExternalUri() = runTest {
@@ -140,8 +205,15 @@ class PersistenceIntegrityTest {
         dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("template-snapshot-1", "template-1", "Captured template", 2, 2)))
         dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-1", "template-snapshot-1", 1, "Captured question", "STATUS", null, true, "Private guidance")))
         dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-001", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 3)))
-        dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", "template-snapshot-1", "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", false, "PERFORMED", false)))
+        dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", "template-snapshot-1", "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", true, "PERFORMED", false)))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work")))
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "Private work")))
+    }
+
+    private suspend fun insertAdditionalWorkItem(id: String, outcome: String, fulfills: Boolean) {
+        val dao = database.serviceLoopDao()
+        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", "plan-1", "obligation-1", null, "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", false, outcome, fulfills)))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, "Work note")))
+        dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
     }
 }

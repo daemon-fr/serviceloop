@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,6 +57,7 @@ import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.CustomerSummary
 import com.v16studio.serviceloop.domain.EquipmentDetail
 import com.v16studio.serviceloop.domain.EquipmentSummary
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.HomeSummary
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
@@ -115,6 +117,11 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("scope/{title}") { entry ->
             DetailScaffold(entry.arguments?.getString("title") ?: "ServiceLoop", nav) { padding ->
                 HonestPlaceholder(padding, "This foundation exposes the entry point without claiming the later workflow is complete.")
+            }
+        }
+        composable("foundation/finding") {
+            DetailScaffold("Finding / issue details", nav) { padding ->
+                HonestPlaceholder(padding, "Detailed Finding editing is not part of the SL-1 foundation yet. No finding or follow-up has been created.")
             }
         }
     }
@@ -243,7 +250,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); StatusChip(if (plan.isOverdue) "Overdue" else "Due soon", urgency = plan.isOverdue) }
                 Text("${plan.reference} · ${plan.interval}")
                 Text("Due ${plan.dueDate}", fontWeight = FontWeight.Medium)
-                Text("Current obligation ${plan.currentObligationId?.takeLast(7) ?: "none"}", style = MaterialTheme.typography.bodySmall)
+                Text(if (plan.state == "ACTIVE") "Current service remains due until explicitly fulfilled" else "Plan ${plan.state.lowercase()}", style = MaterialTheme.typography.bodySmall)
             }
         }
         item { SummaryRow("Corrective follow-ups", "Add follow-up") { nav.navigate("scope/Add follow-up") }; SummaryRow("Equipment history", "Open") { nav.navigate("scope/History") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
@@ -252,6 +259,15 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
 
 @Composable
 private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    viewModel.state.collectAsState().value.pendingResponseTransition?.let { transition ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelResponseTransition,
+            title = { Text("Discard saved response detail?") },
+            text = { Text("Changing this answer will discard the ${transition.detailBeingDiscarded}.") },
+            confirmButton = { TextButton(onClick = viewModel::confirmResponseTransition) { Text("Discard and change") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelResponseTransition) { Text("Cancel") } },
+        )
+    }
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
@@ -261,26 +277,26 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
         }
         item { LabelledValue("Work performed · Customer report", draft.workPerformed.ifBlank { "Not recorded" }, public = true); LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false) }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
-        items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel) }
+        items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel, nav) }
         item { StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium) }
         item { Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth(), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
     }
 }
 
 @Composable
-private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     AccentCard {
         Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
         Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
         when (question.responseType) {
             "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
-                Row(Modifier.fillMaxWidth().selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.saveResponse(question.snapshotItemId, value, reason = question.reason) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
+                Row(Modifier.fillMaxWidth().selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value, reason = if (value == ResponseDisposition.NOT_APPLICABLE) "Not applicable during this visit" else null) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
             }
             else -> ValueQuestion(question, saving, viewModel)
         }
         question.reason?.takeIf { it.isNotBlank() }?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
         if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
-            Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(question.reason ?: "Finding details required", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium); TextButton(onClick = {}) { Text("Finding / issue details") } } }
+            Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(question.reason ?: "Finding details required", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium); TextButton(onClick = { nav.navigate("foundation/finding") }) { Text("Finding / issue details") } } }
         }
     }
 }
@@ -290,8 +306,8 @@ private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewMod
     var value by remember(question.snapshotItemId, question.textValue, question.numberValue) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
     OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { question.unit?.let { Text(it) } }, enabled = !saving, modifier = Modifier.fillMaxWidth())
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { viewModel.saveResponse(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Save response") }
-        OutlinedButton(onClick = { viewModel.saveResponse(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit") }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
+        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Save response") }
+        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit") }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
     }
     if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
 }
@@ -313,8 +329,12 @@ private fun CompletionLineCard(line: CompletionLine) {
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
         Text("Outcome", style = MaterialTheme.typography.labelLarge)
         Text(line.outcome?.replace('_', ' ')?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Choose outcome")
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = line.fulfillsCurrentObligation == true, onCheckedChange = null); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation == true) "Selected independently" else "Not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
-        if (line.fulfillsCurrentObligation == true) Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate ?: "requires review"}") else Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
+        when (line.fulfillmentEligibility) {
+            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = line.fulfillsCurrentObligation, onCheckedChange = null); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
+            FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
+        }
+        if (line.fulfillsCurrentObligation) Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}") else Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
 }

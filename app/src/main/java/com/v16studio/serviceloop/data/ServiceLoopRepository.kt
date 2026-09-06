@@ -7,6 +7,7 @@ import com.v16studio.serviceloop.domain.CustomerSummary
 import com.v16studio.serviceloop.domain.EquipmentDetail
 import com.v16studio.serviceloop.domain.EquipmentPlan
 import com.v16studio.serviceloop.domain.EquipmentSummary
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.HomeSummary
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
@@ -134,20 +135,26 @@ class RoomServiceLoopRepository(
     override suspend fun completionLines(visitId: String): List<CompletionLine> {
         val actualServiceDate = dao.visit(visitId)?.actualServiceDate?.let(LocalDate::parse)
         return dao.visitWorkItems(visitId).map { item ->
-        val public = dao.inspection(item.id)
-        val proposed = if (item.fulfillsCurrentObligation == true && item.outcome == "PERFORMED") {
-            item.intervalCountSnapshot?.let { count ->
-                val date = actualServiceDate ?: return@let null
-                when (item.intervalUnitSnapshot) {
-                    "DAYS" -> date.plusDays(count.toLong())
-                    "WEEKS" -> date.plusWeeks(count.toLong())
-                    "MONTHS" -> date.plusMonths(count.toLong())
-                    "YEARS" -> date.plusYears(count.toLong())
-                    else -> null
-                }?.toString()
+            val public = dao.inspection(item.id)
+            val eligibility = when {
+                item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
+                item.templateSnapshotId != null && !item.checklistReviewed -> FulfillmentEligibility.CHECKLIST_NOT_REVIEWED
+                else -> FulfillmentEligibility.ELIGIBLE
             }
-        } else null
-        CompletionLine(item.id, item.equipmentNameSnapshot, item.equipmentReferenceSnapshot, item.serviceNameSnapshot, item.outcome, item.fulfillsCurrentObligation, item.dueDateSnapshot, proposed, public?.workPerformed.orEmpty())
+            val fulfills = eligibility == FulfillmentEligibility.ELIGIBLE && item.fulfillsCurrentObligation == true
+            val proposed = if (fulfills) {
+                item.intervalCountSnapshot?.let { count ->
+                    val date = actualServiceDate ?: return@let null
+                    when (item.intervalUnitSnapshot) {
+                        "DAYS" -> date.plusDays(count.toLong())
+                        "WEEKS" -> date.plusWeeks(count.toLong())
+                        "MONTHS" -> date.plusMonths(count.toLong())
+                        "YEARS" -> date.plusYears(count.toLong())
+                        else -> null
+                    }?.toString()
+                }
+            } else null
+            CompletionLine(item.id, item.equipmentNameSnapshot, item.equipmentReferenceSnapshot, item.serviceNameSnapshot, item.outcome, eligibility, fulfills, item.dueDateSnapshot, proposed, public?.workPerformed.orEmpty())
         }
     }
 
@@ -165,6 +172,14 @@ class RoomServiceLoopRepository(
         val now = businessTime.instant().toEpochMilli()
         val id = dao.responses(workItemId).firstOrNull { it.checklistItemSnapshotId == questionId }?.id
             ?: UUID.nameUUIDFromBytes("${workItemId}:${item.id}".toByteArray()).toString()
+        val allowed = when (item.responseType) {
+            "STATUS" -> setOf(ResponseDisposition.OK, ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.NOT_CHECKED)
+            "TEXT", "NUMBER" -> setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.VALUE)
+            else -> emptySet()
+        }
+        require(disposition in allowed) { "${disposition.name} is not valid for ${item.responseType}" }
+        if (disposition == ResponseDisposition.VALUE) require(!value.isNullOrBlank()) { "A saved value cannot be blank" }
+        if (disposition == ResponseDisposition.NOT_APPLICABLE) require(!reason.isNullOrBlank()) { "Not applicable requires a reason" }
         val response = WorkingResponseEntity(
             id = id,
             workItemId = workItemId,
@@ -172,7 +187,10 @@ class RoomServiceLoopRepository(
             disposition = disposition.name,
             textValue = if (item.responseType == "TEXT" && disposition == ResponseDisposition.VALUE) value else null,
             numberValue = if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) value else null,
-            reason = reason,
+            reason = when (disposition) {
+                ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE -> reason?.trim()?.takeIf(String::isNotEmpty)
+                else -> null
+            },
             modifiedAtEpochMillis = now,
         )
         database.withTransaction { dao.persistResponse(response, inspection.visitId) }

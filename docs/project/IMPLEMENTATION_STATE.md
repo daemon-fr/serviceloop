@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-1 implementation handoff
+**Updated:** 2026-09-06 — SL-1 independent-review correction pass
 
 ## Current state
 
@@ -11,6 +11,7 @@
 - Package/application ID remains `com.v16studio.serviceloop`.
 - The former generated Compose starter is replaced by a runnable ServiceLoop shell, Room persistence, debug-only representative fixtures, state holders, and representative Home, Equipment detail, Inspection, and Completion Review screens.
 - This is a Stage 1 foundation/semantic proof. It is not a completed service loop and does not implement the Stage 2 finalization transaction.
+- The independent-review correction pass now stages destructive inspection transitions for confirmation, enforces coherent response fields at the repository boundary, routes Finding details to an honest deferred-workflow destination, derives explicit fulfillment eligibility, and removes internal obligation identity from technician-facing Equipment Detail.
 
 ## Known generated toolchain baseline
 
@@ -35,6 +36,8 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - No destructive migration fallback and no database-open-to-empty recovery behavior.
 - Manual application-container injection, repository/state-holder separation, and an injectable business clock/zone abstraction.
 - Save state distinguishes Saving, Saved, and Not saved. Saved is emitted only after the Room transaction returns; cancellation is rethrown before ordinary failure handling.
+- Saved issue/NA/value detail is not discarded until the technician confirms an incompatible disposition change. Cancel leaves the durable response and visible selection unchanged; confirmed writes clear fields incompatible with the new disposition in the same Room transaction.
+- Completion Review exposes fulfillment as eligible only for Performed work with a reviewed assigned checklist (or no checklist). Partly performed and Not performed remain due, and an ineligible persisted `fulfillsCurrentObligation=true` is sanitized to unfulfilled in the derived review model.
 - ServiceLoop visual tokens, status roles, typography hierarchy, non-dynamic color identity, launcher artwork, accessible headings/native controls, and compact single-column layouts.
 - Android automatic backup/device-transfer rules exclude the Room database and owned attachment/report paths so an OS subset is not represented as the future complete ServiceLoop recovery package.
 
@@ -48,21 +51,21 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 
 **DEVELOPER-VALIDATED — automated**
 
-- `gradlew.bat :app:testDebugUnitTest`: PASS — 10 tests, 0 failures/errors/skips.
+- `gradlew.bat :app:testDebugUnitTest`: PASS — 17 tests, 0 failures/errors/skips, including destructive-transition staging/coherence and fulfillment eligibility/recurrence cases.
 - `gradlew.bat :app:assembleDebug`: PASS.
 - `gradlew.bat :app:lintDebug`: PASS.
 - `gradlew.bat :app:assembleRelease`: PASS, including compilation of the release no-op fixture factory.
 - Room schema version 1 generated at `app/schemas/com.v16studio.serviceloop.data.ServiceLoopDatabase/1.json`.
 
-**DEVELOPER-VALIDATED — emulator**
+**DEVELOPER-VALIDATED — canonical emulator targeted correction regression**
 
-- adb: `C:\Users\daemo\AppData\Local\Android\Sdk\platform-tools\adb.exe` 37.0.1.
-- Explicit target: `emulator-5554`, state `device`, 1080×2424 at 420 dpi (`sw411dp`, compact phone).
-- Exact debug APK installed with `adb -s emulator-5554 install -r`.
-- PASS: cold launch; Home; Work and Customers roots; Equipment detail; Inspection; Completion Review.
-- PASS: changed Guard fixing from OK to Not checked; UI reported Saved at 11:22 only after the write; force-stop/cold-reopen retained Not checked and the same durable checkpoint.
-- PASS: Completion Review displayed Performed independently from an unchecked Fulfills current obligation, displayed another independently checked line, and exposed Finalize as disabled with explicit Stage 2 copy.
-- The final post-review APK was installed and cold launch returned `Status: ok`; a final hierarchy capture was interrupted when another emulator app took foreground focus. Earlier targeted SL-1 scenarios remain the recorded runtime evidence.
+- AVD display name: `Pixel 10a ServiceLoop`; resolved internal identifier: `Pixel_10a_ServiceLoop`; dynamically resolved serial for this run: `emulator-5556`, state `device`.
+- adb: `C:\Users\daemo\AppData\Local\Android\Sdk\platform-tools\adb.exe` 37.0.1. The exact debug APK was installed with explicit `-s emulator-5556`; no other emulator or physical device was used.
+- PASS: saved Belt condition issue detail prompted before Issue found → OK. Cancel retained Issue found, its reason, and the prior Saved checkpoint. Confirm wrote OK, cleared the issue reason, and showed Saved only after persistence; force-stop/cold-reopen retained coherent OK with no stale detail.
+- PASS: saved numeric VALUE → Not applicable prompted before discard; confirm cleared the numeric value and retained only the new NA reason.
+- PASS: Finding / issue details opened the labelled SL-1 foundation destination, which stated that no finding or follow-up was created.
+- PASS: Completion Review rendered Performed/unfulfilled as eligible and remaining due, Performed/fulfilled with the captured-interval proposed date, and Partly performed/Not performed as fulfillment-unavailable and remaining due. Finalize remained disabled with no Stage-2 business effect.
+- PASS: Equipment Detail retained plan reference, interval, due date and status while exposing no raw current-obligation identity.
 
 **NOT VALIDATED / OWNER OR DEVICE FOLLOW-UP**
 
@@ -71,4 +74,4 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 
 ## Next boundary
 
-Stop at SL-1. Independent orchestrator review is required. Stage 2 remains unauthorized in this branch: actual finalization, obligation consumption/advancement, final records, recurrence effects, corrective-task creation, and report/PDF generation are deferred.
+Stop at SL-1. Independent orchestrator re-review is required. `ServicePlan.currentObligationId` is the persisted current-obligation pointer/identity foundation; Stage 2 remains unauthorized and must implement and verify the exact compare/consume/advance transaction. Actual finalization, obligation consumption/advancement, final records, recurrence effects, corrective-task creation, and report/PDF generation are deferred.

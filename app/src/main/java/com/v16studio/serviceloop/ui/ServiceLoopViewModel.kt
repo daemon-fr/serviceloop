@@ -28,7 +28,16 @@ data class UiState(
     val inspection: InspectionDraft? = null,
     val completionLines: List<CompletionLine> = emptyList(),
     val saveStatus: SaveStatus = SaveStatus.Idle,
+    val pendingResponseTransition: PendingResponseTransition? = null,
     val error: String? = null,
+)
+
+data class PendingResponseTransition(
+    val questionId: String,
+    val disposition: ResponseDisposition,
+    val value: String?,
+    val reason: String?,
+    val detailBeingDiscarded: String,
 )
 
 class ServiceLoopViewModel(
@@ -60,8 +69,39 @@ class ServiceLoopViewModel(
         _state.value = _state.value.copy(completionLines = repository.completionLines(visitId))
     }
 
-    fun saveResponse(questionId: String, disposition: ResponseDisposition, value: String? = null, reason: String? = null) {
+    fun requestResponseChange(questionId: String, disposition: ResponseDisposition, value: String? = null, reason: String? = null) {
         val draft = _state.value.inspection ?: return
+        val question = draft.questions.firstOrNull { it.snapshotItemId == questionId } ?: return
+        if (question.disposition == disposition && value == null && reason == null) return
+        val discardedDetail = when {
+            question.disposition == disposition -> null
+            question.disposition == ResponseDisposition.ISSUE_FOUND && !question.reason.isNullOrBlank() -> "saved issue detail"
+            question.disposition == ResponseDisposition.NOT_APPLICABLE && !question.reason.isNullOrBlank() -> "saved not-applicable reason"
+            question.disposition == ResponseDisposition.VALUE && !question.textValue.isNullOrBlank() -> "saved text response"
+            question.disposition == ResponseDisposition.VALUE && !question.numberValue.isNullOrBlank() -> "saved numeric response"
+            else -> null
+        }
+        if (discardedDetail != null) {
+            _state.value = _state.value.copy(
+                pendingResponseTransition = PendingResponseTransition(questionId, disposition, value, reason, discardedDetail),
+            )
+            return
+        }
+        persistResponse(draft, questionId, disposition, value, reason)
+    }
+
+    fun cancelResponseTransition() {
+        _state.value = _state.value.copy(pendingResponseTransition = null)
+    }
+
+    fun confirmResponseTransition() {
+        val transition = _state.value.pendingResponseTransition ?: return
+        val draft = _state.value.inspection ?: return
+        _state.value = _state.value.copy(pendingResponseTransition = null)
+        persistResponse(draft, transition.questionId, transition.disposition, transition.value, transition.reason)
+    }
+
+    private fun persistResponse(draft: InspectionDraft, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) {
         val lastSaved = (state.value.saveStatus as? SaveStatus.Saved)?.atEpochMillis ?: draft.modifiedAtEpochMillis
         _state.value = _state.value.copy(saveStatus = SaveStatus.Saving, error = null)
         viewModelScope.launch {

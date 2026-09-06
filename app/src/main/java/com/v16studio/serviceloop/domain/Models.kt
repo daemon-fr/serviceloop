@@ -101,11 +101,18 @@ data class CompletionLine(
     val equipmentReference: String,
     val serviceName: String,
     val outcome: String?,
-    val fulfillsCurrentObligation: Boolean?,
+    val fulfillmentEligibility: FulfillmentEligibility,
+    val fulfillsCurrentObligation: Boolean,
     val dueDate: String?,
     val proposedNextDueDate: String?,
     val workPerformed: String,
 )
+
+enum class FulfillmentEligibility {
+    ELIGIBLE,
+    OUTCOME_INELIGIBLE,
+    CHECKLIST_NOT_REVIEWED,
+}
 
 sealed interface SaveStatus {
     data object Idle : SaveStatus
