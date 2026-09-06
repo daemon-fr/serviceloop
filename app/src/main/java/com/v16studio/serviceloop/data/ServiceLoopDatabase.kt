@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalRecordRevisionEntity::class, FinalWorkItemEntity::class,
         FinalChecklistItemEntity::class, ReportRenditionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -31,7 +31,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -56,6 +56,31 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS report_renditions (id TEXT NOT NULL PRIMARY KEY, revisionId TEXT NOT NULL, versionNumber INTEGER NOT NULL, generatedAtEpochMillis INTEGER, relativePath TEXT NOT NULL, sha256 TEXT, byteSize INTEGER, pageCount INTEGER, status TEXT NOT NULL, kind TEXT NOT NULL, failureMessage TEXT, FOREIGN KEY(revisionId) REFERENCES final_record_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_report_renditions_revisionId_versionNumber ON report_renditions(revisionId, versionNumber)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_report_renditions_relativePath ON report_renditions(relativePath)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Recovery-only backfill for legacy drafts. New work captures these values at start time.
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN customerReferenceSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN siteReferenceSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportBusinessNameSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportTechnicianNameSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportPhoneSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportEmailSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportPostalAddressSnapshot TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN reportZoneIdSnapshot TEXT")
+                db.execSQL("UPDATE working_visits SET customerReferenceSnapshot=(SELECT reference FROM customers WHERE customers.id=working_visits.customerId), siteReferenceSnapshot=(SELECT reference FROM sites WHERE sites.id=working_visits.siteId)")
+                db.execSQL("ALTER TABLE work_items ADD COLUMN equipmentIdentifierSnapshot TEXT")
+                db.execSQL("ALTER TABLE work_items ADD COLUMN equipmentMakeSnapshot TEXT")
+                db.execSQL("ALTER TABLE work_items ADD COLUMN equipmentModelSnapshot TEXT")
+                db.execSQL("ALTER TABLE work_items ADD COLUMN equipmentSerialSnapshot TEXT")
+                db.execSQL("UPDATE work_items SET equipmentIdentifierSnapshot=(SELECT technicianIdentifier FROM equipment WHERE equipment.id=work_items.equipmentId), equipmentMakeSnapshot=(SELECT make FROM equipment WHERE equipment.id=work_items.equipmentId), equipmentModelSnapshot=(SELECT model FROM equipment WHERE equipment.id=work_items.equipmentId), equipmentSerialSnapshot=(SELECT serialNumber FROM equipment WHERE equipment.id=work_items.equipmentId)")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN customerReference TEXT")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN siteReference TEXT")
+                db.execSQL("UPDATE final_record_revisions SET customerReference=(SELECT c.reference FROM final_records f JOIN working_visits v ON v.id=f.visitId JOIN customers c ON c.id=v.customerId WHERE f.id=final_record_revisions.recordId), siteReference=(SELECT s.reference FROM final_records f JOIN working_visits v ON v.id=f.visitId JOIN sites s ON s.id=v.siteId WHERE f.id=final_record_revisions.recordId)")
+                db.execSQL("ALTER TABLE final_work_items ADD COLUMN nextDueDateCalculated INTEGER")
+                db.execSQL("ALTER TABLE final_work_items ADD COLUMN nextDueOverrideReason TEXT")
             }
         }
     }

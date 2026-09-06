@@ -12,9 +12,9 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class Migration1To2Test {
-    private val dbName = "sl2-migration-test.db"
+    private val dbName = "sl3-migration-test.db"
 
-    @Test fun migrationPreservesVersionOneRowsAndAddsCoherentDefaults() {
+    @Test fun migrationOneToThreePreservesRowsThroughTheRegisteredChain() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
@@ -35,7 +35,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO service_plans(id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId) VALUES('plan-1','equipment-1','P-1','Plan',3,'MONTHS','2026-09-01','ACTIVE',NULL)")
             old.version = 1
         }
-        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2).build()
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2, ServiceLoopDatabase.MIGRATION_2_3).build()
         try {
             val dao = migrated.serviceLoopDao()
             kotlinx.coroutines.runBlocking {
@@ -44,5 +44,42 @@ class Migration1To2Test {
                 assertEquals(0, dao.finalRecordCount())
             }
         } finally { migrated.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun migrationTwoToThreeBackfillsWorkingSnapshotsAndPreservesFinalReportAndObligation() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        context.deleteDatabase(dbName)
+        val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/2.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i); val table = entity.getString("tableName")
+                old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                entity.optJSONArray("indices")?.let { indices -> for (j in 0 until indices.length()) old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}", table)) }
+            }
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers VALUES('c','CU-9','Customer')")
+            old.execSQL("INSERT INTO sites VALUES('s','c','ST-9','Site','Address','private')")
+            old.execSQL("INSERT INTO equipment VALUES('e','s','EQ-9','TECH-9','Equipment','Maker','Model','Serial','private')")
+            old.execSQL("INSERT INTO service_plans VALUES('p','e','P-9','Plan',3,'MONTHS','2026-12-05','ACTIVE','o2','2026-09-05','rev')")
+            old.execSQL("INSERT INTO service_obligations VALUES('o1','p',1,'2026-09-01',1,2,'rev')")
+            old.execSQL("INSERT INTO service_obligations VALUES('o2','p',2,'2026-12-05',2,NULL,NULL)")
+            old.execSQL("INSERT INTO working_visits VALUES('v','V-9','c','s','2026-09-05','Captured customer','Captured site','Captured address','FINALIZED',2)")
+            old.execSQL("INSERT INTO work_items VALUES('w','v','e','p','o1',NULL,'Captured equipment','EQ-9','Service','P-9','2026-09-01',3,'MONTHS',0,'PERFORMED',1,NULL,'2026-12-05',1,NULL)")
+            old.execSQL("INSERT INTO final_records VALUES('r','v','rev',2)")
+            old.execSQL("INSERT INTO final_record_revisions VALUES('rev','r',1,'V-9','2026-09-05',2,'Captured customer','Captured site','Captured address','Business','Technician',NULL,NULL,NULL,'Europe/Bucharest',NULL)")
+            old.execSQL("INSERT INTO final_work_items VALUES('fw','rev',1,'w','e','Captured equipment','EQ-9','TECH-9','Maker','Model','Serial','Service','p','P-9','PERFORMED','Done',NULL,1,'2026-09-01','2026-12-05',3,'MONTHS','o1',NULL)")
+            old.execSQL("INSERT INTO report_renditions VALUES('rr','rev',1,3,'reports/r/rr.pdf','hash',65369,1,'READY','ORIGINAL',NULL)")
+            old.version = 2
+        }
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_2_3).build()
+        try { kotlinx.coroutines.runBlocking {
+            val dao = migrated.serviceLoopDao(); val visit = dao.visit("v")!!; val work = dao.workItem("w")!!; val revision = dao.finalRevision("rev")!!
+            assertEquals("CU-9", visit.customerReferenceSnapshot); assertEquals("ST-9", visit.siteReferenceSnapshot)
+            assertEquals("TECH-9", work.equipmentIdentifierSnapshot); assertEquals("Maker", work.equipmentMakeSnapshot)
+            assertEquals("CU-9", revision.customerReference); assertEquals("ST-9", revision.siteReference)
+            assertEquals("2026-12-05", dao.plan("p")!!.currentDueDate); assertEquals("READY", dao.reportRendition("rev")!!.status); assertEquals(1, dao.finalRecordCount())
+        } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 }

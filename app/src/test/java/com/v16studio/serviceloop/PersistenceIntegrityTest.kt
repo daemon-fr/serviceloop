@@ -222,7 +222,7 @@ class PersistenceIntegrityTest {
         dao.insertObligations(listOf(ServiceObligationEntity("obligation-1", "plan-1", 1, "2026-09-01", 1)))
         dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("template-snapshot-1", "template-1", "Captured template", 2, 2)))
         dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-1", "template-snapshot-1", 1, "Captured question", "STATUS", null, true, "Private guidance")))
-        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-001", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 3)))
+        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-001", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 3, "CU-001", "ST-001", "Business", "Technician", null, null, null, "Europe/Bucharest")))
         dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", "template-snapshot-1", "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", true, "PERFORMED", false)))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work")))
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "Private work")))

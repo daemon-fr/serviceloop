@@ -10,6 +10,11 @@ import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
+import com.v16studio.serviceloop.domain.BusinessProfile
+import com.v16studio.serviceloop.domain.FinalRecordDetail
+import com.v16studio.serviceloop.domain.PublicReportModel
+import com.v16studio.serviceloop.domain.ReportRendition
+import com.v16studio.serviceloop.report.ReportService
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +107,48 @@ class StateSemanticsTest {
         val status = viewModel.state.value.saveStatus
         assertTrue(status is SaveStatus.Failed)
         assertEquals(100L, (status as SaveStatus.Failed).lastSavedAtEpochMillis)
+    }
+
+    @Test fun committedWritesRemainSavedWhenTheirPostWriteRefreshFails() = runTest {
+        val actions = listOf<(ServiceLoopViewModel) -> Unit>(
+            { it.loadInspection("work-1"); it.savePublicWork("work-1", "changed") },
+            { it.loadInspection("work-1"); it.markChecklistReviewed("work-1") },
+            { it.loadCompletion("visit-1"); it.saveCompletion("work-1", "PARTLY_PERFORMED", false, null, null, null, null, "visit-1") },
+            { it.loadBusinessProfile(); it.saveBusinessProfile(BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest")) },
+        )
+        actions.forEach { action ->
+            val viewModel = ServiceLoopViewModel(RefreshFailAfterWriteRepository(inspectionDraft())) {}
+            action(viewModel)
+            assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+            assertEquals("refresh failed", viewModel.state.value.contentRefreshError)
+        }
+    }
+
+    @Test fun successfulReportGenerationRemainsReadyWhenRecordRefreshFails() = runTest {
+        val public = PublicReportModel("record", "revision", 1, "V-1", "2026-09-05", 1, "Business", "Technician", "", "Customer", "Site", null, emptyList())
+        val repository = object : ServiceLoopRepository {
+            var generated = false
+            override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
+            override suspend fun equipment(id: String): EquipmentDetail? = null
+            override suspend fun equipmentList(): List<EquipmentSummary> = emptyList()
+            override suspend fun customerList(): List<CustomerSummary> = emptyList()
+            override suspend fun inspection(workItemId: String): InspectionDraft? = null
+            override suspend fun completionLines(visitId: String): List<CompletionLine> = emptyList()
+            override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = 1L
+            override suspend fun finalRecord(recordId: String): FinalRecordDetail { if (generated) error("record refresh failed"); return FinalRecordDetail(public, emptyList(), null) }
+        }
+        val ready = ReportRendition("rendition", "revision", 1, 2, "reports/r.pdf", "hash", 10, 1, "READY", null)
+        val reportService = object : ReportService {
+            override suspend fun generate(recordId: String): ReportRendition { repository.generated = true; return ready }
+            override suspend fun pageCount(relativePath: String) = 1
+            override fun file(relativePath: String) = File(relativePath)
+        }
+        val viewModel = ServiceLoopViewModel(repository, reportService) {}
+        viewModel.loadFinalRecord("record")
+        viewModel.generateReport("record")
+        assertEquals("READY", viewModel.state.value.finalRecord?.report?.status)
+        assertEquals("record refresh failed", viewModel.state.value.contentRefreshError)
+        assertFalse(viewModel.state.value.generatingReport)
     }
 
     @Test fun cancellingDestructiveTransitionLeavesSavedIssueResponseUntouched() = runTest {
@@ -318,5 +365,21 @@ class StateSemanticsTest {
             nextSavedAt = 200L
             return 200L
         }
+    }
+
+    private class RefreshFailAfterWriteRepository(private val draft: InspectionDraft) : ServiceLoopRepository {
+        private var written = false
+        override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
+        override suspend fun equipment(id: String): EquipmentDetail? = null
+        override suspend fun equipmentList(): List<EquipmentSummary> = emptyList()
+        override suspend fun customerList(): List<CustomerSummary> = emptyList()
+        override suspend fun inspection(workItemId: String): InspectionDraft { if (written) error("refresh failed"); return draft }
+        override suspend fun completionLines(visitId: String): List<CompletionLine> { if (written) error("refresh failed"); return emptyList() }
+        override suspend fun businessProfile(): BusinessProfile? { if (written) error("refresh failed"); return BusinessProfile("Business", "Technician", zoneId = "Europe/Bucharest") }
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = 200L
+        override suspend fun savePublicWork(workItemId: String, text: String): Long { written = true; return 200 }
+        override suspend fun markChecklistReviewed(workItemId: String): Long { written = true; return 200 }
+        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long { written = true; return 200 }
+        override suspend fun saveBusinessProfile(profile: BusinessProfile): Long { written = true; return 200 }
     }
 }

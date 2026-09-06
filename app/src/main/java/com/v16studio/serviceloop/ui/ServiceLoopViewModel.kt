@@ -36,6 +36,7 @@ data class UiState(
     val completionLines: List<CompletionLine> = emptyList(),
     val visits: List<VisitSummary> = emptyList(),
     val businessProfile: BusinessProfile? = null,
+    val visitReportIdentity: BusinessProfile? = null,
     val finalRecord: FinalRecordDetail? = null,
     val finalizedRecordId: String? = null,
     val finalizing: Boolean = false,
@@ -45,6 +46,7 @@ data class UiState(
     val error: String? = null,
     val rootDataReady: Boolean = false,
     val rootRefreshError: String? = null,
+    val contentRefreshError: String? = null,
 )
 
 data class PendingResponseTransition(
@@ -116,7 +118,7 @@ class ServiceLoopViewModel(
     }
 
     fun loadCompletion(visitId: String) = launchLoad {
-        _state.value = _state.value.copy(completionLines = repository.completionLines(visitId), businessProfile = repository.businessProfile())
+        _state.value = _state.value.copy(completionLines = repository.completionLines(visitId), businessProfile = repository.businessProfile(), visitReportIdentity = repository.visitReportIdentity(visitId))
     }
 
     fun loadVisits() = launchLoad { _state.value = _state.value.copy(visits = repository.visits()) }
@@ -124,12 +126,13 @@ class ServiceLoopViewModel(
     fun loadFinalRecord(id: String) { _state.value = _state.value.copy(finalRecord = null); launchLoad { _state.value = _state.value.copy(finalRecord = repository.finalRecord(id)) } }
     fun consumeFinalizedNavigation() { _state.value = _state.value.copy(finalizedRecordId = null) }
 
-    fun savePublicWork(workItemId: String, text: String) = persistDraft { repository.savePublicWork(workItemId, text).also { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) } }
-    fun markChecklistReviewed(workItemId: String) = persistDraft { repository.markChecklistReviewed(workItemId).also { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) } }
-    fun saveBusinessProfile(profile: BusinessProfile) = persistDraft { repository.saveBusinessProfile(profile).also { _state.value = _state.value.copy(businessProfile = repository.businessProfile()) } }
-    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistDraft {
-        repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason).also { _state.value = _state.value.copy(completionLines = repository.completionLines(visitId)) }
-    }
+    fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
+    fun markChecklistReviewed(workItemId: String) = persistDraft({ repository.markChecklistReviewed(workItemId) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
+    fun saveBusinessProfile(profile: BusinessProfile) = persistDraft({ repository.saveBusinessProfile(profile) }) { _state.value = _state.value.copy(businessProfile = repository.businessProfile()) }
+    fun refreshVisitReportIdentity(visitId: String) = persistDraft({ repository.refreshVisitReportIdentity(visitId) }) { _state.value = _state.value.copy(visitReportIdentity = repository.visitReportIdentity(visitId)) }
+    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistDraft({
+        repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason)
+    }) { _state.value = _state.value.copy(completionLines = repository.completionLines(visitId)) }
 
     fun finalizeVisit(visitId: String) {
         if (_state.value.finalizing) return
@@ -153,16 +156,31 @@ class ServiceLoopViewModel(
         if (_state.value.generatingReport) return
         _state.value = _state.value.copy(generatingReport = true, error = null)
         viewModelScope.launch {
-            try { service.generate(recordId); _state.value = _state.value.copy(generatingReport = false, finalRecord = repository.finalRecord(recordId)) }
+            try {
+                val rendition = service.generate(recordId)
+                _state.value = _state.value.copy(generatingReport = false, finalRecord = _state.value.finalRecord?.copy(report = rendition))
+                try { _state.value = _state.value.copy(finalRecord = repository.finalRecord(recordId), contentRefreshError = null) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Report was generated, but the screen could not refresh") }
+            }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _state.value = _state.value.copy(generatingReport = false, error = failure.message ?: "PDF generation failed") }
         }
     }
 
-    private fun persistDraft(write: suspend () -> Long) {
+    private fun persistDraft(write: suspend () -> Long, refresh: suspend () -> Unit = {}) {
         val lastSaved = (_state.value.saveStatus as? SaveStatus.Saved)?.atEpochMillis
         _state.value = _state.value.copy(saveStatus = SaveStatus.Saving, error = null)
-        viewModelScope.launch { try { _state.value = _state.value.copy(saveStatus = SaveStatus.Saved(write())) } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { _state.value = _state.value.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) } }
+        viewModelScope.launch {
+            try {
+                val savedAt = write()
+                _state.value = _state.value.copy(saveStatus = SaveStatus.Saved(savedAt))
+                try { refresh(); _state.value = _state.value.copy(contentRefreshError = null) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.value = _state.value.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) }
+        }
     }
 
     fun requestResponseChange(questionId: String, disposition: ResponseDisposition, value: String? = null, reason: String? = null) {
@@ -216,8 +234,10 @@ class ServiceLoopViewModel(
         viewModelScope.launch {
             try {
                 val savedAt = repository.saveResponse(draft.workItemId, questionId, disposition, value, reason)
-                val refreshed = repository.inspection(draft.workItemId)
-                _state.value = _state.value.copy(inspection = refreshed, saveStatus = SaveStatus.Saved(savedAt))
+                _state.value = _state.value.copy(saveStatus = SaveStatus.Saved(savedAt))
+                try { _state.value = _state.value.copy(inspection = repository.inspection(draft.workItemId), contentRefreshError = null) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

@@ -74,7 +74,7 @@ private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : St
             )
             dao.insertChecklistItems(checklist)
             dao.insertVisits(listOf(
-                WorkingVisitEntity(FixtureIds.VISIT_1, "V-001", FixtureIds.CUSTOMER, FixtureIds.SITE, "2026-09-05", "Harbor Fitness and Rehabilitation Cooperative", "Riverside Centre — East Building, Second-floor Training Room", "18 River Lane, Riverside", "WORKING", created),
+                WorkingVisitEntity(FixtureIds.VISIT_1, "V-001", FixtureIds.CUSTOMER, FixtureIds.SITE, "2026-09-05", "Harbor Fitness and Rehabilitation Cooperative", "Riverside Centre — East Building, Second-floor Training Room", "18 River Lane, Riverside", "WORKING", created, "CU-001", "ST-001", "Riverside Equipment Service", "Alex Morgan", "+40 21 555 0142", "service@example.invalid", "Bucharest", "Europe/Bucharest"),
                 WorkingVisitEntity(FixtureIds.VISIT_2, "V-002", FixtureIds.CUSTOMER, FixtureIds.SITE, "2026-09-08", "Harbor Fitness and Rehabilitation Cooperative", "Riverside Centre — East Building, Second-floor Training Room", "18 River Lane, Riverside", "BOOKED", created - 60_000),
             ))
             val workItems = listOf(
@@ -113,7 +113,11 @@ private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : St
         ChecklistItemSnapshotEntity(id, FixtureIds.TEMPLATE, position, label, type, unit, required, "Fixture guidance — not in customer report")
 
     private fun work(id: String, equipmentId: String, planId: String, obligationId: String, templateId: String?, equipmentName: String, equipmentRef: String, serviceName: String, planRef: String, due: String, count: Int, unit: String, reviewed: Boolean, outcome: String, fulfills: Boolean) =
-        WorkItemEntity(id, FixtureIds.VISIT_1, equipmentId, planId, obligationId, templateId, equipmentName, equipmentRef, serviceName, planRef, due, count, unit, reviewed, outcome, fulfills)
+        WorkItemEntity(id, FixtureIds.VISIT_1, equipmentId, planId, obligationId, templateId, equipmentName, equipmentRef, serviceName, planRef, due, count, unit, reviewed, outcome, fulfills,
+            equipmentIdentifierSnapshot = when (equipmentId) { FixtureIds.EQUIPMENT_1 -> "T-01"; FixtureIds.EQUIPMENT_2 -> "T-02"; else -> "B-01" },
+            equipmentMakeSnapshot = if (equipmentId == FixtureIds.EQUIPMENT_3) "WheelWorks" else "StrideWorks",
+            equipmentModelSnapshot = if (equipmentId == FixtureIds.EQUIPMENT_3) "C2" else "R8",
+            equipmentSerialSnapshot = when (equipmentId) { FixtureIds.EQUIPMENT_1 -> "SW-R8-0417"; FixtureIds.EQUIPMENT_3 -> "WW-C2-023"; else -> null })
 
     private fun response(id: String, itemId: String, disposition: String, text: String?, number: String?, reason: String?, modified: Long) =
         WorkingResponseEntity(id, FixtureIds.WORK_INSPECTION, itemId, disposition, text, number, reason, modified)

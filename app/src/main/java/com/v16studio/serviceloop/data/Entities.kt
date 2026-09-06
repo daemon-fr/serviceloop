@@ -117,6 +117,14 @@ data class WorkingVisitEntity(
     val siteAddressSnapshot: String?,
     val state: String,
     val modifiedAtEpochMillis: Long,
+    val customerReferenceSnapshot: String? = null,
+    val siteReferenceSnapshot: String? = null,
+    val reportBusinessNameSnapshot: String? = null,
+    val reportTechnicianNameSnapshot: String? = null,
+    val reportPhoneSnapshot: String? = null,
+    val reportEmailSnapshot: String? = null,
+    val reportPostalAddressSnapshot: String? = null,
+    val reportZoneIdSnapshot: String? = null,
 )
 
 @Entity(
@@ -151,6 +159,10 @@ data class WorkItemEntity(
     val confirmedNextDueDate: String? = null,
     val nextDueDateCalculated: Boolean? = null,
     val nextDueOverrideReason: String? = null,
+    val equipmentIdentifierSnapshot: String? = null,
+    val equipmentMakeSnapshot: String? = null,
+    val equipmentModelSnapshot: String? = null,
+    val equipmentSerialSnapshot: String? = null,
 )
 
 @Entity(tableName = "business_profiles")
@@ -199,6 +211,8 @@ data class FinalRecordRevisionEntity(
     val businessAddress: String?,
     val businessZoneId: String,
     val privateInternalNote: String?,
+    val customerReference: String? = null,
+    val siteReference: String? = null,
 )
 
 @Entity(
@@ -231,6 +245,8 @@ data class FinalWorkItemEntity(
     val intervalUnit: String?,
     val capturedObligationId: String?,
     val privateInternalNote: String?,
+    val nextDueDateCalculated: Boolean? = null,
+    val nextDueOverrideReason: String? = null,
 )
 
 @Entity(

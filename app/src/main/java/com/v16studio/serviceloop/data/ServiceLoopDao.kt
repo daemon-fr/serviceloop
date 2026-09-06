@@ -65,7 +65,7 @@ data class CustomerSummaryRow(
     val equipmentCount: Int,
 )
 
-data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?)
+data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String?)
 
 @Dao
 interface ServiceLoopDao {
@@ -114,6 +114,7 @@ interface ServiceLoopDao {
     @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
     @Query("UPDATE customers SET name = :name WHERE id = :id") suspend fun renameCustomer(id: String, name: String)
     @Query("UPDATE equipment SET name = :name WHERE id = :id") suspend fun renameEquipment(id: String, name: String)
+    @Query("UPDATE equipment SET technicianIdentifier=:identifier, make=:make, model=:model, serialNumber=:serial WHERE id=:id") suspend fun updateEquipmentIdentity(id: String, identifier: String?, make: String?, model: String?, serial: String?)
 
     @Query("""
         SELECT e.id equipmentId, e.name equipmentName, e.reference equipmentReference,
@@ -155,7 +156,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_visits WHERE state='BOOKED' ORDER BY actualServiceDate LIMIT 1")
     suspend fun nextBookedVisit(): WorkingVisitEntity?
 
-    @Query("SELECT v.id, v.reference, v.siteNameSnapshot siteName, v.actualServiceDate, v.state, f.id finalRecordId FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id ORDER BY v.actualServiceDate DESC, v.reference")
+    @Query("SELECT v.id, v.reference, v.siteNameSnapshot siteName, v.actualServiceDate, v.state, f.id finalRecordId, (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.id LIMIT 1) resumeWorkItemId FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id ORDER BY v.actualServiceDate DESC, v.reference")
     suspend fun visits(): List<VisitSummaryRow>
 
     @Query("SELECT id FROM work_items WHERE visitId=:visitId ORDER BY id LIMIT 1")
@@ -206,6 +207,9 @@ interface ServiceLoopDao {
 
     @Query("UPDATE work_items SET outcome=:outcome, fulfillsCurrentObligation=:fulfills, notPerformedReason=:reason, confirmedNextDueDate=:nextDue, nextDueDateCalculated=:calculated, nextDueOverrideReason=:overrideReason WHERE id=:workItemId")
     suspend fun updateCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Int
+
+    @Query("UPDATE working_visits SET reportBusinessNameSnapshot=:businessName, reportTechnicianNameSnapshot=:technicianName, reportPhoneSnapshot=:phone, reportEmailSnapshot=:email, reportPostalAddressSnapshot=:address, reportZoneIdSnapshot=:zoneId, modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='WORKING'")
+    suspend fun updateVisitReportIdentity(visitId: String, businessName: String, technicianName: String, phone: String?, email: String?, address: String?, zoneId: String, modified: Long): Int
 
     @Query("UPDATE service_obligations SET consumedAtEpochMillis=:consumedAt, consumedByRevisionId=:revisionId WHERE id=:id AND planId=:planId AND consumedAtEpochMillis IS NULL")
     suspend fun consumeObligation(id: String, planId: String, consumedAt: Long, revisionId: String): Int

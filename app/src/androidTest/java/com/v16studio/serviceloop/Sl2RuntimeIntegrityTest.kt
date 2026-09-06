@@ -17,19 +17,22 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class Sl2RuntimeIntegrityTest {
-    @Test fun canonicalMigratedFixtureStillContainsWorkingVisitAnswersAndIdentity() {
+    @Test fun canonicalMigratedFixturePreservesFinalVisitAnswersIdentityAndRecurrence() {
         runBlocking {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val database = ServiceLoopDatabase.open(context)
             try {
             val dao = database.serviceLoopDao()
             assertEquals("Harbor Fitness and Rehabilitation Cooperative", dao.customer(FixtureIds.CUSTOMER)?.name)
-            assertEquals("WORKING", dao.visit(FixtureIds.VISIT_1)?.state)
+            assertEquals("FINALIZED", dao.visit(FixtureIds.VISIT_1)?.state)
             val savedFinding = dao.responses(FixtureIds.WORK_INSPECTION).first { it.checklistItemSnapshotId == "check-belt" }
             assertEquals("ISSUE_FOUND", savedFinding.disposition)
             assertFalse(savedFinding.reason.isNullOrBlank())
             assertNotNull(dao.businessProfile())
-            assertNull(dao.plan("plan-001")?.lastCountedCompletionDate)
+            assertEquals("2026-12-05", dao.plan("plan-001")?.currentDueDate)
+            assertEquals("2026-09-05", dao.plan("plan-001")?.lastCountedCompletionDate)
+            val final = dao.finalRecordForVisit(FixtureIds.VISIT_1)
+            assertNotNull(final); assertEquals("READY", dao.reportRendition(final!!.currentRevisionId)?.status)
             } finally { database.close() }
         }
     }

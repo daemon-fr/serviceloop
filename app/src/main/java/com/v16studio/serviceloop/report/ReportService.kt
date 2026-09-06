@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 fun interface PdfWriteGate { suspend fun beforeRender() }
+fun interface ReportMetadataGate { suspend fun beforeReadyCommit() }
 fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int }
 
 interface ReportService {
@@ -37,6 +38,7 @@ class AndroidReportService(
     private val repository: ServiceLoopRepository,
     private val writeGate: PdfWriteGate = PdfWriteGate {},
     private val writer: ReportWriter = ReportWriter(FixedServiceRecordPdf::render),
+    private val metadataGate: ReportMetadataGate = ReportMetadataGate {},
 ) : ReportService {
     private val dao = database.serviceLoopDao()
 
@@ -54,6 +56,7 @@ class AndroidReportService(
         val generating = ReportRenditionEntity(renditionId, detail.public.revisionId, 1, null, relative, null, null, null, "GENERATING", "ORIGINAL", null)
         if (existing == null) dao.insertReportRendition(generating) else dao.updateReportRendition(generating)
         val target = file(relative); target.parentFile?.mkdirs(); val temp = File(target.parentFile, "$renditionId.tmp")
+        var adopted = false
         try {
             writeGate.beforeRender()
             val generatedAt = System.currentTimeMillis()
@@ -61,17 +64,21 @@ class AndroidReportService(
             require(temp.length() > 0) { "Generated PDF was empty" }
             if (target.exists()) target.delete()
             check(temp.renameTo(target)) { "Could not adopt generated report" }
+            adopted = true
             val bytes = target.length(); val hash = sha256(target)
             val ready = generating.copy(generatedAtEpochMillis = generatedAt, sha256 = hash, byteSize = bytes, pageCount = pageCount, status = "READY")
+            metadataGate.beforeReadyCommit()
             database.withTransaction { dao.updateReportRendition(ready) }
             ready.toDomain()
         } catch (cancelled: CancellationException) {
             temp.delete()
+            if (adopted) target.delete()
             throw cancelled
         } catch (failure: Exception) {
             temp.delete()
+            if (adopted) target.delete()
             val failed = generating.copy(status = "FAILED", failureMessage = failure.message ?: "PDF generation failed")
-            dao.updateReportRendition(failed)
+            runCatching { dao.updateReportRendition(failed) }
             throw IllegalStateException("PDF generation failed; the service record is already finalized", failure)
         }
     }
@@ -121,11 +128,11 @@ object FixedServiceRecordPdf {
     }
 
     private fun buildLines(model: PublicReportModel): List<String> {
-        val raw = mutableListOf("# ${model.businessName}", "Service record ${model.visitReference}", "Technician: ${model.technicianName}", model.businessContact, "Service date: ${model.actualServiceDate}", "## Customer and site", model.customerName, model.siteName, model.siteAddress.orEmpty())
+        val raw = mutableListOf("# ${model.businessName}", "Service record ${model.visitReference} · Revision ${model.revisionNumber}", "Technician: ${model.technicianName}", model.businessContact, "Service date: ${model.actualServiceDate}", "## Customer and site", "${model.customerReference.orEmpty()} · ${model.customerName}", "${model.siteReference.orEmpty()} · ${model.siteName}", model.siteAddress.orEmpty())
         model.lines.forEach { line ->
-            raw += listOf("## ${line.equipmentReference} · ${line.equipmentName}", line.equipmentIdentification, "Service: ${line.serviceName}", "Outcome: ${line.outcome.replace('_', ' ')}")
+            raw += listOf("## ${line.equipmentReference} · ${line.equipmentName}", line.equipmentIdentification, "Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", "Outcome: ${line.outcome.replace('_', ' ')}")
             line.publicWorkNote?.let { raw += "Work: $it" }; line.notPerformedReason?.let { raw += "Reason: $it" }
-            raw += if (line.fulfilledObligation) "Due effect: ${line.oldDueDate} to ${line.nextDueDate}" else "Due effect: current obligation unchanged"
+            raw += when { !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }
             line.checklist.forEach { q -> raw += "${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}" }
         }
         return raw.filter(String::isNotBlank).flatMap { wrap(it, 86) }

@@ -265,7 +265,7 @@ private fun WorkScreen(home: HomeSummary?, visits: List<VisitSummary>, nav: NavH
             WorkTab.VISITS -> {
                 item { SectionTitle("Visits") }
                 if (visits.isEmpty()) item { Text("No saved visits") }
-                items(visits) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else if (visit.state == "WORKING") home?.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } else nav.navigate("scope/Booked visit") } }
+                items(visits) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else if (visit.state == "WORKING") visit.resumeWorkItemId?.let { nav.navigate("inspection/$it") } else nav.navigate("scope/Booked visit") } }
             }
             WorkTab.FOLLOW_UPS -> {
                 item { SectionTitle("Follow-ups · ${home?.dueFollowUpCount ?: 0}") }
@@ -343,9 +343,10 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel) }
         item {
-            val required = draft.questions.count { it.required }; val complete = draft.questions.count { q -> q.required && when(q.responseType) { "STATUS" -> q.disposition != ResponseDisposition.NOT_CHECKED && !(q.disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) && q.reason.isNullOrBlank()); else -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) } }
+            val required = draft.questions.count { it.required }; val complete = draft.questions.count { q -> q.required && when(q.responseType) { "STATUS" -> q.disposition != ResponseDisposition.NOT_CHECKED && !(q.disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) && q.reason.isNullOrBlank()); "NUMBER" -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) && !(q.disposition == ResponseDisposition.VALUE && !signedDecimal(q.numberValue.orEmpty())); else -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) } }
+            val missingFinding = draft.questions.any { it.disposition == ResponseDisposition.ISSUE_FOUND && it.reason.isNullOrBlank() }
             StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Required complete $complete of $required")
-            Button(onClick = { viewModel.markChecklistReviewed(draft.workItemId) }, enabled = !draft.checklistReviewed && complete == required && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" }) { Text("Mark checklist reviewed") }
+            Button(onClick = { viewModel.markChecklistReviewed(draft.workItemId) }, enabled = !draft.checklistReviewed && complete == required && !missingFinding && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" }) { Text("Mark checklist reviewed") }
             Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
         }
         item { Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth(), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
@@ -407,9 +408,10 @@ private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, v
 @Composable
 private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     var value by remember(question.snapshotItemId, question.textValue, question.numberValue) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
-    OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { question.unit?.let { Text(it) } }, enabled = !saving, modifier = Modifier.fillMaxWidth())
+    val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
+    OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Save response") }
+        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
         OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit") }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
     }
     if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
@@ -417,13 +419,14 @@ private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewMod
 
 @Composable
 private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>, profile: BusinessProfile?, state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.padding(padding).testTag("completion-review-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text("Outcome and fulfillment are separate decisions.", style = MaterialTheme.typography.titleMedium); Text("Only explicitly fulfilled recurring work advances its obligation.") }
-        if (profile?.ready != true) item { AccentCard { Text("Business/report identity is required before finalization."); Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
+        if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
+        else item { AccentCard { Text("Report identity: ${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); OutlinedButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("refresh-report-identity")) { Text("Refresh report identity from current profile") } } }
         items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel) }
-        item { Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(16.dp)) { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, findings, and selected photos will be reviewed here. Private notes stay excluded.") } } }
+        item { Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(16.dp)) { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, and findings will be included. Private notes stay excluded.") } } }
         state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
-        item { Button(onClick = { viewModel.finalizeVisit(visitId) }, enabled = !state.finalizing && profile?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Finalize record" }) { Text(if (state.finalizing) "Finalizing…" else "Finalize record") } }
+        item { Button(onClick = { viewModel.finalizeVisit(visitId) }, enabled = !state.finalizing && state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) { Text(if (state.finalizing) "Finalizing…" else "Finalize record") } }
     }
 }
 
@@ -434,7 +437,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
         Text("Outcome", style = MaterialTheme.typography.labelLarge)
         listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
-            Row(Modifier.fillMaxWidth().selectable(line.outcome == value, enabled = !saving) { viewModel.saveCompletion(line.workItemId, value, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason, visitId) }.semantics { contentDescription = "Outcome $label" }, verticalAlignment = Alignment.CenterVertically) { RadioButton(line.outcome == value, null); Text(label) }
+            Row(Modifier.fillMaxWidth().testTag("outcome-${line.workItemId}-$value").selectable(line.outcome == value, enabled = !saving) { viewModel.saveCompletion(line.workItemId, value, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason, visitId) }.semantics { contentDescription = "Outcome $label" }, verticalAlignment = Alignment.CenterVertically) { RadioButton(line.outcome == value, null); Text(label) }
         }
         if (line.outcome == "NOT_PERFORMED") {
             var reason by rememberSaveable(line.workItemId, line.notPerformedReason) { mutableStateOf(line.notPerformedReason.orEmpty()) }
@@ -442,7 +445,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             Button(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, false, reason, null, null, null, visitId) }, enabled = !saving && reason.isNotBlank() && reason != line.notPerformedReason, modifier = Modifier.fillMaxWidth()) { Text("Save reason") }
         }
         when (line.fulfillmentEligibility) {
-            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation, enabled = !saving, onCheckedChange = { viewModel.saveCompletion(line.workItemId, line.outcome, it, line.notPerformedReason, null, null, null, visitId) }); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation, enabled = !saving, onCheckedChange = { viewModel.saveCompletion(line.workItemId, line.outcome, it, line.notPerformedReason, null, null, null, visitId) }, modifier = Modifier.testTag("fulfills-${line.workItemId}")); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
             FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("Fulfillment unavailable — one-off work has no recurring obligation to fulfill.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
@@ -465,6 +468,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             OutlinedButton(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, date, false, overrideReason, visitId) }, enabled = !saving && date.isNotBlank() && overrideReason.isNotBlank() && date != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Override next due" }) { Text("Save override") }
         }
         line.blockers.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && !line.checklistReviewed) Text("Checklist incomplete — unrecorded items will remain explicit in the final record.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -473,7 +477,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates · foundation", "Later") {}; SummaryRow("Reminders · foundation", "Later") {}; SummaryRow("Data and recovery · foundation", "Later") {} }
+        item { SummaryRow("Inspection templates · foundation", "Later") { nav.navigate("scope/Inspection templates") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery · foundation", "Later") { nav.navigate("scope/Data and recovery") } }
     }
 }
 
@@ -494,15 +498,17 @@ private fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveSta
 private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, error: String?, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     if (detail == null) return HonestPlaceholder(padding, "Reading final service record")
     val report = detail.public
+    val context = LocalContext.current
+    val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded ${formatTime(report.recordedAtEpochMillis)}"); Text("${report.customerName}\n${report.siteName}\n${report.siteAddress.orEmpty()}") }
-        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.serviceName); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(if (line.fulfilledObligation) "Due ${line.oldDueDate} → ${line.nextDueDate}" else "Current obligation unchanged"); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded ${formatTime(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
+        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
-            Text(when (detail.report?.status) { "READY" -> "Ready · Version 1 · ${detail.report.byteSize} bytes"; "FAILED" -> "Generation failed"; "GENERATING" -> "Generating…"; else -> "Not generated" })
+            Text(when (detail.report?.status) { "READY" -> if (reportPresent) "Ready · Version 1 · ${detail.report.byteSize} bytes" else "File missing · Version 1"; "FAILED" -> "Generation failed"; "GENERATING" -> "Generating…"; else -> "Not generated" })
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (detail.report?.status == "READY") Button(onClick = { nav.navigate("report/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text("View report") }
+            if (detail.report?.status == "READY") Button(onClick = { nav.navigate("report/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
             else Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
         }
     }
@@ -518,17 +524,18 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
         if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
     }
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }) { Text("PDF view") }; if (textView) Button(onClick = {}) { Text("Text view") } else OutlinedButton(onClick = { textView = true }) { Text("Text view") } } }
-        if (missing) item { Text("Report file is missing", color = MaterialTheme.colorScheme.error) }
-        else if (textView) item { StructuredReportText(detail) }
+        item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "File missing" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}, modifier = Modifier.testTag("report-pdf-view")) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }, modifier = Modifier.testTag("report-pdf-view")) { Text("PDF view") }; if (textView) Button(onClick = {}, modifier = Modifier.testTag("report-text-view")) { Text("Text view") } else OutlinedButton(onClick = { textView = true }, modifier = Modifier.testTag("report-text-view")) { Text("Text view") } } }
+        if (textView) item { StructuredReportText(detail) }
+        else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
-        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Share PDF" }) { Text("Share PDF") }; Text("Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
+        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile, modifier = Modifier.fillMaxWidth().testTag("share-pdf").semantics { contentDescription = "Share PDF" }) { Text("Share PDF") }; Text("Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
     }
 }
 
 @Composable
 private fun StructuredReportText(detail: FinalRecordDetail) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Technician ${r.technicianName}"); Text("${r.customerName}\n${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
 }
 
 @Composable
@@ -556,3 +563,11 @@ private fun SaveStateBanner(status: SaveStatus) {
 @Composable private fun HonestPlaceholder(padding: PaddingValues, message: String) { Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text(message, style = MaterialTheme.typography.titleMedium) } }
 
 private fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: "not yet"
+
+private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())
+
+private fun dueEffect(line: com.v16studio.serviceloop.domain.PublicWorkLine): String = when {
+    !line.isRecurringPlan -> "One-off work — no recurring due date effect"
+    line.fulfilledObligation -> "Due ${line.oldDueDate} → ${line.nextDueDate}"
+    else -> "Current service remains due ${line.oldDueDate}"
+}

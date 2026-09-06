@@ -95,7 +95,7 @@ data class InspectionDraft(
     val questions: List<InspectionQuestion>,
 )
 
-data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?)
+data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String? = null)
 
 data class BusinessProfile(
     val businessName: String,
@@ -160,6 +160,8 @@ data class PublicWorkLine(
     val oldDueDate: String?,
     val nextDueDate: String?,
     val checklist: List<PublicChecklistItem>,
+    val planReference: String? = null,
+    val isRecurringPlan: Boolean = false,
 )
 
 data class PublicReportModel(
@@ -176,6 +178,8 @@ data class PublicReportModel(
     val siteName: String,
     val siteAddress: String?,
     val lines: List<PublicWorkLine>,
+    val customerReference: String? = null,
+    val siteReference: String? = null,
 )
 
 data class FinalRecordDetail(
