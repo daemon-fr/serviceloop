@@ -16,13 +16,14 @@ import com.v16studio.serviceloop.domain.ReportRendition
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 fun interface PdfWriteGate { suspend fun beforeRender() }
-fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, file: File): Int }
+fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int }
 
 interface ReportService {
     suspend fun generate(recordId: String): ReportRendition
@@ -54,12 +55,13 @@ class AndroidReportService(
         val target = file(relative); target.parentFile?.mkdirs(); val temp = File(target.parentFile, "$renditionId.tmp")
         try {
             writeGate.beforeRender()
-            val pageCount = writer.render(detail.public, renditionId, temp)
+            val generatedAt = System.currentTimeMillis()
+            val pageCount = writer.render(detail.public, renditionId, generatedAt, temp)
             require(temp.length() > 0) { "Generated PDF was empty" }
             if (target.exists()) target.delete()
             check(temp.renameTo(target)) { "Could not adopt generated report" }
-            val bytes = target.length(); val hash = sha256(target); val now = System.currentTimeMillis()
-            val ready = generating.copy(generatedAtEpochMillis = now, sha256 = hash, byteSize = bytes, pageCount = pageCount, status = "READY")
+            val bytes = target.length(); val hash = sha256(target)
+            val ready = generating.copy(generatedAtEpochMillis = generatedAt, sha256 = hash, byteSize = bytes, pageCount = pageCount, status = "READY")
             database.withTransaction { dao.updateReportRendition(ready) }
             ready.toDomain()
         } catch (cancelled: CancellationException) {
@@ -92,7 +94,7 @@ object FixedServiceRecordPdf {
     private const val BOTTOM = 54f
     private const val LINE = 15f
 
-    fun render(model: PublicReportModel, renditionId: String, file: File): Int {
+    fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int {
         val logical = buildLines(model)
         val linesPerPage = ((HEIGHT - TOP - BOTTOM) / LINE).toInt()
         val pages = logical.chunked(linesPerPage).ifEmpty { listOf(listOf("No public service content")) }
@@ -109,7 +111,7 @@ object FixedServiceRecordPdf {
                     y += LINE
                 }
                 paint.textSize = 8f; paint.color = Color.DKGRAY
-                page.canvas.drawText("Revision ${model.revisionNumber} · Report v1 · ${renditionId.take(8)} · Page ${pageIndex + 1} of ${pages.size}", LEFT, HEIGHT - 28f, paint)
+                page.canvas.drawText("Revision ${model.revisionNumber} · Report v1 · ${renditionId.take(8)} · Generated ${Instant.ofEpochMilli(generatedAtEpochMillis)} · Page ${pageIndex + 1} of ${pages.size}", LEFT, HEIGHT - 28f, paint)
                 document.finishPage(page)
             }
             FileOutputStream(file).use(document::writeTo)

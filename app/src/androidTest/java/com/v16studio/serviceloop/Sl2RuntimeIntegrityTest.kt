@@ -40,7 +40,7 @@ class Sl2RuntimeIntegrityTest {
         val longFinding = (1..80).joinToString(" ") { "Detailed public finding sentence $it." }
         val line = PublicWorkLine(1, "Captured equipment", "EQ-1", "Maker · Model · Serial", "Condition inspection", "PERFORMED", longFinding, null, true, "2026-09-01", "2026-12-05", (1..30).map { PublicChecklistItem(it, "Checklist item $it", "STATUS", null, true, "ISSUE_FOUND", null, longFinding) })
         val model = PublicReportModel("record", "revision", 1, "V-1", "2026-09-05", 1, "Service Business", "Technician", "Contact", "Captured customer", "Captured site", "Captured address", listOf(line, line.copy(position = 2)))
-        val pages = FixedServiceRecordPdf.render(model, "rendition-1", file)
+        val pages = FixedServiceRecordPdf.render(model, "rendition-1", 1_788_708_000_000L, file)
         assertTrue(file.length() > 0); assertTrue(pages > 1)
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> assertEquals(pages, renderer.pageCount); renderer.openPage(0).close() } }
         file.delete()
