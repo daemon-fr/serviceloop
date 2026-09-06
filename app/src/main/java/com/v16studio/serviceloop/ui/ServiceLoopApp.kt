@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -92,25 +94,29 @@ internal enum class WorkTab(val label: String) {
 fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = HOME) {
+    NavHost(
+        navController = nav,
+        startDestination = HOME,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
+    ) {
         composable(HOME) {
-            LaunchedEffect(Unit) { viewModel.refreshHome(); viewModel.loadEquipmentList() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                ScreenState(state.loading, state.error, padding) { HomeScreen(state.home, state.equipmentList, nav) }
+                ScreenState(state.loading, state.error, padding, "root-home") { HomeScreen(state.home, state.equipmentList, nav) }
             }
         }
         composable(WORK) {
             var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
-            LaunchedEffect(Unit) { viewModel.refreshHome() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading, state.error, padding) { WorkScreen(state.home, nav, workTab) { workTab = it } }
+                ScreenState(state.loading, state.error, padding, "root-work") { WorkScreen(state.home, nav, workTab) { workTab = it } }
             }
         }
         composable(CUSTOMERS) {
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
-            LaunchedEffect(Unit) { viewModel.loadEquipmentList(); viewModel.loadCustomers() }
             RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading, state.error, padding) { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
+                ScreenState(state.loading, state.error, padding, "root-customers") { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -183,11 +189,11 @@ private fun NavHostController.navigateToRoot(destination: RootDestination) {
 }
 
 @Composable
-private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues, content: @Composable () -> Unit) {
+private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues, contentTag: String? = null, content: @Composable () -> Unit) {
     when {
         loading -> Column(Modifier.fillMaxSize().padding(padding), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("Reading saved service book", Modifier.padding(16.dp)) }
         error != null -> HonestPlaceholder(padding, "Cannot read saved data. $error")
-        else -> Surface(Modifier.fillMaxSize().padding(padding), color = MaterialTheme.colorScheme.background) { content() }
+        else -> Surface(Modifier.fillMaxSize().padding(padding).then(if (contentTag == null) Modifier else Modifier.testTag(contentTag)), color = MaterialTheme.colorScheme.background) { content() }
     }
 }
 

@@ -19,6 +19,37 @@ class OwnerVisualRuntimeTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun rootSwitchingLeavesExactlyOneRequestedRootVisible() {
+        fun assertOnlyRoot(tag: String) {
+            listOf("root-home", "root-work", "root-customers").forEach { candidate ->
+                if (candidate == tag) composeRule.onAllNodesWithTag(candidate).assertCountEquals(1)
+                else composeRule.onAllNodesWithTag(candidate).assertCountEquals(0)
+            }
+        }
+
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onAllNodesWithTag("root-home").assertCountEquals(1) }.isSuccess
+        }
+        assertOnlyRoot("root-home")
+
+        repeat(3) {
+            composeRule.onNodeWithText("Work").performClick()
+            assertOnlyRoot("root-work")
+            composeRule.onNodeWithText("Customers").performClick()
+            assertOnlyRoot("root-customers")
+            composeRule.onNodeWithText("Home").performClick()
+            assertOnlyRoot("root-home")
+        }
+
+        composeRule.onNodeWithText("Customers").performClick()
+        assertOnlyRoot("root-customers")
+        composeRule.onNodeWithText("Work").performClick()
+        assertOnlyRoot("root-work")
+        composeRule.onNodeWithText("Home").performClick()
+        assertOnlyRoot("root-home")
+    }
+
+    @Test
     fun inlineFindingEditsPersistsAndPreservesDestructiveTransitionSemantics() {
         composeRule.onNodeWithText("Resume visit").performClick()
         val field = composeRule.onNodeWithTag("finding-field-check-belt")

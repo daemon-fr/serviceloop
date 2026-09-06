@@ -47,15 +47,20 @@ class ServiceLoopViewModel(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    init { refreshHome() }
+    init { loadInitialRootData() }
 
-    fun refreshHome() = launchLoad { _state.value = _state.value.copy(home = repository.home()) }
+    private fun loadInitialRootData() = launchLoad {
+        val home = repository.home()
+        val equipmentList = repository.equipmentList()
+        val customerList = repository.customerList()
+        _state.value = _state.value.copy(
+            home = home,
+            equipmentList = equipmentList,
+            customerList = customerList,
+        )
+    }
 
     fun loadEquipment(id: String) = launchLoad { _state.value = _state.value.copy(equipment = repository.equipment(id)) }
-
-    fun loadEquipmentList() = launchLoad { _state.value = _state.value.copy(equipmentList = repository.equipmentList()) }
-
-    fun loadCustomers() = launchLoad { _state.value = _state.value.copy(customerList = repository.customerList()) }
 
     fun loadInspection(id: String) = launchLoad {
         val draft = repository.inspection(id)
