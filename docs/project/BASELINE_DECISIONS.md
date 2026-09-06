@@ -54,3 +54,9 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 
 - Keep the fixed general customer report design as the implementation target unless later amended.
 - A reachable real technician/trade must evaluate the first complete working service loop/report before Stage 2 is considered product-valid and before release preparation. Agreement between AI agents is not a substitute for that pilot evidence.
+
+## B-009 — Inline inspection finding description
+
+- For an ordinary inspection **Issue found** response, edit and view the primary public finding description directly beneath the inspection item rather than requiring navigation to another screen.
+- The field is a compact multiline editor by default with a visible control that expands the same field for long descriptions and collapses it again without changing its content.
+- This inline description remains the public corrective description source under B-007. Do not invent a second mandatory public description; later richer finding metadata, photographs, disposition, corrective-task planning, and lifecycle features remain permitted where adopted.

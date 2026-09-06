@@ -149,6 +149,47 @@ class StateSemanticsTest {
         assertEquals("Not applicable during this visit", viewModel.state.value.inspection?.questions?.single()?.reason)
     }
 
+    @Test fun savedIssueFindingLoadsAndUnchangedSaveIsNoOp() = runTest {
+        val repository = MutableInspectionRepository(issueDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        assertEquals("Fraying edge", viewModel.state.value.inspection?.questions?.single()?.reason)
+        viewModel.requestResponseChange("check-1", ResponseDisposition.ISSUE_FOUND, reason = "Fraying edge")
+
+        assertEquals(0, repository.saveCount)
+        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun changedInlineFindingPersistsAndAdvancesSavedCheckpoint() = runTest {
+        val repository = MutableInspectionRepository(issueDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.ISSUE_FOUND, reason = "Fraying along the outer edge")
+
+        assertEquals(1, repository.saveCount)
+        assertEquals("Fraying along the outer edge", viewModel.state.value.inspection?.questions?.single()?.reason)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun clearingInlineFindingPersistsIncompleteWorkingState() = runTest {
+        val repository = MutableInspectionRepository(issueDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.ISSUE_FOUND, reason = "")
+
+        assertEquals(1, repository.saveCount)
+        assertEquals(null, viewModel.state.value.inspection?.questions?.single()?.reason)
+    }
+
+    @Test fun workTabsUseTypedNonDefaultRepresentations() {
+        assertEquals("Due services", com.v16studio.serviceloop.ui.WorkTab.DUE_SERVICES.label)
+        assertEquals("Visits", com.v16studio.serviceloop.ui.WorkTab.VISITS.label)
+        assertEquals("Follow-ups", com.v16studio.serviceloop.ui.WorkTab.FOLLOW_UPS.label)
+    }
+
     @Test fun releaseFactoryIsNoOpAndProductionSourceContainsNoFixtureCustomer() {
         val releaseFactory = File("src/release/java/com/v16studio/serviceloop/FixtureSeederFactory.kt").readText()
         val productionSources = File("src/main/java").walkTopDown().filter { it.extension == "kt" }.joinToString("\n") { it.readText() }
@@ -193,7 +234,7 @@ class StateSemanticsTest {
                         disposition = disposition,
                         textValue = if (question.responseType == "TEXT" && disposition == ResponseDisposition.VALUE) value else null,
                         numberValue = if (question.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) value else null,
-                        reason = if (disposition == ResponseDisposition.ISSUE_FOUND || disposition == ResponseDisposition.NOT_APPLICABLE) reason else null,
+                        reason = if (disposition == ResponseDisposition.ISSUE_FOUND || disposition == ResponseDisposition.NOT_APPLICABLE) reason?.trim()?.takeIf(String::isNotEmpty) else null,
                     ) else question
                 },
             )

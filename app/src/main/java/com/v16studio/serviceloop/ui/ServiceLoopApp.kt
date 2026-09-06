@@ -41,15 +41,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -72,6 +76,18 @@ private const val HOME = "home"
 private const val WORK = "work"
 private const val CUSTOMERS = "customers"
 
+private enum class RootDestination(val route: String, val label: String) {
+    HOME("home", "Home"),
+    WORK("work", "Work"),
+    CUSTOMERS("customers", "Customers"),
+}
+
+internal enum class WorkTab(val label: String) {
+    DUE_SERVICES("Due services"),
+    VISITS("Visits"),
+    FOLLOW_UPS("Follow-ups"),
+}
+
 @Composable
 fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
     val state by viewModel.state.collectAsState()
@@ -79,20 +95,22 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
     NavHost(navController = nav, startDestination = HOME) {
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshHome(); viewModel.loadEquipmentList() }
-            RootScaffold(nav, HOME, "Home") { padding ->
+            RootScaffold(nav, RootDestination.HOME) { padding ->
                 ScreenState(state.loading, state.error, padding) { HomeScreen(state.home, state.equipmentList, nav) }
             }
         }
         composable(WORK) {
+            var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
             LaunchedEffect(Unit) { viewModel.refreshHome() }
-            RootScaffold(nav, WORK, "Work") { padding ->
-                ScreenState(state.loading, state.error, padding) { WorkScreen(state.home, nav) }
+            RootScaffold(nav, RootDestination.WORK) { padding ->
+                ScreenState(state.loading, state.error, padding) { WorkScreen(state.home, nav, workTab) { workTab = it } }
             }
         }
         composable(CUSTOMERS) {
+            var equipmentMode by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(Unit) { viewModel.loadEquipmentList(); viewModel.loadCustomers() }
-            RootScaffold(nav, CUSTOMERS, "Customers") { padding ->
-                ScreenState(state.loading, state.error, padding) { CustomersScreen(state.customerList, state.equipmentList, nav) }
+            RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
+                ScreenState(state.loading, state.error, padding) { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -119,29 +137,24 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
                 HonestPlaceholder(padding, "This foundation exposes the entry point without claiming the later workflow is complete.")
             }
         }
-        composable("foundation/finding") {
-            DetailScaffold("Finding / issue details", nav) { padding ->
-                HonestPlaceholder(padding, "Detailed Finding editing is not part of the SL-1 foundation yet. No finding or follow-up has been created.")
-            }
-        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RootScaffold(nav: NavHostController, selected: String, title: String, content: @Composable (PaddingValues) -> Unit) {
+private fun RootScaffold(nav: NavHostController, selected: RootDestination, content: @Composable (PaddingValues) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+                title = { Text(selected.label, style = MaterialTheme.typography.titleLarge) },
                 actions = {
                     TextButton(onClick = { nav.navigate("scope/Search") }) { Text("Search") }
                     TextButton(onClick = { nav.navigate("scope/Settings") }) { Text("Settings") }
                 },
             )
         },
-        bottomBar = { RootNavigation(selected) { route -> nav.navigate(route) { launchSingleTop = true; popUpTo(HOME) { saveState = true }; restoreState = true } } },
-        floatingActionButton = { if (selected == WORK) OutlinedButton(onClick = { nav.navigate("scope/New visit") }) { Text("New visit") } },
+        bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
+        floatingActionButton = { if (selected == RootDestination.WORK) OutlinedButton(onClick = { nav.navigate("scope/New visit") }) { Text("New visit") } },
         content = content,
     )
 }
@@ -153,11 +166,19 @@ private fun DetailScaffold(title: String, nav: NavHostController, content: @Comp
 }
 
 @Composable
-private fun RootNavigation(selected: String, onNavigate: (String) -> Unit) {
+private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestination) -> Unit) {
     NavigationBar {
-        listOf(HOME to "Home", WORK to "Work", CUSTOMERS to "Customers").forEach { (route, label) ->
-            NavigationBarItem(selected = selected == route, onClick = { onNavigate(route) }, icon = { Text(if (route == HOME) "⌂" else if (route == WORK) "✓" else "◎") }, label = { Text(label) })
+        RootDestination.entries.forEach { destination ->
+            NavigationBarItem(selected = selected == destination, onClick = { onNavigate(destination) }, icon = { Text(if (destination == RootDestination.HOME) "⌂" else if (destination == RootDestination.WORK) "✓" else "◎") }, label = { Text(destination.label) })
         }
+    }
+}
+
+private fun NavHostController.navigateToRoot(destination: RootDestination) {
+    navigate(destination.route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }
 
@@ -185,30 +206,29 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, na
         }
         item {
             SectionTitle("Booked visits · ${if (home.bookedVisitReference == null) 0 else 1}")
-            SummaryRow(home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" } ?: "No booked visits", "Open") { nav.navigate(WORK) }
+            SummaryRow(home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" } ?: "No booked visits", "Open") { nav.navigateToRoot(RootDestination.WORK) }
         }
         item { SectionTitle("Overdue services · ${home.overdueCount}"); Text("Booked service remains due until its obligation is explicitly fulfilled.", style = MaterialTheme.typography.bodyMedium) }
         items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
-        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate(WORK) } }
-        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "All open") { nav.navigate(WORK) } }
+        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigateToRoot(RootDestination.WORK) } }
+        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "All open") { nav.navigateToRoot(RootDestination.WORK) } }
         item { SectionTitle("Records needing attention"); Text("No report or correction failures in this fixture.") }
         item { OutlinedButton(onClick = { nav.navigate("scope/New visit") }, modifier = Modifier.fillMaxWidth()) { Text("New visit") } }
     }
 }
 
 @Composable
-private fun WorkScreen(home: HomeSummary?, nav: NavHostController) {
-    var tab by remember { mutableStateOf("Due services") }
+private fun WorkScreen(home: HomeSummary?, nav: NavHostController, tab: WorkTab, onTabSelected: (WorkTab) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(Modifier.fillMaxWidth()) { listOf("Due services", "Visits", "Follow-ups").forEach { label -> TextButton(onClick = { tab = label }, modifier = Modifier.weight(1f)) { Text(label, color = if (tab == label) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) } } } }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } } }
         when (tab) {
-            "Due services" -> item { SectionTitle("Due services · ${(home?.overdueCount ?: 0) + (home?.dueSoonCount ?: 0)}"); Text("Each plan retains its own obligation and due date.") }
-            "Visits" -> {
+            WorkTab.DUE_SERVICES -> item { SectionTitle("Due services · ${(home?.overdueCount ?: 0) + (home?.dueSoonCount ?: 0)}"); Text("Each plan retains its own obligation and due date.") }
+            WorkTab.VISITS -> {
                 item { SectionTitle("Visits") }
                 item { SummaryRow("${home?.workingVisitReference ?: "No working visit"} · ${home?.workingSite.orEmpty()}", "Resume") { home?.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } } }
                 home?.bookedVisitReference?.let { reference -> item { SummaryRow("$reference · Booked ${home.bookedVisitDate}", "Open") { nav.navigate("scope/Booked visit") } } }
             }
-            else -> {
+            WorkTab.FOLLOW_UPS -> {
                 item { SectionTitle("Follow-ups · ${home?.dueFollowUpCount ?: 0}") }
                 item { SummaryRow(listOfNotNull(home?.dueFollowUpReference, home?.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open") { nav.navigate("scope/Follow-up") } }
             }
@@ -218,10 +238,9 @@ private fun WorkScreen(home: HomeSummary?, nav: NavHostController) {
 }
 
 @Composable
-private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
-    var equipmentMode by remember { mutableStateOf(false) }
+private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<EquipmentSummary>, nav: NavHostController, equipmentMode: Boolean, onEquipmentModeChanged: (Boolean) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!equipmentMode) Button(onClick = {}) { Text("Customers") } else OutlinedButton(onClick = { equipmentMode = false }) { Text("Customers") }; if (equipmentMode) Button(onClick = {}) { Text("Equipment") } else OutlinedButton(onClick = { equipmentMode = true }) { Text("Equipment") } }; Text(if (equipmentMode) "Equipment register" else "Customer register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!equipmentMode) Button(onClick = {}) { Text("Customers") } else OutlinedButton(onClick = { onEquipmentModeChanged(false) }) { Text("Customers") }; if (equipmentMode) Button(onClick = {}) { Text("Equipment") } else OutlinedButton(onClick = { onEquipmentModeChanged(true) }) { Text("Equipment") } }; Text(if (equipmentMode) "Equipment register" else "Customer register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
         if (!equipmentMode) {
             if (customers.isEmpty()) item { Text("Add a customer to begin.") }
             items(customers) { item -> SummaryRow("${item.name}\n${item.reference} · ${item.siteCount} site · ${item.equipmentCount} equipment", "Open") { nav.navigate("scope/Customer detail") } }
@@ -277,26 +296,60 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
         }
         item { LabelledValue("Work performed · Customer report", draft.workPerformed.ifBlank { "Not recorded" }, public = true); LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false) }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
-        items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel, nav) }
+        items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel) }
         item { StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium) }
         item { Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth(), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
     }
 }
 
 @Composable
-private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     AccentCard {
         Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
         Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
         when (question.responseType) {
             "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
-                Row(Modifier.fillMaxWidth().selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value, reason = if (value == ResponseDisposition.NOT_APPLICABLE) "Not applicable during this visit" else null) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
+                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value, reason = if (value == ResponseDisposition.NOT_APPLICABLE) "Not applicable during this visit" else null) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
             }
             else -> ValueQuestion(question, saving, viewModel)
         }
-        question.reason?.takeIf { it.isNotBlank() }?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
+        if (question.disposition != ResponseDisposition.ISSUE_FOUND) question.reason?.takeIf { it.isNotBlank() }?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
         if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
-            Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(question.reason ?: "Finding details required", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium); TextButton(onClick = { nav.navigate("foundation/finding") }) { Text("Finding / issue details") } } }
+            InlineFindingEditor(question, saving, viewModel)
+        }
+    }
+}
+
+@Composable
+private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    var text by rememberSaveable(question.snapshotItemId, question.reason) { mutableStateOf(question.reason.orEmpty()) }
+    var expanded by rememberSaveable(question.snapshotItemId) { mutableStateOf(false) }
+    val changed = text != question.reason.orEmpty()
+    Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.testTag("finding-expand-${question.snapshotItemId}").semantics { contentDescription = if (expanded) "Collapse finding field" else "Expand finding field" },
+                ) { Text(if (expanded) "Collapse" else "Expand") }
+            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Public finding description") },
+                placeholder = { Text("Describe what was found") },
+                supportingText = { Text("May appear in the customer service record and report") },
+                minLines = if (expanded) 10 else 3,
+                maxLines = if (expanded) 10 else 3,
+                enabled = !saving,
+                modifier = Modifier.fillMaxWidth().testTag("finding-field-${question.snapshotItemId}"),
+            )
+            Button(
+                onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
+                enabled = !saving && changed,
+                modifier = Modifier.fillMaxWidth().testTag("finding-save-${question.snapshotItemId}"),
+            ) { Text("Save finding") }
         }
     }
 }
