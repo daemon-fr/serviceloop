@@ -3,6 +3,8 @@ package com.v16studio.serviceloop.report
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.BitmapFactory
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
@@ -37,7 +39,7 @@ class AndroidReportService(
     private val database: ServiceLoopDatabase,
     private val repository: ServiceLoopRepository,
     private val writeGate: PdfWriteGate = PdfWriteGate {},
-    private val writer: ReportWriter = ReportWriter(FixedServiceRecordPdf::render),
+    private val writer: ReportWriter = ReportWriter { model, renditionId, generatedAt, file -> FixedServiceRecordPdf.render(model, renditionId, generatedAt, file, context.filesDir) },
     private val metadataGate: ReportMetadataGate = ReportMetadataGate {},
 ) : ReportService {
     private val dao = database.serviceLoopDao()
@@ -112,8 +114,10 @@ object FixedServiceRecordPdf {
     internal data class ReportPage(val lines: List<ReportDrawLine>) { val contentHeight: Float get() = lines.sumOf { it.height.toDouble() }.toFloat() }
     private data class RawLine(val text: String, val style: LineStyle)
 
-    fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int {
+    fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File, attachmentRoot: File? = null): Int {
         val pages = layout(model)
+        val photos = model.lines.flatMap { line -> line.photos.mapIndexed { index, photo -> Triple(line, index, photo) } }
+        val totalPages = pages.size + photos.size
         val document = PdfDocument()
         try {
             pages.forEachIndexed { pageIndex, lines ->
@@ -123,15 +127,26 @@ object FixedServiceRecordPdf {
                     page.canvas.drawText(line.text, LEFT, y + line.style.textSize, paint(line.style))
                     y += line.height
                 }
-                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of ${pages.size}"
+                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of $totalPages"
                 wrap(RawLine(footer, LineStyle.FOOTER)).take(4).forEachIndexed { footerIndex, line ->
                     page.canvas.drawText(line.text, LEFT, HEIGHT - 44f + footerIndex * LineStyle.FOOTER.height + LineStyle.FOOTER.textSize, paint(LineStyle.FOOTER).apply { color = Color.DKGRAY })
                 }
                 document.finishPage(page)
             }
+            photos.forEachIndexed { photoPageIndex, (line, photoIndex, photo) ->
+                val source=attachmentRoot?.let{File(it,photo.relativePath)} ?: error("Photograph storage is unavailable")
+                val bitmap=BitmapFactory.decodeFile(source.absolutePath) ?: error("Selected report photograph is missing or unreadable")
+                val pageNumber=pages.size+photoPageIndex+1; val page=document.startPage(PdfDocument.PageInfo.Builder(WIDTH,HEIGHT,pageNumber).create())
+                page.canvas.drawText("${line.equipmentReference} · ${line.equipmentName}",LEFT,TOP+LineStyle.SECTION.textSize,paint(LineStyle.SECTION))
+                page.canvas.drawText("Photograph ${photoIndex+1}${photo.caption?.let{": $it"}.orEmpty()}",LEFT,TOP+38f,paint(LineStyle.BODY))
+                val availableHeight=HEIGHT-TOP-BOTTOM-70f; val scale=minOf(CONTENT_WIDTH/bitmap.width,availableHeight/bitmap.height); val width=bitmap.width*scale; val height=bitmap.height*scale
+                page.canvas.drawBitmap(bitmap,null,RectF(LEFT,TOP+55f,LEFT+width,TOP+55f+height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+                val footer="${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-34f,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
+                document.finishPage(page); bitmap.recycle()
+            }
             FileOutputStream(file).use(document::writeTo)
         } finally { document.close() }
-        return pages.size
+        return totalPages
     }
 
     internal fun layout(model: PublicReportModel): List<ReportPage> {
@@ -157,6 +172,8 @@ object FixedServiceRecordPdf {
             raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
             raw += listOf(RawLine(line.equipmentIdentification, LineStyle.BODY), RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY), RawLine("Outcome: ${line.outcome.replace('_', ' ')}", LineStyle.BODY))
             line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
+            line.parts.forEach { part -> raw += RawLine("Part: ${part.description} — ${part.quantity} ${part.unit}", LineStyle.BODY) }
+            line.photos.forEachIndexed { photoIndex, photo -> raw += RawLine("Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}", LineStyle.BODY) }
             raw += RawLine(when { !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
             line.checklist.forEach { q -> raw += RawLine("${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}", LineStyle.BODY) }
         }

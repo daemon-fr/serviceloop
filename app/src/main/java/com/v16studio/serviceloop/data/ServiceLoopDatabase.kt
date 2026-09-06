@@ -19,8 +19,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BusinessProfileEntity::class, FinalRecordEntity::class,
         FinalRecordRevisionEntity::class, FinalWorkItemEntity::class,
         FinalChecklistItemEntity::class, ReportRenditionEntity::class,
+        ReusableTemplateEntity::class, ReusableTemplateRevisionEntity::class,
+        ReusableTemplateItemEntity::class, ContactNoteEntity::class,
+        FollowUpEventEntity::class, PartEntryEntity::class,
+        VisitClaimEntity::class, FinalPartEntryEntity::class, FinalPhotoEntryEntity::class,
+        PlanScheduleChangeEntity::class,
+        VisitScheduleEventEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -31,7 +37,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -81,6 +87,65 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("UPDATE final_record_revisions SET customerReference=(SELECT c.reference FROM final_records f JOIN working_visits v ON v.id=f.visitId JOIN customers c ON c.id=v.customerId WHERE f.id=final_record_revisions.recordId), siteReference=(SELECT s.reference FROM final_records f JOIN working_visits v ON v.id=f.visitId JOIN sites s ON s.id=v.siteId WHERE f.id=final_record_revisions.recordId)")
                 db.execSQL("ALTER TABLE final_work_items ADD COLUMN nextDueDateCalculated INTEGER")
                 db.execSQL("ALTER TABLE final_work_items ADD COLUMN nextDueOverrideReason TEXT")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customers ADD COLUMN contactName TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN phone TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN email TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN privateNote TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN state TEXT NOT NULL DEFAULT 'ACTIVE'")
+                db.execSQL("ALTER TABLE sites ADD COLUMN contactName TEXT")
+                db.execSQL("ALTER TABLE sites ADD COLUMN phone TEXT")
+                db.execSQL("ALTER TABLE sites ADD COLUMN email TEXT")
+                db.execSQL("ALTER TABLE sites ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sites ADD COLUMN state TEXT NOT NULL DEFAULT 'ACTIVE'")
+                db.execSQL("ALTER TABLE equipment ADD COLUMN state TEXT NOT NULL DEFAULT 'ACTIVE'")
+                db.execSQL("ALTER TABLE service_plans ADD COLUMN reusableTemplateId TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN scheduledAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN appointmentZoneId TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN scheduleChangeReason TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN cancellationReason TEXT")
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN cancelledAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN sourceVisitId TEXT")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN sourceWorkItemId TEXT")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN closedAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE follow_ups ADD COLUMN closureReason TEXT")
+                db.execSQL("ALTER TABLE attachments ADD COLUMN byteSize INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE attachments ADD COLUMN caption TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS reusable_templates (id TEXT NOT NULL PRIMARY KEY, reference TEXT NOT NULL, name TEXT NOT NULL, currentRevisionId TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'ACTIVE', modifiedAtEpochMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_reusable_templates_reference ON reusable_templates(reference)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS reusable_template_revisions (id TEXT NOT NULL PRIMARY KEY, templateId TEXT NOT NULL, revisionNumber INTEGER NOT NULL, nameSnapshot TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(templateId) REFERENCES reusable_templates(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reusable_template_revisions_templateId ON reusable_template_revisions(templateId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_reusable_template_revisions_templateId_revisionNumber ON reusable_template_revisions(templateId, revisionNumber)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS reusable_template_items (id TEXT NOT NULL PRIMARY KEY, revisionId TEXT NOT NULL, position INTEGER NOT NULL, label TEXT NOT NULL, responseType TEXT NOT NULL, unit TEXT, required INTEGER NOT NULL, privateGuidance TEXT, FOREIGN KEY(revisionId) REFERENCES reusable_template_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reusable_template_items_revisionId ON reusable_template_items(revisionId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_reusable_template_items_revisionId_position ON reusable_template_items(revisionId, position)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS contact_notes (id TEXT NOT NULL PRIMARY KEY, reference TEXT NOT NULL, customerId TEXT NOT NULL, siteId TEXT, equipmentId TEXT, channel TEXT NOT NULL, occurredAtEpochMillis INTEGER NOT NULL, outcome TEXT NOT NULL, privateNote TEXT, createdAtEpochMillis INTEGER NOT NULL, editedAtEpochMillis INTEGER, enteredInError INTEGER NOT NULL DEFAULT 0, errorReason TEXT, FOREIGN KEY(customerId) REFERENCES customers(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_contact_notes_customerId ON contact_notes(customerId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_contact_notes_siteId ON contact_notes(siteId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_contact_notes_equipmentId ON contact_notes(equipmentId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_contact_notes_reference ON contact_notes(reference)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS follow_up_events (id TEXT NOT NULL PRIMARY KEY, followUpId TEXT NOT NULL, eventType TEXT NOT NULL, occurredAtEpochMillis INTEGER NOT NULL, reason TEXT NOT NULL, dueDate TEXT, FOREIGN KEY(followUpId) REFERENCES follow_ups(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_up_events_followUpId ON follow_up_events(followUpId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS part_entries (id TEXT NOT NULL PRIMARY KEY, workItemId TEXT NOT NULL, description TEXT NOT NULL, quantity TEXT NOT NULL, unit TEXT NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(workItemId) REFERENCES work_items(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_part_entries_workItemId ON part_entries(workItemId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS visit_claims (obligationId TEXT NOT NULL PRIMARY KEY, visitId TEXT NOT NULL, claimedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(obligationId) REFERENCES service_obligations(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(visitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_visit_claims_visitId_obligationId ON visit_claims(visitId, obligationId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_visit_claims_visitId ON visit_claims(visitId)")
+                db.execSQL("INSERT OR IGNORE INTO visit_claims(obligationId, visitId, claimedAtEpochMillis) SELECT wi.capturedObligationId, wi.visitId, v.modifiedAtEpochMillis FROM work_items wi JOIN working_visits v ON v.id=wi.visitId JOIN service_plans p ON p.id=wi.servicePlanId JOIN service_obligations o ON o.id=wi.capturedObligationId WHERE v.state IN ('BOOKED','WORKING') AND wi.capturedObligationId IS NOT NULL AND p.currentObligationId=wi.capturedObligationId AND o.consumedAtEpochMillis IS NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS final_part_entries (id TEXT NOT NULL PRIMARY KEY, finalWorkItemId TEXT NOT NULL, position INTEGER NOT NULL, description TEXT NOT NULL, quantity TEXT NOT NULL, unit TEXT NOT NULL, FOREIGN KEY(finalWorkItemId) REFERENCES final_work_items(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_part_entries_finalWorkItemId ON final_part_entries(finalWorkItemId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS final_photo_entries (id TEXT NOT NULL PRIMARY KEY, finalWorkItemId TEXT NOT NULL, position INTEGER NOT NULL, sourceAttachmentId TEXT NOT NULL, storedRelativePath TEXT NOT NULL, sha256 TEXT NOT NULL, byteSize INTEGER NOT NULL, mimeType TEXT NOT NULL, caption TEXT, FOREIGN KEY(finalWorkItemId) REFERENCES final_work_items(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_photo_entries_finalWorkItemId ON final_photo_entries(finalWorkItemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_photo_entries_sourceAttachmentId ON final_photo_entries(sourceAttachmentId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS plan_schedule_changes (id TEXT NOT NULL PRIMARY KEY, planId TEXT NOT NULL, oldDueDate TEXT NOT NULL, newDueDate TEXT NOT NULL, reason TEXT NOT NULL, changedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(planId) REFERENCES service_plans(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_plan_schedule_changes_planId ON plan_schedule_changes(planId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS visit_schedule_events (id TEXT NOT NULL PRIMARY KEY, visitId TEXT NOT NULL, eventType TEXT NOT NULL, oldServiceDate TEXT NOT NULL, newServiceDate TEXT, oldScheduledAtEpochMillis INTEGER, newScheduledAtEpochMillis INTEGER, reason TEXT NOT NULL, occurredAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(visitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_visit_schedule_events_visitId ON visit_schedule_events(visitId)")
             }
         }
     }

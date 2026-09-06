@@ -67,6 +67,17 @@ data class CustomerSummaryRow(
 
 data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String?)
 
+data class DueServiceRow(
+    val planId: String, val planReference: String, val planName: String, val dueDate: String,
+    val obligationId: String, val equipmentId: String, val equipmentReference: String,
+    val equipmentName: String, val siteId: String, val siteName: String,
+    val customerId: String, val customerName: String, val claimedVisitId: String?,
+)
+
+data class SearchRow(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
+
+data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String)
+
 @Dao
 interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomers(values: List<CustomerEntity>)
@@ -89,7 +100,25 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalWorkItems(values: List<FinalWorkItemEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalChecklistItems(values: List<FinalChecklistItemEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReportRendition(value: ReportRenditionEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReusableTemplate(value: ReusableTemplateEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReusableTemplateRevision(value: ReusableTemplateRevisionEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReusableTemplateItems(values: List<ReusableTemplateItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertContactNote(value: ContactNoteEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUp(value: FollowUpEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUpEvent(value: FollowUpEventEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPart(value: PartEntryEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertVisitClaim(value: VisitClaimEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalParts(values: List<FinalPartEntryEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalPhotos(values: List<FinalPhotoEntryEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPlanScheduleChange(value: PlanScheduleChangeEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertVisitScheduleEvent(value: VisitScheduleEventEntity)
     @Update suspend fun updateReportRendition(value: ReportRenditionEntity)
+    @Update suspend fun updateCustomer(value: CustomerEntity)
+    @Update suspend fun updateSite(value: SiteEntity)
+    @Update suspend fun updateEquipment(value: EquipmentEntity)
+    @Update suspend fun updatePlan(value: ServicePlanEntity)
+    @Update suspend fun updateVisit(value: WorkingVisitEntity)
+    @Update suspend fun updateFollowUp(value: FollowUpEntity)
 
     @Query("SELECT COUNT(*) FROM customers") suspend fun customerCount(): Int
     @Query("SELECT * FROM customers WHERE id = :id") suspend fun customer(id: String): CustomerEntity?
@@ -108,10 +137,38 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM final_work_items WHERE revisionId=:revisionId ORDER BY position") suspend fun finalWorkItems(revisionId: String): List<FinalWorkItemEntity>
     @Query("SELECT * FROM final_checklist_items WHERE finalWorkItemId=:workItemId ORDER BY position") suspend fun finalChecklistItems(workItemId: String): List<FinalChecklistItemEntity>
     @Query("SELECT * FROM report_renditions WHERE revisionId=:revisionId AND versionNumber=1") suspend fun reportRendition(revisionId: String): ReportRenditionEntity?
+    @Query("SELECT * FROM sites WHERE customerId=:customerId ORDER BY isDefault DESC, name, reference") suspend fun sitesForCustomer(customerId: String): List<SiteEntity>
+    @Query("SELECT s.id, s.reference, s.name, c.name customerName FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
+    @Query("SELECT * FROM equipment WHERE siteId=:siteId ORDER BY name, reference") suspend fun equipmentForSite(siteId: String): List<EquipmentEntity>
+    @Query("SELECT * FROM service_plans WHERE equipmentId=:equipmentId ORDER BY currentDueDate, reference") suspend fun plansForEquipment(equipmentId: String): List<ServicePlanEntity>
+    @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
+    @Query("SELECT * FROM follow_ups ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUps(): List<FollowUpEntity>
+    @Query("SELECT * FROM follow_ups WHERE id=:id") suspend fun followUp(id: String): FollowUpEntity?
+    @Query("SELECT * FROM contact_notes WHERE customerId=:customerId ORDER BY occurredAtEpochMillis DESC, reference") suspend fun contactNotesForCustomer(customerId: String): List<ContactNoteEntity>
+    @Query("SELECT * FROM reusable_templates ORDER BY name, reference") suspend fun reusableTemplates(): List<ReusableTemplateEntity>
+    @Query("SELECT * FROM reusable_templates WHERE id=:id") suspend fun reusableTemplate(id: String): ReusableTemplateEntity?
+    @Query("SELECT * FROM reusable_template_revisions WHERE id=:id") suspend fun reusableTemplateRevision(id: String): ReusableTemplateRevisionEntity?
+    @Query("SELECT * FROM reusable_template_revisions WHERE templateId=:templateId ORDER BY revisionNumber DESC") suspend fun reusableTemplateRevisions(templateId: String): List<ReusableTemplateRevisionEntity>
+    @Query("SELECT * FROM reusable_template_items WHERE revisionId=:revisionId ORDER BY position") suspend fun reusableTemplateItems(revisionId: String): List<ReusableTemplateItemEntity>
+    @Query("SELECT * FROM part_entries WHERE workItemId=:workItemId ORDER BY modifiedAtEpochMillis, id") suspend fun parts(workItemId: String): List<PartEntryEntity>
+    @Query("SELECT * FROM attachments WHERE ownerType='WORK_ITEM' AND ownerId=:workItemId ORDER BY id") suspend fun workItemAttachments(workItemId: String): List<AttachmentEntity>
+    @Query("SELECT COUNT(*) FROM attachments a JOIN work_items wi ON a.ownerType='WORK_ITEM' AND a.ownerId=wi.id WHERE wi.visitId=:visitId AND wi.equipmentId=:equipmentId") suspend fun machinePhotoCount(visitId: String, equipmentId: String): Int
+    @Query("SELECT COUNT(*) FROM attachments a JOIN work_items wi ON a.ownerType='WORK_ITEM' AND a.ownerId=wi.id WHERE wi.visitId=:visitId") suspend fun visitPhotoCount(visitId: String): Int
+    @Query("SELECT * FROM final_part_entries WHERE finalWorkItemId=:finalWorkItemId ORDER BY position") suspend fun finalParts(finalWorkItemId: String): List<FinalPartEntryEntity>
+    @Query("SELECT * FROM final_photo_entries WHERE finalWorkItemId=:finalWorkItemId ORDER BY position") suspend fun finalPhotos(finalWorkItemId: String): List<FinalPhotoEntryEntity>
     @Query("SELECT COUNT(*) FROM final_records") suspend fun finalRecordCount(): Int
     @Query("SELECT COUNT(*) FROM final_record_revisions") suspend fun finalRevisionCount(): Int
     @Query("SELECT COUNT(*) FROM service_obligations WHERE planId=:planId") suspend fun obligationCount(planId: String): Int
+    @Query("SELECT COUNT(*) FROM sites") suspend fun siteCount(): Int
+    @Query("SELECT COUNT(*) FROM equipment") suspend fun equipmentCount(): Int
+    @Query("SELECT COUNT(*) FROM service_plans") suspend fun planCount(): Int
+    @Query("SELECT COUNT(*) FROM working_visits") suspend fun visitCount(): Int
+    @Query("SELECT COUNT(*) FROM reusable_templates") suspend fun reusableTemplateCount(): Int
+    @Query("SELECT COUNT(*) FROM follow_ups") suspend fun followUpCount(): Int
+    @Query("SELECT COUNT(*) FROM contact_notes") suspend fun contactNoteCount(): Int
+    @Query("SELECT * FROM visit_schedule_events WHERE visitId=:visitId ORDER BY occurredAtEpochMillis, id") suspend fun visitScheduleEvents(visitId: String): List<VisitScheduleEventEntity>
     @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
+    @Query("UPDATE service_obligations SET dueDate=:dueDate WHERE id=:id AND consumedAtEpochMillis IS NULL") suspend fun updateCurrentObligationDueDate(id: String, dueDate: String): Int
     @Query("UPDATE customers SET name = :name WHERE id = :id") suspend fun renameCustomer(id: String, name: String)
     @Query("UPDATE equipment SET name = :name WHERE id = :id") suspend fun renameEquipment(id: String, name: String)
     @Query("UPDATE equipment SET technicianIdentifier=:identifier, make=:make, model=:model, serialNumber=:serial WHERE id=:id") suspend fun updateEquipmentIdentity(id: String, identifier: String?, make: String?, model: String?, serial: String?)
@@ -193,6 +250,29 @@ interface ServiceLoopDao {
     """)
     suspend fun customerList(): List<CustomerSummaryRow>
 
+    @Query("""
+        SELECT p.id planId, p.reference planReference, p.name planName, p.currentDueDate dueDate,
+               o.id obligationId, e.id equipmentId, e.reference equipmentReference, e.name equipmentName,
+               s.id siteId, s.name siteName, c.id customerId, c.name customerName, vc.visitId claimedVisitId
+        FROM service_plans p JOIN service_obligations o ON o.id=p.currentObligationId
+        JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId
+        LEFT JOIN visit_claims vc ON vc.obligationId=o.id
+        WHERE p.state='ACTIVE' AND e.state='ACTIVE' AND s.state='ACTIVE' AND c.state='ACTIVE'
+        ORDER BY p.currentDueDate, c.name, s.name, e.name, p.reference
+    """)
+    suspend fun dueServices(): List<DueServiceRow>
+
+    @Query("""
+        SELECT 'CUSTOMER' type, id, reference, name title, COALESCE(contactName,'') subtitle FROM customers WHERE name LIKE :pattern OR reference LIKE :pattern OR COALESCE(contactName,'') LIKE :pattern
+        UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
+        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern
+        UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name FROM service_plans p JOIN equipment e ON e.id=p.equipmentId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
+        UNION ALL SELECT CASE v.state WHEN 'FINALIZED' THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, v.state FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
+        UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, fu.state FROM follow_ups fu WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
+        ORDER BY reference, title
+    """)
+    suspend fun search(pattern: String): List<SearchRow>
+
     @Query("SELECT COUNT(*) FROM service_plans WHERE state='ACTIVE' AND currentDueDate < :today")
     suspend fun overdueCount(today: String): Int
 
@@ -225,6 +305,11 @@ interface ServiceLoopDao {
 
     @Query("UPDATE working_visits SET state='FINALIZED', modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='WORKING'")
     suspend fun finalizeVisit(visitId: String, modified: Long): Int
+
+    @Query("DELETE FROM visit_claims WHERE visitId=:visitId") suspend fun releaseVisitClaims(visitId: String): Int
+    @Query("SELECT COUNT(*) FROM visit_claims WHERE visitId=:visitId AND obligationId=:obligationId") suspend fun visitOwnsClaim(visitId: String, obligationId: String): Int
+    @Query("UPDATE reusable_templates SET name=:name, currentRevisionId=:revisionId, modifiedAtEpochMillis=:modified WHERE id=:id") suspend fun publishTemplateRevision(id: String, name: String, revisionId: String, modified: Long): Int
+    @Query("UPDATE contact_notes SET enteredInError=1, errorReason=:reason, editedAtEpochMillis=:modified WHERE id=:id AND enteredInError=0") suspend fun markContactNoteEnteredInError(id: String, reason: String, modified: Long): Int
 
     @Transaction
     suspend fun persistResponse(response: WorkingResponseEntity, visitId: String, invalidateReview: Boolean = true) {

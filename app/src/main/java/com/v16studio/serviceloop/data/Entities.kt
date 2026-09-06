@@ -4,9 +4,19 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(tableName = "customers", indices = [Index(value = ["reference"], unique = true)])
-data class CustomerEntity(@PrimaryKey val id: String, val reference: String, val name: String)
+data class CustomerEntity(
+    @PrimaryKey val id: String,
+    val reference: String,
+    val name: String,
+    val contactName: String? = null,
+    val phone: String? = null,
+    val email: String? = null,
+    val privateNote: String? = null,
+    @ColumnInfo(defaultValue = "'ACTIVE'") val state: String = "ACTIVE",
+)
 
 @Entity(
     tableName = "sites",
@@ -20,6 +30,11 @@ data class SiteEntity(
     val name: String,
     val address: String?,
     val privateAccessNotes: String?,
+    val contactName: String? = null,
+    val phone: String? = null,
+    val email: String? = null,
+    @ColumnInfo(defaultValue = "0") val isDefault: Boolean = false,
+    @ColumnInfo(defaultValue = "'ACTIVE'") val state: String = "ACTIVE",
 )
 
 @Entity(
@@ -37,6 +52,7 @@ data class EquipmentEntity(
     val model: String?,
     val serialNumber: String?,
     val privateNotes: String?,
+    @ColumnInfo(defaultValue = "'ACTIVE'") val state: String = "ACTIVE",
 )
 
 @Entity(
@@ -56,6 +72,7 @@ data class ServicePlanEntity(
     val currentObligationId: String?,
     val lastCountedCompletionDate: String? = null,
     val lastCountedRevisionId: String? = null,
+    val reusableTemplateId: String? = null,
 )
 
 @Entity(
@@ -125,6 +142,11 @@ data class WorkingVisitEntity(
     val reportEmailSnapshot: String? = null,
     val reportPostalAddressSnapshot: String? = null,
     val reportZoneIdSnapshot: String? = null,
+    val scheduledAtEpochMillis: Long? = null,
+    val appointmentZoneId: String? = null,
+    val scheduleChangeReason: String? = null,
+    val cancellationReason: String? = null,
+    val cancelledAtEpochMillis: Long? = null,
 )
 
 @Entity(
@@ -340,6 +362,11 @@ data class FollowUpEntity(
     val siteId: String?,
     val equipmentId: String?,
     val privatePlanningNote: String?,
+    val sourceVisitId: String? = null,
+    val sourceWorkItemId: String? = null,
+    val updatedAtEpochMillis: Long = 0,
+    val closedAtEpochMillis: Long? = null,
+    val closureReason: String? = null,
 )
 
 @Entity(tableName = "attachments", indices = [Index(value = ["storedRelativePath"], unique = true), Index(value = ["ownerType", "ownerId"])])
@@ -353,4 +380,162 @@ data class AttachmentEntity(
     val mimeType: String,
     val includedInCustomerReport: Boolean,
     val availability: String,
+    val byteSize: Long = 0,
+    val caption: String? = null,
+)
+
+@Entity(tableName = "reusable_templates", indices = [Index(value = ["reference"], unique = true)])
+data class ReusableTemplateEntity(
+    @PrimaryKey val id: String,
+    val reference: String,
+    val name: String,
+    val currentRevisionId: String,
+    @ColumnInfo(defaultValue = "'ACTIVE'") val state: String = "ACTIVE",
+    val modifiedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "reusable_template_revisions",
+    foreignKeys = [ForeignKey(ReusableTemplateEntity::class, ["id"], ["templateId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("templateId"), Index(value = ["templateId", "revisionNumber"], unique = true)],
+)
+data class ReusableTemplateRevisionEntity(
+    @PrimaryKey val id: String,
+    val templateId: String,
+    val revisionNumber: Int,
+    val nameSnapshot: String,
+    val createdAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "reusable_template_items",
+    foreignKeys = [ForeignKey(ReusableTemplateRevisionEntity::class, ["id"], ["revisionId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("revisionId"), Index(value = ["revisionId", "position"], unique = true)],
+)
+data class ReusableTemplateItemEntity(
+    @PrimaryKey val id: String,
+    val revisionId: String,
+    val position: Int,
+    val label: String,
+    val responseType: String,
+    val unit: String?,
+    val required: Boolean,
+    val privateGuidance: String?,
+)
+
+@Entity(
+    tableName = "contact_notes",
+    foreignKeys = [ForeignKey(CustomerEntity::class, ["id"], ["customerId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("customerId"), Index("siteId"), Index("equipmentId"), Index(value = ["reference"], unique = true)],
+)
+data class ContactNoteEntity(
+    @PrimaryKey val id: String,
+    val reference: String,
+    val customerId: String,
+    val siteId: String?,
+    val equipmentId: String?,
+    val channel: String,
+    val occurredAtEpochMillis: Long,
+    val outcome: String,
+    val privateNote: String?,
+    val createdAtEpochMillis: Long,
+    val editedAtEpochMillis: Long? = null,
+    @ColumnInfo(defaultValue = "0") val enteredInError: Boolean = false,
+    val errorReason: String? = null,
+)
+
+@Entity(
+    tableName = "follow_up_events",
+    foreignKeys = [ForeignKey(FollowUpEntity::class, ["id"], ["followUpId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("followUpId")],
+)
+data class FollowUpEventEntity(
+    @PrimaryKey val id: String,
+    val followUpId: String,
+    val eventType: String,
+    val occurredAtEpochMillis: Long,
+    val reason: String,
+    val dueDate: String?,
+)
+
+@Entity(
+    tableName = "part_entries",
+    foreignKeys = [ForeignKey(WorkItemEntity::class, ["id"], ["workItemId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("workItemId")],
+)
+data class PartEntryEntity(
+    @PrimaryKey val id: String,
+    val workItemId: String,
+    val description: String,
+    val quantity: String,
+    val unit: String,
+    val modifiedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "visit_claims",
+    foreignKeys = [
+        ForeignKey(ServiceObligationEntity::class, ["id"], ["obligationId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(WorkingVisitEntity::class, ["id"], ["visitId"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [Index(value = ["visitId", "obligationId"], unique = true), Index("visitId")],
+)
+data class VisitClaimEntity(
+    @PrimaryKey val obligationId: String,
+    val visitId: String,
+    val claimedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "final_part_entries",
+    foreignKeys = [ForeignKey(FinalWorkItemEntity::class, ["id"], ["finalWorkItemId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("finalWorkItemId")],
+)
+data class FinalPartEntryEntity(
+    @PrimaryKey val id: String,
+    val finalWorkItemId: String,
+    val position: Int,
+    val description: String,
+    val quantity: String,
+    val unit: String,
+)
+
+@Entity(
+    tableName = "final_photo_entries",
+    foreignKeys = [ForeignKey(FinalWorkItemEntity::class, ["id"], ["finalWorkItemId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("finalWorkItemId"), Index("sourceAttachmentId")],
+)
+data class FinalPhotoEntryEntity(
+    @PrimaryKey val id: String,
+    val finalWorkItemId: String,
+    val position: Int,
+    val sourceAttachmentId: String,
+    val storedRelativePath: String,
+    val sha256: String,
+    val byteSize: Long,
+    val mimeType: String,
+    val caption: String?,
+)
+
+@Entity(tableName = "plan_schedule_changes", foreignKeys = [ForeignKey(ServicePlanEntity::class, ["id"], ["planId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("planId")])
+data class PlanScheduleChangeEntity(
+    @PrimaryKey val id: String,
+    val planId: String,
+    val oldDueDate: String,
+    val newDueDate: String,
+    val reason: String,
+    val changedAtEpochMillis: Long,
+)
+
+@Entity(tableName = "visit_schedule_events", foreignKeys = [ForeignKey(WorkingVisitEntity::class, ["id"], ["visitId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("visitId")])
+data class VisitScheduleEventEntity(
+    @PrimaryKey val id: String,
+    val visitId: String,
+    val eventType: String,
+    val oldServiceDate: String,
+    val newServiceDate: String?,
+    val oldScheduledAtEpochMillis: Long?,
+    val newScheduledAtEpochMillis: Long?,
+    val reason: String,
+    val occurredAtEpochMillis: Long,
 )

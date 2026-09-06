@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -60,8 +61,10 @@ class CompletionUiSemanticTest {
         val viewModel = ServiceLoopViewModel(repository) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
 
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Resume visit").performClick()
-        compose.onNodeWithText("Review completion").performScrollTo().performClick()
+        compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-completion-review"))
+        compose.onNodeWithTag("open-completion-review").performClick()
         compose.onNodeWithTag("outcome-w-PERFORMED").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
         compose.onNodeWithTag("fulfills-w").performScrollTo().performClick()
@@ -88,9 +91,12 @@ class CompletionUiSemanticTest {
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("Visits").performClick()
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI · Finalized",substring=true))
         compose.onNodeWithText("V-UI · Finalized · 2026-09-05\nSite").performClick()
         compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
         compose.onNodeWithText("View report text").performScrollTo().performClick()
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("report-text-view").fetchSemanticsNodes().isNotEmpty()}
+        compose.waitUntil(5_000){compose.onAllNodesWithText("File missing",substring=true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("File missing", substring = true).assertIsDisplayed()
         compose.onNodeWithTag("report-text-view").assertIsSelected()
         compose.onNodeWithText("Service record V-UI · Revision 1").assertIsDisplayed()
@@ -123,9 +129,14 @@ class CompletionUiSemanticTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Resume visit").performClick()
-        compose.onNodeWithText("Review completion").performScrollTo().performClick()
-        compose.onNodeWithText("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-completion-review"))
+        compose.onNodeWithTag("open-completion-review").performClick()
+        compose.waitUntil(5_000){viewModel.state.value.completionLines.isNotEmpty()}
+        val unavailable = androidx.compose.ui.test.hasText("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.")
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(unavailable)
+        compose.onNode(unavailable).assertIsDisplayed()
         compose.onAllNodesWithTag("fulfills-w").assertCountEquals(0)
     }
 }

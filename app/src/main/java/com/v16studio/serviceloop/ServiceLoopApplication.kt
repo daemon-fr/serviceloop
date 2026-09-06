@@ -24,7 +24,7 @@ class ServiceLoopApplication : Application() {
         val startup = CoroutineScope(SupervisorJob() + Dispatchers.IO).async {
             FixtureSeederFactory.create(database).seedIfNeeded()
         }
-        val repository = RoomServiceLoopRepository(database, businessTime)
+        val repository = RoomServiceLoopRepository(database, businessTime, attachmentRoot = filesDir)
         container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup)
     }
 }

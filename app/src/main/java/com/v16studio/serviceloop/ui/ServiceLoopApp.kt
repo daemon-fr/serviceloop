@@ -30,6 +30,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -81,8 +82,12 @@ import com.v16studio.serviceloop.domain.SaveStatus
 import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
 import com.v16studio.serviceloop.domain.VisitSummary
+import com.v16studio.serviceloop.domain.VisitFilter
+import com.v16studio.serviceloop.domain.VisitDateWindow
+import com.v16studio.serviceloop.domain.FollowUpFilter
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.io.File
@@ -125,10 +130,23 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         }
         composable(WORK) {
             var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits() }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadDueServices(); viewModel.loadFollowUps() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state.home, state.visits, nav, workTab) { workTab = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state, nav, workTab, viewModel) { workTab = it } }
             }
+        }
+        composable("work/{tab}") { entry ->
+            val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
+            var workTab by rememberSaveable(requested) { mutableStateOf(requested) }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadDueServices(); viewModel.loadFollowUps() }
+            RootScaffold(nav, RootDestination.WORK) { padding -> ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding) { WorkScreen(state, nav, workTab, viewModel) { workTab = it } } }
+        }
+        composable("work/{tab}/{filter}") { entry ->
+            val requested=runCatching{WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty())}.getOrDefault(WorkTab.DUE_SERVICES)
+            val contextualFilter=entry.arguments?.getString("filter")
+            var workTab by rememberSaveable(requested){mutableStateOf(requested)}
+            LaunchedEffect(Unit){viewModel.refreshRootDataNonBlocking();viewModel.loadVisits();viewModel.loadDueServices();viewModel.loadFollowUps()}
+            RootScaffold(nav,RootDestination.WORK){padding->ScreenState(state.loading&&!state.rootDataReady,state.error.takeUnless{state.rootDataReady},padding){WorkScreen(state,nav,workTab,viewModel,contextualFilter){workTab=it}}}
         }
         composable(CUSTOMERS) {
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
@@ -144,6 +162,30 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
                 ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav) } }
             }
         }
+        composable("customer/new") { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } }
+        composable("customer/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Customer",nav){CustomerDetailScreen(state.customer,it,nav,viewModel)} }
+        composable("customer/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Edit customer",nav){CustomerEditorScreen(state.customer,it,state,viewModel,nav)} }
+        composable("site/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId"); DetailScaffold("Add site",nav){SiteEditorScreen(id,null,it,state,viewModel,nav)} }
+        composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav)} }
+        composable("site/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Edit site",nav){SiteEditorScreen(null,state.site,it,state,viewModel,nav)} }
+        composable("equipment/new/{siteId}") { entry -> val id=entry.arguments?.getString("siteId"); DetailScaffold("Add equipment",nav){EquipmentEditorScreen(id,null,it,state,viewModel,nav)} }
+        composable("equipment/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadEquipment(id)}; DetailScaffold("Edit equipment",nav){EquipmentEditorScreen(null,state.equipment,it,state,viewModel,nav)} }
+        composable("plan/new/{equipmentId}") { entry -> val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} }
+        composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
+        composable("plan/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} }
+        composable("template/list") { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav)} }
+        composable("template/new") { DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav)} }
+        composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
+        composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
+        composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id)}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
+        composable("visit/new") { LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav)} }
+        composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,id)} }
+        composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }
+        composable("follow-up/list") { LaunchedEffect(Unit){viewModel.loadFollowUps()}; DetailScaffold("Follow-ups",nav){FollowUpListScreen(state.followUps,it,nav)} }
+        composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel)} }
+        composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
+        composable("contact/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Record contact",nav){ContactNoteEditorScreen(id,it,state,viewModel,nav)} }
+        composable("search") { DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav)} }
         composable("inspection/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }
@@ -201,13 +243,13 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
                     }
                 },
                 actions = {
-                    TextButton(onClick = { nav.navigate("scope/Search") }) { Text("Search") }
+                    TextButton(onClick = { nav.navigate("search") }) { Text("Search") }
                     TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
                 },
             )
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
-        floatingActionButton = { if (selected == RootDestination.WORK) OutlinedButton(onClick = { nav.navigate("scope/New visit") }) { Text("New visit") } },
+        floatingActionButton = { if (selected == RootDestination.WORK) OutlinedButton(onClick = { nav.navigate("visit/new") }) { Text("New visit") } },
         content = content,
     )
 }
@@ -255,6 +297,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
                 Text("Saved on this device · ${formatTime(home.savedAtEpochMillis)}", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { home.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } }, modifier = Modifier.fillMaxWidth()) { Text("Resume visit") }
+                TextButton(onClick = { nav.navigate("work/${WorkTab.VISITS.name}/WORKING") }) { Text("View all unfinished") }
             }
         }
         item {
@@ -264,31 +307,46 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
                 home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" },
                 bookedSite,
             ).joinToString("\n").ifBlank { "No booked visits" }
-            SummaryRow(bookedSummary, "Open") { nav.navigateToRoot(RootDestination.WORK) }
+            SummaryRow(bookedSummary, "Open") { nav.navigate("work/${WorkTab.VISITS.name}/BOOKED") }
         }
-        item { SectionTitle("Overdue services · ${home.overdueCount}"); Text("Booked service remains due until its obligation is explicitly fulfilled.", style = MaterialTheme.typography.bodyMedium) }
+        item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate("work/${WorkTab.DUE_SERVICES.name}/OVERDUE")} }
         items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
-        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigateToRoot(RootDestination.WORK) } }
-        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "All open") { nav.navigateToRoot(RootDestination.WORK) } }
+        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate("work/${WorkTab.DUE_SERVICES.name}/DUE_SOON") } }
+        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate("work/${WorkTab.FOLLOW_UPS.name}/DUE_OR_OVERDUE") } }
         item { SectionTitle("Records needing attention"); Text("No report or correction failures in this fixture.") }
-        item { OutlinedButton(onClick = { nav.navigate("scope/New visit") }, modifier = Modifier.fillMaxWidth()) { Text("New visit") } }
+        item { OutlinedButton(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth()) { Text("New visit") } }
     }
 }
 
 @Composable
-private fun WorkScreen(home: HomeSummary?, visits: List<VisitSummary>, nav: NavHostController, tab: WorkTab, onTabSelected: (WorkTab) -> Unit) {
-    LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, viewModel: ServiceLoopViewModel, contextualFilter: String? = null, onTabSelected: (WorkTab) -> Unit) {
+    if (tab == WorkTab.DUE_SERVICES) {
+        val contextualDueBucket=runCatching{com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty())}.getOrNull()
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } }
+            DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket)
+        }
+        return
+    }
+    var visitFilter by rememberSaveable(tab,contextualFilter){mutableStateOf(runCatching{VisitFilter.valueOf(contextualFilter.orEmpty())}.getOrDefault(VisitFilter.ALL))}
+    var visitWindow by rememberSaveable(tab){mutableStateOf(VisitDateWindow.ALL_DATES)}
+    var followFilter by rememberSaveable(tab,contextualFilter){mutableStateOf(runCatching{FollowUpFilter.valueOf(contextualFilter.orEmpty())}.getOrDefault(FollowUpFilter.ALL_OPEN))}
+    val today=LocalDate.now()
+    LazyColumn(Modifier.testTag("work-${tab.name.lowercase()}-list"), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } } }
         when (tab) {
-            WorkTab.DUE_SERVICES -> item { SectionTitle("Due services · ${(home?.overdueCount ?: 0) + (home?.dueSoonCount ?: 0)}"); Text("Each plan retains its own obligation and due date.") }
+            WorkTab.DUE_SERVICES -> Unit
             WorkTab.VISITS -> {
-                item { SectionTitle("Visits") }
-                if (visits.isEmpty()) item { Text("No saved visits") }
-                items(visits) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else if (visit.state == "WORKING") visit.resumeWorkItemId?.let { nav.navigate("inspection/$it") } else nav.navigate("scope/Booked visit") } }
+                val filtered=state.visits.filter { visit -> (visitFilter==VisitFilter.ALL||visit.state==visitFilter.name) && when(visitWindow){VisitDateWindow.ALL_DATES->true;VisitDateWindow.PAST_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today.minusDays(30)..today}.getOrDefault(false);VisitDateWindow.NEXT_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today..today.plusDays(30)}.getOrDefault(false)} }
+                item { SectionTitle("Visits"); Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){VisitFilter.entries.forEach{option->FilterChip(visitFilter==option,{visitFilter=option},{Text(option.name.lowercase().replaceFirstChar(Char::uppercase))},modifier=Modifier.testTag("visit-filter-${option.name}"))}}; Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){VisitDateWindow.entries.forEach{option->FilterChip(visitWindow==option,{visitWindow=option},{Text(option.name.lowercase().replace('_',' '))},modifier=Modifier.testTag("visit-window-${option.name}"))}} }
+                if (filtered.isEmpty()) item { Text("No visits match these filters") }
+                items(filtered) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}") } }
             }
             WorkTab.FOLLOW_UPS -> {
-                item { SectionTitle("Follow-ups · ${home?.dueFollowUpCount ?: 0}") }
-                item { SummaryRow(listOfNotNull(home?.dueFollowUpReference, home?.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open") { nav.navigate("scope/Follow-up") } }
+                val filtered=state.followUps.filter{follow->val due=LocalDate.parse(follow.dueDate);when(followFilter){FollowUpFilter.DUE_OR_OVERDUE->follow.state=="OPEN"&&!due.isAfter(today);FollowUpFilter.UPCOMING->follow.state=="OPEN"&&due.isAfter(today);FollowUpFilter.ALL_OPEN->follow.state=="OPEN";FollowUpFilter.CLOSED->follow.state!="OPEN"}}
+                item { SectionTitle("Follow-ups · ${filtered.size}"); Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){FollowUpFilter.entries.forEach{option->FilterChip(followFilter==option,{followFilter=option},{Text(option.name.lowercase().replace('_',' '))},modifier=Modifier.testTag("follow-filter-${option.name}"))}} }
+                if(filtered.isEmpty()) item{Text("No follow-ups match this filter")}
+                items(filtered) { follow -> SummaryRow("${follow.reference} · ${follow.title}\n${follow.state} · Due ${follow.dueDate}\n${listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · ")}", "Open") { nav.navigate("follow-up/${follow.id}") } }
             }
         }
         item { SummaryRow("History and records needing attention", "Open") { nav.navigate("scope/History") } }
@@ -299,17 +357,17 @@ private fun WorkScreen(home: HomeSummary?, visits: List<VisitSummary>, nav: NavH
 private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<EquipmentSummary>, nav: NavHostController, equipmentMode: Boolean, onEquipmentModeChanged: (Boolean) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!equipmentMode) Button(onClick = {}) { Text("Customers") } else OutlinedButton(onClick = { onEquipmentModeChanged(false) }) { Text("Customers") }; if (equipmentMode) Button(onClick = {}) { Text("Equipment") } else OutlinedButton(onClick = { onEquipmentModeChanged(true) }) { Text("Equipment") } }; Text(if (equipmentMode) "Equipment register" else "Customer register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        item {
+            val addLabel = if (equipmentMode) "Add equipment" else "Add customer"
+            val addRoute = if (equipmentMode) "search" else "customer/new"
+            OutlinedButton(onClick = { nav.navigate(addRoute) }, modifier = Modifier.fillMaxWidth().testTag(if (equipmentMode) "add-equipment-from-register" else "add-customer")) { Text(addLabel) }
+        }
         if (!equipmentMode) {
             if (customers.isEmpty()) item { Text("Add a customer to begin.") }
-            items(customers) { item -> SummaryRow("${item.name}\n${item.reference} · ${item.siteCount} site · ${item.equipmentCount} equipment", "Open") { nav.navigate("scope/Customer detail") } }
+            items(customers) { item -> SummaryRow("${item.name}\n${item.reference} · ${item.siteCount} site · ${item.equipmentCount} equipment", "Open") { nav.navigate("customer/${item.id}") } }
         } else {
             if (equipment.isEmpty()) item { Text("Add an equipment item to begin.") }
             items(equipment) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\n${item.customerName} · ${item.siteName}\nNext due ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
-        }
-        item {
-            val addLabel = if (equipmentMode) "Add equipment" else "Add customer"
-            val addRoute = if (equipmentMode) "scope/Add equipment" else "scope/Add customer"
-            OutlinedButton(onClick = { nav.navigate(addRoute) }, modifier = Modifier.fillMaxWidth()) { Text(addLabel) }
         }
     }
 }
@@ -324,7 +382,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
         }
-        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { nav.navigate("scope/Book visit") }, Modifier.weight(1f)) { Text("Book visit") }; Button(onClick = { detail.workingItemId?.let { nav.navigate("inspection/$it") } }, Modifier.weight(1f), enabled = detail.workingItemId != null) { Text("Start / resume") } } }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { nav.navigate("equipment/edit/${detail.id}") }, Modifier.weight(1f)) { Text("Edit") }; Button(onClick = { detail.workingItemId?.let { nav.navigate("inspection/$it") } }, Modifier.weight(1f), enabled = detail.workingItemId != null) { Text("Start / resume") } } }
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
             AccentCard {
@@ -332,9 +390,10 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
                 Text("${plan.reference} · ${plan.interval}")
                 Text("Due ${plan.dueDate}", fontWeight = FontWeight.Medium)
                 Text(if (plan.state == "ACTIVE") "Current service remains due until explicitly fulfilled" else "Plan ${plan.state.lowercase()}", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { nav.navigate("plan/${plan.id}") }) { Text("Open plan") }
             }
         }
-        item { SummaryRow("Corrective follow-ups", "Add follow-up") { nav.navigate("scope/Add follow-up") }; SummaryRow("Equipment history", "Open") { nav.navigate("scope/History") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
+        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; SummaryRow("Equipment history", "Open") { nav.navigate("scope/History") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
     }
 }
 
@@ -349,7 +408,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
             dismissButton = { TextButton(onClick = viewModel::cancelResponseTransition) { Text("Cancel") } },
         )
     }
-    LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.testTag("inspection-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
@@ -359,7 +418,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
         item {
             var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
             Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            OutlinedTextField(work, { work = it }, label = { Text("Public work performed") }, minLines = 3, maxLines = 6, enabled = saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth())
+            LongTextEditor(work, { work = it }, "Public work performed", false)
             Button(onClick = { viewModel.savePublicWork(draft.workItemId, work) }, enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth()) { Text("Save work performed") }
             LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
         }
@@ -372,7 +431,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
             Button(onClick = { viewModel.markChecklistReviewed(draft.workItemId) }, enabled = !draft.checklistReviewed && complete == required && !missingFinding && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" }) { Text("Mark checklist reviewed") }
             Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
         }
-        item { Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth(), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
+        item { OutlinedButton(onClick = { nav.navigate("field/${draft.workItemId}") }, modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")) { Text("Parts and photographs") }; Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
     }
 }
 
@@ -398,15 +457,13 @@ private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewMod
 private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     var text by rememberSaveable(question.snapshotItemId, question.reason) { mutableStateOf(question.reason.orEmpty()) }
     var expanded by rememberSaveable(question.snapshotItemId) { mutableStateOf(false) }
+    var modalOpen by remember(question.snapshotItemId) { mutableStateOf(false) }
     val changed = text != question.reason.orEmpty()
     Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.testTag("finding-expand-${question.snapshotItemId}").semantics { contentDescription = if (expanded) "Collapse finding field" else "Expand finding field" },
-                ) { Text(if (expanded) "Collapse" else "Expand") }
+                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("finding-expand-${question.snapshotItemId}").semantics { contentDescription = if(expanded) "Collapse finding field" else "Expand finding field" }) { Text(if(expanded) "Collapse" else "Expand") }
             }
             OutlinedTextField(
                 value = text,
@@ -414,11 +471,12 @@ private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, v
                 label = { Text("Public finding description") },
                 placeholder = { Text("Describe what was found") },
                 supportingText = { Text("May appear in the customer service record and report") },
-                minLines = if (expanded) 10 else 3,
-                maxLines = if (expanded) 10 else 3,
+                minLines = if(expanded) 10 else 3,
+                maxLines = if(expanded) 10 else 3,
                 enabled = !saving,
                 modifier = Modifier.fillMaxWidth().testTag("finding-field-${question.snapshotItemId}"),
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { modalOpen = true }, modifier = Modifier.semantics { contentDescription = "Open full finding editor" }) { Text("Open full editor ↗") } }
             Button(
                 onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
                 enabled = !saving && changed,
@@ -426,6 +484,7 @@ private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, v
             ) { Text("Save finding") }
         }
     }
+    if (modalOpen) AlertDialog(onDismissRequest = { modalOpen = false }, title = { Text("Public finding description") }, text = { OutlinedTextField(text, { text = it }, minLines = 5, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("finding-expanded-${question.snapshotItemId}")) }, confirmButton = { TextButton(onClick = { modalOpen = false }) { Text("Done editing") } })
 }
 
 @Composable
@@ -501,7 +560,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates · foundation", "Later") { nav.navigate("scope/Inspection templates") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery · foundation", "Later") { nav.navigate("scope/Data and recovery") } }
+        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery · foundation", "Later") { nav.navigate("scope/Data and recovery") } }
     }
 }
 
@@ -526,7 +585,7 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, e
     val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
     LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
-        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
@@ -547,19 +606,22 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
     LaunchedEffect(file, pageIndex, textView) {
         if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
     }
-    LazyColumn(Modifier.padding(padding).testTag("report-preview-list"), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "File missing" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
+    Column(Modifier.padding(padding).fillMaxSize()) {
+    Text(if (missing) "File missing · Structured report remains available" else "PDF file ready", modifier = Modifier.fillMaxWidth().background(if(missing) LocalServiceLoopColors.current.errorTint else LocalServiceLoopColors.current.confirmedTint).padding(10.dp))
+    LazyColumn(Modifier.weight(1f).testTag("report-preview-list"), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}, modifier = Modifier.testTag("report-pdf-view").semantics { selected = true }) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }, modifier = Modifier.testTag("report-pdf-view").semantics { selected = false }) { Text("PDF view") }; if (textView) Button(onClick = {}, modifier = Modifier.testTag("report-text-view").semantics { selected = true }) { Text("Text view") } else OutlinedButton(onClick = { textView = true }, modifier = Modifier.testTag("report-text-view").semantics { selected = false }) { Text("Text view") } } }
         if (textView) item { StructuredReportText(detail) }
         else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
         item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile, modifier = Modifier.fillMaxWidth().testTag("share-pdf").semantics { contentDescription = "Share PDF" }) { Text("Share PDF") }; Text("Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
     }
+    }
 }
 
 @Composable
 private fun StructuredReportText(detail: FinalRecordDetail) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
 }
 
 @Composable

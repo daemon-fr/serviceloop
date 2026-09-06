@@ -17,10 +17,13 @@ import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
 import com.v16studio.serviceloop.domain.FinalizeResult
 import com.v16studio.serviceloop.domain.VisitSummary
+import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.report.ReportService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +51,21 @@ data class UiState(
     val rootDataReady: Boolean = false,
     val rootRefreshError: String? = null,
     val contentRefreshError: String? = null,
+    val customer: CustomerDetail? = null,
+    val site: SiteDetail? = null,
+    val plan: PlanDetail? = null,
+    val dueServices: List<DueService> = emptyList(),
+    val visitSites: List<VisitSiteOption> = emptyList(),
+    val templates: List<TemplateSummary> = emptyList(),
+    val template: TemplateDetail? = null,
+    val visit: VisitDetail? = null,
+    val followUps: List<FollowUpDetail> = emptyList(),
+    val followUp: FollowUpDetail? = null,
+    val parts: List<PartEntry> = emptyList(),
+    val photos: List<PhotoEntry> = emptyList(),
+    val searchResults: List<SearchTarget> = emptyList(),
+    val operationInProgress: Boolean = false,
+    val operationMessage: String? = null,
 )
 
 data class PendingResponseTransition(
@@ -66,6 +84,7 @@ class ServiceLoopViewModel(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var rootRefreshJob: Job? = null
+    private var searchJob: Job? = null
 
     init { loadInitialRootData() }
 
@@ -123,6 +142,52 @@ class ServiceLoopViewModel(
     }
 
     fun loadVisits() = launchLoad { _state.value = _state.value.copy(visits = repository.visits()) }
+    fun loadCustomer(id: String) = launchLoad { _state.value = _state.value.copy(customer = repository.customer(id)) }
+    fun loadSite(id: String) = launchLoad { _state.value = _state.value.copy(site = repository.site(id)) }
+    fun loadPlan(id: String) = launchLoad { _state.value = _state.value.copy(plan = repository.plan(id), templates = repository.templates()) }
+    fun loadDueServices() = launchLoad { _state.value = _state.value.copy(dueServices = repository.dueServices()) }
+    fun loadVisitSetup() = launchLoad { _state.value = _state.value.copy(visitSites = repository.visitSites(), dueServices = repository.dueServices()) }
+    fun loadTemplates() = launchLoad { _state.value = _state.value.copy(templates = repository.templates()) }
+    fun loadTemplate(id: String) = launchLoad { _state.value = _state.value.copy(template = repository.template(id)) }
+    fun loadVisit(id: String) = launchLoad { val visit=repository.visit(id); _state.value = _state.value.copy(visit = visit, site = visit?.let { repository.site(it.siteId) }) }
+    fun loadFollowUps() = launchLoad { _state.value = _state.value.copy(followUps = repository.followUps()) }
+    fun loadFollowUp(id: String) = launchLoad { _state.value = _state.value.copy(followUp = repository.followUp(id)) }
+    fun loadFieldEvidence(workItemId: String) = launchLoad { _state.value = _state.value.copy(parts = repository.parts(workItemId), photos = repository.photos(workItemId)) }
+
+    fun search(query: String) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            try { val results = repository.search(query); ensureActive(); _state.value = _state.value.copy(searchResults = results, error = null) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.value = _state.value.copy(error = failure.message ?: "Search failed") }
+        }
+    }
+
+    fun createCustomer(input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.createCustomer(input) }, onSuccess)
+    fun updateCustomer(id: String, input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateCustomer(id, input); id }, onSuccess)
+    fun createSite(customerId: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.createSite(customerId, input) }, onSuccess)
+    fun updateSite(id: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateSite(id, input); id }, onSuccess)
+    fun createEquipment(siteId: String, input: EquipmentInput, onSuccess: (String) -> Unit) = runOperation({ repository.createEquipment(siteId, input) }, onSuccess)
+    fun updateEquipment(id: String, input: EquipmentInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateEquipment(id, input); id }, onSuccess)
+    fun createPlan(equipmentId: String, input: PlanInput, onSuccess: (String) -> Unit) = runOperation({ repository.createPlan(equipmentId, input) }, onSuccess)
+    fun updatePlan(id: String, input: PlanInput, onSuccess: (String) -> Unit) = runOperation({ repository.updatePlan(id, input); id }, onSuccess)
+    fun createTemplate(name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.createTemplate(name, items) }, onSuccess)
+    fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.reviseTemplate(id, name, items); id }, onSuccess)
+    fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)
+    fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, oneOffEquipmentId, oneOffName, state, date, scheduledAt) }, onSuccess)
+    fun startVisit(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.startVisit(id); id }, onSuccess)
+    fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.rescheduleVisit(id, date, scheduledAt, reason); id }, onSuccess)
+    fun cancelVisit(id: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.cancelVisit(id, reason); id }, onSuccess)
+    fun addOneOff(visitId: String, equipmentId: String, name: String) = runOperation({ repository.addOneOffWork(visitId, equipmentId, name) }) { loadVisit(visitId) }
+    fun addPart(workItemId: String, description: String, quantity: String, unit: String) = runOperation({ repository.addPart(workItemId, description, quantity, unit) }) { loadFieldEvidence(workItemId) }
+    fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { loadFieldEvidence(workItemId) }
+    fun reportOperationFailure(message:String) { _state.value=_state.value.copy(operationInProgress=false,error=message,operationMessage=null) }
+    fun createContactNote(input: ContactNoteInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createContactNote(input) }, onSuccess)
+    fun markContactNoteEnteredInError(id:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.markContactNoteEnteredInError(id,reason);id},onSuccess)
+    fun createFollowUp(input: FollowUpInput, onSuccess: (String) -> Unit) = runOperation({ repository.createFollowUp(input) }, onSuccess)
+    fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCorrectiveFollowUp(workItemId, title, dueDate, privateNote) }, onSuccess)
+    fun updateFollowUp(id:String,title:String,dueDate:String,note:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.updateFollowUp(id,title,dueDate,note,reason);id},onSuccess)
+    fun changeFollowUpState(id: String, target: String, reason: String, newDue: String?, onSuccess: (String) -> Unit = {}) = runOperation({ repository.changeFollowUpState(id, target, reason, newDue); id }, onSuccess)
     fun loadBusinessProfile() = launchLoad {
         val profile = repository.businessProfile()
         _state.value = _state.value.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { SaveStatus.Saved(it) } ?: SaveStatus.Idle)
@@ -197,6 +262,16 @@ class ServiceLoopViewModel(
                 catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _state.value = _state.value.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) }
+        }
+    }
+
+    private fun runOperation(block: suspend () -> String, onSuccess: (String) -> Unit = {}) {
+        if (_state.value.operationInProgress) return
+        _state.value = _state.value.copy(operationInProgress = true, operationMessage = null, error = null)
+        viewModelScope.launch {
+            try { val id = block(); _state.value = _state.value.copy(operationInProgress = false, operationMessage = "Saved on this device"); refreshRootDataNonBlocking(); onSuccess(id) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.value = _state.value.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
         }
     }
 

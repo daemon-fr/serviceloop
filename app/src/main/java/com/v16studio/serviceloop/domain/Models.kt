@@ -57,6 +57,9 @@ data class EquipmentDetail(
     val customerName: String,
     val plans: List<EquipmentPlan>,
     val workingItemId: String?,
+    val make: String = "",
+    val model: String = "",
+    val privateNote: String = "",
 )
 
 enum class ResponseDisposition {
@@ -166,7 +169,12 @@ data class PublicWorkLine(
     val checklist: List<PublicChecklistItem>,
     val planReference: String? = null,
     val isRecurringPlan: Boolean = false,
+    val parts: List<PublicPart> = emptyList(),
+    val photos: List<PublicPhoto> = emptyList(),
 )
+
+data class PublicPart(val description: String, val quantity: String, val unit: String)
+data class PublicPhoto(val relativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?)
 
 data class PublicReportModel(
     val recordId: String,

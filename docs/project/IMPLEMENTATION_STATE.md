@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-2 owner acceptance and Stage-3 handoff
+**Updated:** 2026-09-07 — SL-3 implementation candidate
 
 ## Current state
 
@@ -9,7 +9,25 @@
 - SL-2 final safety/save closure before owner review: `b56dd2edbcfd31f910e510ddce5df5d3c347778b`.
 - SL-2 owner-review usability correction: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - B-008 real-technician pilot remains outstanding. This does not block Stage-3 development, but Stage 2 is not product-valid for release preparation until that pilot occurs.
-- Next milestone: **Stage 3 / SL-3 — Complete daily operations**.
+- SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
+
+## SL-3 implementation candidate
+
+- Room schema version 4 with registered additive `MIGRATION_3_4`, retained v1→2 and v2→3 migrations, and exported `4.json`.
+- Editable Customer → Site → Equipment → Service Plan directory with stable references, explicit saves, private field labelling, one default site, and plan creation that transactionally creates exactly one current obligation.
+- Append-only reusable inspection-template masters/revisions/items; working visits copy the then-current revision into the existing immutable snapshot model.
+- Due-service search/buckets/booked scope, one-site multi-selection, a real New visit setup with Book/Start now/Record past and one-off work, transactionally exclusive obligation claims, append-only reasoned reschedule/cancel provenance, cancellation claim release, and claim-ownership stale-start protection.
+- Contact handoffs for dialer/SMS/email/maps remain separate from manually saved contact outcomes. Saved notes can be retained as Entered in error. Contact and corrective follow-ups support reasoned edit/resolve/cancel/reopen without recurrence effects.
+- Textual parts and bounded app-owned photo intake through Android Photo Picker/camera staging, orientation-corrected metadata-stripped optimization, explicit customer-report inclusion, selected-file integrity checks, final-record part/photo snapshots, PDF photo pages, and public-model privacy selection.
+- Global local search routes customers, sites, equipment, plans, visits/final records, and follow-ups to their typed destinations.
+- Reusable expanded multiline pattern and a dedicated long-form Issue found editor sharing the same unsaved buffer; the accepted compact inline editor remains intact.
+- Home contextual actions enter explicit Work due/visit/follow-up filters rather than restoring an unrelated previous tab; Work includes visit state/date-window and follow-up due/open/closed filters.
+
+Canonical `Pixel 10a ServiceLoop` was upgraded in place from v3 to v4 with `install -r`; V-001/P-001/report preservation and all registered migration chains were validated. The historical V-001 PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`.
+
+The persistent canonical SL-3 journey passed on the preserved production database: template; customer, site, equipment, and plan; booking, rescheduling, cancellation, and start; inspection/finding; parts; corrective follow-up; finalization; search; and contextual due filtering. The normal canonical suite passed all 18 tests (the separately gated persistent journey is intentionally skipped in that normal run). Final local verification passed 82 unit tests, debug and release assembly, debug lint (0 errors; existing/toolchain and API-usage warnings only), and debug Android-test assembly.
+
+Stage 4 corrections/voiding, lifecycle/move dependency workflows, complete backup/restore/import/export, and full history presentation remain deferred. Stage 5 reminders, broad device/accessibility/performance hardening, and release work remain deferred. B-008 remains outstanding.
 
 ## Accepted SL-2 outcome
 

@@ -56,6 +56,7 @@ class OwnerVisualRuntimeTest {
         }
         composeRule.onNodeWithText("Work").performClick()
         composeRule.onNodeWithText("Visits").performClick()
+        composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("V-001", substring = true))
         composeRule.onNodeWithText("V-001", substring = true).performClick()
         composeRule.onNodeWithText("V-001 · Finalized").assertIsDisplayed()
         captureRenderedEvidence("final-record")
@@ -125,39 +126,40 @@ class OwnerVisualRuntimeTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume visit").fetchSemanticsNode() }.isSuccess }
         composeRule.onNodeWithText("Resume visit").performClick()
-        val field = composeRule.onNodeWithTag("finding-field-check-belt")
+        val field = composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true)
         field.performScrollTo()
 
-        composeRule.onNodeWithTag("finding-expand-check-belt").performClick()
+        composeRule.onNodeWithTag("finding-expand-check-belt", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Collapse").performClick()
 
         field.performTextClearance()
         field.performTextInput("Belt edge wear observed during inspection")
-        composeRule.onNodeWithTag("finding-save-check-belt").performScrollTo().performClick()
+        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithTag("finding-save-check-belt").assertIsNotEnabled() }.isSuccess
+            runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
         }
 
         composeRule.onNodeWithText("Back").performClick()
         composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         composeRule.onNodeWithText("Resume visit").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt").performScrollTo().assertTextContains("Belt edge wear observed during inspection")
+        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt").assertTextContains("Belt edge wear observed during inspection")
+        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onNodeWithText("Discard and change").performClick()
-        composeRule.onAllNodesWithTag("finding-field-check-belt").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("finding-field-check-belt", useUnmergedTree = true).assertCountEquals(0)
 
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt").performTextInput("Belt edge wear observed; inspect before next use")
-        composeRule.onNodeWithTag("finding-save-check-belt").performScrollTo().performClick()
+        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).performTextInput("Belt edge wear observed; inspect before next use")
+        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithTag("finding-save-check-belt").assertIsNotEnabled() }.isSuccess
+            runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
         }
         database.close()
     }
