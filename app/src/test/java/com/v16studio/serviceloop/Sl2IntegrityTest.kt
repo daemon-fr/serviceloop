@@ -106,6 +106,9 @@ class Sl2IntegrityTest {
         val ready = AndroidReportService(context, db, repository, writer = fakeWriter).generate(record)
         assertEquals("READY", ready.status); assertTrue(ready.byteSize!! > 0); assertEquals(64, ready.sha256!!.length); assertTrue(ready.pageCount!! >= 1)
         assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
+        AndroidReportService(context, db, repository, writer = fakeWriter).file(ready.relativePath).delete()
+        try { AndroidReportService(context, db, repository, writer = fakeWriter).generate(record); fail("Expected missing file") } catch (expected: IllegalStateException) { assertEquals("Report file is missing", expected.message) }
+        assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
     }
 
     private fun repo() = RoomServiceLoopRepository(db, time)

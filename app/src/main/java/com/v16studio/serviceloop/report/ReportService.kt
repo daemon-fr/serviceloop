@@ -46,6 +46,7 @@ class AndroidReportService(
         val detail = repository.finalRecord(recordId) ?: error("Final service record no longer exists")
         dao.reportRendition(detail.public.revisionId)?.let { existing ->
             if (existing.status == "READY" && file(existing.relativePath).isFile) return@withLock existing.toDomain()
+            if (existing.status == "READY") error("Report file is missing")
         }
         val renditionId = dao.reportRendition(detail.public.revisionId)?.id ?: UUID.nameUUIDFromBytes("report-v1:${detail.public.revisionId}".toByteArray()).toString()
         val relative = "reports/$recordId/$renditionId.pdf"
