@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-1 independent-review correction pass
+**Updated:** 2026-09-06 — SL-1 final technical closure correction pass
 
 ## Current state
 
@@ -8,6 +8,7 @@
 - SL-1 development branch: `codex/sl-1-foundation-visual-proof`.
 - Required and verified starting revision: `33d350fbd6e46161616b630d766f46c4cf3b8dd7`.
 - SL-1 implementation commit: `e92af2b8b715f5adcf97ddc31e9db1392470a52f`.
+- SL-1 final technical closure implementation commit: `2e9e074a0dcb1d1fd00484d9c3bb1a37fd8498db`.
 - Package/application ID remains `com.v16studio.serviceloop`.
 - The former generated Compose starter is replaced by a runnable ServiceLoop shell, Room persistence, debug-only representative fixtures, state holders, and representative Home, Equipment detail, Inspection, and Completion Review screens.
 - This is a Stage 1 foundation/semantic proof. It is not a completed service loop and does not implement the Stage 2 finalization transaction.
@@ -37,7 +38,8 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - Manual application-container injection, repository/state-holder separation, and an injectable business clock/zone abstraction.
 - Save state distinguishes Saving, Saved, and Not saved. Saved is emitted only after the Room transaction returns; cancellation is rethrown before ordinary failure handling.
 - Saved issue/NA/value detail is not discarded until the technician confirms an incompatible disposition change. Cancel leaves the durable response and visible selection unchanged; confirmed writes clear fields incompatible with the new disposition in the same Room transaction.
-- Completion Review exposes fulfillment as eligible only for Performed work with a reviewed assigned checklist (or no checklist). Partly performed and Not performed remain due, and an ineligible persisted `fulfillsCurrentObligation=true` is sanitized to unfulfilled in the derived review model.
+- Re-activating an already-selected semantic response is a no-op: a specific saved NA reason is preserved instead of being replaced by the generic transition reason, an identical VALUE does not write, and the durable Saved checkpoint does not advance. Genuinely changed values still persist normally.
+- Completion Review exposes fulfillment as eligible only for recurring plan work that captured a specific obligation, is Performed, and has a reviewed assigned checklist (or no checklist). One-off work has `NO_CURRENT_OBLIGATION`, no checkbox or recurring due-date effect, and any stale persisted fulfillment flag is sanitized to false in the derived review model. Partly performed and Not performed remain due.
 - ServiceLoop visual tokens, status roles, typography hierarchy, non-dynamic color identity, launcher artwork, accessible headings/native controls, and compact single-column layouts.
 - Android automatic backup/device-transfer rules exclude the Room database and owned attachment/report paths so an OS subset is not represented as the future complete ServiceLoop recovery package.
 
@@ -51,7 +53,7 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 
 **DEVELOPER-VALIDATED — automated**
 
-- `gradlew.bat :app:testDebugUnitTest`: PASS — 17 tests, 0 failures/errors/skips, including destructive-transition staging/coherence and fulfillment eligibility/recurrence cases.
+- `gradlew.bat :app:testDebugUnitTest`: PASS — 23 tests, 0 failures/errors/skips, including same-answer/checkpoint preservation, changed-value persistence, destructive-transition staging/coherence, one-off sanitization, and recurring fulfillment eligibility/recurrence cases.
 - `gradlew.bat :app:assembleDebug`: PASS.
 - `gradlew.bat :app:lintDebug`: PASS.
 - `gradlew.bat :app:assembleRelease`: PASS, including compilation of the release no-op fixture factory.
@@ -66,6 +68,9 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - PASS: Finding / issue details opened the labelled SL-1 foundation destination, which stated that no finding or follow-up was created.
 - PASS: Completion Review rendered Performed/unfulfilled as eligible and remaining due, Performed/fulfilled with the captured-interval proposed date, and Partly performed/Not performed as fulfillment-unavailable and remaining due. Finalize remained disabled with no Stage-2 business effect.
 - PASS: Equipment Detail retained plan reference, interval, due date and status while exposing no raw current-obligation identity.
+- PASS: tapping the already-selected Optional accessory NA response retained the specific `Not fitted` reason and did not advance the visible 13:51 Saved checkpoint; force-stop/cold-reopen retained it. A genuine TEXT transition into NA saved the required generic reason.
+- PASS: recurring Completion Review cases continued to render eligible/unfulfilled, eligible/fulfilled with proposed date, and partly performed/ineligible states without null due wording.
+- NOT RUN: one-off Completion Review runtime rendering because the existing representative SL-1 runtime route has no one-off work line; focused repository tests and source review provide this correction evidence without distorting the fixture.
 
 **NOT VALIDATED / OWNER OR DEVICE FOLLOW-UP**
 
@@ -74,4 +79,4 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 
 ## Next boundary
 
-Stop at SL-1. Independent orchestrator re-review is required. `ServicePlan.currentObligationId` is the persisted current-obligation pointer/identity foundation; Stage 2 remains unauthorized and must implement and verify the exact compare/consume/advance transaction. Actual finalization, obligation consumption/advancement, final records, recurrence effects, corrective-task creation, and report/PDF generation are deferred.
+Stop at SL-1. Final independent orchestrator review is required. `ServicePlan.currentObligationId` is the persisted current-obligation pointer/identity foundation; Stage 2 remains unauthorized and must implement and verify the exact live compare/consume/advance transaction. Actual finalization, obligation consumption/advancement, final records, recurrence effects, corrective-task creation, and report/PDF generation are deferred.
