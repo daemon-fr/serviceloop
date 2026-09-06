@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-1 owner visual review corrections
+**Updated:** 2026-09-06 — SL-1 root-switch visual atomicity correction
 
 ## Current state
 
@@ -11,10 +11,13 @@
 - SL-1 final technical closure implementation commit: `2e9e074a0dcb1d1fd00484d9c3bb1a37fd8498db`.
 - SL-1 owner visual correction starting revision: `884184eb9b53baefa67fd5c67c6ba92efbc48743`.
 - SL-1 owner visual correction implementation commit: `e90ce7f9e7e59d59601452034458cd2a52a61cda`.
+- SL-1 visual-atomicity correction starting revision: `c9b5e49ad16f8d865ac99f99c15ecd57b4586fcd`.
+- SL-1 visual-atomicity implementation commit: `9f782e7c821860261cee8c97c625d618e339491c`.
 - Package/application ID remains `com.v16studio.serviceloop`.
 - The former generated Compose starter is replaced by a runnable ServiceLoop shell, Room persistence, debug-only representative fixtures, state holders, and representative Home, Equipment detail, Inspection, and Completion Review screens.
 - This is a Stage 1 foundation/semantic proof. It is not a completed service loop and does not implement the Stage 2 finalization transaction.
 - The owner visual correction pass makes Home/Work/Customers deterministic sibling roots, preserves saveable Work-tab return context, and replaces the deferred finding page with a compact/expandable inline public finding editor.
+- The root-switch visual-atomicity pass removes destination crossfades and redundant root-entry loads so root changes render as immediate, single-root replacements without a shared loading-screen flash.
 
 ## Known generated toolchain baseline
 
@@ -44,6 +47,7 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - Completion Review exposes fulfillment as eligible only for recurring plan work that captured a specific obligation, is Performed, and has a reviewed assigned checklist (or no checklist). One-off work has `NO_CURRENT_OBLIGATION`, no checkbox or recurring due-date effect, and any stale persisted fulfillment flag is sanitized to false in the derived review model. Partly performed and Not performed remain due.
 - ServiceLoop visual tokens, status roles, typography hierarchy, non-dynamic color identity, launcher artwork, accessible headings/native controls, and compact single-column layouts.
 - Root navigation uses Navigation Compose start-destination save/restore semantics. Repeated root taps are single-top, detail destinations return to their originating root, and Work's typed Due services/Visits/Follow-ups selection is saveable session/navigation state rather than Room data.
+- The simple SL-1 NavHost explicitly uses no enter/exit or pop transitions. Home, equipment-list, and customer-list data are loaded together once during the initial blocking read; returning among already usable roots performs no duplicate read and cannot toggle the shared blocking flag. Root semantics tags support the invariant that exactly one settled root is present.
 - Issue found exposes its persisted public description inline: approximately three lines by default, approximately ten when expanded, explicit expand/collapse accessibility semantics, and a deliberate Save finding action. Unchanged issue text is a no-op; changed or cleared working-draft text persists through the existing truthful save path. The obsolete `foundation/finding` route is removed.
 - Android automatic backup/device-transfer rules exclude the Room database and owned attachment/report paths so an OS subset is not represented as the future complete ServiceLoop recovery package.
 
@@ -61,7 +65,7 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - `gradlew.bat :app:assembleDebug`: PASS.
 - `gradlew.bat :app:lintDebug`: PASS.
 - `gradlew.bat :app:assembleRelease`: PASS, including compilation of the release no-op fixture factory.
-- `gradlew.bat :app:assembleDebugAndroidTest`: PASS; the focused canonical-AVD Compose runtime test passed 1 test with 0 failures.
+- `gradlew.bat :app:assembleDebugAndroidTest`: PASS; focused canonical-AVD Compose runtime tests passed root switching and the existing inline-finding regression independently with 0 failures.
 - Room schema version 1 generated at `app/schemas/com.v16studio.serviceloop.data.ServiceLoopDatabase/1.json`.
 
 **DEVELOPER-VALIDATED — canonical emulator owner-feedback regression**
@@ -71,6 +75,7 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - PASS: saved Belt condition issue detail prompted before Issue found → OK. Cancel retained Issue found, its reason, and the prior Saved checkpoint. Confirm wrote OK, cleared the issue reason, and showed Saved only after persistence; force-stop/cold-reopen retained coherent OK with no stale detail.
 - PASS: saved numeric VALUE → Not applicable prompted before discard; confirm cleared the numeric value and retained only the new NA reason.
 - PASS: all required root sequences rendered the requested root with its matching selected item: Home → Work → Home; Home → Customers → Home; Work → Customers → Home; Customers → Work → Home; Home → Work → Customers → Work; Home → Customers → Work → Customers. A repeated Customers tap produced no visible navigation oddity.
+- PASS: after disabling NavHost transitions and consolidating initial root reads, repeated Home → Work → Customers → Home, Home → Customers → Work → Home, and rapid Work ↔ Customers switches showed one complete requested root in captured post-switch frames, the matching selected item, and no `Reading saved service book` flash. The instrumented test repeated switching and asserted exactly one root semantics container after every settled change.
 - PASS: Work retained Visits after Resume working visit → Back and Booked visit → Back, Follow-ups after Follow-up → Back, and Due services after an available child destination → Back. Visits → Follow-ups → Visits also retained the correct visible selection.
 - PASS: the Belt condition public finding rendered inline at about three lines, expanded to about ten lines, collapsed without content loss, and exposed `Expand finding field` / `Collapse finding field` semantics. Edited text saved, survived leave/reopen, and was restored to a useful Issue found state after the regression.
 - PASS: Issue found → OK still prompted. Cancel retained issue text; confirm atomically cleared it with the new response. A focused instrumented test exercised edit/save/reopen plus both destructive-transition outcomes on the canonical AVD.
