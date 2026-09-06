@@ -1,8 +1,13 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-1 root freshness without flicker correction
+**Updated:** 2026-09-06 — SL-2 first complete service loop developer validation
 
 ## Current state
+
+- SL-1 is OWNER ACCEPTED and banked on `master` at `2052ef07c5dc20c515b86574631cc3b75648166f`.
+- SL-2 development branch: `codex/sl-2-first-complete-service-loop`, started exactly from the accepted SL-1 SHA.
+- SL-2 implementation commit: `208f4ebd9bab22a74fc9a9bd4f938582bb406ff9`.
+- SL-2 is implemented and developer-validated, but is not owner accepted and is not Stage 2 product-valid until the B-008 real-technician pilot occurs.
 
 - Repository: `daemon-fr/serviceloop`; protected owner baseline remains `master`.
 - SL-1 development branch: `codex/sl-1-foundation-visual-proof`.
@@ -18,6 +23,40 @@
 - Package/application ID remains `com.v16studio.serviceloop`.
 - The former generated Compose starter is replaced by a runnable ServiceLoop shell, Room persistence, debug-only representative fixtures, state holders, and representative Home, Equipment detail, Inspection, and Completion Review screens.
 - This is a Stage 1 foundation/semantic proof. It is not a completed service loop and does not implement the Stage 2 finalization transaction.
+- The prior sentence describes the accepted SL-1 baseline. SL-2 now implements the first complete local service-recording loop described below.
+
+## SL-2 implemented
+
+**IMPLEMENTED / TESTED**
+
+- Room schema version 2, exported schema, and explicit `MIGRATION_1_2`; all v1 business/draft tables are preserved and new provenance, completion-draft, business-profile, immutable final-record revision, final line/checklist snapshot, and report-rendition structures are additive.
+- Required Business and report identity editor with explicit truthful Save, stored business zone, debug-only positively-recognized compatibility seed, and finalization blocker when issuer/technician identity is incomplete.
+- Editable durable public work performed field, required-checklist validation, explicit Mark checklist reviewed, and atomic invalidation of Reviewed when a saved answer/finding changes.
+- Durable Performed / Partly performed / Not performed outcomes, required non-performance reason, explicit recurring fulfillment, calculated completion-date-based next due, explicit confirmation, and reasoned manual override.
+- Central recurrence calculator for days, weeks, months, and years using `java.time` calendar clipping and no hidden anchor/catch-up behavior.
+- One authoritative Room finalization transaction. It returns an existing record idempotently, reloads and validates live state, compares the exact captured/current obligation identity, conditionally consumes/advances, inserts immutable revision-1 snapshots, and marks the visit Finalized only after all effects succeed. Partial, not-performed, unfulfilled, and one-off lines have no recurrence effect.
+- Read-only Final Service Record with public line/checklist/outcome/due effects and a visibly separate Internal / Not in customer report section. Work → Visits lists and reopens Working, Booked, and Finalized rows.
+- Structurally public-only `PublicReportModel`; Android-native fixed A4 PDF with deterministic pagination, app-private persistent storage, SHA-256/size/page metadata, retry-safe version 1, PdfRenderer page preview, structured Text view, and restricted FileProvider sharesheet handoff.
+
+**DEVELOPER-RUNTIME-VALIDATED**
+
+- Canonical AVD display name `Pixel 10a ServiceLoop`, internal AVD id `Pixel_10a_ServiceLoop`, dynamically resolved serial `emulator-5556`, adb 37.0.1.
+- Existing accepted SL-1 database upgraded in place from v1 to v2 with `install -r`; no clear/reset/recreation. V-001, customer/site/equipment, saved responses, and the user-edited public belt finding survived.
+- Representative V-001 finalized once: plan P-001 advanced from 2026-09-01 to 2026-12-05; the partial, performed-but-unfulfilled, and not-performed lines retained their obligations. Immediate retry returned the same final record.
+- Cold reopen removed V-001 from Home unfinished work, reduced overdue count from four to three, and Work → Visits reopened V-001 as Finalized while retaining V-002 Booked.
+- Real owned PDF rendition `ec1c0f1c-a227-37ff-b12d-82e0863a8810`, 65,369 bytes, SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`, one page, stored below `files/reports/a6590fcd-7398-308a-8c72-64fa7c23db0e/`; PdfRenderer view, public-only Text view, and Android Sharesheet handoff were exercised. A synthetic long report produced and reopened multiple pages.
+- Focused instrumentation passed for synthetic v1→v2 migration, actual canonical migrated-data preservation, native multipage PDF, representative loop execution/idempotent retry, and post-finalization root visual atomicity.
+
+**AUTOMATED**
+
+- `:app:testDebugUnitTest`: PASS — 38 tests.
+- `:app:assembleDebug`, `:app:lintDebug`, `:app:assembleRelease`, `:app:assembleDebugAndroidTest`: PASS.
+- Tests cover recurrence boundaries, checklist review/invalidation, completion persistence semantics, stale obligation blocking, rollback, repeated/reconstructed idempotence, non-effect outcomes/one-off work, independent plans, immutable captured identity, privacy sentinels, PDF failure/retry isolation, content hash/size, and native multipage rendering.
+
+**DEFERRED / OWNER VALIDATION REQUIRED**
+
+- Corrections/voiding, photos/parts, full CRUD/editors, scheduling, backup/restore/import/export, reminders, search, signatures, layout design, and the other later-stage workflows remain deferred.
+- A reachable real technician/trade pilot and owner visual/report review remain required by B-008 before Stage 2 can be considered product-valid or release preparation begins.
 - The owner visual correction pass makes Home/Work/Customers deterministic sibling roots, preserves saveable Work-tab return context, and replaces the deferred finding page with a compact/expandable inline public finding editor.
 - The root-switch visual-atomicity pass removes destination crossfades and redundant root-entry loads so root changes render as immediate, single-root replacements without a shared loading-screen flash.
 - The root-freshness follow-up quietly refreshes the combined Home/Work/Customers projections on meaningful root re-entry, retaining usable content during reads and atomically publishing only a complete successful refresh.
