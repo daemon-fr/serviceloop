@@ -331,10 +331,17 @@ private fun CompletionLineCard(line: CompletionLine) {
         Text(line.outcome?.replace('_', ' ')?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Choose outcome")
         when (line.fulfillmentEligibility) {
             FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = line.fulfillsCurrentObligation, onCheckedChange = null); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("Fulfillment unavailable — one-off work has no recurring obligation to fulfill.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
         }
-        if (line.fulfillsCurrentObligation) Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}") else Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
+        when {
+            line.fulfillmentEligibility == FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date changes")
+            line.fulfillsCurrentObligation && line.dueDate != null && line.proposedNextDueDate != null -> Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}")
+            line.fulfillsCurrentObligation -> Text("Recurring due-date proposal unavailable", color = LocalServiceLoopColors.current.urgencyInk)
+            line.dueDate != null -> Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
+            else -> Text("Current recurring obligation remains outstanding", color = LocalServiceLoopColors.current.urgencyInk)
+        }
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
 }

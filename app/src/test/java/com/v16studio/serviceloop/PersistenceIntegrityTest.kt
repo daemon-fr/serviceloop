@@ -165,6 +165,7 @@ class PersistenceIntegrityTest {
         seedFoundation()
         insertAdditionalWorkItem("work-partial", "PARTLY_PERFORMED", true)
         insertAdditionalWorkItem("work-not-performed", "NOT_PERFORMED", true)
+        insertAdditionalWorkItem("work-unreviewed", "PERFORMED", true, templateSnapshotId = "template-snapshot-1")
 
         val lines = RoomServiceLoopRepository(database, time).completionLines("visit-1").associateBy { it.workItemId }
         listOf("work-partial", "work-not-performed").forEach { id ->
@@ -172,6 +173,9 @@ class PersistenceIntegrityTest {
             assertFalse(lines.getValue(id).fulfillsCurrentObligation)
             assertEquals(null, lines.getValue(id).proposedNextDueDate)
         }
+        assertEquals(FulfillmentEligibility.CHECKLIST_NOT_REVIEWED, lines.getValue("work-unreviewed").fulfillmentEligibility)
+        assertFalse(lines.getValue("work-unreviewed").fulfillsCurrentObligation)
+        assertEquals(null, lines.getValue("work-unreviewed").proposedNextDueDate)
     }
 
     @Test fun explicitEligibleFulfillmentUsesCapturedIntervalFromActualServiceDate() = runTest {
@@ -182,6 +186,20 @@ class PersistenceIntegrityTest {
         assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
         assertTrue(line.fulfillsCurrentObligation)
         assertEquals("2026-12-05", line.proposedNextDueDate)
+    }
+
+    @Test fun performedOneOffNeverFulfillsOrDerivesRecurringDueDate() = runTest {
+        seedFoundation()
+        insertOneOffWorkItem("work-one-off", false)
+        insertOneOffWorkItem("work-one-off-stale", true)
+
+        val lines = RoomServiceLoopRepository(database, time).completionLines("visit-1").associateBy { it.workItemId }
+        listOf("work-one-off", "work-one-off-stale").forEach { id ->
+            val line = lines.getValue(id)
+            assertEquals(FulfillmentEligibility.NO_CURRENT_OBLIGATION, line.fulfillmentEligibility)
+            assertFalse(line.fulfillsCurrentObligation)
+            assertEquals(null, line.proposedNextDueDate)
+        }
     }
 
     @Test fun attachmentUsesStableOwnerAndOwnedPathNotDisplayNameOrExternalUri() = runTest {
@@ -210,10 +228,17 @@ class PersistenceIntegrityTest {
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "Private work")))
     }
 
-    private suspend fun insertAdditionalWorkItem(id: String, outcome: String, fulfills: Boolean) {
+    private suspend fun insertAdditionalWorkItem(id: String, outcome: String, fulfills: Boolean, templateSnapshotId: String? = null) {
         val dao = database.serviceLoopDao()
-        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", "plan-1", "obligation-1", null, "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", false, outcome, fulfills)))
+        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", "plan-1", "obligation-1", templateSnapshotId, "Captured equipment", "EQ-001", "Captured service", "P-001", "2026-09-01", 3, "MONTHS", false, outcome, fulfills)))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, "Work note")))
+        dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
+    }
+
+    private suspend fun insertOneOffWorkItem(id: String, fulfills: Boolean) {
+        val dao = database.serviceLoopDao()
+        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", null, null, null, "Captured equipment", "EQ-001", "One-off service", null, null, null, null, false, "PERFORMED", fulfills)))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, "One-off work note")))
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
     }
 }

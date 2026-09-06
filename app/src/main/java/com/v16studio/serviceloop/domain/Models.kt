@@ -110,6 +110,7 @@ data class CompletionLine(
 
 enum class FulfillmentEligibility {
     ELIGIBLE,
+    NO_CURRENT_OBLIGATION,
     OUTCOME_INELIGIBLE,
     CHECKLIST_NOT_REVIEWED,
 }

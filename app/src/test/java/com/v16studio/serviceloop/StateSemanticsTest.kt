@@ -88,6 +88,67 @@ class StateSemanticsTest {
         assertTrue(viewModel.state.value.saveStatus is SaveStatus.Saved)
     }
 
+    @Test fun repeatedNotApplicablePreservesSpecificReasonAndCheckpoint() = runTest {
+        val repository = MutableInspectionRepository(responseDraft(ResponseDisposition.NOT_APPLICABLE, reason = "Not fitted"))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit")
+
+        assertEquals(0, repository.saveCount)
+        assertEquals("Not fitted", viewModel.state.value.inspection?.questions?.single()?.reason)
+        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun repeatedOkIsSemanticNoOp() = runTest {
+        val repository = MutableInspectionRepository(responseDraft(ResponseDisposition.OK))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.OK)
+
+        assertEquals(0, repository.saveCount)
+        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun repeatedIdenticalValueIsSemanticNoOp() = runTest {
+        val repository = MutableInspectionRepository(valueDraft("1240.5"))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.VALUE, value = "1240.5")
+
+        assertEquals(0, repository.saveCount)
+        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun genuinelyChangedValuePersists() = runTest {
+        val repository = MutableInspectionRepository(valueDraft("1240.5"))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.VALUE, value = "1241.0")
+
+        assertEquals(1, repository.saveCount)
+        assertEquals("1241.0", viewModel.state.value.inspection?.questions?.single()?.numberValue)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun transitionIntoNotApplicableUsesReasonAndStillConfirmsDestructiveChange() = runTest {
+        val repository = MutableInspectionRepository(issueDraft())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit")
+        assertEquals(0, repository.saveCount)
+        assertEquals("saved issue detail", viewModel.state.value.pendingResponseTransition?.detailBeingDiscarded)
+
+        viewModel.confirmResponseTransition()
+        assertEquals(1, repository.saveCount)
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, viewModel.state.value.inspection?.questions?.single()?.disposition)
+        assertEquals("Not applicable during this visit", viewModel.state.value.inspection?.questions?.single()?.reason)
+    }
+
     @Test fun releaseFactoryIsNoOpAndProductionSourceContainsNoFixtureCustomer() {
         val releaseFactory = File("src/release/java/com/v16studio/serviceloop/FixtureSeederFactory.kt").readText()
         val productionSources = File("src/main/java").walkTopDown().filter { it.extension == "kt" }.joinToString("\n") { it.readText() }
@@ -104,6 +165,14 @@ class StateSemanticsTest {
 
     private fun issueDraft() = inspectionDraft().copy(
         questions = listOf(inspectionDraft().questions.single().copy(disposition = ResponseDisposition.ISSUE_FOUND, reason = "Fraying edge")),
+    )
+
+    private fun responseDraft(disposition: ResponseDisposition, reason: String? = null) = inspectionDraft().copy(
+        questions = listOf(inspectionDraft().questions.single().copy(disposition = disposition, reason = reason)),
+    )
+
+    private fun valueDraft(value: String) = inspectionDraft().copy(
+        questions = listOf(inspectionDraft().questions.single().copy(responseType = "NUMBER", disposition = ResponseDisposition.VALUE, numberValue = value)),
     )
 
     private class MutableInspectionRepository(private var draft: InspectionDraft) : ServiceLoopRepository {

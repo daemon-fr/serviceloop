@@ -72,7 +72,7 @@ class ServiceLoopViewModel(
     fun requestResponseChange(questionId: String, disposition: ResponseDisposition, value: String? = null, reason: String? = null) {
         val draft = _state.value.inspection ?: return
         val question = draft.questions.firstOrNull { it.snapshotItemId == questionId } ?: return
-        if (question.disposition == disposition && value == null && reason == null) return
+        if (question.semanticallyMatches(disposition, value)) return
         val discardedDetail = when {
             question.disposition == disposition -> null
             question.disposition == ResponseDisposition.ISSUE_FOUND && !question.reason.isNullOrBlank() -> "saved issue detail"
@@ -88,6 +88,16 @@ class ServiceLoopViewModel(
             return
         }
         persistResponse(draft, questionId, disposition, value, reason)
+    }
+
+    private fun com.v16studio.serviceloop.domain.InspectionQuestion.semanticallyMatches(
+        requestedDisposition: ResponseDisposition,
+        requestedValue: String?,
+    ): Boolean {
+        if (disposition != requestedDisposition) return false
+        if (requestedDisposition != ResponseDisposition.VALUE) return true
+        val savedValue = if (responseType == "NUMBER") numberValue else textValue
+        return savedValue == requestedValue
     }
 
     fun cancelResponseTransition() {

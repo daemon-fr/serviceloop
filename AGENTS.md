@@ -22,6 +22,8 @@ Own ordinary engineering decisions inside the authorized scope. Prefer simple de
 
 Task sizing: Codex is trusted with substantial coherent assignments. Do not fragment work merely because it is large. Split only at meaningful workflow, integrity, platform-risk, or review boundaries. Do not cross the explicitly authorized task boundary.
 
+Substantial authorized Codex tasks are intended to run unattended. Use reasonable engineering judgment and repair ordinary, low-risk scope-adjacent defects whose correct behavior is already established instead of pausing for routine approval.
+
 History, durable drafts, attachment ownership, migration safety, and truthful save/finalize semantics are architectural concerns from the foundation onward even when their full user workflows arrive later.
 
 ## Android/toolchain
@@ -84,5 +86,7 @@ Tests must validate adopted business meaning rather than merely mirror implement
 ## Git and handoff
 
 Inspect `git status`, branch and starting revision before substantial work. Keep diffs reviewable, preserve unrelated behavior, do not rewrite history, force-push, destructively reset known-good work, publish, or merge into the protected owner baseline unless explicitly authorized.
+
+On an explicitly authorized milestone branch, ordinary Git staging, coherent commits, and pushing that designated branch do not require separate owner approval. This authority does not permit force-push, destructive reset/history rewrite, deletion or movement of protected accepted history, merging into master, or moving master merely because a milestone branch is complete.
 
 At handoff report starting/ending revision, files materially changed, behavior implemented, verification actually run, known gaps, deviations, and the exact branch/commit/diff for independent review.

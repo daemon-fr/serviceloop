@@ -137,6 +137,7 @@ class RoomServiceLoopRepository(
         return dao.visitWorkItems(visitId).map { item ->
             val public = dao.inspection(item.id)
             val eligibility = when {
+                item.servicePlanId == null || item.capturedObligationId == null -> FulfillmentEligibility.NO_CURRENT_OBLIGATION
                 item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
                 item.templateSnapshotId != null && !item.checklistReviewed -> FulfillmentEligibility.CHECKLIST_NOT_REVIEWED
                 else -> FulfillmentEligibility.ELIGIBLE
