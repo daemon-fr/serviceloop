@@ -54,6 +54,8 @@ data class ServicePlanEntity(
     val currentDueDate: String,
     val state: String,
     val currentObligationId: String?,
+    val lastCountedCompletionDate: String? = null,
+    val lastCountedRevisionId: String? = null,
 )
 
 @Entity(
@@ -68,6 +70,7 @@ data class ServiceObligationEntity(
     val dueDate: String,
     val createdAtEpochMillis: Long,
     val consumedAtEpochMillis: Long? = null,
+    val consumedByRevisionId: String? = null,
 )
 
 @Entity(tableName = "template_snapshots")
@@ -144,6 +147,130 @@ data class WorkItemEntity(
     val checklistReviewed: Boolean,
     val outcome: String?,
     val fulfillsCurrentObligation: Boolean?,
+    val notPerformedReason: String? = null,
+    val confirmedNextDueDate: String? = null,
+    val nextDueDateCalculated: Boolean? = null,
+    val nextDueOverrideReason: String? = null,
+)
+
+@Entity(tableName = "business_profiles")
+data class BusinessProfileEntity(
+    @PrimaryKey val id: String = "primary",
+    val businessName: String,
+    val technicianName: String,
+    val phone: String?,
+    val email: String?,
+    val postalAddress: String?,
+    val zoneId: String,
+    val modifiedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "final_records",
+    foreignKeys = [ForeignKey(WorkingVisitEntity::class, ["id"], ["visitId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index(value = ["visitId"], unique = true)],
+)
+data class FinalRecordEntity(
+    @PrimaryKey val id: String,
+    val visitId: String,
+    val currentRevisionId: String,
+    val createdAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "final_record_revisions",
+    foreignKeys = [ForeignKey(FinalRecordEntity::class, ["id"], ["recordId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index(value = ["recordId", "revisionNumber"], unique = true)],
+)
+data class FinalRecordRevisionEntity(
+    @PrimaryKey val id: String,
+    val recordId: String,
+    val revisionNumber: Int,
+    val visitReference: String,
+    val actualServiceDate: String,
+    val recordedAtEpochMillis: Long,
+    val customerName: String,
+    val siteName: String,
+    val siteAddress: String?,
+    val businessName: String,
+    val technicianName: String,
+    val businessPhone: String?,
+    val businessEmail: String?,
+    val businessAddress: String?,
+    val businessZoneId: String,
+    val privateInternalNote: String?,
+)
+
+@Entity(
+    tableName = "final_work_items",
+    foreignKeys = [ForeignKey(FinalRecordRevisionEntity::class, ["id"], ["revisionId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("revisionId"), Index(value = ["revisionId", "position"], unique = true)],
+)
+data class FinalWorkItemEntity(
+    @PrimaryKey val id: String,
+    val revisionId: String,
+    val position: Int,
+    val sourceWorkItemId: String,
+    val equipmentId: String,
+    val equipmentName: String,
+    val equipmentReference: String,
+    val equipmentIdentifier: String?,
+    val equipmentMake: String?,
+    val equipmentModel: String?,
+    val equipmentSerial: String?,
+    val serviceName: String,
+    val planId: String?,
+    val planReference: String?,
+    val outcome: String,
+    val publicWorkNote: String?,
+    val notPerformedReason: String?,
+    val fulfilledObligation: Boolean,
+    val oldDueDate: String?,
+    val nextDueDate: String?,
+    val intervalCount: Int?,
+    val intervalUnit: String?,
+    val capturedObligationId: String?,
+    val privateInternalNote: String?,
+)
+
+@Entity(
+    tableName = "final_checklist_items",
+    foreignKeys = [ForeignKey(FinalWorkItemEntity::class, ["id"], ["finalWorkItemId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("finalWorkItemId"), Index(value = ["finalWorkItemId", "position"], unique = true)],
+)
+data class FinalChecklistItemEntity(
+    @PrimaryKey val id: String,
+    val finalWorkItemId: String,
+    val position: Int,
+    val templateSnapshotId: String?,
+    val templateRevision: Int?,
+    val label: String,
+    val responseType: String,
+    val unit: String?,
+    val required: Boolean,
+    val disposition: String,
+    val textValue: String?,
+    val numberValue: String?,
+    val reason: String?,
+)
+
+@Entity(
+    tableName = "report_renditions",
+    foreignKeys = [ForeignKey(FinalRecordRevisionEntity::class, ["id"], ["revisionId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index(value = ["revisionId", "versionNumber"], unique = true), Index(value = ["relativePath"], unique = true)],
+)
+data class ReportRenditionEntity(
+    @PrimaryKey val id: String,
+    val revisionId: String,
+    val versionNumber: Int,
+    val generatedAtEpochMillis: Long?,
+    val relativePath: String,
+    val sha256: String?,
+    val byteSize: Long?,
+    val pageCount: Int?,
+    val status: String,
+    val kind: String,
+    val failureMessage: String?,
 )
 
 @Entity(

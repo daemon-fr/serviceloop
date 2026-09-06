@@ -2,6 +2,7 @@ package com.v16studio.serviceloop
 
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.data.AttachmentEntity
+import com.v16studio.serviceloop.data.BusinessProfileEntity
 import com.v16studio.serviceloop.data.ChecklistItemSnapshotEntity
 import com.v16studio.serviceloop.data.CustomerEntity
 import com.v16studio.serviceloop.data.EquipmentEntity
@@ -38,9 +39,16 @@ private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : St
     override suspend fun seedIfNeeded() {
         val dao = database.serviceLoopDao()
         database.withTransaction {
-            if (dao.customerCount() != 0) return@withTransaction
             val created = Instant.parse("2026-09-05T07:14:00Z").toEpochMilli()
+            if (dao.customerCount() != 0) {
+                val fixture = dao.customer(FixtureIds.CUSTOMER)
+                if (fixture?.name == "Harbor Fitness and Rehabilitation Cooperative" && dao.businessProfile() == null) {
+                    dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Riverside Equipment Service", technicianName = "Alex Morgan", phone = "+40 21 555 0142", email = "service@example.invalid", postalAddress = "Bucharest", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = created))
+                }
+                return@withTransaction
+            }
             dao.insertCustomers(listOf(CustomerEntity(FixtureIds.CUSTOMER, "CU-001", "Harbor Fitness and Rehabilitation Cooperative")))
+            dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Riverside Equipment Service", technicianName = "Alex Morgan", phone = "+40 21 555 0142", email = "service@example.invalid", postalAddress = "Bucharest", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = created))
             dao.insertSites(listOf(SiteEntity(FixtureIds.SITE, FixtureIds.CUSTOMER, "ST-001", "Riverside Centre — East Building, Second-floor Training Room", "18 River Lane, Riverside", "Saturday access via east reception.")))
             dao.insertEquipment(listOf(
                 EquipmentEntity(FixtureIds.EQUIPMENT_1, FixtureIds.SITE, "EQ-001", "T-01", "Treadmill 01 — window side", "StrideWorks", "R8", "SW-R8-0417", "Drive belt history held internally."),

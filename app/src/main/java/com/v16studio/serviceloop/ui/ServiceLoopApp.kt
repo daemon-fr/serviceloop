@@ -1,8 +1,13 @@
 package com.v16studio.serviceloop.ui
 
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -53,7 +58,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -69,10 +77,16 @@ import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
+import com.v16studio.serviceloop.domain.BusinessProfile
+import com.v16studio.serviceloop.domain.FinalRecordDetail
+import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val HOME = "home"
 private const val WORK = "work"
@@ -110,9 +124,9 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         }
         composable(WORK) {
             var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state.home, nav, workTab) { workTab = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state.home, state.visits, nav, workTab) { workTab = it } }
             }
         }
         composable(CUSTOMERS) {
@@ -139,7 +153,23 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("review/{visitId}") { entry ->
             val visitId = entry.arguments?.getString("visitId").orEmpty()
             LaunchedEffect(visitId) { viewModel.loadCompletion(visitId) }
-            DetailScaffold("Review completion", nav) { padding -> CompletionReviewScreen(state.completionLines, padding) }
+            LaunchedEffect(state.finalizedRecordId) { state.finalizedRecordId?.let { recordId -> viewModel.consumeFinalizedNavigation(); nav.navigate("record/$recordId") { popUpTo("review/{visitId}") { inclusive = true } } } }
+            DetailScaffold("Review completion", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
+        }
+        composable("settings") {
+            DetailScaffold("Settings", nav) { padding -> SettingsScreen(padding, nav) }
+        }
+        composable("business-profile") {
+            LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
+            DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.saveStatus, padding, viewModel) }
+        }
+        composable("record/{id}") { entry ->
+            val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
+            DetailScaffold("Final service record", nav) { padding -> FinalRecordScreen(state.finalRecord, state.generatingReport, state.error, padding, viewModel, nav) }
+        }
+        composable("report/{id}") { entry ->
+            val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
+            DetailScaffold("Customer report", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding) }
         }
         composable("scope/{title}") { entry ->
             DetailScaffold(entry.arguments?.getString("title") ?: "ServiceLoop", nav) { padding ->
@@ -158,7 +188,7 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
                 title = { Text(selected.label, style = MaterialTheme.typography.titleLarge) },
                 actions = {
                     TextButton(onClick = { nav.navigate("scope/Search") }) { Text("Search") }
-                    TextButton(onClick = { nav.navigate("scope/Settings") }) { Text("Settings") }
+                    TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
                 },
             )
         },
@@ -227,15 +257,15 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, na
 }
 
 @Composable
-private fun WorkScreen(home: HomeSummary?, nav: NavHostController, tab: WorkTab, onTabSelected: (WorkTab) -> Unit) {
+private fun WorkScreen(home: HomeSummary?, visits: List<VisitSummary>, nav: NavHostController, tab: WorkTab, onTabSelected: (WorkTab) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } } }
         when (tab) {
             WorkTab.DUE_SERVICES -> item { SectionTitle("Due services · ${(home?.overdueCount ?: 0) + (home?.dueSoonCount ?: 0)}"); Text("Each plan retains its own obligation and due date.") }
             WorkTab.VISITS -> {
                 item { SectionTitle("Visits") }
-                item { SummaryRow("${home?.workingVisitReference ?: "No working visit"} · ${home?.workingSite.orEmpty()}", "Resume") { home?.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } } }
-                home?.bookedVisitReference?.let { reference -> item { SummaryRow("$reference · Booked ${home.bookedVisitDate}", "Open") { nav.navigate("scope/Booked visit") } } }
+                if (visits.isEmpty()) item { Text("No saved visits") }
+                items(visits) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else if (visit.state == "WORKING") home?.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } else nav.navigate("scope/Booked visit") } }
             }
             WorkTab.FOLLOW_UPS -> {
                 item { SectionTitle("Follow-ups · ${home?.dueFollowUpCount ?: 0}") }
@@ -303,10 +333,21 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
             SaveStateBanner(saveStatus)
             Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
         }
-        item { LabelledValue("Work performed · Customer report", draft.workPerformed.ifBlank { "Not recorded" }, public = true); LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false) }
+        item {
+            var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
+            Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            OutlinedTextField(work, { work = it }, label = { Text("Public work performed") }, minLines = 3, maxLines = 6, enabled = saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { viewModel.savePublicWork(draft.workItemId, work) }, enabled = saveStatus !is SaveStatus.Saving && work != draft.workPerformed, modifier = Modifier.fillMaxWidth()) { Text("Save work performed") }
+            LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
+        }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel) }
-        item { StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium) }
+        item {
+            val required = draft.questions.count { it.required }; val complete = draft.questions.count { q -> q.required && when(q.responseType) { "STATUS" -> q.disposition != ResponseDisposition.NOT_CHECKED && !(q.disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) && q.reason.isNullOrBlank()); else -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) } }
+            StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Required complete $complete of $required")
+            Button(onClick = { viewModel.markChecklistReviewed(draft.workItemId) }, enabled = !draft.checklistReviewed && complete == required && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" }) { Text("Mark checklist reviewed") }
+            Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
+        }
         item { Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth(), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
     }
 }
@@ -375,27 +416,37 @@ private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewMod
 }
 
 @Composable
-private fun CompletionReviewScreen(lines: List<CompletionLine>, padding: PaddingValues) {
+private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>, profile: BusinessProfile?, state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { Text("Outcome and fulfillment are separate decisions.", style = MaterialTheme.typography.titleMedium); Text("Stage 2 finalization is not implemented in this milestone.") }
-        items(lines) { line -> CompletionLineCard(line) }
+        item { Text("Outcome and fulfillment are separate decisions.", style = MaterialTheme.typography.titleMedium); Text("Only explicitly fulfilled recurring work advances its obligation.") }
+        if (profile?.ready != true) item { AccentCard { Text("Business/report identity is required before finalization."); Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
+        items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel) }
         item { Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(16.dp)) { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, findings, and selected photos will be reviewed here. Private notes stay excluded.") } } }
-        item { Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("Finalize record — available in Stage 2") }; Text("No record, due date, task, or success message is created from this proof screen.", style = MaterialTheme.typography.bodySmall) }
+        state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
+        item { Button(onClick = { viewModel.finalizeVisit(visitId) }, enabled = !state.finalizing && profile?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Finalize record" }) { Text(if (state.finalizing) "Finalizing…" else "Finalize record") } }
     }
 }
 
 @Composable
-private fun CompletionLineCard(line: CompletionLine) {
+private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel) {
     AccentCard {
         Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.labelLarge)
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
         Text("Outcome", style = MaterialTheme.typography.labelLarge)
-        Text(line.outcome?.replace('_', ' ')?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Choose outcome")
+        listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
+            Row(Modifier.fillMaxWidth().selectable(line.outcome == value, enabled = !saving) { viewModel.saveCompletion(line.workItemId, value, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason, visitId) }.semantics { contentDescription = "Outcome $label" }, verticalAlignment = Alignment.CenterVertically) { RadioButton(line.outcome == value, null); Text(label) }
+        }
+        if (line.outcome == "NOT_PERFORMED") {
+            var reason by rememberSaveable(line.workItemId, line.notPerformedReason) { mutableStateOf(line.notPerformedReason.orEmpty()) }
+            OutlinedTextField(reason, { reason = it }, label = { Text("Not performed reason") }, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, false, reason, null, null, null, visitId) }, enabled = !saving && reason.isNotBlank() && reason != line.notPerformedReason, modifier = Modifier.fillMaxWidth()) { Text("Save reason") }
+        }
         when (line.fulfillmentEligibility) {
-            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = line.fulfillsCurrentObligation, onCheckedChange = null); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation, enabled = !saving, onCheckedChange = { viewModel.saveCompletion(line.workItemId, line.outcome, it, line.notPerformedReason, null, null, null, visitId) }); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
             FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("Fulfillment unavailable — one-off work has no recurring obligation to fulfill.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
+            FulfillmentEligibility.PLAN_INELIGIBLE -> Text("Fulfillment unavailable — this plan is no longer active.", style = MaterialTheme.typography.bodyMedium)
         }
         when {
             line.fulfillmentEligibility == FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date changes")
@@ -404,8 +455,80 @@ private fun CompletionLineCard(line: CompletionLine) {
             line.dueDate != null -> Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
             else -> Text("Current recurring obligation remains outstanding", color = LocalServiceLoopColors.current.urgencyInk)
         }
+        if (line.fulfillsCurrentObligation && line.calculatedNextDueDate != null) {
+            Text("Calculated next due ${line.calculatedNextDueDate}")
+            Button(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, line.calculatedNextDueDate, true, null, visitId) }, enabled = !saving && line.confirmedNextDueDate != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Use calculated date" }) { Text("Use calculated date") }
+            var date by rememberSaveable(line.workItemId, line.confirmedNextDueDate) { mutableStateOf(line.confirmedNextDueDate.orEmpty()) }
+            var overrideReason by rememberSaveable(line.workItemId, line.nextDueOverrideReason) { mutableStateOf(line.nextDueOverrideReason.orEmpty()) }
+            OutlinedTextField(date, { date = it }, label = { Text("Override next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(overrideReason, { overrideReason = it }, label = { Text("Override reason") }, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, date, false, overrideReason, visitId) }, enabled = !saving && date.isNotBlank() && overrideReason.isNotBlank() && date != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Override next due" }) { Text("Save override") }
+        }
+        line.blockers.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+@Composable
+private fun SettingsScreen(padding: PaddingValues, nav: NavHostController) {
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
+        item { SummaryRow("Inspection templates · foundation", "Later") {}; SummaryRow("Reminders · foundation", "Later") {}; SummaryRow("Data and recovery · foundation", "Later") {} }
+    }
+}
+
+@Composable
+private fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveStatus, padding: PaddingValues, viewModel: ServiceLoopViewModel) {
+    val zone = profile?.zoneId ?: ZoneId.systemDefault().id
+    var business by rememberSaveable(profile) { mutableStateOf(profile?.businessName.orEmpty()) }; var technician by rememberSaveable(profile) { mutableStateOf(profile?.technicianName.orEmpty()) }
+    var phone by rememberSaveable(profile) { mutableStateOf(profile?.phone.orEmpty()) }; var email by rememberSaveable(profile) { mutableStateOf(profile?.email.orEmpty()) }; var address by rememberSaveable(profile) { mutableStateOf(profile?.postalAddress.orEmpty()) }
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("These details are frozen into each finalized record."); SaveStateBanner(saveStatus) }
+        item { OutlinedTextField(business, { business = it }, label = { Text("Business/display name · Required") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(technician, { technician = it }, label = { Text("Technician name · Required") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(phone, { phone = it }, label = { Text("Phone") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(address, { address = it }, label = { Text("Postal address") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+        item { LabelledValue("Business time zone", zone, true); Button(onClick = { viewModel.saveBusinessProfile(BusinessProfile(business, technician, phone, email, address, zone)) }, enabled = business.isNotBlank() && technician.isNotBlank() && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth()) { Text("Save profile") } }
+    }
+}
+
+@Composable
+private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, error: String?, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    if (detail == null) return HonestPlaceholder(padding, "Reading final service record")
+    val report = detail.public
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded ${formatTime(report.recordedAtEpochMillis)}"); Text("${report.customerName}\n${report.siteName}\n${report.siteAddress.orEmpty()}") }
+        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.serviceName); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(if (line.fulfilledObligation) "Due ${line.oldDueDate} → ${line.nextDueDate}" else "Current obligation unchanged"); line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+        if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
+        item {
+            Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
+            Text(when (detail.report?.status) { "READY" -> "Ready · Version 1 · ${detail.report.byteSize} bytes"; "FAILED" -> "Generation failed"; "GENERATING" -> "Generating…"; else -> "Not generated" })
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (detail.report?.status == "READY") Button(onClick = { nav.navigate("report/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text("View report") }
+            else Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
+        }
+    }
+}
+
+@Composable
+private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues) {
+    val rendition = detail?.report
+    if (detail == null || rendition?.status != "READY") return HonestPlaceholder(padding, "Report file is not ready")
+    val context = LocalContext.current; val file = remember(rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
+    var textView by rememberSaveable { mutableStateOf(false) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }
+    LaunchedEffect(file, pageIndex, textView) {
+        if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
+    }
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }) { Text("PDF view") }; if (textView) Button(onClick = {}) { Text("Text view") } else OutlinedButton(onClick = { textView = true }) { Text("Text view") } } }
+        if (missing) item { Text("Report file is missing", color = MaterialTheme.colorScheme.error) }
+        else if (textView) item { StructuredReportText(detail) }
+        else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
+        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Share PDF" }) { Text("Share PDF") }; Text("Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun StructuredReportText(detail: FinalRecordDetail) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Technician ${r.technicianName}"); Text("${r.customerName}\n${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
 }
 
 @Composable

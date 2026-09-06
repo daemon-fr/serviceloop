@@ -5,6 +5,8 @@ import com.v16studio.serviceloop.data.RoomServiceLoopRepository
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.ClockBusinessTime
+import com.v16studio.serviceloop.report.AndroidReportService
+import com.v16studio.serviceloop.report.ReportService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,13 +24,15 @@ class ServiceLoopApplication : Application() {
         val startup = CoroutineScope(SupervisorJob() + Dispatchers.IO).async {
             FixtureSeederFactory.create(database).seedIfNeeded()
         }
-        container = AppContainer(database, RoomServiceLoopRepository(database, businessTime), startup)
+        val repository = RoomServiceLoopRepository(database, businessTime)
+        container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup)
     }
 }
 
 data class AppContainer(
     val database: ServiceLoopDatabase,
     val repository: ServiceLoopRepository,
+    val reportService: ReportService,
     val startup: Deferred<Unit>,
 )
 

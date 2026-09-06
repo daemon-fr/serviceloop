@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 
 data class EquipmentPlanRow(
     val equipmentId: String,
@@ -64,6 +65,8 @@ data class CustomerSummaryRow(
     val equipmentCount: Int,
 )
 
+data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?)
+
 @Dao
 interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomers(values: List<CustomerEntity>)
@@ -80,6 +83,13 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertResponses(values: List<WorkingResponseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAttachments(values: List<AttachmentEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUps(values: List<FollowUpEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertBusinessProfile(value: BusinessProfileEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRecord(value: FinalRecordEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRevision(value: FinalRecordRevisionEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalWorkItems(values: List<FinalWorkItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalChecklistItems(values: List<FinalChecklistItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReportRendition(value: ReportRenditionEntity)
+    @Update suspend fun updateReportRendition(value: ReportRenditionEntity)
 
     @Query("SELECT COUNT(*) FROM customers") suspend fun customerCount(): Int
     @Query("SELECT * FROM customers WHERE id = :id") suspend fun customer(id: String): CustomerEntity?
@@ -91,6 +101,17 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_visits WHERE id = :id") suspend fun visit(id: String): WorkingVisitEntity?
     @Query("SELECT * FROM attachments WHERE id = :id") suspend fun attachment(id: String): AttachmentEntity?
     @Query("SELECT * FROM template_snapshots WHERE id = :id") suspend fun templateSnapshot(id: String): TemplateSnapshotEntity?
+    @Query("SELECT * FROM business_profiles WHERE id='primary'") suspend fun businessProfile(): BusinessProfileEntity?
+    @Query("SELECT * FROM final_records WHERE visitId=:visitId") suspend fun finalRecordForVisit(visitId: String): FinalRecordEntity?
+    @Query("SELECT * FROM final_records WHERE id=:id") suspend fun finalRecord(id: String): FinalRecordEntity?
+    @Query("SELECT * FROM final_record_revisions WHERE id=:id") suspend fun finalRevision(id: String): FinalRecordRevisionEntity?
+    @Query("SELECT * FROM final_work_items WHERE revisionId=:revisionId ORDER BY position") suspend fun finalWorkItems(revisionId: String): List<FinalWorkItemEntity>
+    @Query("SELECT * FROM final_checklist_items WHERE finalWorkItemId=:workItemId ORDER BY position") suspend fun finalChecklistItems(workItemId: String): List<FinalChecklistItemEntity>
+    @Query("SELECT * FROM report_renditions WHERE revisionId=:revisionId AND versionNumber=1") suspend fun reportRendition(revisionId: String): ReportRenditionEntity?
+    @Query("SELECT COUNT(*) FROM final_records") suspend fun finalRecordCount(): Int
+    @Query("SELECT COUNT(*) FROM final_record_revisions") suspend fun finalRevisionCount(): Int
+    @Query("SELECT COUNT(*) FROM service_obligations WHERE planId=:planId") suspend fun obligationCount(planId: String): Int
+    @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
     @Query("UPDATE customers SET name = :name WHERE id = :id") suspend fun renameCustomer(id: String, name: String)
     @Query("UPDATE equipment SET name = :name WHERE id = :id") suspend fun renameEquipment(id: String, name: String)
 
@@ -134,6 +155,9 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_visits WHERE state='BOOKED' ORDER BY actualServiceDate LIMIT 1")
     suspend fun nextBookedVisit(): WorkingVisitEntity?
 
+    @Query("SELECT v.id, v.reference, v.siteNameSnapshot siteName, v.actualServiceDate, v.state, f.id finalRecordId FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id ORDER BY v.actualServiceDate DESC, v.reference")
+    suspend fun visits(): List<VisitSummaryRow>
+
     @Query("SELECT id FROM work_items WHERE visitId=:visitId ORDER BY id LIMIT 1")
     suspend fun firstWorkItemId(visitId: String): String?
 
@@ -174,10 +198,29 @@ interface ServiceLoopDao {
     @Query("UPDATE working_visits SET modifiedAtEpochMillis=:modified WHERE id=:visitId")
     suspend fun touchVisit(visitId: String, modified: Long)
 
+    @Query("UPDATE work_item_public_drafts SET workPerformed=:text WHERE workItemId=:workItemId")
+    suspend fun updatePublicWork(workItemId: String, text: String): Int
+
+    @Query("UPDATE work_items SET checklistReviewed=:reviewed WHERE id=:workItemId")
+    suspend fun updateChecklistReviewed(workItemId: String, reviewed: Boolean): Int
+
+    @Query("UPDATE work_items SET outcome=:outcome, fulfillsCurrentObligation=:fulfills, notPerformedReason=:reason, confirmedNextDueDate=:nextDue, nextDueDateCalculated=:calculated, nextDueOverrideReason=:overrideReason WHERE id=:workItemId")
+    suspend fun updateCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Int
+
+    @Query("UPDATE service_obligations SET consumedAtEpochMillis=:consumedAt, consumedByRevisionId=:revisionId WHERE id=:id AND planId=:planId AND consumedAtEpochMillis IS NULL")
+    suspend fun consumeObligation(id: String, planId: String, consumedAt: Long, revisionId: String): Int
+
+    @Query("UPDATE service_plans SET currentDueDate=:nextDue, currentObligationId=:nextObligationId, lastCountedCompletionDate=:completionDate, lastCountedRevisionId=:revisionId WHERE id=:planId AND state='ACTIVE' AND currentObligationId=:expectedObligationId")
+    suspend fun advancePlan(planId: String, expectedObligationId: String, nextDue: String, nextObligationId: String, completionDate: String, revisionId: String): Int
+
+    @Query("UPDATE working_visits SET state='FINALIZED', modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='WORKING'")
+    suspend fun finalizeVisit(visitId: String, modified: Long): Int
+
     @Transaction
-    suspend fun persistResponse(response: WorkingResponseEntity, visitId: String) {
+    suspend fun persistResponse(response: WorkingResponseEntity, visitId: String, invalidateReview: Boolean = true) {
         val changed = updateResponse(response.id, response.disposition, response.textValue, response.numberValue, response.reason, response.modifiedAtEpochMillis)
         if (changed == 0) upsertResponses(listOf(response))
+        if (invalidateReview) updateChecklistReviewed(response.workItemId, false)
         touchVisit(visitId, response.modifiedAtEpochMillis)
     }
 }

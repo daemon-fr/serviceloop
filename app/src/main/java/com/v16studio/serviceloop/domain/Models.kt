@@ -95,6 +95,19 @@ data class InspectionDraft(
     val questions: List<InspectionQuestion>,
 )
 
+data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?)
+
+data class BusinessProfile(
+    val businessName: String,
+    val technicianName: String,
+    val phone: String = "",
+    val email: String = "",
+    val postalAddress: String = "",
+    val zoneId: String,
+) {
+    val ready: Boolean get() = businessName.isNotBlank() && technicianName.isNotBlank()
+}
+
 data class CompletionLine(
     val workItemId: String,
     val equipmentName: String,
@@ -106,6 +119,13 @@ data class CompletionLine(
     val dueDate: String?,
     val proposedNextDueDate: String?,
     val workPerformed: String,
+    val checklistReviewed: Boolean = false,
+    val notPerformedReason: String? = null,
+    val calculatedNextDueDate: String? = null,
+    val confirmedNextDueDate: String? = null,
+    val nextDueDateCalculated: Boolean? = null,
+    val nextDueOverrideReason: String? = null,
+    val blockers: List<String> = emptyList(),
 )
 
 enum class FulfillmentEligibility {
@@ -113,6 +133,73 @@ enum class FulfillmentEligibility {
     NO_CURRENT_OBLIGATION,
     OUTCOME_INELIGIBLE,
     CHECKLIST_NOT_REVIEWED,
+    PLAN_INELIGIBLE,
+}
+
+data class PublicChecklistItem(
+    val position: Int,
+    val label: String,
+    val responseType: String,
+    val unit: String?,
+    val required: Boolean,
+    val disposition: String,
+    val value: String?,
+    val reason: String?,
+)
+
+data class PublicWorkLine(
+    val position: Int,
+    val equipmentName: String,
+    val equipmentReference: String,
+    val equipmentIdentification: String,
+    val serviceName: String,
+    val outcome: String,
+    val publicWorkNote: String?,
+    val notPerformedReason: String?,
+    val fulfilledObligation: Boolean,
+    val oldDueDate: String?,
+    val nextDueDate: String?,
+    val checklist: List<PublicChecklistItem>,
+)
+
+data class PublicReportModel(
+    val recordId: String,
+    val revisionId: String,
+    val revisionNumber: Int,
+    val visitReference: String,
+    val actualServiceDate: String,
+    val recordedAtEpochMillis: Long,
+    val businessName: String,
+    val technicianName: String,
+    val businessContact: String,
+    val customerName: String,
+    val siteName: String,
+    val siteAddress: String?,
+    val lines: List<PublicWorkLine>,
+)
+
+data class FinalRecordDetail(
+    val public: PublicReportModel,
+    val privateNotes: List<String>,
+    val report: ReportRendition?,
+)
+
+data class ReportRendition(
+    val id: String,
+    val revisionId: String,
+    val versionNumber: Int,
+    val generatedAtEpochMillis: Long?,
+    val relativePath: String,
+    val sha256: String?,
+    val byteSize: Long?,
+    val pageCount: Int?,
+    val status: String,
+    val failureMessage: String?,
+)
+
+sealed interface FinalizeResult {
+    data class Success(val recordId: String) : FinalizeResult
+    data class Blocked(val message: String) : FinalizeResult
 }
 
 sealed interface SaveStatus {
