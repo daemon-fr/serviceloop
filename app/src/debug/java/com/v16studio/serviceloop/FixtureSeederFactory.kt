@@ -7,6 +7,7 @@ import com.v16studio.serviceloop.data.ChecklistItemSnapshotEntity
 import com.v16studio.serviceloop.data.CustomerEntity
 import com.v16studio.serviceloop.data.EquipmentEntity
 import com.v16studio.serviceloop.data.FollowUpEntity
+import com.v16studio.serviceloop.data.ServiceLoopDao
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.ServiceObligationEntity
 import com.v16studio.serviceloop.data.ServicePlanEntity
@@ -27,7 +28,9 @@ object FixtureIds {
     const val EQUIPMENT_3 = "8716a8e6-41d4-4cc5-97e6-a8c1e4afe003"
     const val VISIT_1 = "3ed972d9-0479-40ce-aec8-0f53f60e1001"
     const val VISIT_2 = "3ed972d9-0479-40ce-aec8-0f53f60e1002"
+    const val OWNER_REVIEW_VISIT = "3ed972d9-0479-40ce-aec8-0f53f60e1003"
     const val WORK_INSPECTION = "b9ce30a5-4c3c-49b8-a7a8-73390822f001"
+    const val OWNER_REVIEW_WORK = "b9ce30a5-4c3c-49b8-a7a8-73390822f005"
     const val TEMPLATE = "1d90783e-cd9a-47c2-8c52-833df6347001"
 }
 
@@ -40,10 +43,14 @@ private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : St
         val dao = database.serviceLoopDao()
         database.withTransaction {
             val created = Instant.parse("2026-09-05T07:14:00Z").toEpochMilli()
+            val ownerReviewCreated = Instant.parse("2026-09-06T16:00:00Z").toEpochMilli()
             if (dao.customerCount() != 0) {
                 val fixture = dao.customer(FixtureIds.CUSTOMER)
-                if (fixture?.name == "Harbor Fitness and Rehabilitation Cooperative" && dao.businessProfile() == null) {
-                    dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Riverside Equipment Service", technicianName = "Alex Morgan", phone = "+40 21 555 0142", email = "service@example.invalid", postalAddress = "Bucharest", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = created))
+                if (fixture?.name == "Harbor Fitness and Rehabilitation Cooperative") {
+                    if (dao.businessProfile() == null) {
+                        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Riverside Equipment Service", technicianName = "Alex Morgan", phone = "+40 21 555 0142", email = "service@example.invalid", postalAddress = "Bucharest", zoneId = "Europe/Bucharest", modifiedAtEpochMillis = created))
+                    }
+                    seedOwnerReviewVisit(dao, ownerReviewCreated)
                 }
                 return@withTransaction
             }
@@ -103,7 +110,72 @@ private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : St
                 AttachmentEntity("attach-ph-02", "WORK_ITEM", FixtureIds.WORK_INSPECTION, "attachments/attach-ph-02/original.jpg", "fixture-sha256-ph02", "nameplate.jpg", "image/jpeg", false, "PRESENT"),
             ))
             dao.insertFollowUps(listOf(FollowUpEntity("follow-up-001", "FU-001", "CONTACT", "Confirm access for the return visit", "2026-09-05", "OPEN", FixtureIds.CUSTOMER, FixtureIds.SITE, null, "Call reception before arrival.")))
+            seedOwnerReviewVisit(dao, ownerReviewCreated)
         }
+    }
+
+    private suspend fun seedOwnerReviewVisit(dao: ServiceLoopDao, created: Long) {
+        if (dao.visit(FixtureIds.OWNER_REVIEW_VISIT) != null) return
+        val customer = dao.customer(FixtureIds.CUSTOMER) ?: return
+        if (customer.name != "Harbor Fitness and Rehabilitation Cooperative") return
+        val site = dao.site(FixtureIds.SITE) ?: return
+        val equipment = dao.equipment(FixtureIds.EQUIPMENT_2) ?: return
+        val plan = dao.plan("plan-005") ?: return
+        if (plan.state != "ACTIVE") return
+        val obligationId = plan.currentObligationId ?: return
+        val obligation = dao.obligation(obligationId) ?: return
+        if (obligation.planId != plan.id || obligation.consumedAtEpochMillis != null) return
+        if (dao.templateSnapshot(FixtureIds.TEMPLATE) == null) return
+        val profile = dao.businessProfile()
+
+        dao.insertVisits(listOf(
+            WorkingVisitEntity(
+                FixtureIds.OWNER_REVIEW_VISIT,
+                "V-003",
+                customer.id,
+                site.id,
+                "2026-09-06",
+                customer.name,
+                site.name,
+                site.address,
+                "WORKING",
+                created,
+                customer.reference,
+                site.reference,
+                profile?.businessName,
+                profile?.technicianName,
+                profile?.phone,
+                profile?.email,
+                profile?.postalAddress,
+                profile?.zoneId,
+            ),
+        ))
+        dao.insertWorkItems(listOf(
+            WorkItemEntity(
+                FixtureIds.OWNER_REVIEW_WORK,
+                FixtureIds.OWNER_REVIEW_VISIT,
+                equipment.id,
+                plan.id,
+                obligationId,
+                FixtureIds.TEMPLATE,
+                equipment.name,
+                equipment.reference,
+                plan.name,
+                plan.reference,
+                plan.currentDueDate,
+                plan.intervalCount,
+                plan.intervalUnit,
+                false,
+                null,
+                false,
+                equipmentIdentifierSnapshot = equipment.technicianIdentifier,
+                equipmentMakeSnapshot = equipment.make,
+                equipmentModelSnapshot = equipment.model,
+                equipmentSerialSnapshot = equipment.serialNumber,
+            ),
+        ))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(FixtureIds.OWNER_REVIEW_WORK, "")))
+        dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(FixtureIds.OWNER_REVIEW_WORK, "")))
     }
 
     private fun plan(id: String, equipmentId: String, reference: String, name: String, count: Int, unit: String, due: String, obligation: String) =

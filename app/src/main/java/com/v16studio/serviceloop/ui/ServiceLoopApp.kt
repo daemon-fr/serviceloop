@@ -120,7 +120,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, nav) }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, state.visits, nav) }
             }
         }
         composable(WORK) {
@@ -190,7 +190,16 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(selected.label, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    if (selected == RootDestination.HOME) {
+                        Column {
+                            Text("ServiceLoop", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("Home", style = MaterialTheme.typography.titleLarge)
+                        }
+                    } else {
+                        Text(selected.label, style = MaterialTheme.typography.titleLarge)
+                    }
+                },
                 actions = {
                     TextButton(onClick = { nav.navigate("scope/Search") }) { Text("Search") }
                     TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
@@ -236,7 +245,7 @@ private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues
 }
 
 @Composable
-private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, nav: NavHostController) {
+private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, nav: NavHostController) {
     if (home == null) return HonestPlaceholder(PaddingValues(), "Add a customer to create your first service obligation.")
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (home.workingVisitId != null) item {
@@ -250,7 +259,12 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, na
         }
         item {
             SectionTitle("Booked visits · ${home.bookedVisitCount}")
-            SummaryRow(home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" } ?: "No booked visits", "Open") { nav.navigateToRoot(RootDestination.WORK) }
+            val bookedSite = visits.firstOrNull { it.state == "BOOKED" && it.reference == home.bookedVisitReference }?.siteName
+            val bookedSummary = listOfNotNull(
+                home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" },
+                bookedSite,
+            ).joinToString("\n").ifBlank { "No booked visits" }
+            SummaryRow(bookedSummary, "Open") { nav.navigateToRoot(RootDestination.WORK) }
         }
         item { SectionTitle("Overdue services · ${home.overdueCount}"); Text("Booked service remains due until its obligation is explicitly fulfilled.", style = MaterialTheme.typography.bodyMedium) }
         items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
@@ -292,7 +306,11 @@ private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<Eq
             if (equipment.isEmpty()) item { Text("Add an equipment item to begin.") }
             items(equipment) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\n${item.customerName} · ${item.siteName}\nNext due ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
         }
-        item { OutlinedButton(onClick = { nav.navigate("scope/Add customer") }, modifier = Modifier.fillMaxWidth()) { Text("Add customer") } }
+        item {
+            val addLabel = if (equipmentMode) "Add equipment" else "Add customer"
+            val addRoute = if (equipmentMode) "scope/Add equipment" else "scope/Add customer"
+            OutlinedButton(onClick = { nav.navigate(addRoute) }, modifier = Modifier.fillMaxWidth()) { Text(addLabel) }
+        }
     }
 }
 
