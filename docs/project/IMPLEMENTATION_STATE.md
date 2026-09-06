@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-06 — SL-1 final technical closure correction pass
+**Updated:** 2026-09-06 — SL-1 owner visual review corrections
 
 ## Current state
 
@@ -9,10 +9,12 @@
 - Required and verified starting revision: `33d350fbd6e46161616b630d766f46c4cf3b8dd7`.
 - SL-1 implementation commit: `e92af2b8b715f5adcf97ddc31e9db1392470a52f`.
 - SL-1 final technical closure implementation commit: `2e9e074a0dcb1d1fd00484d9c3bb1a37fd8498db`.
+- SL-1 owner visual correction starting revision: `884184eb9b53baefa67fd5c67c6ba92efbc48743`.
+- SL-1 owner visual correction implementation commit: `e90ce7f9e7e59d59601452034458cd2a52a61cda`.
 - Package/application ID remains `com.v16studio.serviceloop`.
 - The former generated Compose starter is replaced by a runnable ServiceLoop shell, Room persistence, debug-only representative fixtures, state holders, and representative Home, Equipment detail, Inspection, and Completion Review screens.
 - This is a Stage 1 foundation/semantic proof. It is not a completed service loop and does not implement the Stage 2 finalization transaction.
-- The independent-review correction pass now stages destructive inspection transitions for confirmation, enforces coherent response fields at the repository boundary, routes Finding details to an honest deferred-workflow destination, derives explicit fulfillment eligibility, and removes internal obligation identity from technician-facing Equipment Detail.
+- The owner visual correction pass makes Home/Work/Customers deterministic sibling roots, preserves saveable Work-tab return context, and replaces the deferred finding page with a compact/expandable inline public finding editor.
 
 ## Known generated toolchain baseline
 
@@ -41,31 +43,37 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 - Re-activating an already-selected semantic response is a no-op: a specific saved NA reason is preserved instead of being replaced by the generic transition reason, an identical VALUE does not write, and the durable Saved checkpoint does not advance. Genuinely changed values still persist normally.
 - Completion Review exposes fulfillment as eligible only for recurring plan work that captured a specific obligation, is Performed, and has a reviewed assigned checklist (or no checklist). One-off work has `NO_CURRENT_OBLIGATION`, no checkbox or recurring due-date effect, and any stale persisted fulfillment flag is sanitized to false in the derived review model. Partly performed and Not performed remain due.
 - ServiceLoop visual tokens, status roles, typography hierarchy, non-dynamic color identity, launcher artwork, accessible headings/native controls, and compact single-column layouts.
+- Root navigation uses Navigation Compose start-destination save/restore semantics. Repeated root taps are single-top, detail destinations return to their originating root, and Work's typed Due services/Visits/Follow-ups selection is saveable session/navigation state rather than Room data.
+- Issue found exposes its persisted public description inline: approximately three lines by default, approximately ten when expanded, explicit expand/collapse accessibility semantics, and a deliberate Save finding action. Unchanged issue text is a no-op; changed or cleared working-draft text persists through the existing truthful save path. The obsolete `foundation/finding` route is removed.
 - Android automatic backup/device-transfer rules exclude the Room database and owned attachment/report paths so an OS subset is not represented as the future complete ServiceLoop recovery package.
 
 **DEBUG-FIXTURE-DRIVEN**
 
 - The representative Harbor Fitness dataset, V-001/V-002, five plan obligations, captured checklist revision, working answers/outcomes, follow-up, and attachment metadata exist only under `src/debug` and are inserted through the same Room DAO/repository paths.
 - `src/release` supplies `NoOpStartupSeeder`; production sources contain no fictional customer dataset.
-- Search, Settings, new-visit creation, customer detail/CRUD, report history, finding editor, and follow-up detail remain labelled foundation destinations rather than fake completed workflows.
+- Search, Settings, new-visit creation, customer detail/CRUD, report history, richer finding lifecycle, and follow-up detail remain labelled foundation destinations rather than fake completed workflows.
 
 ## Verification evidence
 
 **DEVELOPER-VALIDATED — automated**
 
-- `gradlew.bat :app:testDebugUnitTest`: PASS — 23 tests, 0 failures/errors/skips, including same-answer/checkpoint preservation, changed-value persistence, destructive-transition staging/coherence, one-off sanitization, and recurring fulfillment eligibility/recurrence cases.
+- `gradlew.bat :app:testDebugUnitTest`: PASS — 27 tests, 0 failures/errors/skips, including unchanged/changed/cleared issue descriptions, prior same-answer/checkpoint preservation, destructive-transition staging/coherence, one-off sanitization, and recurring fulfillment eligibility/recurrence cases.
 - `gradlew.bat :app:assembleDebug`: PASS.
 - `gradlew.bat :app:lintDebug`: PASS.
 - `gradlew.bat :app:assembleRelease`: PASS, including compilation of the release no-op fixture factory.
+- `gradlew.bat :app:assembleDebugAndroidTest`: PASS; the focused canonical-AVD Compose runtime test passed 1 test with 0 failures.
 - Room schema version 1 generated at `app/schemas/com.v16studio.serviceloop.data.ServiceLoopDatabase/1.json`.
 
-**DEVELOPER-VALIDATED — canonical emulator targeted correction regression**
+**DEVELOPER-VALIDATED — canonical emulator owner-feedback regression**
 
 - AVD display name: `Pixel 10a ServiceLoop`; resolved internal identifier: `Pixel_10a_ServiceLoop`; dynamically resolved serial for this run: `emulator-5556`, state `device`.
 - adb: `C:\Users\daemo\AppData\Local\Android\Sdk\platform-tools\adb.exe` 37.0.1. The exact debug APK was installed with explicit `-s emulator-5556`; no other emulator or physical device was used.
 - PASS: saved Belt condition issue detail prompted before Issue found → OK. Cancel retained Issue found, its reason, and the prior Saved checkpoint. Confirm wrote OK, cleared the issue reason, and showed Saved only after persistence; force-stop/cold-reopen retained coherent OK with no stale detail.
 - PASS: saved numeric VALUE → Not applicable prompted before discard; confirm cleared the numeric value and retained only the new NA reason.
-- PASS: Finding / issue details opened the labelled SL-1 foundation destination, which stated that no finding or follow-up was created.
+- PASS: all required root sequences rendered the requested root with its matching selected item: Home → Work → Home; Home → Customers → Home; Work → Customers → Home; Customers → Work → Home; Home → Work → Customers → Work; Home → Customers → Work → Customers. A repeated Customers tap produced no visible navigation oddity.
+- PASS: Work retained Visits after Resume working visit → Back and Booked visit → Back, Follow-ups after Follow-up → Back, and Due services after an available child destination → Back. Visits → Follow-ups → Visits also retained the correct visible selection.
+- PASS: the Belt condition public finding rendered inline at about three lines, expanded to about ten lines, collapsed without content loss, and exposed `Expand finding field` / `Collapse finding field` semantics. Edited text saved, survived leave/reopen, and was restored to a useful Issue found state after the regression.
+- PASS: Issue found → OK still prompted. Cancel retained issue text; confirm atomically cleared it with the new response. A focused instrumented test exercised edit/save/reopen plus both destructive-transition outcomes on the canonical AVD.
 - PASS: Completion Review rendered Performed/unfulfilled as eligible and remaining due, Performed/fulfilled with the captured-interval proposed date, and Partly performed/Not performed as fulfillment-unavailable and remaining due. Finalize remained disabled with no Stage-2 business effect.
 - PASS: Equipment Detail retained plan reference, interval, due date and status while exposing no raw current-obligation identity.
 - PASS: tapping the already-selected Optional accessory NA response retained the specific `Not fitted` reason and did not advance the visible 13:51 Saved checkpoint; force-stop/cold-reopen retained it. A genuine TEXT transition into NA saved the required generic reason.
@@ -75,7 +83,7 @@ Android Studio generated newer ordinary AndroidX libraries than Routine Repeater
 **NOT VALIDATED / OWNER OR DEVICE FOLLOW-UP**
 
 - No physical phone was used. TalkBack, 200% font, multi-window/foldable, light-theme, locale/RTL, and broader device-matrix inspection were not run.
-- Camera/gallery/file intake, actual owned attachment bytes, storage-exhaustion rescue actions, migrations beyond initial version 1, explicit backup/restore, final records/PDFs, and Stage 2 transaction retry behavior are not implemented or validated.
+- Camera/gallery/file intake, richer finding metadata/lifecycle/photos/disposition/corrective-task planning, actual owned attachment bytes, storage-exhaustion rescue actions, migrations beyond initial version 1, explicit backup/restore, final records/PDFs, and Stage 2 transaction retry behavior are not implemented or validated.
 
 ## Next boundary
 
