@@ -231,16 +231,18 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
-        require(planIds.isNotEmpty()) { "Select at least one due service" }; require(state in setOf("BOOKED", "WORKING")); LocalDate.parse(serviceDate)
+        require(planIds.isNotEmpty()) { "Select at least one due service" }; require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); LocalDate.parse(serviceDate)
+        val historical = state == "HISTORICAL"
         val plans = planIds.distinct().map { dao.plan(it) ?: error("Service plan no longer exists") }; val equipment = plans.map { dao.equipment(it.equipmentId) ?: error("Equipment no longer exists") }; val sites = equipment.map { it.siteId }.distinct(); require(sites.size == 1) { "One visit can contain work at one site only" }
         val site = dao.site(sites.single()) ?: error("Site no longer exists"); val customer = dao.customer(site.customerId) ?: error("Customer no longer exists"); val obligations = plans.map { plan -> dao.obligation(plan.currentObligationId ?: error("Plan has no current obligation")) ?: error("Current obligation missing") }
         require(plans.all { it.state == "ACTIVE" } && obligations.all { it.consumedAtEpochMillis == null }) { "A selected obligation is no longer current" }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val id = UUID.randomUUID().toString(); val profile = dao.businessProfile(); val zone = businessTime.zoneId.id
-        dao.insertVisits(listOf(WorkingVisitEntity(id, reference("V", dao.visitCount() + 1), customer.id, site.id, serviceDate, customer.name, site.name, site.address, state, now, customer.reference, site.reference, profile?.businessName, profile?.technicianName, profile?.phone, profile?.email, profile?.postalAddress, profile?.zoneId, scheduledAtEpochMillis, if (scheduledAtEpochMillis != null) zone else null)))
+        dao.insertVisits(listOf(WorkingVisitEntity(id, reference("V", dao.visitCount() + 1), customer.id, site.id, serviceDate, customer.name, site.name, site.address, if (historical) "WORKING" else state, now, customer.reference, site.reference, profile?.businessName, profile?.technicianName, profile?.phone, profile?.email, profile?.postalAddress, profile?.zoneId, scheduledAtEpochMillis, if (scheduledAtEpochMillis != null) zone else profile?.zoneId)))
         plans.forEachIndexed { index, plan ->
-            val eq = equipment[index]; val obligation = obligations[index]; dao.insertVisitClaim(VisitClaimEntity(obligation.id, id, now))
-            val snapshotId = captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
-            val workId = UUID.randomUUID().toString(); dao.insertWorkItems(listOf(WorkItemEntity(workId, id, eq.id, plan.id, obligation.id, snapshotId, eq.name, eq.reference, plan.name, plan.reference, obligation.dueDate, plan.intervalCount, plan.intervalUnit, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
+            val eq = equipment[index]; val obligation = obligations[index]
+            if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, id, now))
+            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
+            val workId = UUID.randomUUID().toString(); dao.insertWorkItems(listOf(WorkItemEntity(workId, id, eq.id, plan.id, if (historical) null else obligation.id, snapshotId, eq.name, eq.reference, plan.name, plan.reference, obligation.dueDate, plan.intervalCount, plan.intervalUnit, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
         }
         return@withTransaction id
     }
@@ -254,10 +256,10 @@ class RoomServiceLoopRepository(
         val visitId = if (planIds.isNotEmpty()) {
             createVisit(planIds, state, serviceDate, scheduledAtEpochMillis)
         } else {
-            require(state in setOf("BOOKED", "WORKING")); LocalDate.parse(serviceDate)
+            require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); LocalDate.parse(serviceDate)
             val site = dao.site(siteId) ?: error("Site no longer exists"); val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
             writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val id = UUID.randomUUID().toString(); val profile = dao.businessProfile()
-            dao.insertVisits(listOf(WorkingVisitEntity(id, reference("V", dao.visitCount() + 1), customer.id, site.id, serviceDate, customer.name, site.name, site.address, state, now, customer.reference, site.reference, profile?.businessName, profile?.technicianName, profile?.phone, profile?.email, profile?.postalAddress, profile?.zoneId, scheduledAtEpochMillis, scheduledAtEpochMillis?.let { businessTime.zoneId.id })))
+            dao.insertVisits(listOf(WorkingVisitEntity(id, reference("V", dao.visitCount() + 1), customer.id, site.id, serviceDate, customer.name, site.name, site.address, if(state=="HISTORICAL") "WORKING" else state, now, customer.reference, site.reference, profile?.businessName, profile?.technicianName, profile?.phone, profile?.email, profile?.postalAddress, profile?.zoneId, scheduledAtEpochMillis, scheduledAtEpochMillis?.let { businessTime.zoneId.id } ?: profile?.zoneId)))
             id
         }
         if (!oneOffName.isNullOrBlank()) addOneOffWork(visitId, oneOffEquipmentId ?: error("Choose equipment for one-off work"), oneOffName)
@@ -265,44 +267,46 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun addOneOffWork(visitId: String, equipmentId: String, name: String): String {
-        require(name.trim().isNotEmpty() && name.length <= 200); val visit = dao.visit(visitId) ?: error("Visit no longer exists"); require(visit.state in setOf("BOOKED", "WORKING")); val eq = dao.equipment(equipmentId) ?: error("Equipment no longer exists"); require(eq.siteId == visit.siteId) { "Equipment must belong to this visit site" }
-        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { dao.insertWorkItems(listOf(WorkItemEntity(id, visitId, eq.id, null, null, null, eq.name, eq.reference, name.trim(), null, null, null, null, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, ""))); dao.touchVisit(visitId, now) }; return id
+        require(name.trim().isNotEmpty() && name.length <= 200)
+        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(visitId)?:error("Visit no longer exists"); require(visit.state in setOf("BOOKED","WORKING")){"Visit no longer accepts work"}; val eq=dao.equipment(equipmentId)?:error("Equipment no longer exists"); require(eq.siteId==visit.siteId){"Equipment must belong to this visit site"}; dao.insertWorkItems(listOf(WorkItemEntity(id, visitId, eq.id, null, null, null, eq.name, eq.reference, name.trim(), null, null, null, null, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, ""))); dao.touchVisit(visitId, now) }; return id
     }
 
-    override suspend fun startVisit(id: String): Long = database.withTransaction {
+    override suspend fun startVisit(id: String): Long { writeGate.beforeWrite(); return database.withTransaction {
         val visit = dao.visit(id) ?: error("Visit no longer exists"); require(visit.state == "BOOKED") { "Only a booked visit can be started" }
         val workItems=dao.visitWorkItems(id); require(workItems.isNotEmpty()){ "Add at least one service line before starting" }
-        workItems.filter { it.capturedObligationId != null }.forEach { item ->
+        workItems.filter { it.servicePlanId != null }.forEach { item ->
             val plan = dao.plan(item.servicePlanId!!) ?: error("Plan missing")
-            val obligation = dao.obligation(item.capturedObligationId!!)
+            val captured = item.capturedObligationId ?: error("Booked recurring work has no captured obligation")
+            val obligation = dao.obligation(captured)
             require(
-                plan.currentObligationId == item.capturedObligationId &&
+                plan.currentObligationId == captured &&
                     obligation?.planId == plan.id &&
                     obligation.consumedAtEpochMillis == null &&
-                    obligation.dueDate == item.dueDateSnapshot &&
-                    dao.visitOwnsClaim(id, item.capturedObligationId) == 1
+                    dao.visitOwnsClaim(id, captured) == 1
             ) { "${item.equipmentReferenceSnapshot} · ${item.serviceNameSnapshot} is stale — rebook this work" }
         }
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); dao.updateVisit(visit.copy(state = "WORKING", actualServiceDate = businessTime.today().toString(), modifiedAtEpochMillis = now)); return@withTransaction now
-    }
+        val site=dao.site(visit.siteId)?:error("Site missing"); val customer=dao.customer(site.customerId)?:error("Customer missing"); val profile=dao.businessProfile(); val now = businessTime.instant().toEpochMilli()
+        workItems.forEach { item -> val eq=dao.equipment(item.equipmentId)?:error("Equipment missing"); require(eq.siteId==visit.siteId); val plan=item.servicePlanId?.let{dao.plan(it) ?: error("Plan missing")}; val snapshot=plan?.let{captureTemplateSnapshot(it.reusableTemplateId,id,it.id,now)}; check(dao.refreshWorkItemSnapshot(item.id,snapshot,eq.name,eq.reference,eq.technicianIdentifier,eq.make,eq.model,eq.serialNumber,plan?.name ?: item.serviceNameSnapshot,plan?.reference,plan?.currentDueDate,item.intervalCountSnapshot?.let{plan?.intervalCount},item.intervalUnitSnapshot?.let{plan?.intervalUnit})==1) }
+        check(dao.startBookedVisit(id,businessTime.today().toString(),customer.name,customer.reference,site.name,site.reference,site.address,profile?.businessName,profile?.technicianName,profile?.phone,profile?.email,profile?.postalAddress,profile?.zoneId,now)==1){"Only a booked visit can be started"}; now
+    } }
 
     override suspend fun rescheduleVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?, reason: String): Long {
-        LocalDate.parse(serviceDate); require(reason.trim().isNotEmpty()); val visit = dao.visit(id) ?: error("Visit no longer exists"); require(visit.state == "BOOKED"); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { dao.updateVisit(visit.copy(actualServiceDate = serviceDate, scheduledAtEpochMillis = scheduledAtEpochMillis, scheduleChangeReason = reason.trim(), modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",visit.actualServiceDate,serviceDate,visit.scheduledAtEpochMillis,scheduledAtEpochMillis,reason.trim(),now)) }; return now
+        LocalDate.parse(serviceDate); require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be rescheduled"}; dao.updateVisit(visit.copy(actualServiceDate = serviceDate, scheduledAtEpochMillis = scheduledAtEpochMillis, scheduleChangeReason = reason.trim(), modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",visit.actualServiceDate,serviceDate,visit.scheduledAtEpochMillis,scheduledAtEpochMillis,reason.trim(),now)) }; return now
     }
 
     override suspend fun cancelVisit(id: String, reason: String): Long {
-        require(reason.trim().isNotEmpty()); val visit = dao.visit(id) ?: error("Visit no longer exists"); require(visit.state == "BOOKED"); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { dao.updateVisit(visit.copy(state = "CANCELLED", cancellationReason = reason.trim(), cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELLED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
+        require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be cancelled"}; dao.updateVisit(visit.copy(state = "CANCELLED", cancellationReason = reason.trim(), cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELLED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
     }
 
     override suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String {
-        require(description.trim().isNotEmpty() && description.length <= 200); require(unit.trim().isNotEmpty() && unit.length <= 30); val numeric = runCatching { BigDecimal(quantity.trim()) }.getOrNull(); require(numeric != null && numeric > BigDecimal.ZERO) { "Quantity must be a finite positive number" }; val item = dao.workItem(workItemId) ?: error("Work item no longer exists"); require(dao.visit(item.visitId)?.state == "WORKING")
-        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); dao.insertPart(PartEntryEntity(id, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now)); dao.touchVisit(item.visitId, now); return id
+        require(description.trim().isNotEmpty() && description.length <= 200); require(unit.trim().isNotEmpty() && unit.length <= 30); val numeric = runCatching { BigDecimal(quantity.trim()) }.getOrNull(); require(numeric != null && numeric > BigDecimal.ZERO) { "Quantity must be a finite positive number" }
+        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); dao.insertPart(PartEntryEntity(id, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now)); dao.touchVisit(item.visitId, now) }; return id
     }
 
     override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String {
-        require(bytes.isNotEmpty()); require(bytes.size <= MAX_PHOTO_SOURCE_BYTES) { "Choose a photo smaller than 30 MB" }; require(mimeType.startsWith("image/")); val item = dao.workItem(workItemId) ?: error("Work item no longer exists"); require(dao.visit(item.visitId)?.state == "WORKING"); require(dao.machinePhotoCount(item.visitId,item.equipmentId) < 20) { "This machine already has 20 visit photographs" }; require(dao.visitPhotoCount(item.visitId) < 100) { "This visit already has 100 photographs" }; val root = attachmentRoot ?: error("Attachment storage unavailable")
+        require(bytes.isNotEmpty()); require(bytes.size <= MAX_PHOTO_SOURCE_BYTES) { "Choose a photo smaller than 30 MB" }; require(mimeType.startsWith("image/")); val root = attachmentRoot ?: error("Attachment storage unavailable")
         val normalized = normalizePhoto(bytes)
-        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val relative = "attachments/$id/original"; val target = File(root, relative); val temp = File(target.parentFile, "incoming.tmp"); target.parentFile?.mkdirs(); try { temp.writeBytes(normalized.bytes); require(temp.length() == normalized.bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }; val hash = MessageDigest.getInstance("SHA-256").digest(normalized.bytes).joinToString("") { "%02x".format(it) }; try { dao.insertAttachments(listOf(AttachmentEntity(id, "WORK_ITEM", workItemId, relative, hash, displayName, normalized.mimeType, includeInReport, "PRESENT", normalized.bytes.size.toLong(), clean(caption)))) } catch (failure: Exception) { target.delete(); throw failure }; dao.touchVisit(item.visitId, businessTime.instant().toEpochMilli()); return id } catch (failure: Exception) { temp.delete(); throw failure }
+        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val relative = "attachments/$id/original"; val target = File(root, relative); val temp = File(target.parentFile, "incoming.tmp"); target.parentFile?.mkdirs(); try { temp.writeBytes(normalized.bytes); require(temp.length() == normalized.bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }; val hash = MessageDigest.getInstance("SHA-256").digest(normalized.bytes).joinToString("") { "%02x".format(it) }; database.withTransaction { val item=workingItem(workItemId); require(dao.machinePhotoCount(item.visitId,item.equipmentId)<20); require(dao.visitPhotoCount(item.visitId)<100); dao.insertAttachments(listOf(AttachmentEntity(id,"WORK_ITEM",workItemId,relative,hash,displayName,normalized.mimeType,includeInReport,"PRESENT",normalized.bytes.size.toLong(),clean(caption)))); dao.touchVisit(item.visitId,businessTime.instant().toEpochMilli()) }; return id } catch (failure: Throwable) { temp.delete(); target.delete(); throw failure }
     }
 
     override suspend fun createContactNote(input: ContactNoteInput): String {
@@ -316,7 +320,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun updateFollowUp(id: String, title: String, dueDate: String, privateNote: String, reason: String): Long {
-        require(title.trim().isNotEmpty()&&title.length<=200); LocalDate.parse(dueDate); val old=dao.followUp(id)?:error("Follow-up no longer exists"); require(old.state=="OPEN"); if(dueDate!=old.dueDate) require(reason.trim().isNotEmpty()){ "Explain why the follow-up date changed" }; writeGate.beforeWrite(); val now=businessTime.instant().toEpochMilli(); database.withTransaction { dao.updateFollowUp(old.copy(title=title.trim(),dueDate=dueDate,privatePlanningNote=clean(privateNote),updatedAtEpochMillis=now)); if(dueDate!=old.dueDate) dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",now,reason.trim(),dueDate)) }; return now
+        require(title.trim().isNotEmpty()&&title.length<=200); LocalDate.parse(dueDate); writeGate.beforeWrite(); val now=businessTime.instant().toEpochMilli(); database.withTransaction { val old=dao.followUp(id)?:error("Follow-up no longer exists"); require(old.state=="OPEN"){"Only an open follow-up can be edited"}; if(dueDate!=old.dueDate) require(reason.trim().isNotEmpty()){ "Explain why the follow-up date changed" }; dao.updateFollowUp(old.copy(title=title.trim(),dueDate=dueDate,privatePlanningNote=clean(privateNote),updatedAtEpochMillis=now)); if(dueDate!=old.dueDate) dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",now,reason.trim(),dueDate)) }; return now
     }
 
     override suspend fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String): String {
@@ -325,8 +329,8 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun changeFollowUpState(id: String, state: String, reason: String, newDueDate: String?): Long {
-        require(state in setOf("RESOLVED", "CANCELLED", "OPEN")); require(reason.trim().isNotEmpty()); val old = dao.followUp(id) ?: error("Follow-up no longer exists"); if (state == "OPEN") require(old.state != "OPEN" && newDueDate != null); else require(old.state == "OPEN"); newDueDate?.let(LocalDate::parse)
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { dao.updateFollowUp(old.copy(state = state, dueDate = newDueDate ?: old.dueDate, updatedAtEpochMillis = now, closedAtEpochMillis = if (state == "OPEN") null else now, closureReason = if (state == "OPEN") null else reason.trim())); dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(), id, state, now, reason.trim(), newDueDate)) }; return now
+        require(state in setOf("RESOLVED", "CANCELLED", "OPEN")); require(reason.trim().isNotEmpty()); newDueDate?.let(LocalDate::parse)
+        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val old=dao.followUp(id)?:error("Follow-up no longer exists"); if(state=="OPEN") require(old.state!="OPEN"&&newDueDate!=null){"Only a closed follow-up can be reopened"} else require(old.state=="OPEN"){"Only an open follow-up can be closed"}; dao.updateFollowUp(old.copy(state = state, dueDate = newDueDate ?: old.dueDate, updatedAtEpochMillis = now, closedAtEpochMillis = if (state == "OPEN") null else now, closureReason = if (state == "OPEN") null else reason.trim())); dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(), id, state, now, reason.trim(), newDueDate)) }; return now
     }
 
     override suspend fun equipment(id: String): EquipmentDetail? {
@@ -349,10 +353,11 @@ class RoomServiceLoopRepository(
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
             val eligibility = when {
                 item.servicePlanId == null -> FulfillmentEligibility.NO_CURRENT_OBLIGATION
+                item.capturedObligationId == null -> FulfillmentEligibility.HISTORY_ONLY
                 plan == null || plan.state != "ACTIVE" -> FulfillmentEligibility.PLAN_INELIGIBLE
                 item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
                 item.templateSnapshotId != null && !item.checklistReviewed -> FulfillmentEligibility.CHECKLIST_NOT_REVIEWED
-                item.capturedObligationId == null || obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null || plan.currentObligationId != item.capturedObligationId -> FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED
+                obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null || plan.currentObligationId != item.capturedObligationId -> FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED
                 else -> FulfillmentEligibility.ELIGIBLE
             }
             val fulfills = eligibility == FulfillmentEligibility.ELIGIBLE && item.fulfillsCurrentObligation == true
@@ -405,8 +410,9 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun savePublicWork(workItemId: String, text: String): Long {
-        val row = dao.inspection(workItemId) ?: error("Working item no longer exists"); val normalizedText = text.trim(); if (row.workPerformed == normalizedText) return row.modifiedAtEpochMillis
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { check(dao.updatePublicWork(workItemId, normalizedText) == 1); dao.touchVisit(row.visitId, now) }; return now
+        val row = dao.inspection(workItemId) ?: error("Working item no longer exists"); val normalizedText = text.trim()
+        if(row.workPerformed==normalizedText) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
+        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); check(dao.updatePublicWork(workItemId, normalizedText) == 1); dao.touchVisit(item.visitId, now) }; return now
     }
 
     override suspend fun markChecklistReviewed(workItemId: String): Long {
@@ -420,8 +426,7 @@ class RoomServiceLoopRepository(
                 })
         }
         require(invalid.isEmpty()) { "${invalid.size} required checklist item(s) need attention" }
-        if (draft.checklistReviewed) return draft.modifiedAtEpochMillis
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { check(dao.updateChecklistReviewed(workItemId, true) == 1); dao.touchVisit(draft.visitId, now) }; return now
+        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); check(dao.updateChecklistReviewed(workItemId, true) == 1); dao.touchVisit(item.visitId, now) }; return now
     }
 
     override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
@@ -434,8 +439,8 @@ class RoomServiceLoopRepository(
         val derivedCalculated = chosen?.let { it == calculatedDate }
         val normalizedOverride = overrideReason?.trim()?.ifBlank { null }?.takeIf { chosen != null && derivedCalculated == false }
         if (chosen != null && derivedCalculated == false) require(normalizedOverride != null) { "Override reason is required" }
-        if (item.outcome == outcome && item.fulfillsCurrentObligation == effectiveFulfills && item.notPerformedReason == normalizedReason && item.confirmedNextDueDate == chosen && item.nextDueDateCalculated == derivedCalculated && item.nextDueOverrideReason == normalizedOverride) return visit.modifiedAtEpochMillis
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { check(dao.updateCompletionDraft(workItemId, outcome, effectiveFulfills, normalizedReason, chosen, derivedCalculated, normalizedOverride) == 1); dao.touchVisit(item.visitId, now) }; return now
+        if(item.outcome==outcome&&item.fulfillsCurrentObligation==effectiveFulfills&&item.notPerformedReason==normalizedReason&&item.confirmedNextDueDate==chosen&&item.nextDueDateCalculated==derivedCalculated&&item.nextDueOverrideReason==normalizedOverride) return database.withTransaction { workingItem(workItemId); dao.visit(item.visitId)?.modifiedAtEpochMillis ?: error("Visit no longer exists") }
+        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val current=workingItem(workItemId); check(dao.updateCompletionDraft(workItemId, outcome, effectiveFulfills, normalizedReason, chosen, derivedCalculated, normalizedOverride) == 1); dao.touchVisit(current.visitId, now) }; return now
     }
 
     override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long {
@@ -443,11 +448,11 @@ class RoomServiceLoopRepository(
         val normalizedValue = value?.trim()?.takeIf { disposition == ResponseDisposition.VALUE }; val normalizedReason = reason?.trim()?.ifBlank { null }?.takeIf { disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) }
         val allowed = if (item.responseType == "STATUS") setOf(ResponseDisposition.OK, ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.NOT_CHECKED) else setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.VALUE); require(disposition in allowed); if (disposition == ResponseDisposition.VALUE) require(!normalizedValue.isNullOrBlank()); if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) require(isFiniteSignedDecimal(normalizedValue!!)) { "Enter a signed decimal number, for example -12.5" }; if (disposition == ResponseDisposition.NOT_APPLICABLE) require(normalizedReason != null)
         val existing = dao.responses(workItemId).firstOrNull { it.checklistItemSnapshotId == questionId }
-        if (existing != null && existing.disposition == disposition.name && (if (item.responseType == "NUMBER") existing.numberValue else existing.textValue) == normalizedValue?.takeIf { disposition == ResponseDisposition.VALUE } && existing.reason == normalizedReason?.takeIf { disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) }) return inspection.modifiedAtEpochMillis
+        if(existing!=null&&existing.disposition==disposition.name&&(if(item.responseType=="NUMBER") existing.numberValue else existing.textValue)==normalizedValue?.takeIf{disposition==ResponseDisposition.VALUE}&&existing.reason==normalizedReason?.takeIf{disposition in setOf(ResponseDisposition.ISSUE_FOUND,ResponseDisposition.NOT_APPLICABLE)}) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
         writeGate.beforeWrite()
         val now = businessTime.instant().toEpochMilli()
         val response = WorkingResponseEntity(existing?.id ?: stableId("response", workItemId, item.id), workItemId, questionId, disposition.name, normalizedValue?.takeIf { item.responseType == "TEXT" }, normalizedValue?.takeIf { item.responseType == "NUMBER" }, normalizedReason, now)
-        database.withTransaction { dao.persistResponse(response, inspection.visitId) }; return now
+        database.withTransaction { workingItem(workItemId); dao.persistResponse(response, inspection.visitId) }; return now
     }
 
     override suspend fun finalizeVisit(visitId: String): FinalizeResult = database.withTransaction {
@@ -504,13 +509,19 @@ class RoomServiceLoopRepository(
 
     override suspend fun finalRecord(recordId: String): FinalRecordDetail? {
         val record = dao.finalRecord(recordId) ?: return null; val revision = dao.finalRevision(record.currentRevisionId) ?: return null; val items = dao.finalWorkItems(revision.id)
-        val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption) }) }
+        val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption) }, historyOnly=item.planId!=null&&item.capturedObligationId==null) }
         val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference)
         val rendition = dao.reportRendition(revision.id)?.let { ReportRendition(it.id, it.revisionId, it.versionNumber, it.generatedAtEpochMillis, it.relativePath, it.sha256, it.byteSize, it.pageCount, it.status, it.failureMessage) }
         return FinalRecordDetail(model, items.mapNotNull { it.privateInternalNote }, rendition)
     }
 
     private fun stableId(vararg parts: String) = UUID.nameUUIDFromBytes(parts.joinToString(":").toByteArray()).toString()
+
+    private suspend fun workingItem(workItemId: String): WorkItemEntity {
+        val item=dao.workItem(workItemId)?:error("Work item no longer exists")
+        require(dao.visit(item.visitId)?.state=="WORKING"){"Visit is no longer working"}
+        return item
+    }
 
     private fun clean(value: String?): String? = value?.trim()?.ifBlank { null }
     private data class NormalizedPhoto(val bytes: ByteArray, val mimeType: String)

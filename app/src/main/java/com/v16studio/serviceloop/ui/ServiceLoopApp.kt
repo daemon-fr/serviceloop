@@ -44,6 +44,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -169,6 +172,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav)} }
         composable("site/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Edit site",nav){SiteEditorScreen(null,state.site,it,state,viewModel,nav)} }
         composable("equipment/new/{siteId}") { entry -> val id=entry.arguments?.getString("siteId"); DetailScaffold("Add equipment",nav){EquipmentEditorScreen(id,null,it,state,viewModel,nav)} }
+        composable("equipment/select-site") { LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Choose equipment site",nav){EquipmentSiteSelectorScreen(state.visitSites,it,nav)} }
         composable("equipment/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadEquipment(id)}; DetailScaffold("Edit equipment",nav){EquipmentEditorScreen(null,state.equipment,it,state,viewModel,nav)} }
         composable("plan/new/{equipmentId}") { entry -> val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} }
         composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
@@ -182,7 +186,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,id)} }
         composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }
         composable("follow-up/list") { LaunchedEffect(Unit){viewModel.loadFollowUps()}; DetailScaffold("Follow-ups",nav){FollowUpListScreen(state.followUps,it,nav)} }
-        composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel)} }
+        composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
         composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
         composable("contact/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Record contact",nav){ContactNoteEditorScreen(id,it,state,viewModel,nav)} }
         composable("search") { DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav)} }
@@ -257,8 +261,11 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailScaffold(title: String, nav: NavHostController, content: @Composable (PaddingValues) -> Unit) {
-    Scaffold(topBar = { TopAppBar(title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, navigationIcon = { TextButton(onClick = { nav.popBackStack() }) { Text("Back") } }) }, content = content)
+    val interceptor=remember { mutableStateOf<(() -> Unit)?>(null) }
+    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(topBar = { TopAppBar(title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() }) { Text("Back") } }) }, content = content) }
 }
+
+internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
 
 @Composable
 private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestination) -> Unit) {
@@ -359,7 +366,7 @@ private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<Eq
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!equipmentMode) Button(onClick = {}) { Text("Customers") } else OutlinedButton(onClick = { onEquipmentModeChanged(false) }) { Text("Customers") }; if (equipmentMode) Button(onClick = {}) { Text("Equipment") } else OutlinedButton(onClick = { onEquipmentModeChanged(true) }) { Text("Equipment") } }; Text(if (equipmentMode) "Equipment register" else "Customer register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
         item {
             val addLabel = if (equipmentMode) "Add equipment" else "Add customer"
-            val addRoute = if (equipmentMode) "search" else "customer/new"
+            val addRoute = if (equipmentMode) "equipment/select-site" else "customer/new"
             OutlinedButton(onClick = { nav.navigate(addRoute) }, modifier = Modifier.fillMaxWidth().testTag(if (equipmentMode) "add-equipment-from-register" else "add-customer")) { Text(addLabel) }
         }
         if (!equipmentMode) {
@@ -456,27 +463,11 @@ private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewMod
 @Composable
 private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     var text by rememberSaveable(question.snapshotItemId, question.reason) { mutableStateOf(question.reason.orEmpty()) }
-    var expanded by rememberSaveable(question.snapshotItemId) { mutableStateOf(false) }
-    var modalOpen by remember(question.snapshotItemId) { mutableStateOf(false) }
     val changed = text != question.reason.orEmpty()
     Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("finding-expand-${question.snapshotItemId}").semantics { contentDescription = if(expanded) "Collapse finding field" else "Expand finding field" }) { Text(if(expanded) "Collapse" else "Expand") }
-            }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Public finding description") },
-                placeholder = { Text("Describe what was found") },
-                supportingText = { Text("May appear in the customer service record and report") },
-                minLines = if(expanded) 10 else 3,
-                maxLines = if(expanded) 10 else 3,
-                enabled = !saving,
-                modifier = Modifier.fillMaxWidth().testTag("finding-field-${question.snapshotItemId}"),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { modalOpen = true }, modifier = Modifier.semantics { contentDescription = "Open full finding editor" }) { Text("Open full editor ↗") } }
+            Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium)
+            LongTextEditor(text,{text=it},"Public finding description",false)
             Button(
                 onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
                 enabled = !saving && changed,
@@ -484,7 +475,6 @@ private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, v
             ) { Text("Save finding") }
         }
     }
-    if (modalOpen) AlertDialog(onDismissRequest = { modalOpen = false }, title = { Text("Public finding description") }, text = { OutlinedTextField(text, { text = it }, minLines = 5, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("finding-expanded-${question.snapshotItemId}")) }, confirmButton = { TextButton(onClick = { modalOpen = false }) { Text("Done editing") } })
 }
 
 @Composable
@@ -528,6 +518,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         }
         when (line.fulfillmentEligibility) {
             FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation, enabled = !saving, onCheckedChange = { viewModel.saveCompletion(line.workItemId, line.outcome, it, line.notPerformedReason, null, null, null, visitId) }, modifier = Modifier.testTag("fulfills-${line.workItemId}")); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.HISTORY_ONLY -> Text("Recurring historical work · History only — no current obligation will be fulfilled.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("Fulfillment unavailable — one-off work has no recurring obligation to fulfill.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
@@ -535,6 +526,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.", style = MaterialTheme.typography.bodyMedium)
         }
         when {
+            line.fulfillmentEligibility == FulfillmentEligibility.HISTORY_ONLY -> Text("History only — current recurring due date is unchanged")
             line.fulfillmentEligibility == FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date changes")
             line.fulfillsCurrentObligation && line.dueDate != null && line.proposedNextDueDate != null -> Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}")
             line.fulfillsCurrentObligation -> Text("Recurring due-date proposal unavailable", color = LocalServiceLoopColors.current.urgencyInk)
@@ -654,6 +646,7 @@ private fun formatRecordedOn(epochMillis: Long): String = DateTimeFormatter.ofPa
 private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())
 
 private fun dueEffect(line: com.v16studio.serviceloop.domain.PublicWorkLine): String = when {
+    line.historyOnly -> "Recurring historical work · History only — no current due-date effect"
     !line.isRecurringPlan -> "One-off work — no recurring due date effect"
     line.fulfilledObligation -> "Due ${line.oldDueDate} → ${line.nextDueDate}"
     else -> "Current service remains due ${line.oldDueDate}"

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextContains
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -81,7 +82,7 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Record past visit").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Book visit").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().visitCount()==1}}
-        compose.onNodeWithText("Start booked visit").assertIsDisplayed()
+        compose.onNodeWithText("Start with current details").assertIsDisplayed()
         compose.onNodeWithText("New appointment date").performTextReplacement("2026-09-12")
         compose.onNodeWithText("Reschedule reason").performTextInput("Customer requested another date")
         compose.onNodeWithText("Reschedule booking").performScrollTo().performClick()
@@ -91,6 +92,27 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Cancel booking").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().visits().single().state=="CANCELLED"}}
         assertEquals(null,kotlinx.coroutines.runBlocking{database.serviceLoopDao().dueServices().single().claimedVisitId})
+    }
+
+    @Test fun appBarAndSystemBackProtectUnsavedCreateAndEditForms()=runBlocking {
+        val customer=repository.createCustomer(CustomerInput("Guard customer"))
+        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Unsaved")
+        compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Unsaved").assertIsDisplayed(); compose.onNodeWithText("Discard changes").assertDoesNotExist()
+        compose.activity.onBackPressedDispatcher.onBackPressed(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Discard changes").performClick()
+        compose.onNodeWithText("Guard customer").performClick(); compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard edited")
+        compose.activity.onBackPressedDispatcher.onBackPressed(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Guard edited").assertIsDisplayed(); Unit
+    }
+
+    @Test fun expandedLongTextUsesSameBufferUntilExplicitSave()=runBlocking {
+        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
+        compose.onNodeWithTag("long-text-private-customer-note-expand").performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput("Unsaved long private note"); compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("long-text-private-customer-note").assertTextContains("Unsaved long private note"); compose.onNodeWithText("Save customer").performScrollTo().performClick(); compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; assertEquals("Unsaved long private note",repository.customer(database.serviceLoopDao().customerList().single().id)!!.privateNote); Unit
+    }
+
+    @Test fun globalAddEquipmentUsesSiteChooserAndRealEditor()=runBlocking {
+        val customer=repository.createCustomer(CustomerInput("Selector customer")); repository.createSite(customer,SiteInput("Selector site",""))
+        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("add-equipment-from-register").performClick()
+        compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.onNodeWithText("Selector customer\nST-001 · Selector site").performClick(); compose.onNodeWithText("Equipment name · Required").assertIsDisplayed(); Unit
     }
 
 

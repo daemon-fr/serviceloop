@@ -174,7 +174,7 @@ object FixedServiceRecordPdf {
             line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
             line.parts.forEach { part -> raw += RawLine("Part: ${part.description} — ${part.quantity} ${part.unit}", LineStyle.BODY) }
             line.photos.forEachIndexed { photoIndex, photo -> raw += RawLine("Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}", LineStyle.BODY) }
-            raw += RawLine(when { !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
+            raw += RawLine(when { line.historyOnly -> "Recurring historical work — History only; no current due-date effect"; !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
             line.checklist.forEach { q -> raw += RawLine("${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}", LineStyle.BODY) }
         }
         return raw.filter { it.text.isNotBlank() }.flatMap(::wrap)

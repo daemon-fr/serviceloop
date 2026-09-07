@@ -265,7 +265,7 @@ interface ServiceLoopDao {
     @Query("""
         SELECT 'CUSTOMER' type, id, reference, name title, COALESCE(contactName,'') subtitle FROM customers WHERE name LIKE :pattern OR reference LIKE :pattern OR COALESCE(contactName,'') LIKE :pattern
         UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
-        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern
+        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern OR COALESCE(e.make,'') LIKE :pattern OR COALESCE(e.model,'') LIKE :pattern
         UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name FROM service_plans p JOIN equipment e ON e.id=p.equipmentId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
         UNION ALL SELECT CASE v.state WHEN 'FINALIZED' THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, v.state FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
         UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, fu.state FROM follow_ups fu WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
@@ -284,6 +284,12 @@ interface ServiceLoopDao {
 
     @Query("UPDATE working_visits SET modifiedAtEpochMillis=:modified WHERE id=:visitId")
     suspend fun touchVisit(visitId: String, modified: Long)
+
+    @Query("UPDATE work_items SET templateSnapshotId=:snapshotId, equipmentNameSnapshot=:equipmentName, equipmentReferenceSnapshot=:equipmentReference, equipmentIdentifierSnapshot=:identifier, equipmentMakeSnapshot=:make, equipmentModelSnapshot=:model, equipmentSerialSnapshot=:serial, serviceNameSnapshot=:serviceName, planReferenceSnapshot=:planReference, dueDateSnapshot=:dueDate, intervalCountSnapshot=:intervalCount, intervalUnitSnapshot=:intervalUnit WHERE id=:workItemId")
+    suspend fun refreshWorkItemSnapshot(workItemId: String, snapshotId: String?, equipmentName: String, equipmentReference: String, identifier: String?, make: String?, model: String?, serial: String?, serviceName: String, planReference: String?, dueDate: String?, intervalCount: Int?, intervalUnit: String?): Int
+
+    @Query("UPDATE working_visits SET state='WORKING', actualServiceDate=:serviceDate, customerNameSnapshot=:customerName, customerReferenceSnapshot=:customerReference, siteNameSnapshot=:siteName, siteReferenceSnapshot=:siteReference, siteAddressSnapshot=:siteAddress, reportBusinessNameSnapshot=:businessName, reportTechnicianNameSnapshot=:technicianName, reportPhoneSnapshot=:phone, reportEmailSnapshot=:email, reportPostalAddressSnapshot=:address, reportZoneIdSnapshot=:zoneId, modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='BOOKED'")
+    suspend fun startBookedVisit(visitId: String, serviceDate: String, customerName: String, customerReference: String, siteName: String, siteReference: String, siteAddress: String?, businessName: String?, technicianName: String?, phone: String?, email: String?, address: String?, zoneId: String?, modified: Long): Int
 
     @Query("UPDATE work_item_public_drafts SET workPerformed=:text WHERE workItemId=:workItemId")
     suspend fun updatePublicWork(workItemId: String, text: String): Int

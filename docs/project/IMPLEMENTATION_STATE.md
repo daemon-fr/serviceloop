@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-07 — SL-3 implementation candidate
+**Updated:** 2026-09-07 — SL-3 independent-review correction implementation candidate
 
 ## Current state
 
@@ -10,6 +10,7 @@
 - SL-2 owner-review usability correction: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - B-008 real-technician pilot remains outstanding. This does not block Stage-3 development, but Stage 2 is not product-valid for release preparation until that pilot occurs.
 - SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
+- The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Exhaustive runtime/regression acceptance verification remains pending Testing AI Model Phase B; this checkpoint is not technical or owner acceptance.
 
 ## SL-3 implementation candidate
 
@@ -20,7 +21,8 @@
 - Contact handoffs for dialer/SMS/email/maps remain separate from manually saved contact outcomes. Saved notes can be retained as Entered in error. Contact and corrective follow-ups support reasoned edit/resolve/cancel/reopen without recurrence effects.
 - Textual parts and bounded app-owned photo intake through Android Photo Picker/camera staging, orientation-corrected metadata-stripped optimization, explicit customer-report inclusion, selected-file integrity checks, final-record part/photo snapshots, PDF photo pages, and public-model privacy selection.
 - Global local search routes customers, sites, equipment, plans, visits/final records, and follow-ups to their typed destinations.
-- Reusable expanded multiline pattern and a dedicated long-form Issue found editor sharing the same unsaved buffer; the accepted compact inline editor remains intact.
+- One reusable compact multiline pattern with a bottom-right expand affordance and full-screen same-buffer editor, including Issue found without competing expansion controls. Parent explicit Save remains authoritative.
+- Template revision items have staged accessible Move up/Move down controls; the global Equipment-register Add action now opens a real active-site chooser; equipment search includes make and model; explicit-save directory, plan, template, follow-up, contact-note, and visit-setup forms protect changed local buffers on app-bar and system Back.
 - Home contextual actions enter explicit Work due/visit/follow-up filters rather than restoring an unrelated previous tab; Work includes visit state/date-window and follow-up due/open/closed filters.
 
 Canonical `Pixel 10a ServiceLoop` was upgraded in place from v3 to v4 with `install -r`; V-001/P-001/report preservation and all registered migration chains were validated. The historical V-001 PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`.

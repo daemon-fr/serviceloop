@@ -6,6 +6,7 @@ import android.graphics.Color
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.RoomServiceLoopRepository
+import com.v16studio.serviceloop.data.DraftWriteGate
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.domain.*
 import java.io.File
@@ -14,6 +15,8 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
@@ -50,12 +53,62 @@ class DailyOperationsIntegrityTest {
         assertEquals(before.currentObligationId, after.currentObligationId); assertEquals(1, db.serviceLoopDao().obligationCount(ids.plan)); assertNull(db.serviceLoopDao().obligation(after.currentObligationId!!)!!.consumedAtEpochMillis); assertEquals("2026-10-10", db.serviceLoopDao().obligation(after.currentObligationId!!)!!.dueDate)
     }
 
-    @Test fun reusableTemplatePublishesAppendOnlyRevisionAndWorkingSnapshotsStayFrozen() = runTest {
-        val ids = foundation(); val template = repo.createTemplate("Safety", listOf(TemplateItemDraft("Old wording", "STATUS", required = true))); repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+    @Test fun bookedVisitCapturesLatestTemplateAtStartAndWorkingSnapshotsStayFrozen() = runTest {
+        val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val template = repo.createTemplate("Safety", listOf(TemplateItemDraft("Old wording", "STATUS", required = true))); repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
         val firstVisit = repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", Instant.parse("2026-09-06T08:00:00Z").toEpochMilli()); val firstWork = db.serviceLoopDao().firstWorkItemId(firstVisit)!!
-        repo.reviseTemplate(template, "Safety revised", listOf(TemplateItemDraft("New wording", "NUMBER", "bar", true))); repo.cancelVisit(firstVisit, "Customer unavailable")
-        val secondVisit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val secondWork = db.serviceLoopDao().firstWorkItemId(secondVisit)!!
-        assertEquals("Old wording", repo.inspection(firstWork)!!.questions.single().label); assertEquals("New wording", repo.inspection(secondWork)!!.questions.single().label); assertEquals(2, db.serviceLoopDao().reusableTemplateRevisions(template).size)
+        assertTrue(repo.inspection(firstWork)!!.questions.isEmpty())
+        repo.reviseTemplate(template, "Safety revised", listOf(TemplateItemDraft("New wording", "NUMBER", "bar", true))); repo.startVisit(firstVisit)
+        assertEquals("New wording", repo.inspection(firstWork)!!.questions.single().label)
+        repo.reviseTemplate(template, "Safety r3", listOf(TemplateItemDraft("Newest wording", "TEXT", required = true)))
+        assertEquals("New wording", repo.inspection(firstWork)!!.questions.single().label); repo.saveResponse(firstWork,repo.inspection(firstWork)!!.questions.single().snapshotItemId,ResponseDisposition.VALUE,"2.5",null);repo.markChecklistReviewed(firstWork);repo.savePublicWork(firstWork,"Checked");repo.saveCompletionDraft(firstWork,"PERFORMED",false,null,null,null,null);repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest"));val record=repo.finalRecord((repo.finalizeVisit(firstVisit) as FinalizeResult.Success).recordId)!!;assertEquals("New wording",record.public.lines.single().checklist.single().label); assertEquals(3, db.serviceLoopDao().reusableTemplateRevisions(template).size)
+    }
+
+    @Test fun recordPastRecurringWorkIsHistoryOnlyAndFinalizationDoesNotTouchCurrentObligation() = runTest {
+        val ids=foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val before=db.serviceLoopDao().plan(ids.plan)!!
+        val visit=repo.createVisit(listOf(ids.plan),"HISTORICAL","2026-08-01"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!
+        assertNull(repo.dueServices().single().claimedVisitId); assertNull(db.serviceLoopDao().workItem(work)!!.capturedObligationId)
+        repo.savePublicWork(work,"Historical annual service"); repo.saveCompletionDraft(work,"PERFORMED",true,null,"2027-08-01",true,null)
+        assertEquals(FulfillmentEligibility.HISTORY_ONLY,repo.completionLines(visit).single().fulfillmentEligibility); assertFalse(repo.completionLines(visit).single().fulfillsCurrentObligation)
+        val record=repo.finalRecord((repo.finalizeVisit(visit) as FinalizeResult.Success).recordId)!!; val after=db.serviceLoopDao().plan(ids.plan)!!
+        assertEquals(before.currentObligationId,after.currentObligationId); assertEquals(before.currentDueDate,after.currentDueDate); assertTrue(record.public.lines.single().historyOnly)
+    }
+
+    @Test fun obligationReplacementBeforeStartBlocksWithoutRetargeting() = runTest {
+        val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val captured=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
+        db.serviceLoopDao().insertObligations(listOf(com.v16studio.serviceloop.data.ServiceObligationEntity("replacement",ids.plan,2,"2027-09-01",2))); db.serviceLoopDao().setCurrentObligationForTest(ids.plan,"replacement")
+        assertTrue(runCatching{repo.startVisit(visit)}.isFailure); assertEquals("BOOKED",repo.visit(visit)!!.state); assertEquals(captured,db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId)
+    }
+
+    @Test fun finalizeWinningPreventsLaterPartMutation() = runTest {
+        val ids=foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!; repo.savePublicWork(work,"Done"); repo.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null)
+        val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); val delayed=RoomServiceLoopRepository(db,time,DraftWriteGate{entered.complete(Unit);release.await()},attachmentRoot=root)
+        val save=launch{assertTrue(runCatching{delayed.addPart(work,"Filter","1","pc")}.isFailure)}; entered.await(); assertTrue(repo.finalizeVisit(visit) is FinalizeResult.Success); release.complete(Unit); save.join(); assertTrue(repo.parts(work).isEmpty())
+    }
+
+    @Test fun cancelWinningPreventsStaleStartAndResolveWinningPreventsStaleFollowUpEdit() = runTest {
+        val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); val delayed=RoomServiceLoopRepository(db,time,DraftWriteGate{entered.complete(Unit);release.await()},attachmentRoot=root)
+        val start=launch{assertTrue(runCatching{delayed.startVisit(visit)}.isFailure)}; entered.await(); repo.cancelVisit(visit,"Cancelled first"); release.complete(Unit); start.join(); assertEquals("CANCELLED",repo.visit(visit)!!.state)
+        val follow=repo.createFollowUp(FollowUpInput("CONTACT","Call","2026-09-06",ids.customer)); val editEntered=CompletableDeferred<Unit>(); val editRelease=CompletableDeferred<Unit>(); val delayedEdit=RoomServiceLoopRepository(db,time,DraftWriteGate{editEntered.complete(Unit);editRelease.await()},attachmentRoot=root)
+        val edit=launch{assertTrue(runCatching{delayedEdit.updateFollowUp(follow,"Changed","2026-09-06",""," ")}.isFailure)}; editEntered.await(); repo.changeFollowUpState(follow,"RESOLVED","Done"); editRelease.complete(Unit); edit.join(); assertEquals("RESOLVED",repo.followUp(follow)!!.state); assertEquals("Call",repo.followUp(follow)!!.title)
+    }
+
+    @Test fun startWinningPreventsStaleReschedule() = runTest {
+        val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); val delayed=RoomServiceLoopRepository(db,time,DraftWriteGate{entered.complete(Unit);release.await()},attachmentRoot=root)
+        val reschedule=launch{assertTrue(runCatching{delayed.rescheduleVisit(visit,"2026-09-10",2,"Move")}.isFailure)}; entered.await(); repo.startVisit(visit); release.complete(Unit); reschedule.join(); assertEquals("WORKING",repo.visit(visit)!!.state)
+    }
+
+    @Test fun finalizeWinningPreventsLatePhotoAndPublicWorkWritesAndCleansOwnedFile() = runTest {
+        suspend fun readyVisit():Pair<String,String>{val ids=foundation();repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest"));val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05");val work=db.serviceLoopDao().firstWorkItemId(visit)!!;repo.savePublicWork(work,"Original");repo.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null);return visit to work}
+        val (photoVisit,photoWork)=readyVisit(); val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); val delayed=RoomServiceLoopRepository(db,time,DraftWriteGate{entered.complete(Unit);release.await()},attachmentRoot=root)
+        val photo=launch{assertTrue(runCatching{delayed.savePhoto(photoWork,testImageBytes(Color.MAGENTA),"late.png","image/png",true,"Late")}.isFailure)}; entered.await(); assertTrue(repo.finalizeVisit(photoVisit) is FinalizeResult.Success); release.complete(Unit); photo.join(); assertTrue(repo.photos(photoWork).isEmpty()); assertTrue(root.walkTopDown().filter{it.isFile}.none())
+        val (workVisit,workItem)=readyVisit(); val workEntered=CompletableDeferred<Unit>(); val workRelease=CompletableDeferred<Unit>(); val delayedWork=RoomServiceLoopRepository(db,time,DraftWriteGate{workEntered.complete(Unit);workRelease.await()},attachmentRoot=root)
+        val late=launch{assertTrue(runCatching{delayedWork.savePublicWork(workItem,"Late")}.isFailure)}; workEntered.await(); val record=(repo.finalizeVisit(workVisit) as FinalizeResult.Success).recordId; workRelease.complete(Unit); late.join(); assertEquals("Original",repo.finalRecord(record)!!.public.lines.single().publicWorkNote); assertEquals("Original",repo.inspection(workItem)!!.workPerformed)
+    }
+
+    @Test fun templateReorderPublishesNewRevisionWithoutChangingPriorOrder() = runTest {
+        val template=repo.createTemplate("Order",listOf(TemplateItemDraft("First","STATUS"),TemplateItemDraft("Second","TEXT"))); val oldId=db.serviceLoopDao().reusableTemplate(template)!!.currentRevisionId
+        repo.reviseTemplate(template,"Order",listOf(TemplateItemDraft("Second","TEXT"),TemplateItemDraft("First","STATUS"))); val current=db.serviceLoopDao().reusableTemplate(template)!!.currentRevisionId
+        assertEquals(listOf("First","Second"),db.serviceLoopDao().reusableTemplateItems(oldId).map{it.label}); assertEquals(listOf("Second","First"),db.serviceLoopDao().reusableTemplateItems(current).map{it.label})
     }
 
     @Test fun bookingClaimsAreExclusiveAndCancellationReleasesWithoutChangingDueDate() = runTest {
@@ -134,6 +187,8 @@ class DailyOperationsIntegrityTest {
         val ids = foundation(); val visit = repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", 1); val follow = repo.createFollowUp(FollowUpInput("CONTACT", "Call Acme contact", "2026-09-05", ids.customer))
         assertEquals("CUSTOMER", repo.search("Acme").first { it.id == ids.customer }.type); assertEquals("EQUIPMENT", repo.search("Compressor").single().type); assertEquals("VISIT", repo.search(repo.visit(visit)!!.reference).single().type); assertEquals("FOLLOW_UP", repo.search("Call Acme").single { it.id == follow }.type); assertTrue(repo.search("no-such-record").isEmpty())
     }
+
+    @Test fun equipmentSearchIncludesMakeAndModel() = runTest { val ids=foundation(); repo.updateEquipment(ids.equipment,EquipmentInput("Compressor","C-01","Kaeser","Sigma 7","S1")); assertEquals(ids.equipment,repo.search("Kaeser").single().id); assertEquals(ids.equipment,repo.search("Sigma 7").single().id) }
 
     private data class Ids(val customer: String, val site: String, val equipment: String, val plan: String)
     private suspend fun foundation(): Ids { val customer=repo.createCustomer(CustomerInput("Acme Service Customer", "Dana")); val site=repo.createSite(customer, SiteInput("Main site", "1 Test Street")); val equipment=repo.createEquipment(site, EquipmentInput("Compressor", "C-01")); val plan=repo.createPlan(equipment, PlanInput("Annual service",1,"YEARS","2026-09-01")); return Ids(customer,site,equipment,plan) }

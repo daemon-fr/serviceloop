@@ -136,6 +136,7 @@ data class CompletionLine(
 
 enum class FulfillmentEligibility {
     ELIGIBLE,
+    HISTORY_ONLY,
     NO_CURRENT_OBLIGATION,
     OUTCOME_INELIGIBLE,
     CHECKLIST_NOT_REVIEWED,
@@ -171,6 +172,7 @@ data class PublicWorkLine(
     val isRecurringPlan: Boolean = false,
     val parts: List<PublicPart> = emptyList(),
     val photos: List<PublicPhoto> = emptyList(),
+    val historyOnly: Boolean = false,
 )
 
 data class PublicPart(val description: String, val quantity: String, val unit: String)

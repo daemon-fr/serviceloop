@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -22,6 +23,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import androidx.core.content.FileProvider
 import com.v16studio.serviceloop.domain.*
@@ -55,6 +58,7 @@ internal fun CustomerDetailScreen(detail: CustomerDetail?, padding: PaddingValue
 @Composable
 internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty(),nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Add customer" else "Edit ${existing.reference}"); Text("A stable reference is assigned on Save.") }
         item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
@@ -79,6 +83,7 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
 @Composable
 internal fun SiteEditorScreen(customerId: String?, existing: SiteDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var address by rememberSaveable(existing?.id) { mutableStateOf(existing?.address.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateAccessNote.orEmpty()) }; var default by rememberSaveable(existing?.id) { mutableStateOf(existing?.isDefault ?: false) }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||address!=existing?.address.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateAccessNote.orEmpty()||default!=(existing?.isDefault?:false),nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Add site" else "Edit ${existing.reference}") }
         item { DailyField(name, { name = it }, "Site name · Required"); DailyField(address, { address = it }, "Address"); DailyField(contact, { contact = it }, "Contact override"); DailyField(phone, { phone = it }, "Phone override"); DailyField(email, { email = it }, "Email override") }
@@ -90,6 +95,7 @@ internal fun SiteEditorScreen(customerId: String?, existing: SiteDetail?, paddin
 @Composable
 internal fun EquipmentEditorScreen(siteId: String?, existing: EquipmentDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var identifier by rememberSaveable(existing?.id) { mutableStateOf(existing?.technicianIdentifier.orEmpty()) }; var make by rememberSaveable(existing?.id) { mutableStateOf(existing?.make.orEmpty()) }; var model by rememberSaveable(existing?.id) { mutableStateOf(existing?.model.orEmpty()) }; var serial by rememberSaveable(existing?.id) { mutableStateOf(existing?.serialNumber.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||identifier!=existing?.technicianIdentifier.orEmpty()||make!=existing?.make.orEmpty()||model!=existing?.model.orEmpty()||serial!=existing?.serialNumber.orEmpty()||note!=existing?.privateNote.orEmpty(),nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Add equipment" else "Edit ${existing.reference}") }
         item { DailyField(name, { name = it }, "Equipment name · Required"); DailyField(identifier, { identifier = it }, "Technician identifier"); DailyField(make, { make = it }, "Make"); DailyField(model, { model = it }, "Model"); DailyField(serial, { serial = it }, "Serial") }
@@ -107,6 +113,7 @@ internal fun PlanDetailScreen(plan: PlanDetail?, padding: PaddingValues, nav: Na
 @Composable
 internal fun PlanEditorScreen(equipmentId: String?, existing: PlanDetail?, templates: List<TemplateSummary>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var count by rememberSaveable(existing?.id) { mutableStateOf(existing?.intervalCount?.toString() ?: "6") }; var unit by rememberSaveable(existing?.id) { mutableStateOf(existing?.intervalUnit ?: "MONTHS") }; var due by rememberSaveable(existing?.id) { mutableStateOf(existing?.dueDate ?: LocalDate.now().toString()) }; var templateId by rememberSaveable(existing?.id) { mutableStateOf(existing?.reusableTemplateId) }; var dueReason by rememberSaveable(existing?.id){mutableStateOf("")}
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||count!=(existing?.intervalCount?.toString()?:"6")||unit!=(existing?.intervalUnit?:"MONTHS")||due!=(existing?.dueDate?:LocalDate.now().toString())||templateId!=existing?.reusableTemplateId||dueReason.isNotBlank(),nav)
     EditorColumn(padding, state, "plan-editor") {
         item { DailyHeading(if (existing == null) "Add recurring service plan" else "Edit ${existing.reference}"); DailyField(name, { name = it }, "Plan name · Required"); DailyField(count, { count = it }, "Positive interval") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("DAYS","WEEKS","MONTHS","YEARS").forEach { option -> FilterChip(unit == option, { unit = option }, { Text(option.lowercase().replaceFirstChar(Char::uppercase)) }) } }; DailyField(due, { due = it }, "Next due date · YYYY-MM-DD"); if(existing!=null&&due!=existing.dueDate) LongTextEditor(dueReason,{dueReason=it},"Due-date change reason · Required",false) }
@@ -141,6 +148,8 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
     val setupRoute = nav.currentBackStackEntry?.destination?.route ?: "visit/new"
     val available = dueServices.filter { it.siteId == siteId && it.claimedVisitId == null }
     val valid = site != null && (selectedPlans.isNotEmpty() || (oneOffEquipmentId != null && oneOffName.isNotBlank())) && runCatching { LocalDate.parse(date) }.isSuccess && !state.operationInProgress
+    val initialSite=dueServices.firstOrNull{it.planId==initialPlanId}?.siteId
+    UnsavedChangesGuard(siteId!=initialSite||selectedPlans!=(initialPlanId?.let(::listOf)?:emptyList<String>())||date!=LocalDate.now().plusDays(1).toString()||oneOffEquipmentId!=null||oneOffName.isNotBlank()||siteQuery.isNotBlank(),nav)
     fun save(targetState: String, serviceDate: String, scheduledAt: Long?) {
         viewModel.createVisitForSite(site!!.id, selectedPlans, oneOffEquipmentId, oneOffName.takeIf(String::isNotBlank), targetState, serviceDate, scheduledAt) { nav.navigate("visit/$it") { popUpTo(setupRoute) { inclusive = true } } }
     }
@@ -164,7 +173,7 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         }
         if(site!=null) item { Text("Planned work",fontWeight=FontWeight.Bold); available.forEach { due -> Row(verticalAlignment=Alignment.CenterVertically){Checkbox(due.planId in selectedPlans,{checked->selectedPlans=if(checked) selectedPlans+due.planId else selectedPlans-due.planId});Text("${due.equipmentName} · ${due.planName} · Due ${due.dueDate}") } }; if(available.isEmpty()) Text("No unclaimed current plans at this site.") }
         if(site!=null) item { Text("Optional one-off work",fontWeight=FontWeight.Bold); site.equipment.forEach { equipment -> FilterChip(oneOffEquipmentId==equipment.id,{oneOffEquipmentId=equipment.id},{Text(equipment.name)}) }; DailyField(oneOffName,{oneOffName=it},"One-off service name") }
-        item { DailyField(date,{date=it},"Appointment / service date · YYYY-MM-DD"); val parsed=runCatching{LocalDate.parse(date)}.getOrNull(); Button({save("BOOKED",date,parsed!!.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())},enabled=valid,modifier=Modifier.fillMaxWidth()){Text("Book visit")}; Button({save("WORKING",LocalDate.now().toString(),null)},enabled=valid,modifier=Modifier.fillMaxWidth()){Text("Start now")}; OutlinedButton({save("WORKING",date,null)},enabled=valid&&parsed!=null&&!parsed.isAfter(LocalDate.now()),modifier=Modifier.fillMaxWidth()){Text("Record past visit")}; Text("Booking and appointment changes never fulfill or reschedule service obligations.") }
+        item { DailyField(date,{date=it},"Appointment / service date · YYYY-MM-DD"); val parsed=runCatching{LocalDate.parse(date)}.getOrNull(); Button({save("BOOKED",date,parsed!!.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())},enabled=valid,modifier=Modifier.fillMaxWidth()){Text("Book visit")}; Button({save("WORKING",LocalDate.now().toString(),null)},enabled=valid,modifier=Modifier.fillMaxWidth()){Text("Start now")}; OutlinedButton({save("HISTORICAL",date,null)},enabled=valid&&parsed!=null&&!parsed.isAfter(LocalDate.now()),modifier=Modifier.fillMaxWidth()){Text("Record past visit")}; Text("Record past creates History-only recurring work; it never claims or advances today's obligation.") }
     }
 }
 
@@ -182,9 +191,10 @@ internal fun TemplateDetailScreen(detail: TemplateDetail?, padding: PaddingValue
 @Composable
 internal fun TemplateEditorScreen(existing: TemplateDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var draftItems by remember(existing?.id) { mutableStateOf(existing?.items ?: emptyList()) }; var label by rememberSaveable { mutableStateOf("") }; var type by rememberSaveable { mutableStateOf("STATUS") }; var unit by rememberSaveable { mutableStateOf("") }; var required by rememberSaveable { mutableStateOf(true) }; var guidance by rememberSaveable { mutableStateOf("") }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||draftItems!=(existing?.items?:emptyList<TemplateItemDraft>())||label.isNotBlank()||unit.isNotBlank()||guidance.isNotBlank(),nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Create reusable template" else "Publish revision ${existing.revisionNumber + 1}"); DailyField(name, { name = it }, "Template name · Required") }
-        items(draftItems.withIndex().toList()) { (index,item) -> Card { Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("${index+1}. ${item.label} · ${item.responseType}", Modifier.weight(1f)); TextButton({ draftItems = draftItems.filterIndexed { i,_ -> i != index } }) { Text("Remove") } } } }
+        items(draftItems.withIndex().toList()) { (index,item) -> Card { Column(Modifier.padding(12.dp).fillMaxWidth()) { Text("${index+1}. ${item.label} · ${item.responseType}"); Row { TextButton({ val copy=draftItems.toMutableList(); copy[index]=copy[index-1].also{copy[index-1]=copy[index]}; draftItems=copy },enabled=index>0){Text("Move up")}; TextButton({ val copy=draftItems.toMutableList(); copy[index]=copy[index+1].also{copy[index+1]=copy[index]}; draftItems=copy },enabled=index<draftItems.lastIndex){Text("Move down")}; TextButton({ draftItems = draftItems.filterIndexed { i,_ -> i != index } }) { Text("Remove") } } } } }
         item { Text("Add item", fontWeight = FontWeight.Bold); DailyField(label, { label = it }, "Item label"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("STATUS","TEXT","NUMBER").forEach { option -> FilterChip(type == option, { type = option }, { Text(option) }) } }; if (type == "NUMBER") DailyField(unit, { unit = it }, "Unit"); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(required, { required = it }); Text("Required response") }; LongTextEditor(guidance, { guidance = it }, "Private technician guidance", true); OutlinedButton({ draftItems = draftItems + TemplateItemDraft(label, type, unit, required, guidance); label=""; unit=""; guidance="" }, enabled = label.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Add item") } }
         item { Button({ if (existing == null) viewModel.createTemplate(name, draftItems) { nav.navigate("template/$it") { popUpTo("template/new") { inclusive = true } } } else viewModel.reviseTemplate(existing.id, name, draftItems) { nav.popBackStack() } }, enabled = name.isNotBlank() && draftItems.isNotEmpty() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text(if (existing == null) "Save template" else "Publish new revision") } }
     }
@@ -198,7 +208,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         item { Text("${detail.reference} · ${detail.state.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text("${detail.customerName}\n${detail.siteName}\n${detail.siteAddress}"); Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }
         items(detail.lines) { line -> DailyRow("${line.equipmentReference} · ${line.equipmentName}\n${line.serviceName} · Due ${line.dueDate ?: "one-off"}${line.outcome?.let { " · ${it.lowercase()}" }.orEmpty()}", "visit-line-${line.workItemId}") { if (detail.state == "WORKING") nav.navigate("inspection/${line.workItemId}") } }
         if(detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { Text("Add one-off service line",fontWeight=FontWeight.Bold); state.site.equipment.forEach { eq->FilterChip(oneOffEquipment==eq.id,{oneOffEquipment=eq.id},{Text(eq.name)}) }; DailyField(oneOffName,{oneOffName=it},"One-off service"); OutlinedButton({viewModel.addOneOff(detail.id,oneOffEquipment!!,oneOffName);oneOffName=""},enabled=oneOffEquipment!=null&&oneOffName.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Add one-off line")} }
-        if (detail.state == "BOOKED") item { Button({ viewModel.startVisit(detail.id) { id -> viewModel.loadVisit(id) } }, enabled = detail.lines.isNotEmpty() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Start booked visit") }; if(detail.lines.isEmpty()) Text("Add at least one service line before starting."); DailyField(newDate, { newDate = it }, "New appointment date"); LongTextEditor(reason, { reason = it }, "Reschedule reason", false); OutlinedButton({ viewModel.rescheduleVisit(detail.id, newDate, Instant.now().toEpochMilli(), reason) { viewModel.loadVisit(it) } }, enabled = reason.isNotBlank() && runCatching { LocalDate.parse(newDate) }.isSuccess, modifier = Modifier.fillMaxWidth()) { Text("Reschedule booking") }; LongTextEditor(cancelReason, { cancelReason = it }, "Cancellation reason", false); OutlinedButton({ viewModel.cancelVisit(detail.id, cancelReason) { viewModel.loadVisit(it) } }, enabled = cancelReason.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Cancel booking") }; Text("Rescheduling or cancelling does not fulfill or alter the due obligation.") }
+        if (detail.state == "BOOKED") item { Text("Start reloads current customer, site, equipment, plan, business, and reusable-template details. Changed details will replace booking-time display details in the Working visit."); Button({ viewModel.startVisit(detail.id) { id -> viewModel.loadVisit(id) } }, enabled = detail.lines.isNotEmpty() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Start with current details") }; if(detail.lines.isEmpty()) Text("Add at least one service line before starting."); DailyField(newDate, { newDate = it }, "New appointment date"); LongTextEditor(reason, { reason = it }, "Reschedule reason", false); OutlinedButton({ viewModel.rescheduleVisit(detail.id, newDate, Instant.now().toEpochMilli(), reason) { viewModel.loadVisit(it) } }, enabled = reason.isNotBlank() && runCatching { LocalDate.parse(newDate) }.isSuccess, modifier = Modifier.fillMaxWidth()) { Text("Reschedule booking") }; LongTextEditor(cancelReason, { cancelReason = it }, "Cancellation reason", false); OutlinedButton({ viewModel.cancelVisit(detail.id, cancelReason) { viewModel.loadVisit(it) } }, enabled = cancelReason.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Cancel booking") }; Text("Rescheduling or cancelling does not fulfill or alter the due obligation.") }
         if (detail.state == "WORKING") item { Button({ detail.lines.firstOrNull()?.let { nav.navigate("inspection/${it.workItemId}") } }, Modifier.fillMaxWidth()) { Text("Continue working visit") } }
         if (detail.state == "CANCELLED") item { Text("Cancellation reason: ${detail.cancellationReason}"); Text("The service obligation remains due and may be booked again.") }
     }
@@ -225,20 +235,23 @@ internal fun FieldEvidenceScreen(workItemId: String, state: UiState, padding: Pa
 internal fun FollowUpListScreen(values: List<FollowUpDetail>, padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { if (values.isEmpty()) item { Text("No follow-ups") }; items(values) { follow -> DailyRow("${follow.reference} · ${follow.title}\n${follow.type.lowercase()} · ${follow.state.lowercase()} · Due ${follow.dueDate}\n${listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · ")}") { nav.navigate("follow-up/${follow.id}") } } } }
 
 @Composable
-internal fun FollowUpDetailScreen(detail: FollowUpDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel) {
+internal fun FollowUpDetailScreen(detail: FollowUpDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     if (detail == null) return DailyEmpty(padding, "Reading follow-up"); var reason by rememberSaveable(detail.id) { mutableStateOf("") }; var newDue by rememberSaveable(detail.id) { mutableStateOf(LocalDate.now().plusDays(7).toString()) }; var editTitle by rememberSaveable(detail.id){mutableStateOf(detail.title)}; var editDue by rememberSaveable(detail.id){mutableStateOf(detail.dueDate)}; var editNote by rememberSaveable(detail.id){mutableStateOf(detail.privatePlanningNote)}; var editReason by rememberSaveable(detail.id){mutableStateOf("")}
+    UnsavedChangesGuard(editTitle!=detail.title||editDue!=detail.dueDate||editNote!=detail.privatePlanningNote||editReason.isNotBlank()||reason.isNotBlank()||(detail.state!="OPEN"&&newDue!=LocalDate.now().plusDays(7).toString()),nav)
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("${detail.reference} · ${detail.title}", style = MaterialTheme.typography.headlineSmall); Text("${detail.type} · ${detail.state} · Due ${detail.dueDate}"); Text(listOfNotNull(detail.customerName,detail.siteName,detail.equipmentName).filter{it.isNotBlank()}.joinToString(" · ")); if(detail.state=="OPEN"){ DailyField(editTitle,{editTitle=it},"Title"); DailyField(editDue,{editDue=it},"Follow-up date"); LongTextEditor(editNote,{editNote=it},"PRIVATE planning note",true); if(editDue!=detail.dueDate) LongTextEditor(editReason,{editReason=it},"Date-change reason · Required",false); OutlinedButton({viewModel.updateFollowUp(detail.id,editTitle,editDue,editNote,editReason){viewModel.loadFollowUp(it)}},enabled=editTitle.isNotBlank()&&(editDue==detail.dueDate||editReason.isNotBlank()),modifier=Modifier.fillMaxWidth()){Text("Save follow-up changes")} } else if (detail.privatePlanningNote.isNotBlank()) PrivateBlock("PRIVATE planning note", detail.privatePlanningNote); LongTextEditor(reason, { reason=it }, if (detail.state == "OPEN") "Outcome or cancellation reason" else "Reopen reason", true); if (detail.state != "OPEN") DailyField(newDue, { newDue=it }, "New follow-up date"); if (detail.state == "OPEN") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button({ viewModel.changeFollowUpState(detail.id,"RESOLVED",reason,null) { viewModel.loadFollowUp(it) } }, enabled=reason.isNotBlank()&&!state.operationInProgress) { Text("Resolve") }; OutlinedButton({ viewModel.changeFollowUpState(detail.id,"CANCELLED",reason,null) { viewModel.loadFollowUp(it) } }, enabled=reason.isNotBlank()&&!state.operationInProgress) { Text("Cancel") } } else Button({ viewModel.changeFollowUpState(detail.id,"OPEN",reason,newDue) { viewModel.loadFollowUp(it) } }, enabled=reason.isNotBlank(), modifier=Modifier.fillMaxWidth()) { Text("Reopen") }; Text("Follow-up state never changes a service plan or historical report.") } }
 }
 
 @Composable
 internal fun FollowUpEditorScreen(customerId: String, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var type by rememberSaveable { mutableStateOf("CONTACT") }; var title by rememberSaveable { mutableStateOf("") }; var due by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }; var note by rememberSaveable { mutableStateOf("") }
+    UnsavedChangesGuard(type!="CONTACT"||title.isNotBlank()||due!=LocalDate.now().toString()||note.isNotBlank(),nav)
     EditorColumn(padding,state) { item { DailyHeading("Add follow-up"); Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("CONTACT","CORRECTIVE").forEach { option -> FilterChip(type==option,{type=option},{Text(option.lowercase().replaceFirstChar(Char::uppercase))}) } }; DailyField(title,{title=it},"Title · Required"); DailyField(due,{due=it},"Follow-up date"); LongTextEditor(note,{note=it},"PRIVATE planning note",true); Button({ viewModel.createFollowUp(FollowUpInput(type,title,due,customerId,privatePlanningNote=note)) { nav.navigate("follow-up/$it") { popUpTo("follow-up/new/$customerId") { inclusive=true } } } },enabled=title.isNotBlank()&&runCatching{LocalDate.parse(due)}.isSuccess&&!state.operationInProgress,modifier=Modifier.fillMaxWidth()){Text("Save follow-up")} } }
 }
 
 @Composable
 internal fun ContactNoteEditorScreen(customerId: String, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var channel by rememberSaveable { mutableStateOf("CALL") }; var outcome by rememberSaveable { mutableStateOf("") }; var note by rememberSaveable { mutableStateOf("") }
+    UnsavedChangesGuard(channel!="CALL"||outcome.isNotBlank()||note.isNotBlank(),nav)
     EditorColumn(padding,state) { item { DailyHeading("Record actual contact outcome"); Text("Opening an external app does not create this note."); Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) { listOf("CALL","SMS","EMAIL","IN_PERSON","OTHER").forEach { option -> FilterChip(channel==option,{channel=option},{Text(option.lowercase().replace('_',' '))}) } }; LongTextEditor(outcome,{outcome=it},"Actual context / outcome · Required",false); LongTextEditor(note,{note=it},"PRIVATE note",true); Button({ viewModel.createContactNote(ContactNoteInput(customerId,channel=channel,outcome=outcome,privateNote=note)) { nav.popBackStack() } },enabled=outcome.isNotBlank()&&!state.operationInProgress,modifier=Modifier.fillMaxWidth()){Text("Save contact note")} } }
 }
 
@@ -249,11 +262,32 @@ internal fun SearchScreen(results: List<SearchTarget>, padding: PaddingValues, v
 }
 
 @Composable
+internal fun EquipmentSiteSelectorScreen(sites: List<VisitSiteOption>, padding: PaddingValues, nav: NavHostController) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val filtered=sites.filter{query.isBlank()||it.customerName.contains(query,true)||it.name.contains(query,true)||it.reference.contains(query,true)}
+    LazyColumn(Modifier.padding(padding),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        item { Text("Select the customer site where the equipment is installed."); DailyField(query,{query=it},"Find customer or site") }
+        if(filtered.isEmpty()) item { Text("No active customer sites match. Add a customer and site first.") }
+        items(filtered,key={it.id}) { site -> DailyRow("${site.customerName}\n${site.reference} · ${site.name}"){nav.navigate("equipment/new/${site.id}")} }
+    }
+}
+
+@Composable
 internal fun LongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     val tag = "long-text-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    Column { OutlinedTextField(value,onValueChange,label={Text(label)},minLines=3,maxLines=5,modifier=Modifier.fillMaxWidth().testTag(tag)); Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){ TextButton({expanded=true},Modifier.semantics{contentDescription="Expand $label"}){Text("Expand ↗")} }; if(private) Text("PRIVATE · Not included in the customer report",style=MaterialTheme.typography.bodySmall) }
-    if(expanded) AlertDialog(onDismissRequest={expanded=false},title={Text(label)},text={OutlinedTextField(value,onValueChange,minLines=5,maxLines=6,modifier=Modifier.fillMaxWidth())},confirmButton={TextButton({expanded=false}){Text("Done editing")}})
+    Column { Box(Modifier.fillMaxWidth()) { OutlinedTextField(value,onValueChange,label={Text(label)},minLines=3,maxLines=3,modifier=Modifier.fillMaxWidth().testTag(tag)); TextButton({expanded=true},Modifier.align(Alignment.BottomEnd).semantics{contentDescription="Expand text editor"}.testTag("$tag-expand")){Text("⤢")} }; if(private) Text("PRIVATE · Not included in the customer report",style=MaterialTheme.typography.bodySmall) }
+    if(expanded) Dialog(onDismissRequest={expanded=false},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) { Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) { Text(label,style=MaterialTheme.typography.headlineSmall); OutlinedTextField(value,onValueChange,modifier=Modifier.fillMaxWidth().weight(1f).testTag("$tag-expanded")); Button({expanded=false},Modifier.fillMaxWidth()){Text("Done")} } } }
+}
+
+@Composable
+internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    val requestBack:()->Unit={if(changed) confirm=true else { nav.popBackStack(); Unit }}
+    val interceptor=LocalDetailBackInterceptor.current
+    DisposableEffect(requestBack) { interceptor.value=requestBack; onDispose { if(interceptor.value===requestBack) interceptor.value=null } }
+    BackHandler(onBack=requestBack)
+    if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("Discard unsaved changes?")},text={Text("This form uses local unsaved input until Save succeeds.")},confirmButton={TextButton({confirm=false;nav.popBackStack()}){Text("Discard changes")}},dismissButton={TextButton({confirm=false}){Text("Keep editing")}})
 }
 
 @Composable private fun EditorColumn(padding: PaddingValues,state: UiState,tag:String?=null,content: androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
