@@ -2,14 +2,18 @@ package com.v16studio.serviceloop
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertTextContains
@@ -32,6 +36,8 @@ import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -70,7 +76,7 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Technician identifier").performTextInput("TC-01")
         compose.onNodeWithText("Save equipment").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().equipmentCount()==1}}
-        compose.onNodeWithTag("add-service-plan").performScrollTo().performClick()
+        compose.onNodeWithTag("add-service-plan", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Plan name · Required").performTextInput("Quarterly inspection")
         compose.onNodeWithText("Save plan").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().planCount()==1}}
@@ -120,10 +126,59 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.onNodeWithText("Selector customer\nST-001 · Selector site").performClick(); compose.onNodeWithText("Equipment name · Required").assertIsDisplayed(); Unit
     }
 
+    @Test fun dialerHandoffHasNoBusinessEffect()=contactHandoff("Call")
+    @Test fun smsHandoffHasNoBusinessEffect()=contactHandoff("SMS")
+    @Test fun emailHandoffHasNoBusinessEffect()=contactHandoff("Email")
+    @Test fun mapsHandoffHasNoBusinessEffect()=contactHandoff("Maps",navigateToSite=true)
+    @Test fun photoPickerHandoffReachesSystemSurface()=fieldHandoff("Choose photo")
+    @Test fun cameraHandoffReachesSystemSurface()=fieldHandoff("Take photo")
+
+    private fun contactHandoff(label:String,navigateToSite:Boolean=false)=runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("systemHandoff")=="true")
+        val customer=repository.createCustomer(CustomerInput("Handoff customer","Test contact","+40 700 000 000","sl3@example.invalid"))
+        repository.createSite(customer,SiteInput("Handoff site","1 Fictional Test Street"))
+        val beforeContacts=database.serviceLoopDao().contactNoteCount(); val beforeFollowUps=database.serviceLoopDao().followUpCount()
+        val viewModel=ServiceLoopViewModel(repository){}
+        compose.runOnUiThread { compose.activity.setContent{ServiceLoopTheme{ServiceLoopApp(viewModel)}} }
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("Customers").performClick()
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Handoff customer",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("Handoff customer",substring=true).performClick()
+        if(navigateToSite) compose.onNodeWithText("Handoff site",substring=true).performClick()
+        systemHandoff(label)
+        assertEquals(beforeContacts,database.serviceLoopDao().contactNoteCount()); assertEquals(beforeFollowUps,database.serviceLoopDao().followUpCount())
+    }
+
+    private fun fieldHandoff(label:String)=runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("systemHandoff")=="true")
+        val customer=repository.createCustomer(CustomerInput("Media customer")); val site=repository.createSite(customer,SiteInput("Media site","")); val equipment=repository.createEquipment(site,EquipmentInput("Media machine")); val plan=repository.createPlan(equipment,PlanInput("Media service",1,"YEARS","2026-09-01")); repository.createVisit(listOf(plan),"WORKING","2026-09-06")
+        val beforePhotos=database.serviceLoopDao().visitPhotoCount(database.serviceLoopDao().visits().single().id)
+        val viewModel=ServiceLoopViewModel(repository){}; compose.runOnUiThread { compose.activity.setContent{ServiceLoopTheme{ServiceLoopApp(viewModel)}} }
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithText("Resume visit").performClick()
+        compose.onNodeWithTag("inspection-list").performScrollToNode(androidx.compose.ui.test.hasTestTag("open-field-evidence")); compose.onNodeWithTag("open-field-evidence").performClick()
+        systemHandoff(label)
+        assertEquals(beforePhotos,database.serviceLoopDao().visitPhotoCount(database.serviceLoopDao().visits().single().id))
+    }
+
 
     @Test fun selectedPhotoIsRenderedAsItsOwnCustomerPdfPage()=runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext; val customer=repository.createCustomer(CustomerInput("Photo customer")); val site=repository.createSite(customer,SiteInput("Photo site","1 Photo Street")); val equipment=repository.createEquipment(site,EquipmentInput("Photo machine")); val plan=repository.createPlan(equipment,PlanInput("Photo service",1,"YEARS","2026-09-01")); repository.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val visit=repository.createVisit(listOf(plan),"WORKING","2026-09-06"); val work=database.serviceLoopDao().firstWorkItemId(visit)!!; repository.savePublicWork(work,"Photographed service"); repository.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null)
         val bitmap=Bitmap.createBitmap(40,30,Bitmap.Config.ARGB_8888).apply{eraseColor(Color.CYAN)}; val bytes=ByteArrayOutputStream().also{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray(); repository.savePhoto(work,bytes,"evidence.png","image/png",true,"Machine evidence")
         val record=(repository.finalizeVisit(visit) as FinalizeResult.Success).recordId; val report=AndroidReportService(context,database,repository).generate(record); assertEquals(2,report.pageCount); assertEquals(2,AndroidReportService(context,database,repository).pageCount(report.relativePath)); File(context.filesDir,report.relativePath).delete(); Unit
+    }
+
+    private fun systemHandoff(label:String) {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        compose.onNodeWithText(label).performClick()
+        var external=false
+        repeat(30) {
+            val packageName=instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()
+            if(packageName!=null && packageName!="com.v16studio.serviceloop") { external=true; return@repeat }
+            Thread.sleep(100)
+        }
+        assertTrue("$label did not reach a system handler",external)
+        if(instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!="com.v16studio.serviceloop") {
+            instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        }
     }
 }

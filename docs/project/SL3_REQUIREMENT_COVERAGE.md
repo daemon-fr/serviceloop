@@ -1,6 +1,6 @@
 # ServiceLoop — SL-3 Requirement Coverage
 
-**Status:** Phase-B verification incomplete; not technically ready and not owner accepted. The persistent canonical journey has an open runtime blocker.
+**Status:** Phase-B technically verified and ready for owner review; not owner accepted, product-valid, or release-ready.
 
 ## Implemented
 
@@ -24,12 +24,12 @@
 ## Phase-B verification evidence
 
 - TESTED — host gate: 91 unit tests, 0 failures/errors/skips; `assembleDebug`, `assembleRelease`, and `assembleDebugAndroidTest` pass; lint reports 0 errors, 12 warnings, and 2 lower-severity findings.
-- UI-INSTRUMENTED — normal canonical suite: 21 tests pass in 52.245 seconds, with the persistent journey's deliberate assumption skip included in the runner count. This covers v1→4, v2→4, and v3→4 migrations; retained SL-2 finalization/report/root behavior; D01 create/edit behavior; same-buffer long text; global equipment site selection; selected-photo PDF rendering; and ordinary directory/plan UI.
+- UI-INSTRUMENTED — expanded normal canonical suite: 27 tests discovered in 341.863 seconds, with 20 passes and 7 deliberate assumption skips for the separately gated persistent/system-handoff cases. This covers v1→4, v2→4, and v3→4 migrations; retained SL-2 finalization/report/root behavior; D01 create/edit behavior; same-buffer long text; global equipment site selection; selected-photo PDF rendering; ordinary directory/plan UI; and lazy-list inspection continuation.
 - TESTED / DOMAIN-INSTRUMENTED — focused integrity coverage remains green for History-only finalization, latest/reused Booked snapshots, state races, post-finalization write rejection, photo cleanup, template revision ordering, make/model search, recurrence, finalization idempotency, and report privacy.
-- UI-INSTRUMENTED BLOCKER — the explicitly gated persistent canonical journey repeatedly reaches and durably commits checklist review, but the working-inspection screen then fails to expose `open-field-evidence`; the journey cannot continue through parts, follow-up, completion, finalization, search, and contextual filtering. Earlier development-checkpoint PASS wording is superseded by this Phase-B result.
-- HUMAN/RENDERED — limited actual-screen inspection occurred for retained final-record/PDF/text screenshots and the failure environment; the full required Stage-3 screen matrix was not completed because the persistent blocker prevents technical acceptance.
-- SYSTEM-HANDOFF — NOT RUN for Photo Picker, Camera, Dialer, SMS, Email, Maps, and Sharesheet in this Phase-B pass; no external delivery/capture/contact action is claimed.
-- Canonical preservation — before install, the V-001 historical PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`; install used `-r` and no data clear/uninstall/reset occurred.
+- UI-INSTRUMENTED — gated persistent canonical journey: PASS on the final APK in 86.931 seconds against preserved data. The prior failure was an invalid test wait for an off-screen `LazyColumn` child; a later intermittent branch also used ambiguous plan text instead of the existing stable visit-line tag. The corrected test uses list-aware navigation and stable identity. Template, directory, plan, booking/reschedule/cancel/rebook/start, finding/expanded editor, parts, corrective follow-up, completion/finalization, search, and contextual filtering complete successfully.
+- HUMAN/RENDERED — latest canonical V-001 final-record, PDF preview, and structured-text report screenshots were inspected at 1080×2424. Visible content is unclipped, headings and public/private meaning are coherent, report controls are reachable, and no visual defect requiring a code change was found. The remaining workflow screens were exercised through real Compose UI assertions; owner product/visual acceptance remains separate.
+- SYSTEM-HANDOFF — PASS for Android Photo Picker, Camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Tests used fictional data, opened the installed handler/system surface, did not send or place communications, and verified no automatic contact/follow-up/photo effects.
+- Canonical preservation — after the final persistent journey, the V-001 historical PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`; installs used `-r` and no data clear/uninstall/reset occurred.
 
 ## Intentionally deferred
 

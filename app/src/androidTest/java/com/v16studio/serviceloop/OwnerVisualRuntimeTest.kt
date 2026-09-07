@@ -1,6 +1,7 @@
 package com.v16studio.serviceloop
 
 import android.graphics.Bitmap
+import android.accessibilityservice.AccessibilityService
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.activity.compose.setContent
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
@@ -33,6 +35,7 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 
 class OwnerVisualRuntimeTest {
     @get:Rule
@@ -74,6 +77,14 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithText("Text view").performClick()
         composeRule.onNodeWithText("Service record V-001 · Revision 1").assertIsDisplayed()
         captureRenderedEvidence("text")
+        if(InstrumentationRegistry.getArguments().getString("systemHandoff")=="true") {
+            composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasTestTag("share-pdf"))
+            composeRule.onNodeWithTag("share-pdf").performClick()
+            val instrumentation=InstrumentationRegistry.getInstrumentation(); var external=false
+            repeat(30) { if(instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!="com.v16studio.serviceloop") external=true else Thread.sleep(100) }
+            assertTrue("Sharesheet did not open",external)
+            if(instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!="com.v16studio.serviceloop") instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        }
     }
 
     @Test
@@ -161,6 +172,9 @@ class OwnerVisualRuntimeTest {
         composeRule.waitUntil(5_000) {
             runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
         }
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
+        composeRule.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Parts and photographs").assertIsDisplayed()
         database.close()
     }
 }

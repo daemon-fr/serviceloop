@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-07 — SL-3 Phase-B technical verification in progress; persistent journey blocker open
+**Updated:** 2026-09-07 — SL-3 Phase-B technical verification complete; ready for owner review
 
 ## Current state
 
@@ -12,8 +12,10 @@
 - SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
 - The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Exhaustive runtime/regression acceptance verification remains pending Testing AI Model Phase B; this checkpoint is not technical or owner acceptance.
 - Backward compatibility for pre-correction v4 Booked rows is closed: Start safely validates and reuses an already-captured deterministic snapshot when its immutable template revision is still current, or selects a newly captured current revision without rewriting the old snapshot.
-- Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The repaired normal canonical instrumentation suite passes 21 tests with its persistent journey intentionally skipped.
-- SL-3 is not technically ready for owner review yet: the explicitly gated persistent journey commits checklist review but then loses the working-inspection field-evidence action instead of continuing to parts/follow-up/completion. Phase B stopped without redesign; the remaining runtime defect requires localized development diagnosis and a successful full-gate rerun.
+- Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The expanded normal canonical instrumentation suite discovers 27 tests and completes with 20 passes plus 7 deliberate assumption skips for separately gated persistent/system-handoff cases.
+- The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.
+- Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
+- SL-3 is technically ready for owner review, but is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
 
 ## SL-3 implementation candidate
 

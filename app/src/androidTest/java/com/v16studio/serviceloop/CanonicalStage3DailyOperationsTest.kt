@@ -128,7 +128,7 @@ class CanonicalStage3DailyOperationsTest {
         val workId=runBlocking{dao.visitWorkItems(visitId).single().id}
         val questionId=runBlocking{dao.checklistItems(dao.workItem(workId)!!.templateSnapshotId!!).single().id}
         waitForText("Working")
-        compose.onNode(hasText(planName,substring=true) and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithTag("visit-line-$workId").performClick()
         compose.waitUntil(15_000){compose.onAllNodesWithTag("long-text-public-work-performed").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("long-text-public-work-performed").performTextInput("Completed runtime inspection")
         hideKeyboard()
@@ -145,8 +145,8 @@ class CanonicalStage3DailyOperationsTest {
         compose.waitUntil(15_000){runCatching{compose.onNodeWithContentDescription("Mark checklist reviewed").assertIsEnabled()}.isSuccess}
         compose.onNodeWithContentDescription("Mark checklist reviewed").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(15_000){runBlocking{dao.workItem(workId)!!.checklistReviewed}}
-        compose.waitUntil(15_000){compose.onAllNodesWithTag("open-field-evidence").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithTag("open-field-evidence").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
+        compose.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
         compose.waitUntil(15_000){compose.onAllNodesWithTag("field-description").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("field-description").performTextInput("Runtime filter")
         hideKeyboard()
