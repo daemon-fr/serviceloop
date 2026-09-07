@@ -549,8 +549,16 @@ class RoomServiceLoopRepository(
         val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
         val revision = dao.reusableTemplateRevision(master.currentRevisionId) ?: error("Template revision missing")
         val snapshotId = stableId("template-snapshot", visitId, planId, revision.id)
+        val revisionItems=dao.reusableTemplateItems(revision.id)
+        dao.templateSnapshot(snapshotId)?.let { existing ->
+            require(existing.sourceTemplateId==master.id&&existing.templateName==revision.nameSnapshot&&existing.revision==revision.revisionNumber){"Existing template snapshot does not match the current immutable revision"}
+            val expected=revisionItems.map { item -> ChecklistItemSnapshotEntity(stableId("snapshot-item",snapshotId,item.id),snapshotId,item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance) }
+            val actual=dao.checklistItems(snapshotId)
+            require(actual==expected){"Existing checklist snapshot does not match the current immutable revision"}
+            return snapshotId
+        }
         dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity(snapshotId, master.id, revision.nameSnapshot, revision.revisionNumber, now)))
-        dao.insertChecklistItems(dao.reusableTemplateItems(revision.id).map { item -> ChecklistItemSnapshotEntity(stableId("snapshot-item", snapshotId, item.id), snapshotId, item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) })
+        dao.insertChecklistItems(revisionItems.map { item -> ChecklistItemSnapshotEntity(stableId("snapshot-item", snapshotId, item.id), snapshotId, item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) })
         return snapshotId
     }
 

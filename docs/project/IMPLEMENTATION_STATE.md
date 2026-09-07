@@ -11,6 +11,7 @@
 - B-008 real-technician pilot remains outstanding. This does not block Stage-3 development, but Stage 2 is not product-valid for release preparation until that pilot occurs.
 - SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
 - The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Exhaustive runtime/regression acceptance verification remains pending Testing AI Model Phase B; this checkpoint is not technical or owner acceptance.
+- Backward compatibility for pre-correction v4 Booked rows is closed: Start safely validates and reuses an already-captured deterministic snapshot when its immutable template revision is still current, or selects a newly captured current revision without rewriting the old snapshot.
 
 ## SL-3 implementation candidate
 

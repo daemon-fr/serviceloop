@@ -13,6 +13,7 @@ import java.io.File
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.ZoneId
+import java.util.UUID
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CompletableDeferred
@@ -56,11 +57,18 @@ class DailyOperationsIntegrityTest {
     @Test fun bookedVisitCapturesLatestTemplateAtStartAndWorkingSnapshotsStayFrozen() = runTest {
         val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val template = repo.createTemplate("Safety", listOf(TemplateItemDraft("Old wording", "STATUS", required = true))); repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
         val firstVisit = repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", Instant.parse("2026-09-06T08:00:00Z").toEpochMilli()); val firstWork = db.serviceLoopDao().firstWorkItemId(firstVisit)!!
-        assertTrue(repo.inspection(firstWork)!!.questions.isEmpty())
+        val oldSnapshot=attachPreCorrectionBookedSnapshot(firstVisit,ids.plan,template)
+        assertEquals("Old wording",repo.inspection(firstWork)!!.questions.single().label)
         repo.reviseTemplate(template, "Safety revised", listOf(TemplateItemDraft("New wording", "NUMBER", "bar", true))); repo.startVisit(firstVisit)
         assertEquals("New wording", repo.inspection(firstWork)!!.questions.single().label)
         repo.reviseTemplate(template, "Safety r3", listOf(TemplateItemDraft("Newest wording", "TEXT", required = true)))
-        assertEquals("New wording", repo.inspection(firstWork)!!.questions.single().label); repo.saveResponse(firstWork,repo.inspection(firstWork)!!.questions.single().snapshotItemId,ResponseDisposition.VALUE,"2.5",null);repo.markChecklistReviewed(firstWork);repo.savePublicWork(firstWork,"Checked");repo.saveCompletionDraft(firstWork,"PERFORMED",false,null,null,null,null);repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest"));val record=repo.finalRecord((repo.finalizeVisit(firstVisit) as FinalizeResult.Success).recordId)!!;assertEquals("New wording",record.public.lines.single().checklist.single().label); assertEquals(3, db.serviceLoopDao().reusableTemplateRevisions(template).size)
+        assertEquals("Old wording",db.serviceLoopDao().checklistItems(oldSnapshot).single().label); assertEquals("New wording", repo.inspection(firstWork)!!.questions.single().label); repo.saveResponse(firstWork,repo.inspection(firstWork)!!.questions.single().snapshotItemId,ResponseDisposition.VALUE,"2.5",null);repo.markChecklistReviewed(firstWork);repo.savePublicWork(firstWork,"Checked");repo.saveCompletionDraft(firstWork,"PERFORMED",false,null,null,null,null);repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest"));val record=repo.finalRecord((repo.finalizeVisit(firstVisit) as FinalizeResult.Success).recordId)!!;assertEquals("New wording",record.public.lines.single().checklist.single().label); assertEquals(3, db.serviceLoopDao().reusableTemplateRevisions(template).size)
+    }
+
+    @Test fun preCorrectionBookedSnapshotAtSameRevisionIsReusedAtStart() = runTest {
+        val ids=foundation(); val template=repo.createTemplate("Legacy booked",listOf(TemplateItemDraft("Revision one check","STATUS",required=true))); repo.updatePlan(ids.plan,PlanInput("Annual service",1,"YEARS","2026-09-01",template)); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val work=db.serviceLoopDao().firstWorkItemId(visit)!!; val captured=db.serviceLoopDao().workItem(work)!!.capturedObligationId!!; val snapshot=attachPreCorrectionBookedSnapshot(visit,ids.plan,template); val snapshotCount=db.serviceLoopDao().templateSnapshotCount(); val itemCount=db.serviceLoopDao().checklistSnapshotItemCount()
+        repo.startVisit(visit)
+        assertEquals("WORKING",repo.visit(visit)!!.state); assertEquals(snapshot,db.serviceLoopDao().workItem(work)!!.templateSnapshotId); assertEquals(snapshotCount,db.serviceLoopDao().templateSnapshotCount()); assertEquals(itemCount,db.serviceLoopDao().checklistSnapshotItemCount()); assertEquals("Revision one check",repo.inspection(work)!!.questions.single().label); assertEquals(1,db.serviceLoopDao().templateSnapshot(snapshot)!!.revision); assertEquals(captured,db.serviceLoopDao().workItem(work)!!.capturedObligationId); assertEquals(1,db.serviceLoopDao().visitOwnsClaim(visit,captured))
     }
 
     @Test fun recordPastRecurringWorkIsHistoryOnlyAndFinalizationDoesNotTouchCurrentObligation() = runTest {
@@ -191,6 +199,8 @@ class DailyOperationsIntegrityTest {
     @Test fun equipmentSearchIncludesMakeAndModel() = runTest { val ids=foundation(); repo.updateEquipment(ids.equipment,EquipmentInput("Compressor","C-01","Kaeser","Sigma 7","S1")); assertEquals(ids.equipment,repo.search("Kaeser").single().id); assertEquals(ids.equipment,repo.search("Sigma 7").single().id) }
 
     private data class Ids(val customer: String, val site: String, val equipment: String, val plan: String)
+    private suspend fun attachPreCorrectionBookedSnapshot(visit:String,plan:String,template:String):String { val dao=db.serviceLoopDao(); val master=dao.reusableTemplate(template)!!; val revision=dao.reusableTemplateRevision(master.currentRevisionId)!!; val snapshot=stableTestId("template-snapshot",visit,plan,revision.id); dao.insertTemplateSnapshots(listOf(com.v16studio.serviceloop.data.TemplateSnapshotEntity(snapshot,master.id,revision.nameSnapshot,revision.revisionNumber,1))); dao.insertChecklistItems(dao.reusableTemplateItems(revision.id).map{item->com.v16studio.serviceloop.data.ChecklistItemSnapshotEntity(stableTestId("snapshot-item",snapshot,item.id),snapshot,item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance)}); val work=dao.firstWorkItemId(visit)!!; db.openHelper.writableDatabase.execSQL("UPDATE work_items SET templateSnapshotId=? WHERE id=?",arrayOf(snapshot,work)); return snapshot }
+    private fun stableTestId(vararg parts:String)=UUID.nameUUIDFromBytes(parts.joinToString(":").toByteArray()).toString()
     private suspend fun foundation(): Ids { val customer=repo.createCustomer(CustomerInput("Acme Service Customer", "Dana")); val site=repo.createSite(customer, SiteInput("Main site", "1 Test Street")); val equipment=repo.createEquipment(site, EquipmentInput("Compressor", "C-01")); val plan=repo.createPlan(equipment, PlanInput("Annual service",1,"YEARS","2026-09-01")); return Ids(customer,site,equipment,plan) }
     private fun testImageBytes(color:Int):ByteArray { val bitmap=Bitmap.createBitmap(8,8,Bitmap.Config.ARGB_8888); bitmap.eraseColor(color); return ByteArrayOutputStream().also{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray() }
 }

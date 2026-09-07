@@ -158,6 +158,8 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM final_photo_entries WHERE finalWorkItemId=:finalWorkItemId ORDER BY position") suspend fun finalPhotos(finalWorkItemId: String): List<FinalPhotoEntryEntity>
     @Query("SELECT COUNT(*) FROM final_records") suspend fun finalRecordCount(): Int
     @Query("SELECT COUNT(*) FROM final_record_revisions") suspend fun finalRevisionCount(): Int
+    @Query("SELECT COUNT(*) FROM template_snapshots") suspend fun templateSnapshotCount(): Int
+    @Query("SELECT COUNT(*) FROM checklist_item_snapshots") suspend fun checklistSnapshotItemCount(): Int
     @Query("SELECT COUNT(*) FROM service_obligations WHERE planId=:planId") suspend fun obligationCount(planId: String): Int
     @Query("SELECT COUNT(*) FROM sites") suspend fun siteCount(): Int
     @Query("SELECT COUNT(*) FROM equipment") suspend fun equipmentCount(): Int
