@@ -136,14 +136,16 @@ class CanonicalStage3DailyOperationsTest {
         compose.waitUntil(15_000){runBlocking{dao.inspection(workId)!!.workPerformed.isNotBlank()}}
         compose.onNodeWithTag("response-$questionId-ISSUE_FOUND").performClick()
         compose.waitUntil(15_000){runBlocking{dao.responses(workId).singleOrNull()?.disposition=="ISSUE_FOUND"}}
-        compose.onNodeWithTag("finding-field-$questionId").performTextInput("Guard needs adjustment")
-        compose.onNodeWithContentDescription("Open full finding editor").performScrollTo().performClick()
-        compose.onNodeWithText("Done editing").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("long-text-public-finding-description").performTextInput("Guard needs adjustment")
+        compose.onNodeWithTag("long-text-public-finding-description-expand").performScrollTo().performClick()
+        compose.onNodeWithText("Done").assertIsDisplayed().performClick()
         compose.onNodeWithTag("finding-save-$questionId").assertIsEnabled().performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.responses(workId).single().reason?.contains("Guard needs adjustment")==true}}
         hideKeyboard()
-        compose.onNodeWithText("Mark checklist reviewed").performScrollTo().performClick()
+        compose.waitUntil(15_000){runCatching{compose.onNodeWithContentDescription("Mark checklist reviewed").assertIsEnabled()}.isSuccess}
+        compose.onNodeWithContentDescription("Mark checklist reviewed").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(15_000){runBlocking{dao.workItem(workId)!!.checklistReviewed}}
+        compose.waitUntil(15_000){compose.onAllNodesWithTag("open-field-evidence").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("open-field-evidence").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(15_000){compose.onAllNodesWithTag("field-description").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("field-description").performTextInput("Runtime filter")

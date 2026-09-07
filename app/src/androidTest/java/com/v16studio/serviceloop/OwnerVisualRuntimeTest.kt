@@ -128,11 +128,11 @@ class OwnerVisualRuntimeTest {
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume visit").fetchSemanticsNode() }.isSuccess }
         composeRule.onNodeWithText("Resume visit").performClick()
-        val field = composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true)
+        val field = composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true)
         field.performScrollTo()
 
-        composeRule.onNodeWithTag("finding-expand-check-belt", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Collapse").performClick()
+        composeRule.onNodeWithTag("long-text-public-finding-description-expand", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("Done").performClick()
 
         field.performTextClearance()
         field.performTextInput("Belt edge wear observed during inspection")
@@ -145,18 +145,18 @@ class OwnerVisualRuntimeTest {
         composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         composeRule.onNodeWithText("Resume visit").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
+        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
+        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onNodeWithText("Discard and change").performClick()
-        composeRule.onAllNodesWithTag("finding-field-check-belt", useUnmergedTree = true).assertCountEquals(0)
+        composeRule.onAllNodesWithTag("long-text-public-finding-description", useUnmergedTree = true).assertCountEquals(0)
 
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
-        composeRule.onNodeWithTag("finding-field-check-belt", useUnmergedTree = true).performTextInput("Belt edge wear observed; inspect before next use")
+        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performTextInput("Belt edge wear observed; inspect before next use")
         composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.waitUntil(5_000) {
             runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess

@@ -95,12 +95,17 @@ class Stage3DailyOperationsUiTest {
     }
 
     @Test fun appBarAndSystemBackProtectUnsavedCreateAndEditForms()=runBlocking {
-        val customer=repository.createCustomer(CustomerInput("Guard customer"))
         compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Unsaved")
         compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Unsaved").assertIsDisplayed(); compose.onNodeWithText("Discard changes").assertDoesNotExist()
-        compose.activity.onBackPressedDispatcher.onBackPressed(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Discard changes").performClick()
-        compose.onNodeWithText("Guard customer").performClick(); compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard edited")
-        compose.activity.onBackPressedDispatcher.onBackPressed(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Guard edited").assertIsDisplayed(); Unit
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; compose.waitUntil(5_000){runCatching{compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()}.isSuccess}; compose.onNodeWithText("Discard changes").performClick()
+        compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Guard customer"); compose.onNodeWithText("Save customer").performScrollTo().performClick()
+        compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; compose.onNodeWithText("Discard unsaved changes?").assertDoesNotExist()
+        compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard edited")
+        compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Guard edited").assertIsDisplayed()
+        compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Discard changes").performClick()
+        assertEquals("Guard customer",repository.customer(database.serviceLoopDao().customerList().single().id)!!.name)
+        compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard saved"); compose.onNodeWithText("Save customer").performScrollTo().performClick()
+        compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{repository.customer(database.serviceLoopDao().customerList().single().id)?.name=="Guard saved"}}; compose.onNodeWithText("Discard unsaved changes?").assertDoesNotExist(); Unit
     }
 
     @Test fun expandedLongTextUsesSameBufferUntilExplicitSave()=runBlocking {

@@ -1,6 +1,6 @@
 # ServiceLoop — SL-3 Requirement Coverage
 
-**Status:** independent-review correction implementation candidate; not technically or owner accepted. Exhaustive verification is pending Testing AI Model Phase B.
+**Status:** Phase-B verification incomplete; not technically ready and not owner accepted. The persistent canonical journey has an open runtime blocker.
 
 ## Implemented
 
@@ -21,18 +21,15 @@
 | Long text | One shared compact three-line editor with a bottom-right accessible expand/resize affordance opens the same buffer in a full-screen surface. Issue found uses this one mechanism; Done does not persist, and the parent Save remains authoritative. |
 | Report/privacy | Final records expose textual parts and selected photo entries; PDF/text include part and photo captions. Private/access/internal and unselected-photo fields remain structurally absent from the public model. PDF failure remains independent of business finalization. |
 
-## Verification evidence
+## Phase-B verification evidence
 
-- Independent-review correction development checks add focused Robolectric coverage for History-only creation/finalization, Start-time latest-template capture plus Working/final freeze, stale obligation blocking, deterministic transition/evidence/follow-up races and photo cleanup, template reorder revision isolation, and make/model search. Compose source coverage covers D01 app-bar/system Back, same-buffer long text, and the global equipment site chooser. Full Phase-B runtime/regression acceptance remains pending.
-
-- Accepted baseline before edits: `testDebugUnitTest`, `assembleDebug`, `lintDebug`, `assembleDebugAndroidTest` PASS.
-- Unit coverage includes directory identity/edits, exactly-one obligation creation, same-obligation due edit, template revision snapshot stability, exclusive/concurrent claims, cancellation release, one-site rejection, contact/follow-up non-effects, parts/photo privacy/final snapshots, and typed search.
-- Canonical AVD instrumentation includes v1→4, v2→4, v3→4 migrations; SL-2 finalization/report/root regressions; normal UI directory→site→equipment→plan creation; and inline finding semantics.
-- Gated persistent canonical journey: PASS (1 test, 99.6 seconds), using the preserved production database. It covered template, directory and plan setup, booking/reschedule/cancel/start, inspection/finding, parts, corrective follow-up, finalization, typed search, and contextual due filtering.
-- Normal canonical suite: PASS (18 tests, 160.336 seconds). The persistent journey is gated behind `sl3RuntimeJourney` and is an expected assumption skip in the normal suite so it cannot mutate owner-review data during routine runs.
-- Final local release gate: PASS — `:app:testDebugUnitTest` (82 tests), `:app:assembleDebug`, `:app:lintDebug` (0 errors, 12 warnings, 2 hints), `:app:assembleRelease`, and `:app:assembleDebugAndroidTest`.
-- SYSTEM-HANDOFF for picker/camera/dialer/SMS/email/maps was not exhaustively executed. Intent/contract integration is implemented; delivery, capture, message sending, call completion, or navigation success is never claimed.
-- HUMAN/RENDERED Stage-3 owner review was not performed in this implementation pass.
+- TESTED — host gate: 91 unit tests, 0 failures/errors/skips; `assembleDebug`, `assembleRelease`, and `assembleDebugAndroidTest` pass; lint reports 0 errors, 12 warnings, and 2 lower-severity findings.
+- UI-INSTRUMENTED — normal canonical suite: 21 tests pass in 52.245 seconds, with the persistent journey's deliberate assumption skip included in the runner count. This covers v1→4, v2→4, and v3→4 migrations; retained SL-2 finalization/report/root behavior; D01 create/edit behavior; same-buffer long text; global equipment site selection; selected-photo PDF rendering; and ordinary directory/plan UI.
+- TESTED / DOMAIN-INSTRUMENTED — focused integrity coverage remains green for History-only finalization, latest/reused Booked snapshots, state races, post-finalization write rejection, photo cleanup, template revision ordering, make/model search, recurrence, finalization idempotency, and report privacy.
+- UI-INSTRUMENTED BLOCKER — the explicitly gated persistent canonical journey repeatedly reaches and durably commits checklist review, but the working-inspection screen then fails to expose `open-field-evidence`; the journey cannot continue through parts, follow-up, completion, finalization, search, and contextual filtering. Earlier development-checkpoint PASS wording is superseded by this Phase-B result.
+- HUMAN/RENDERED — limited actual-screen inspection occurred for retained final-record/PDF/text screenshots and the failure environment; the full required Stage-3 screen matrix was not completed because the persistent blocker prevents technical acceptance.
+- SYSTEM-HANDOFF — NOT RUN for Photo Picker, Camera, Dialer, SMS, Email, Maps, and Sharesheet in this Phase-B pass; no external delivery/capture/contact action is claimed.
+- Canonical preservation — before install, the V-001 historical PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`; install used `-r` and no data clear/uninstall/reset occurred.
 
 ## Intentionally deferred
 
