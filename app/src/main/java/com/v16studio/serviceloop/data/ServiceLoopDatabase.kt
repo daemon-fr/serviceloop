@@ -28,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CorrectionDraftEntity::class, CorrectionWorkItemEntity::class,
         ChangeEntryEntity::class, EquipmentMoveEntity::class, RecoveryMetadataEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureStage4Tracking(db)
@@ -187,17 +187,35 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
-        private fun configureStage4Tracking(db: SupportSQLiteDatabase) {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE recovery_metadata ADD COLUMN adoptionToken TEXT")
+                db.execSQL("ALTER TABLE correction_drafts ADD COLUMN followUpEffectsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE correction_drafts ADD COLUMN newFollowUpsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE correction_work_items ADD COLUMN checklistJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE correction_work_items ADD COLUMN partsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE correction_work_items ADD COLUMN photosJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE correction_work_items ADD COLUMN nextDueDateCalculated INTEGER")
+                db.execSQL("ALTER TABLE correction_work_items ADD COLUMN nextDueOverrideReason TEXT")
+                db.execSQL("ALTER TABLE final_photo_entries ADD COLUMN addedInCorrection INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE final_photo_entries ADD COLUMN addedAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN publicNote TEXT")
+                configureStage4Tracking(db)
+            }
+        }
+
+        internal fun configureStage4Tracking(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
-            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "working_visits", "work_items", "working_responses", "work_item_public_drafts", "work_item_private_drafts", "attachments", "part_entries", "follow_ups", "follow_up_events", "contact_notes", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "final_part_entries", "final_photo_entries", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves")
+            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves")
             tracked.forEach { table ->
                 listOf("INSERT", "UPDATE", "DELETE").forEach { operation ->
                     val trigger = "track_${table}_${operation.lowercase()}"
+                    db.execSQL("DROP TRIGGER IF EXISTS `$trigger`")
                     db.execSQL(
                         "CREATE TRIGGER IF NOT EXISTS `$trigger` AFTER $operation ON `$table` " +
                             "BEGIN UPDATE recovery_metadata SET " +
-                            "firstBusinessWriteAtEpochMillis=COALESCE(firstBusinessWriteAtEpochMillis, CAST(strftime('%s','now') AS INTEGER)*1000), " +
-                            "lastBusinessWriteAtEpochMillis=CAST(strftime('%s','now') AS INTEGER)*1000 " +
+                            "firstBusinessWriteAtEpochMillis=COALESCE(firstBusinessWriteAtEpochMillis, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)), " +
+                            "lastBusinessWriteAtEpochMillis=CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) " +
                             "WHERE id='primary'; END",
                     )
                 }

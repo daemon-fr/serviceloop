@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.withLock
 
 interface ServiceLoopRepository {
     suspend fun home(): HomeSummary
@@ -37,6 +38,7 @@ interface ServiceLoopRepository {
     suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long = error("Completion draft unavailable")
     suspend fun finalizeVisit(visitId: String): FinalizeResult = FinalizeResult.Blocked("Finalization unavailable")
     suspend fun finalRecord(recordId: String): FinalRecordDetail? = null
+    suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String? = null): FinalRecordDetail? = null
     suspend fun customer(id: String): CustomerDetail? = null
     suspend fun site(id: String): SiteDetail? = null
     suspend fun dueServices(): List<DueService> = emptyList()
@@ -71,6 +73,7 @@ interface ServiceLoopRepository {
     suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String = error("Part entry unavailable")
     suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = error("Photo intake unavailable")
     suspend fun createContactNote(input: ContactNoteInput): String = error("Contact note unavailable")
+    suspend fun contactNote(id: String): ContactNoteDetail? = null
     suspend fun markContactNoteEnteredInError(id: String, reason: String): Long = error("Contact note unavailable")
     suspend fun createFollowUp(input: FollowUpInput): String = error("Follow-up unavailable")
     suspend fun updateFollowUp(id: String, title: String, dueDate: String, privateNote: String, reason: String): Long = error("Follow-up unavailable")
@@ -81,6 +84,7 @@ interface ServiceLoopRepository {
     suspend fun recordVersions(recordId: String): Pair<List<RecordVersionSummary>, List<ReportVersionSummary>> = emptyList<RecordVersionSummary>() to emptyList()
     suspend fun openCorrection(recordId: String): CorrectionDraft = error("Correction unavailable")
     suspend fun saveCorrection(value: CorrectionDraft): Long = error("Correction unavailable")
+    suspend fun addCorrectionEvidence(recordId: String, correctionWorkItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, caption: String?): Long = error("Correction evidence unavailable")
     suspend fun commitCorrection(recordId: String): String = error("Correction unavailable")
     suspend fun discardCorrection(recordId: String): Boolean = false
     suspend fun voidRecord(recordId: String, publicReason: String, privateReason: String?): Boolean = error("Void unavailable")
@@ -95,7 +99,7 @@ interface ServiceLoopRepository {
     suspend fun recordVerifiedBackup(result: BackupResult, destination: String) = Unit
     suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean): Unit = error("Restore unavailable")
     suspend fun directoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String? = null): ByteArray = error("Export unavailable")
-    suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean): ByteArray = error("Export unavailable")
+    suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean, customerId: String? = null): ByteArray = error("Export unavailable")
     suspend fun validateDirectoryCsv(bytes: ByteArray): CsvImportPreview = error("Import unavailable")
     suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String> = emptySet(), skippedBranches: Set<String> = emptySet()): ImportResult = error("Import unavailable")
     suspend fun erase(acknowledged: Boolean, confirmation: String): Unit = error("Erase unavailable")
@@ -119,6 +123,7 @@ class RoomServiceLoopRepository(
     override suspend fun recordVersions(recordId: String) = stage4.versions(recordId)
     override suspend fun openCorrection(recordId: String) = stage4.openCorrection(recordId)
     override suspend fun saveCorrection(value: CorrectionDraft) = stage4.saveCorrection(value)
+    override suspend fun addCorrectionEvidence(recordId: String, correctionWorkItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, caption: String?) = stage4.addCorrectionEvidence(recordId, correctionWorkItemId, bytes, displayName, mimeType, caption)
     override suspend fun commitCorrection(recordId: String) = stage4.commitCorrection(recordId)
     override suspend fun discardCorrection(recordId: String) = stage4.discardCorrection(recordId)
     override suspend fun voidRecord(recordId: String, publicReason: String, privateReason: String?) = stage4.voidRecord(recordId, publicReason, privateReason)
@@ -133,7 +138,7 @@ class RoomServiceLoopRepository(
     override suspend fun recordVerifiedBackup(result: BackupResult, destination: String) = stage4.recordVerifiedBackup(result, destination)
     override suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean) = stage4.restoreBackup(inspection, confirmation, incompleteAcknowledged)
     override suspend fun directoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String?) = stage4.directoryCsv(includeInactive, includePrivate, customerId)
-    override suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean) = stage4.recordsCsvPackage(includeInactive, includePrivate, includePreviousRevisions)
+    override suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean, customerId: String?) = stage4.recordsCsvPackage(includeInactive, includePrivate, includePreviousRevisions, customerId)
     override suspend fun validateDirectoryCsv(bytes: ByteArray) = stage4.validateDirectoryCsv(bytes)
     override suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String>, skippedBranches: Set<String>) = stage4.importDirectory(preview, createSeparate, skippedBranches)
     override suspend fun erase(acknowledged: Boolean, confirmation: String) = stage4.erase(acknowledged, confirmation)
@@ -387,7 +392,9 @@ class RoomServiceLoopRepository(
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); dao.insertPart(PartEntryEntity(id, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now)); dao.touchVisit(item.visitId, now) }; return id
     }
 
-    override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String {
+    override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = BusinessFileCoordinator.mutex.withLock { savePhotoUnlocked(workItemId, bytes, displayName, mimeType, includeInReport, caption) }
+
+    private suspend fun savePhotoUnlocked(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String {
         require(bytes.isNotEmpty()); require(bytes.size <= MAX_PHOTO_SOURCE_BYTES) { "Choose a photo smaller than 30 MB" }; require(mimeType.startsWith("image/")); val root = attachmentRoot ?: error("Attachment storage unavailable")
         val normalized = normalizePhoto(bytes)
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val relative = "attachments/$id/original"; val target = File(root, relative); val temp = File(target.parentFile, "incoming.tmp"); target.parentFile?.mkdirs(); try { temp.writeBytes(normalized.bytes); require(temp.length() == normalized.bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }; val hash = MessageDigest.getInstance("SHA-256").digest(normalized.bytes).joinToString("") { "%02x".format(it) }; database.withTransaction { val item=workingItem(workItemId); require(dao.machinePhotoCount(item.visitId,item.equipmentId)<20); require(dao.visitPhotoCount(item.visitId)<100); dao.insertAttachments(listOf(AttachmentEntity(id,"WORK_ITEM",workItemId,relative,hash,displayName,normalized.mimeType,includeInReport,"PRESENT",normalized.bytes.size.toLong(),clean(caption)))); dao.touchVisit(item.visitId,businessTime.instant().toEpochMilli()) }; return id } catch (failure: Throwable) { temp.delete(); target.delete(); throw failure }
@@ -396,6 +403,8 @@ class RoomServiceLoopRepository(
     override suspend fun createContactNote(input: ContactNoteInput): String {
         require(input.outcome.trim().isNotEmpty() && input.outcome.length <= 2000); require(input.channel in setOf("CALL", "SMS", "EMAIL", "IN_PERSON", "OTHER")); dao.customer(input.customerId) ?: error("Customer no longer exists"); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val id = UUID.randomUUID().toString(); dao.insertContactNote(ContactNoteEntity(id, reference("CN", dao.contactNoteCount() + 1), input.customerId, input.siteId, input.equipmentId, input.channel, now, input.outcome.trim(), clean(input.privateNote), now)); return id
     }
+
+    override suspend fun contactNote(id: String): ContactNoteDetail? = dao.contactNote(id)?.let { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
 
     override suspend fun markContactNoteEnteredInError(id: String, reason: String): Long { require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now=businessTime.instant().toEpochMilli(); check(dao.markContactNoteEnteredInError(id,reason.trim(),now)==1){"Contact note is unavailable or already entered in error"}; return now }
 
@@ -592,10 +601,16 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun finalRecord(recordId: String): FinalRecordDetail? {
-        val record = dao.finalRecord(recordId) ?: return null; val revision = dao.finalRevision(record.currentRevisionId) ?: return null; val items = dao.finalWorkItems(revision.id)
-        val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption) }, historyOnly=item.planId!=null&&item.capturedObligationId==null) }
-        val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference)
-        val rendition = dao.reportRendition(revision.id)?.let { ReportRendition(it.id, it.revisionId, it.versionNumber, it.generatedAtEpochMillis, it.relativePath, it.sha256, it.byteSize, it.pageCount, it.status, it.failureMessage) }
+        val record = dao.finalRecord(recordId) ?: return null
+        return finalRecordRevision(recordId, record.currentRevisionId)
+    }
+
+    override suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String?): FinalRecordDetail? {
+        val record = dao.finalRecord(recordId) ?: return null; val revision = dao.finalRevision(revisionId)?.takeIf { it.recordId == recordId } ?: return null; val items = dao.finalWorkItems(revision.id)
+        val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption, it.addedInCorrection, it.addedAtEpochMillis) }, historyOnly=item.planId!=null&&item.capturedObligationId==null) }
+        val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference, record.voided, record.publicVoidReason, revision.publicNote)
+        val renditionEntity = renditionId?.let { dao.reportRenditionById(it)?.takeIf { row -> row.revisionId == revision.id } } ?: dao.reportRendition(revision.id)
+        val rendition = renditionEntity?.let { ReportRendition(it.id, it.revisionId, it.versionNumber, it.generatedAtEpochMillis, it.relativePath, it.sha256, it.byteSize, it.pageCount, it.status, it.failureMessage, it.kind) }
         return FinalRecordDetail(model, items.mapNotNull { it.privateInternalNote }, rendition, record.voided, record.publicVoidReason)
     }
 

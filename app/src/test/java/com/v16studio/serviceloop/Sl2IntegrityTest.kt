@@ -119,6 +119,14 @@ class Sl2IntegrityTest {
         assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
     }
 
+    @Test fun missingHistoricalRenditionIsRecreatedFromItsFixedRevision() = runTest {
+        seed(); val repository = RoomServiceLoopRepository(db, time, attachmentRoot = context.filesDir); repository.saveCompletionDraft("work-1", "PERFORMED", false, null, null, null, null); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val renderedRevisions = mutableListOf<String>(); val writer = ReportWriter { model, _, _, _, file -> renderedRevisions += model.revisionId; FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }; val reports = AndroidReportService(context, db, repository, writer = writer)
+        val original = reports.generate(record); val draft = repository.openCorrection(record); repository.saveCorrection(draft.copy(reason = "Correct public text", publicNote = "Corrected note")); val correctedRevision = repository.commitCorrection(record); reports.generate(record)
+        reports.file(original.relativePath).delete(); val recreated = reports.generateRevision(record, original.revisionId)
+        assertEquals(original.revisionId, recreated.revisionId); assertEquals(2, recreated.versionNumber); assertEquals("RECREATED", recreated.kind); assertEquals(listOf(original.revisionId, correctedRevision, original.revisionId), renderedRevisions)
+    }
+
     @Test fun optionalIssueWithoutDescriptionCannotBeReviewedOrFinalized() = runTest {
         seed(withChecklist = true); val dao = db.serviceLoopDao()
         dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional", "template-1", 2, "Optional visual", "STATUS", null, false, null)))

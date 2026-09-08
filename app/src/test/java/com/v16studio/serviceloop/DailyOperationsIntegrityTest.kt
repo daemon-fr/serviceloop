@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.RoomServiceLoopRepository
 import com.v16studio.serviceloop.data.DraftWriteGate
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
+import com.v16studio.serviceloop.data.RecoveryPackage
 import com.v16studio.serviceloop.domain.*
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -36,7 +37,7 @@ class DailyOperationsIntegrityTest {
     private val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
     private val repo get() = RoomServiceLoopRepository(db, time, attachmentRoot = root)
 
-    @Before fun setup() { db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build(); root = File(context.cacheDir, "sl3-${System.nanoTime()}").apply { mkdirs() } }
+    @Before fun setup() { db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build(); ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase); root = File(context.cacheDir, "sl3-${System.nanoTime()}").apply { mkdirs() } }
     @After fun close() { db.close(); root.deleteRecursively() }
 
     @Test fun directoryCreationAndEditRetainStableIdentityAndPlanCreatesExactlyOneObligation() = runTest {
@@ -243,6 +244,38 @@ class DailyOperationsIntegrityTest {
         assertEquals(1, repo.recordVersions(recordId).first.size); assertTrue(repo.history(HistoryQuery(type = HistoryType.CHANGES)).any { it.eventKind == "VOID" })
     }
 
+    @Test fun correctionCanReplaceCapturedChecklistPartsAndSelectedEvidenceWithoutMutatingOriginal() = runTest {
+        val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val template = repo.createTemplate("Captured", listOf(TemplateItemDraft("Original question", "STATUS", required = true))); repo.updatePlan(ids.plan, PlanInput("Annual service",1,"YEARS","2026-09-01",template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val work = db.serviceLoopDao().firstWorkItemId(visit)!!; val question = repo.inspection(work)!!.questions.single()
+        repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.OK, null, null); repo.markChecklistReviewed(work); repo.savePublicWork(work,"Original work"); repo.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null); repo.addPart(work,"Old part","1","pc"); repo.savePhoto(work,testImageBytes(Color.RED),"old.png","image/png",true,"Old evidence")
+        val recordId = (repo.finalizeVisit(visit) as FinalizeResult.Success).recordId; val original = repo.finalRecord(recordId)!!; val draft = repo.openCorrection(recordId); val line = draft.items.single(); val check = line.checklist.single()
+        repo.addCorrectionEvidence(recordId, line.id, testImageBytes(Color.BLUE), "new.png", "image/png", "Correction proof")
+        val enriched = repo.openCorrection(recordId); val enrichedLine = enriched.items.single()
+        repo.saveCorrection(enriched.copy(reason="Correct captured content", publicNote="Customer-visible correction note", items=listOf(enrichedLine.copy(checklist=listOf(check.copy(disposition="ISSUE_FOUND", reason="Corrected public finding")), parts=listOf(CorrectionPartDraft(null,"New part","2","pcs")), photos=enrichedLine.photos.map { if (it.addedInCorrection) it else it.copy(selected=false) }))))
+        repo.commitCorrection(recordId); val corrected = repo.finalRecord(recordId)!!.public.lines.single()
+        assertEquals("ISSUE_FOUND", corrected.checklist.single().disposition); assertEquals("Corrected public finding", corrected.checklist.single().reason); assertEquals("New part", corrected.parts.single().description); assertEquals("Customer-visible correction note", repo.finalRecord(recordId)!!.public.publicNote); assertTrue(corrected.photos.single().addedInCorrection); assertNotNull(corrected.photos.single().addedAtEpochMillis)
+        assertEquals("OK", db.serviceLoopDao().finalChecklistItems(original.public.lines.single().let { db.serviceLoopDao().finalWorkItems(original.public.revisionId).single().id }).single().disposition)
+    }
+
+    @Test fun correctionFollowUpEffectsAreExplicitAndAtomic() = runTest {
+        val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!; val follow=repo.createCorrectiveFollowUp(work,"Inspect leak","2026-09-10",""); repo.savePublicWork(work,"Done"); repo.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null); val record=(repo.finalizeVisit(visit) as FinalizeResult.Success).recordId
+        val draft=repo.openCorrection(record); repo.saveCorrection(draft.copy(reason="Finding entered incorrectly", followUps=draft.followUps.map { it.copy(action="CANCEL", cancellationReason="Not actually required") }, newFollowUps=listOf(CorrectionNewFollowUpDraft("Return with gauge","2026-09-12"))))
+        repo.commitCorrection(record); assertEquals("CANCELLED",repo.followUp(follow)!!.state); assertTrue(repo.followUps().any { it.title=="Return with gauge" && it.state=="OPEN" })
+    }
+
+    @Test fun latestCountedCorrectionAndVoidReconcileScheduleAndProvenance() = runTest {
+        val ids=foundation(); val record=finalizedRecord(ids); val correction=repo.openCorrection(record); val changed=correction.items.single().copy(fulfilledObligation=false)
+        repo.saveCorrection(correction.copy(reason="Did not fulfill scheduled service",scheduleAcknowledged=true,items=listOf(changed))); repo.commitCorrection(record)
+        val afterCorrection=db.serviceLoopDao().plan(ids.plan)!!; assertEquals("2026-09-01",afterCorrection.currentDueDate); assertNull(afterCorrection.lastCountedRevisionId)
+        val nextRecord=finalizedRecord(ids); val currentRevision=repo.finalRecord(nextRecord)!!.public.revisionId; assertEquals(currentRevision,db.serviceLoopDao().plan(ids.plan)!!.lastCountedRevisionId)
+        repo.voidRecord(nextRecord,"Service was attributed in error",null); val afterVoid=db.serviceLoopDao().plan(ids.plan)!!; assertEquals("2026-09-01",afterVoid.currentDueDate); assertNull(afterVoid.lastCountedRevisionId)
+    }
+
+    @Test fun recordsPackageContainsAdoptedReadableOwnershipTables() = runTest {
+        val ids=foundation(); finalizedRecord(ids); val bytes=repo.recordsCsvPackage(true,false,true,ids.customer); val names=mutableSetOf<String>(); java.util.zip.ZipInputStream(bytes.inputStream()).use { zip -> while(true){ val entry=zip.nextEntry?:break; names+=entry.name } }
+        assertTrue(names.containsAll(setOf("customers.csv","sites.csv","equipment.csv","service_plans.csv","visits.csv","work_items.csv","checklist_answers.csv","findings.csv","parts.csv","followups.csv","contact_notes.csv","changes.csv","report_index.csv","attachment_index.csv","README.txt")))
+    }
+
     @Test fun encryptedBackupRejectsWrongPassphraseAndRestoresAfterExplicitErase() = runTest {
         foundation(); val password = "correct horse battery".toCharArray(); val backup = repo.createBackup(password)
         assertTrue(backup.complete); assertFalse(backup.bytes.toString(Charsets.ISO_8859_1).contains("Acme Service Customer"))
@@ -251,6 +284,67 @@ class DailyOperationsIntegrityTest {
         assertTrue(runCatching { repo.inspectBackup(damaged, password) }.isFailure)
         val inspection = repo.inspectBackup(backup.bytes, password); repo.erase(true, "ERASE"); assertEquals(0, repo.datasetSummary().customers)
         repo.restoreBackup(inspection, "REPLACE", false); assertEquals(1, repo.datasetSummary().customers)
+    }
+
+    @Test fun sameDatasetRestoreRemovesOldOnlyBusinessFiles() = runTest {
+        val ids = foundation(); val password = "same dataset restore".toCharArray(); val backup = repo.createBackup(password); val inspection = repo.inspectBackup(backup.bytes, password)
+        repo.updateCustomer(ids.customer, CustomerInput("Changed after backup", "Dana"))
+        val oldOnly = File(root, "reports/old-only/private.pdf").apply { parentFile!!.mkdirs(); writeText("private old bytes") }
+        repo.restoreBackup(inspection, "REPLACE", false)
+        assertEquals("Acme Service Customer", repo.customer(ids.customer)!!.name)
+        assertFalse(oldOnly.exists())
+    }
+
+    @Test fun restoreCrashMatrixUsesAdoptionTokenAndAlwaysKeepsOneCoherentSide() = runTest {
+        val ids = foundation(); val password = "restore crash matrix".toCharArray(); val backup = repo.createBackup(password); val inspection = repo.inspectBackup(backup.bytes, password)
+        val beforeCommit = setOf(RecoveryPackage.FailurePoint.BEFORE_FILE_ADOPTION, RecoveryPackage.FailurePoint.DURING_FILE_ADOPTION, RecoveryPackage.FailurePoint.BEFORE_DB_TRANSACTION, RecoveryPackage.FailurePoint.DURING_DB_TRANSACTION)
+        val points = beforeCommit + setOf(RecoveryPackage.FailurePoint.AFTER_DB_COMMIT, RecoveryPackage.FailurePoint.AFTER_COMMITTED_JOURNAL)
+        points.forEach { point ->
+            repo.updateCustomer(ids.customer, CustomerInput("Live $point", "Dana"))
+            val liveFile = File(root, "attachments/live-$point.bin").apply { parentFile!!.mkdirs(); writeText("live") }
+            val packageWithFailure = RecoveryPackage(db, root) { reached -> if (reached == point) error("injected $point") }
+            assertTrue(runCatching { packageWithFailure.restore(inspection) }.isFailure)
+            assertNotEquals(RecoveryPackage.RecoveryResult.RESTRICTED, RecoveryPackage.recoverInterrupted(db, root))
+            if (point in beforeCommit) { assertEquals("Live $point", repo.customer(ids.customer)!!.name); assertTrue(liveFile.exists()) }
+            else { assertEquals("Acme Service Customer", repo.customer(ids.customer)!!.name); assertFalse(liveFile.exists()) }
+        }
+    }
+
+    @Test fun malformedRecoveryJournalEntersRestrictedStateInsteadOfOpeningSilently() = runTest {
+        foundation(); repo.datasetSummary(); File(root, "recovery").mkdirs(); File(root, "recovery/restore-journal.json").writeText("not-json")
+        assertEquals(RecoveryPackage.RecoveryResult.RESTRICTED, RecoveryPackage.recoverInterrupted(db, root))
+        assertTrue(db.serviceLoopDao().recoveryMetadata()!!.restrictedRecoveryState)
+    }
+
+    @Test fun explicitValidatedReplacementCanResolveRestrictedDamagedJournal() = runTest {
+        foundation(); val password = "restricted replacement".toCharArray(); val backup = repo.createBackup(password); val inspection = repo.inspectBackup(backup.bytes, password)
+        File(root, "recovery").mkdirs(); File(root, "recovery/restore-journal.json").writeText("not-json"); assertEquals(RecoveryPackage.RecoveryResult.RESTRICTED, RecoveryPackage.recoverInterrupted(db, root))
+        repo.restoreBackup(inspection, "REPLACE", false)
+        assertFalse(repo.datasetSummary().restrictedRecoveryState); assertEquals(1, repo.datasetSummary().customers); assertFalse(File(root, "recovery").exists())
+    }
+
+    @Test fun incompleteRestorePersistsMissingAttachmentAvailability() = runTest {
+        val ids = foundation(); val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val attachment = repo.savePhoto(work, testImageBytes(Color.BLUE), "evidence.png", "image/png", true, "Evidence")
+        val stored = db.serviceLoopDao().attachment(attachment)!!; File(root, stored.storedRelativePath).delete()
+        val password = "incomplete recovery".toCharArray(); val backup = repo.createBackup(password, true); assertFalse(backup.complete)
+        repo.restoreBackup(repo.inspectBackup(backup.bytes, password), "REPLACE", true)
+        assertEquals("MISSING", db.serviceLoopDao().attachment(attachment)!!.availability)
+        assertTrue(db.serviceLoopDao().recoveryMetadata()!!.restoredFromIncompleteCopy)
+    }
+
+    @Test fun eraseFileFailureRollsBackDatabaseAndPrivateFiles() = runTest {
+        foundation(); val privateFile=File(root,"attachments/private.bin").apply { parentFile!!.mkdirs(); writeText("private") }
+        val failing=RecoveryPackage(db,root){ if(it==RecoveryPackage.FailurePoint.DURING_ERASE_FILES) error("delete failure") }
+        assertTrue(runCatching { failing.eraseDatabaseAndOwnedFiles(UUID.randomUUID().toString()) }.isFailure)
+        assertEquals(1,repo.datasetSummary().customers); assertTrue(privateFile.isFile); assertFalse(repo.datasetSummary().restrictedRecoveryState)
+    }
+
+    @Test fun verifiedSnapshotTracksBusinessWritesButNotRecoveryMetadataWrites() = runTest {
+        val ids=foundation(); val password="business dirty state".toCharArray(); val first=repo.createBackup(password); repo.recordVerifiedBackup(first,"test destination"); assertFalse(repo.datasetSummary().changedSinceBackup)
+        repo.setBackupReminder(30); assertFalse(repo.datasetSummary().changedSinceBackup)
+        repo.updateCustomer(ids.customer,CustomerInput("Changed business name","Dana")); assertTrue(repo.datasetSummary().changedSinceBackup)
+        val second=repo.createBackup(password); repo.recordVerifiedBackup(second,"test destination"); assertFalse(repo.datasetSummary().changedSinceBackup)
     }
 
     @Test fun directoryCsvEscapesSpreadsheetFormulasAndImportIsIdempotent() = runTest {

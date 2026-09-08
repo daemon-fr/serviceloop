@@ -241,6 +241,8 @@ data class FinalRecordRevisionEntity(
     val siteReference: String? = null,
     val supersedesRevisionId: String? = null,
     val correctionReason: String? = null,
+    /** Public revision-level note, structurally separate from privateInternalNote. */
+    val publicNote: String? = null,
 )
 
 @Entity(
@@ -521,6 +523,8 @@ data class FinalPhotoEntryEntity(
     val byteSize: Long,
     val mimeType: String,
     val caption: String?,
+    val addedInCorrection: Boolean = false,
+    val addedAtEpochMillis: Long? = null,
 )
 
 @Entity(tableName = "plan_schedule_changes", foreignKeys = [ForeignKey(ServicePlanEntity::class, ["id"], ["planId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("planId")])
@@ -572,6 +576,8 @@ data class CorrectionDraftEntity(
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
     val commitToken: String,
+    val followUpEffectsJson: String = "[]",
+    val newFollowUpsJson: String = "[]",
 )
 
 @Entity(
@@ -589,6 +595,11 @@ data class CorrectionWorkItemEntity(
     val notPerformedReason: String?,
     val fulfilledObligation: Boolean,
     val proposedNextDueDate: String?,
+    val checklistJson: String = "[]",
+    val partsJson: String = "[]",
+    val photosJson: String = "[]",
+    val nextDueDateCalculated: Boolean? = null,
+    val nextDueOverrideReason: String? = null,
 )
 
 /** Append-only, human-readable provenance for lifecycle, move, correction and void actions. */
@@ -637,4 +648,6 @@ data class RecoveryMetadataEntity(
     val backupReminderDays: Int = 7,
     val restoredFromIncompleteCopy: Boolean = false,
     val restrictedRecoveryState: Boolean = false,
+    /** Unique identity of the last cross-resource restore/erase transaction that committed. */
+    val adoptionToken: String? = null,
 )

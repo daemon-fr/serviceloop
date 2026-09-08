@@ -94,6 +94,7 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPrivateDrafts(values: List<WorkItemPrivateDraftEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertResponses(values: List<WorkingResponseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAttachments(values: List<AttachmentEntity>)
+    @Query("DELETE FROM attachments WHERE id=:id") suspend fun deleteAttachment(id: String): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUps(values: List<FollowUpEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertBusinessProfile(value: BusinessProfileEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRecord(value: FinalRecordEntity)
@@ -146,6 +147,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM final_checklist_items WHERE finalWorkItemId=:workItemId ORDER BY position") suspend fun finalChecklistItems(workItemId: String): List<FinalChecklistItemEntity>
     @Query("SELECT * FROM report_renditions WHERE revisionId=:revisionId ORDER BY versionNumber DESC LIMIT 1") suspend fun reportRendition(revisionId: String): ReportRenditionEntity?
     @Query("SELECT * FROM report_renditions WHERE revisionId=:revisionId ORDER BY versionNumber") suspend fun reportRenditions(revisionId: String): List<ReportRenditionEntity>
+    @Query("SELECT * FROM report_renditions WHERE id=:id") suspend fun reportRenditionById(id: String): ReportRenditionEntity?
     @Query("SELECT * FROM report_renditions ORDER BY generatedAtEpochMillis, id") suspend fun allReportRenditions(): List<ReportRenditionEntity>
     @Query("SELECT * FROM final_record_revisions WHERE recordId=:recordId ORDER BY revisionNumber") suspend fun finalRevisions(recordId: String): List<FinalRecordRevisionEntity>
     @Query("SELECT * FROM sites WHERE customerId=:customerId ORDER BY isDefault DESC, name, reference") suspend fun sitesForCustomer(customerId: String): List<SiteEntity>
@@ -156,6 +158,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM follow_ups ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUps(): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups WHERE id=:id") suspend fun followUp(id: String): FollowUpEntity?
     @Query("SELECT * FROM contact_notes WHERE customerId=:customerId ORDER BY occurredAtEpochMillis DESC, reference") suspend fun contactNotesForCustomer(customerId: String): List<ContactNoteEntity>
+    @Query("SELECT * FROM contact_notes WHERE id=:id") suspend fun contactNote(id: String): ContactNoteEntity?
     @Query("SELECT * FROM reusable_templates ORDER BY name, reference") suspend fun reusableTemplates(): List<ReusableTemplateEntity>
     @Query("SELECT * FROM reusable_templates WHERE id=:id") suspend fun reusableTemplate(id: String): ReusableTemplateEntity?
     @Query("SELECT * FROM reusable_template_revisions WHERE id=:id") suspend fun reusableTemplateRevision(id: String): ReusableTemplateRevisionEntity?
@@ -189,6 +192,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM correction_drafts WHERE id=:id") suspend fun correctionDraft(id: String): CorrectionDraftEntity?
     @Query("SELECT * FROM correction_drafts ORDER BY modifiedAtEpochMillis DESC") suspend fun correctionDrafts(): List<CorrectionDraftEntity>
     @Query("SELECT * FROM correction_work_items WHERE draftId=:draftId ORDER BY position") suspend fun correctionWorkItems(draftId: String): List<CorrectionWorkItemEntity>
+    @Query("SELECT * FROM correction_work_items WHERE id=:id") suspend fun correctionWorkItem(id: String): CorrectionWorkItemEntity?
     @Query("SELECT COUNT(*) FROM correction_drafts cd JOIN correction_work_items cw ON cw.draftId=cd.id JOIN final_work_items fw ON fw.id=cw.sourceFinalWorkItemId WHERE fw.equipmentId=:equipmentId") suspend fun correctionDraftCountForEquipment(equipmentId: String): Int
     @Query("SELECT cd.recordId FROM correction_drafts cd JOIN correction_work_items cw ON cw.draftId=cd.id JOIN final_work_items fw ON fw.id=cw.sourceFinalWorkItemId WHERE fw.equipmentId=:equipmentId LIMIT 1") suspend fun correctionRecordForEquipment(equipmentId: String): String?
     @Query("SELECT * FROM recovery_metadata WHERE id='primary'") suspend fun recoveryMetadata(): RecoveryMetadataEntity?
@@ -384,7 +388,7 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM visit_claims vc JOIN service_obligations o ON o.id=vc.obligationId WHERE o.planId=:planId") suspend fun activeClaimCountForPlan(planId: String): Int
     @Query("SELECT COUNT(*) FROM sites WHERE customerId=:customerId AND isDefault=1") suspend fun defaultSiteCount(customerId: String): Int
     @Query("UPDATE sites SET isDefault=0 WHERE id=:siteId") suspend fun clearDefaultSite(siteId: String): Int
-    @Query("UPDATE service_plans SET currentDueDate=:dueDate, lastCountedCompletionDate=:completionDate, lastCountedRevisionId=:revisionId WHERE id=:planId AND lastCountedRevisionId=:expectedRevisionId") suspend fun reconcileLatestPlan(planId: String, expectedRevisionId: String, dueDate: String, completionDate: String, revisionId: String): Int
+    @Query("UPDATE service_plans SET currentDueDate=:dueDate, lastCountedCompletionDate=:completionDate, lastCountedRevisionId=:revisionId WHERE id=:planId AND lastCountedRevisionId=:expectedRevisionId") suspend fun reconcileLatestPlan(planId: String, expectedRevisionId: String, dueDate: String, completionDate: String?, revisionId: String?): Int
 
     @Transaction
     suspend fun persistResponse(response: WorkingResponseEntity, visitId: String, invalidateReview: Boolean = true) {

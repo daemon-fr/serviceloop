@@ -16,6 +16,7 @@ import java.security.SecureRandom
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import java.util.UUID
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -24,21 +25,33 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.sync.withLock
 
 /** Portable authenticated backup format. It contains no passphrase-derived verifier. */
-class RecoveryPackage(private val database: ServiceLoopDatabase, private val fileRoot: File) {
-    suspend fun create(passphrase: CharArray, allowIncomplete: Boolean): BackupResult {
+class RecoveryPackage(
+    private val database: ServiceLoopDatabase,
+    private val fileRoot: File,
+    private val failureInjector: (FailurePoint) -> Unit = {},
+) {
+    enum class FailurePoint { BEFORE_FILE_ADOPTION, DURING_FILE_ADOPTION, BEFORE_DB_TRANSACTION, DURING_DB_TRANSACTION, AFTER_DB_COMMIT, AFTER_COMMITTED_JOURNAL, DURING_ERASE_FILES }
+    enum class RecoveryResult { NONE, CANDIDATE_COMMITTED, ORIGINAL_RESTORED, RESTRICTED }
+
+    suspend fun create(passphrase: CharArray, allowIncomplete: Boolean): BackupResult = BusinessFileCoordinator.mutex.withLock { createUnlocked(passphrase, allowIncomplete) }
+
+    private suspend fun createUnlocked(passphrase: CharArray, allowIncomplete: Boolean): BackupResult {
         require(passphrase.size >= 12) { "Passphrase must contain at least 12 characters" }
         val snapshotAt = System.currentTimeMillis()
-        val files = requiredFiles()
+        val databaseObject = database.withTransaction { JSONObject(exportDatabase().toString(Charsets.UTF_8)) }
+        val files = requiredFiles(databaseObject)
         val missing = files.filterNot { File(fileRoot, it.path).isFile }.map { it.path }
         if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing")
-        val databaseJson = database.withTransaction { exportDatabase() }
+        normalizeMissingAvailability(databaseObject, missing.toSet())
+        val databaseJson = databaseObject.toString().toByteArray(Charsets.UTF_8)
         val manifest = JSONObject()
             .put("formatVersion", FORMAT_VERSION)
-            .put("schemaVersion", 5)
+            .put("schemaVersion", SCHEMA_VERSION)
             .put("snapshotAtEpochMillis", snapshotAt)
-            .put("datasetId", database.serviceLoopDao().recoveryMetadata()?.datasetId ?: "unknown")
+            .put("datasetId", recoveryMetadata(databaseObject).getString("datasetId"))
             .put("complete", missing.isEmpty())
             .put("databaseSha256", sha256(databaseJson))
             .put("missingFiles", JSONArray(missing))
@@ -69,7 +82,7 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
         val manifest = JSONObject(manifestBytes.toString(Charsets.UTF_8))
         val version = manifest.getInt("formatVersion")
         require(version <= FORMAT_VERSION) { "This backup needs a newer ServiceLoop version" }
-        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") == 5) { "Unsupported backup format" }
+        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") == SCHEMA_VERSION) { "Unsupported backup format" }
         require(sha256(databaseBytes) == manifest.getString("databaseSha256")) { "Database snapshot integrity check failed" }
         val declaredFiles = manifest.getJSONArray("files")
         val paths = mutableSetOf<String>()
@@ -84,26 +97,37 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
         val db = JSONObject(databaseBytes.toString(Charsets.UTF_8))
         validateDatabase(db)
         val missing = manifest.getJSONArray("missingFiles").let { array -> List(array.length()) { array.getString(it) } }
-        require(missing.all(::safeRelativePath)) { "Unsafe missing-file declaration" }
+        require(missing.size == missing.toSet().size && missing.all(::safeRelativePath) && missing.none { it in paths }) { "Unsafe or conflicting missing-file declaration" }
         val complete = manifest.getBoolean("complete")
         require(complete == missing.isEmpty()) { "Deceptive completeness metadata" }
+        crossValidateFiles(db, declaredFiles, missing)
         return BackupInspection(version, manifest.getLong("snapshotAtEpochMillis"), manifest.getString("datasetId"), complete, db.getJSONArray("tables").length(), countRecords(db), paths.size, missing, plain)
     }
 
-    suspend fun restore(inspection: BackupInspection) {
+    suspend fun restore(inspection: BackupInspection) = BusinessFileCoordinator.mutex.withLock { restoreUnlocked(inspection) }
+
+    private suspend fun restoreUnlocked(inspection: BackupInspection) {
         val entries = unzip(inspection.stagedPayload)
         val databaseObject = JSONObject(entries.getValue("database.json").toString(Charsets.UTF_8))
         validateDatabase(databaseObject)
-        recoverInterrupted(database, fileRoot)
         val recoveryRoot = File(fileRoot, "recovery")
+        var restrictedQuarantine: File? = null
+        if (recoverInterrupted(database, fileRoot) == RecoveryResult.RESTRICTED) {
+            restrictedQuarantine = File(fileRoot, "recovery-restricted-${UUID.randomUUID()}")
+            check(recoveryRoot.renameTo(restrictedQuarantine)) { "Unable to isolate the damaged recovery journal" }
+        }
         val stage = File(recoveryRoot, "restore-candidate")
         val rollback = File(recoveryRoot, "restore-rollback")
+        check(!journalFile(recoveryRoot).exists()) { "Another recovery operation is unfinished" }
         stage.deleteRecursively(); rollback.deleteRecursively()
         require(stage.mkdirs() && rollback.mkdirs()) { "Unable to create recovery staging" }
         val manifest = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
         val declared = manifest.getJSONArray("files")
         val paths = List(declared.length()) { declared.getJSONObject(it).getString("path") }
-        val journal = File(recoveryRoot, JOURNAL)
+        val touchedPaths = (ownedBusinessFiles() + paths).distinct().sorted()
+        val journal = journalFile(recoveryRoot)
+        val adoptionToken = UUID.randomUUID().toString()
+        setAdoptionToken(databaseObject, adoptionToken)
         try {
             entries.filterKeys { it.startsWith("files/") }.forEach { (name, bytes) ->
                 val relative = name.removePrefix("files/")
@@ -112,16 +136,29 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
                 require(target.path.startsWith(stage.canonicalPath + File.separator))
                 target.parentFile?.mkdirs(); target.writeBytes(bytes)
             }
-            journal.writeText(JSONObject().put("targetDatasetId", manifest.getString("datasetId")).put("paths", JSONArray(paths)).put("phase", "ADOPTING_FILES").toString())
-            paths.forEach { relative ->
+            val initialJournal = JSONObject().put("operation", "RESTORE").put("adoptionToken", adoptionToken).put("paths", JSONArray(touchedPaths)).put("candidatePaths", JSONArray(paths)).put("adoptedPaths", JSONArray()).put("phase", "PREPARED")
+            restrictedQuarantine?.let { initialJournal.put("restrictedQuarantine", it.name) }
+            writeJournal(journal, initialJournal)
+            failureInjector(FailurePoint.BEFORE_FILE_ADOPTION)
+            writeJournal(journal, JSONObject(journal.readText()).put("phase", "ADOPTING_FILES"))
+            touchedPaths.forEachIndexed { index, relative ->
                 val current = File(fileRoot, relative)
+                writeJournal(journal, JSONObject(journal.readText()).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
                 if (current.isFile) { val saved = File(rollback, relative); saved.parentFile?.mkdirs(); check(current.renameTo(saved) || runCatching { current.copyTo(saved, overwrite = true); current.delete() }.isSuccess) }
-                val candidate = File(stage, relative); val target = File(fileRoot, relative); target.parentFile?.mkdirs(); check(candidate.renameTo(target) || runCatching { candidate.copyTo(target, overwrite = true) }.isSuccess)
+                val candidate = File(stage, relative)
+                if (candidate.isFile) { val target = File(fileRoot, relative); target.parentFile?.mkdirs(); check(candidate.renameTo(target) || runCatching { candidate.copyTo(target, overwrite = true); candidate.delete() }.getOrDefault(false)) }
+                val state = JSONObject(journal.readText()); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
+                if (index == 0) failureInjector(FailurePoint.DURING_FILE_ADOPTION)
             }
-            journal.writeText(JSONObject(journal.readText()).put("phase", "DB_COMMITTING").toString())
-            database.withTransaction { replaceDatabase(databaseObject) }
-            journal.writeText(JSONObject(journal.readText()).put("phase", "COMMITTED").toString())
-            rollback.deleteRecursively(); stage.deleteRecursively(); journal.delete()
+            writeJournal(journal, JSONObject(journal.readText()).put("phase", "DB_COMMITTING"))
+            failureInjector(FailurePoint.BEFORE_DB_TRANSACTION)
+            database.withTransaction { replaceDatabase(databaseObject); failureInjector(FailurePoint.DURING_DB_TRANSACTION) }
+            failureInjector(FailurePoint.AFTER_DB_COMMIT)
+            writeJournal(journal, JSONObject(journal.readText()).put("phase", "COMMITTED"))
+            failureInjector(FailurePoint.AFTER_COMMITTED_JOURNAL)
+            rollback.deleteRecursively(); stage.deleteRecursively()
+            restrictedQuarantine?.let { check(it.deleteRecursively()) { "Damaged recovery quarantine could not be removed" } }
+            journal.delete()
             if (inspection.missingFiles.isEmpty()) recoveryRoot.delete()
         } catch (failure: Exception) {
             recoverInterrupted(database, fileRoot)
@@ -132,11 +169,12 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
     }
 
     private data class RequiredFile(val path: String, val size: Long, val hash: String, val kind: String)
-    private suspend fun requiredFiles(): List<RequiredFile> {
-        val dao = database.serviceLoopDao()
-        val attachments = dao.allAttachments().map { RequiredFile(it.storedRelativePath, it.byteSize, it.sha256, "ATTACHMENT") }
-        val reports = dao.allReportRenditions().filter { it.status == "READY" && it.sha256 != null }.map { RequiredFile(it.relativePath, it.byteSize ?: 0, it.sha256!!, "REPORT") }
-        return (attachments + reports).distinctBy { it.path }
+    private fun requiredFiles(root: JSONObject): List<RequiredFile> {
+        val attachments = tableRows(root, "attachments").map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "ATTACHMENT") }
+        val reports = tableRows(root, "report_renditions").filter { it.getString("status") in setOf("READY", "MISSING") && !it.isNull("sha256") }.map { RequiredFile(it.getString("relativePath"), it.optLong("byteSize"), it.getString("sha256"), "REPORT") }
+        val all = attachments + reports
+        require(all.map { it.path }.size == all.map { it.path }.toSet().size) { "Two database file references use the same path" }
+        return all
     }
 
     private fun exportDatabase(): ByteArray {
@@ -147,7 +185,7 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
             db.query("SELECT * FROM `$table`").use { cursor -> while (cursor.moveToNext()) rows.put(cursorRow(cursor)) }
             tables.put(JSONObject().put("name", table).put("rows", rows))
         }
-        return JSONObject().put("schemaVersion", 5).put("tables", tables).toString().toByteArray(Charsets.UTF_8)
+        return JSONObject().put("schemaVersion", SCHEMA_VERSION).put("tables", tables).toString().toByteArray(Charsets.UTF_8)
     }
 
     private fun cursorRow(cursor: Cursor): JSONObject = JSONObject().also { row ->
@@ -164,7 +202,7 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
     }
 
     private fun validateDatabase(root: JSONObject) {
-        require(root.getInt("schemaVersion") == 5)
+        require(root.getInt("schemaVersion") == SCHEMA_VERSION)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
         val names = mutableSetOf<String>()
@@ -216,6 +254,110 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
     }
     private fun countRecords(root: JSONObject): Int = TABLE_ORDER.sumOf { tableRows(root, it).size }
 
+    /** Recoverable erase: file adoption and the empty database share one durable commit identity. */
+    suspend fun eraseDatabaseAndOwnedFiles(newDatasetId: String) = BusinessFileCoordinator.mutex.withLock { eraseUnlocked(newDatasetId) }
+
+    private suspend fun eraseUnlocked(newDatasetId: String) {
+        check(recoverInterrupted(database, fileRoot) != RecoveryResult.RESTRICTED) { "Recovery is restricted; erase cannot continue" }
+        val recoveryRoot = File(fileRoot, "recovery")
+        val rollback = File(recoveryRoot, "restore-rollback")
+        val journal = journalFile(recoveryRoot)
+        check(!journal.exists()) { "Another recovery operation is unfinished" }
+        rollback.deleteRecursively()
+        require(rollback.mkdirs()) { "Unable to create erase rollback staging" }
+        val paths = ownedBusinessFiles().sorted()
+        val token = UUID.randomUUID().toString()
+        try {
+            writeJournal(journal, JSONObject().put("operation", "ERASE").put("adoptionToken", token).put("paths", JSONArray(paths)).put("candidatePaths", JSONArray()).put("adoptedPaths", JSONArray()).put("phase", "ADOPTING_FILES"))
+            paths.forEachIndexed { index, relative ->
+                val current = File(fileRoot, relative)
+                writeJournal(journal, JSONObject(journal.readText()).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
+                if (current.isFile) {
+                    val saved = File(rollback, relative)
+                    saved.parentFile?.mkdirs()
+                    check(current.renameTo(saved) || runCatching { current.copyTo(saved, overwrite = true); current.delete() }.getOrDefault(false))
+                }
+                val state = JSONObject(journal.readText()); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
+                if (index == 0) failureInjector(FailurePoint.DURING_ERASE_FILES)
+            }
+            writeJournal(journal, JSONObject(journal.readText()).put("phase", "DB_COMMITTING"))
+            database.withTransaction {
+                val db = database.openHelper.writableDatabase
+                TABLE_ORDER.asReversed().filterNot { it == "recovery_metadata" }.forEach { db.execSQL("DELETE FROM `$it`") }
+                database.serviceLoopDao().upsertRecoveryMetadata(
+                    RecoveryMetadataEntity(
+                        datasetId = newDatasetId,
+                        firstBusinessWriteAtEpochMillis = null,
+                        lastBusinessWriteAtEpochMillis = null,
+                        lastBackupAttemptAtEpochMillis = null,
+                        lastVerifiedFullBackupAtEpochMillis = null,
+                        lastVerifiedSnapshotAtEpochMillis = null,
+                        lastVerifiedDestination = null,
+                        lastVerifiedSize = null,
+                        adoptionToken = token,
+                    ),
+                )
+                failureInjector(FailurePoint.DURING_DB_TRANSACTION)
+            }
+            failureInjector(FailurePoint.AFTER_DB_COMMIT)
+            writeJournal(journal, JSONObject(journal.readText()).put("phase", "COMMITTED"))
+            failureInjector(FailurePoint.AFTER_COMMITTED_JOURNAL)
+            check(rollback.deleteRecursively()) { "Private file cleanup did not complete" }
+            journal.delete()
+            ownedRootDirectories().forEach { deleteEmptyTree(it) }
+            recoveryRoot.delete()
+        } catch (failure: Exception) {
+            recoverInterrupted(database, fileRoot)
+            throw failure
+        }
+    }
+
+    private fun normalizeMissingAvailability(root: JSONObject, missing: Set<String>) {
+        tableRows(root, "attachments").forEach { row ->
+            if (row.getString("storedRelativePath") in missing) row.put("availability", "MISSING")
+        }
+        tableRows(root, "report_renditions").forEach { row ->
+            if (row.getString("relativePath") in missing && row.getString("status") == "READY") {
+                row.put("status", "MISSING").put("failureMessage", "File declared missing in incomplete recovery copy")
+            }
+        }
+        recoveryMetadata(root).put("restoredFromIncompleteCopy", if (missing.isEmpty()) 0 else 1)
+    }
+
+    private fun crossValidateFiles(root: JSONObject, manifest: JSONArray, missing: List<String>) {
+        val expected = requiredFiles(root).associateBy { it.path }
+        val declared = List(manifest.length()) { manifest.getJSONObject(it) }.associateBy { it.getString("path") }
+        require(expected.keys == declared.keys + missing.toSet()) { "Database file references do not match the backup manifest" }
+        declared.forEach { (path, item) ->
+            val reference = expected.getValue(path)
+            require(item.getString("kind") == reference.kind && item.getLong("size") == reference.size && item.getString("sha256") == reference.hash) { "Manifest metadata conflicts with the database reference: $path" }
+        }
+        tableRows(root, "attachments").forEach { row ->
+            val absent = row.getString("storedRelativePath") in missing
+            require((row.getString("availability") == "MISSING") == absent) { "Invalid attachment availability metadata" }
+        }
+        tableRows(root, "report_renditions").forEach { row ->
+            val absent = row.getString("relativePath") in missing
+            if (absent) require(row.getString("status") == "MISSING") { "Invalid report availability metadata" }
+        }
+    }
+
+    private fun recoveryMetadata(root: JSONObject) = tableRows(root, "recovery_metadata").single()
+    private fun setAdoptionToken(root: JSONObject, token: String) { recoveryMetadata(root).put("adoptionToken", token).put("restrictedRecoveryState", 0) }
+    private fun ownedRootDirectories() = BUSINESS_ROOTS.map { File(fileRoot, it) }
+    private fun ownedBusinessFiles(): List<String> = BUSINESS_ROOTS.flatMap { rootName ->
+        val root = File(fileRoot, rootName)
+        if (!root.isDirectory) emptyList() else root.walkTopDown().filter { it.isFile }.map { it.relativeTo(fileRoot).invariantSeparatorsPath }.toList()
+    }
+    private fun writeJournal(file: File, value: JSONObject) {
+        file.parentFile?.mkdirs()
+        val temporary = File(file.parentFile, "$JOURNAL.tmp")
+        temporary.writeText(value.toString())
+        check(temporary.renameTo(file) || runCatching { temporary.copyTo(file, overwrite = true); temporary.delete() }.getOrDefault(false))
+    }
+    private fun journalFile(root: File) = File(root, JOURNAL)
+    private fun deleteEmptyTree(root: File) { if (root.isDirectory) root.walkBottomUp().filter { it.isDirectory && it.list()?.isEmpty() == true }.forEach { it.delete() } }
+
     private fun protect(plain: ByteArray, passphrase: CharArray): ByteArray {
         val random = SecureRandom(); val salt = ByteArray(16).also(random::nextBytes); val nonce = ByteArray(12).also(random::nextBytes)
         val key = derive(passphrase, salt, ITERATIONS)
@@ -258,7 +400,9 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        const val FORMAT_VERSION = 1
+        private const val SCHEMA_VERSION = 6
+        private val BUSINESS_ROOTS = listOf("attachments", "reports")
+        const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
         const val MAX_PACKAGE_BYTES = 512 * 1024 * 1024
         const val MAX_EXPANDED_BYTES = 1024L * 1024 * 1024
@@ -276,22 +420,69 @@ class RecoveryPackage(private val database: ServiceLoopDatabase, private val fil
             "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "recovery_metadata",
         )
 
-        /** Resolves a crashed cross-filesystem adoption to the dataset whose id durably won. */
-        fun recoverInterrupted(database: ServiceLoopDatabase, fileRoot: File) {
+        /** Resolves a crashed cross-filesystem adoption using the token committed with the database transaction. */
+        fun recoverInterrupted(database: ServiceLoopDatabase, fileRoot: File): RecoveryResult {
             val recoveryRoot = File(fileRoot, "recovery"); val journal = File(recoveryRoot, JOURNAL)
-            if (!journal.isFile) return
-            val state = runCatching { JSONObject(journal.readText()) }.getOrElse { return }
-            val targetDatasetId = state.optString("targetDatasetId")
-            val paths = state.optJSONArray("paths")?.let { array -> List(array.length()) { array.getString(it) } }.orEmpty().filter { safeRelativePathStatic(it) }
-            val durableDatasetId = runCatching { database.openHelper.writableDatabase.query("SELECT datasetId FROM recovery_metadata WHERE id='primary'").use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
-            val candidateWon = durableDatasetId == targetDatasetId && state.optString("phase") in setOf("DB_COMMITTING", "COMMITTED")
-            if (!candidateWon) paths.forEach { relative ->
-                File(fileRoot, relative).delete()
-                val saved = File(recoveryRoot, "restore-rollback/$relative")
-                if (saved.isFile) { val target = File(fileRoot, relative); target.parentFile?.mkdirs(); saved.renameTo(target) || runCatching { saved.copyTo(target, overwrite = true) }.isSuccess }
+            if (!journal.isFile) return RecoveryResult.NONE
+            val state = runCatching { JSONObject(journal.readText()) }.getOrElse {
+                markRestricted(database)
+                return RecoveryResult.RESTRICTED
             }
-            File(recoveryRoot, "restore-candidate").deleteRecursively(); File(recoveryRoot, "restore-rollback").deleteRecursively(); journal.delete(); recoveryRoot.delete()
+            val parsed = runCatching {
+                val operation = state.getString("operation")
+                require(operation in setOf("RESTORE", "ERASE"))
+                val token = state.getString("adoptionToken"); require(token.isNotBlank())
+                val paths = state.getJSONArray("paths").let { array -> List(array.length()) { array.getString(it) } }
+                val candidatePaths = state.getJSONArray("candidatePaths").let { array -> List(array.length()) { array.getString(it) } }
+                require(paths.size == paths.toSet().size && paths.all(::safeRelativePathStatic))
+                require(candidatePaths.size == candidatePaths.toSet().size && candidatePaths.all(::safeRelativePathStatic) && candidatePaths.all { it in paths })
+                Triple(token, paths, candidatePaths)
+            }.getOrElse {
+                markRestricted(database)
+                return RecoveryResult.RESTRICTED
+            }
+            val (token, paths) = parsed
+            val adoptedPaths = runCatching { state.getJSONArray("adoptedPaths").let { array -> List(array.length()) { array.getString(it) } } }.getOrElse { markRestricted(database); return RecoveryResult.RESTRICTED }
+            if (adoptedPaths.size != adoptedPaths.toSet().size || adoptedPaths.any { it !in paths }) { markRestricted(database); return RecoveryResult.RESTRICTED }
+            val processingPath = state.optString("processingPath").takeIf { it.isNotBlank() }
+            if (processingPath != null && processingPath !in paths) { markRestricted(database); return RecoveryResult.RESTRICTED }
+            val quarantineName = state.optString("restrictedQuarantine").takeIf { it.isNotBlank() }
+            if (quarantineName != null && (!quarantineName.startsWith("recovery-restricted-") || quarantineName.contains('/') || quarantineName.contains('\\'))) { markRestricted(database); return RecoveryResult.RESTRICTED }
+            val quarantine = quarantineName?.let { File(fileRoot, it) }
+            val rollbackPaths = (adoptedPaths + listOfNotNull(processingPath)).distinct()
+            val durableToken = runCatching { database.openHelper.writableDatabase.query("SELECT adoptionToken FROM recovery_metadata WHERE id='primary'").use { if (it.moveToFirst() && !it.isNull(0)) it.getString(0) else null } }.getOrNull()
+            val candidateWon = durableToken == token && state.optString("phase") in setOf("DB_COMMITTING", "COMMITTED")
+            val resolved = runCatching {
+                if (!candidateWon) rollbackPaths.forEach { relative ->
+                    val target = File(fileRoot, relative)
+                    val saved = File(recoveryRoot, "restore-rollback/$relative")
+                    if (saved.isFile) {
+                        if (target.exists()) check(target.delete())
+                        target.parentFile?.mkdirs()
+                        check(saved.renameTo(target) || runCatching { saved.copyTo(target, overwrite = true); saved.delete() }.getOrDefault(false))
+                    } else if (relative in adoptedPaths || (relative == processingPath && !state.optBoolean("processingOriginalExisted", false))) {
+                        if (target.exists()) check(target.delete())
+                    }
+                }
+                check(File(recoveryRoot, "restore-candidate").deleteRecursively())
+                check(File(recoveryRoot, "restore-rollback").deleteRecursively())
+                if (candidateWon && quarantine != null) check(quarantine.deleteRecursively())
+                check(journal.delete())
+                recoveryRoot.delete()
+                if (!candidateWon && quarantine != null) {
+                    check(!recoveryRoot.exists() && quarantine.renameTo(recoveryRoot))
+                    markRestricted(database)
+                }
+                if (candidateWon || quarantine == null) database.openHelper.writableDatabase.execSQL("UPDATE recovery_metadata SET restrictedRecoveryState=0 WHERE id='primary'")
+            }.isSuccess
+            if (!resolved) {
+                markRestricted(database)
+                return RecoveryResult.RESTRICTED
+            }
+            if (!candidateWon && quarantine != null) return RecoveryResult.RESTRICTED
+            return if (candidateWon) RecoveryResult.CANDIDATE_COMMITTED else RecoveryResult.ORIGINAL_RESTORED
         }
+        private fun markRestricted(database: ServiceLoopDatabase) = runCatching { database.openHelper.writableDatabase.execSQL("UPDATE recovery_metadata SET restrictedRecoveryState=1 WHERE id='primary'") }
         private fun safeRelativePathStatic(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') && path.replace('\\', '/').split('/').none { it.isBlank() || it == "." || it == ".." } && !File(path).isAbsolute
     }
 }

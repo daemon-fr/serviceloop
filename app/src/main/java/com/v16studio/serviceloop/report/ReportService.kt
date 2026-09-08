@@ -13,6 +13,7 @@ import androidx.room.withTransaction
 import com.v16studio.serviceloop.data.ReportRenditionEntity
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.ServiceLoopRepository
+import com.v16studio.serviceloop.data.BusinessFileCoordinator
 import com.v16studio.serviceloop.domain.PublicReportModel
 import com.v16studio.serviceloop.domain.ReportRendition
 import java.io.File
@@ -30,6 +31,7 @@ fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: S
 
 interface ReportService {
     suspend fun generate(recordId: String): ReportRendition
+    suspend fun generateRevision(recordId: String, revisionId: String): ReportRendition = generate(recordId)
     suspend fun pageCount(relativePath: String): Int
     fun file(relativePath: String): File
 }
@@ -46,16 +48,22 @@ class AndroidReportService(
 
     override fun file(relativePath: String): File = File(context.filesDir, relativePath)
 
-    override suspend fun generate(recordId: String): ReportRendition = mutex.withLock {
-        val detail = repository.finalRecord(recordId) ?: error("Final service record no longer exists")
+    override suspend fun generate(recordId: String): ReportRendition = generateLocked(recordId, null)
+
+    override suspend fun generateRevision(recordId: String, revisionId: String): ReportRendition = generateLocked(recordId, revisionId)
+
+    private suspend fun generateLocked(recordId: String, requestedRevisionId: String?): ReportRendition = BusinessFileCoordinator.mutex.withLock { mutex.withLock {
+        val detail = (if (requestedRevisionId == null) repository.finalRecord(recordId) else repository.finalRecordRevision(recordId, requestedRevisionId))
+            ?: error("Final service record revision no longer exists")
         val previous = dao.reportRendition(detail.public.revisionId)
-        previous?.let { existing -> if (existing.status == "READY" && file(existing.relativePath).isFile) return@withLock existing.toDomain() }
-        val recreatingMissing = previous?.status == "READY" && !file(previous.relativePath).isFile
-        val version = if (recreatingMissing) previous!!.versionNumber + 1 else previous?.versionNumber ?: 1
-        val renditionId = if (recreatingMissing) UUID.randomUUID().toString() else previous?.id ?: UUID.nameUUIDFromBytes("report-v1:${detail.public.revisionId}".toByteArray()).toString()
+        previous?.let { existing -> if (existing.status == "READY" && file(existing.relativePath).isFile && (!detail.voided || existing.kind == "VOID_NOTICE")) return@withLock existing.toDomain() }
+        val recreatingMissing = previous?.status == "MISSING" || (previous?.status == "READY" && !file(previous.relativePath).isFile)
+        val creatingVoidNotice = requestedRevisionId == null && detail.voided && previous?.kind != "VOID_NOTICE"
+        val version = if (recreatingMissing || creatingVoidNotice) (previous?.versionNumber ?: 0) + 1 else previous?.versionNumber ?: 1
+        val renditionId = if (recreatingMissing || creatingVoidNotice) UUID.randomUUID().toString() else previous?.id ?: UUID.nameUUIDFromBytes("report-v1:${detail.public.revisionId}".toByteArray()).toString()
         val relative = "reports/$recordId/$renditionId.pdf"
-        val generating = ReportRenditionEntity(renditionId, detail.public.revisionId, version, null, relative, null, null, null, "GENERATING", if (recreatingMissing) "RECREATED" else "ORIGINAL", null)
-        if (recreatingMissing || previous == null) dao.insertReportRendition(generating) else dao.updateReportRendition(generating)
+        val generating = ReportRenditionEntity(renditionId, detail.public.revisionId, version, null, relative, null, null, null, "GENERATING", if (creatingVoidNotice) "VOID_NOTICE" else if (recreatingMissing) "RECREATED" else if (detail.public.revisionNumber > 1) "CORRECTION" else "ORIGINAL", null)
+        if (recreatingMissing || creatingVoidNotice || previous == null) dao.insertReportRendition(generating) else dao.updateReportRendition(generating)
         val target = file(relative); target.parentFile?.mkdirs(); val temp = File(target.parentFile, "$renditionId.tmp")
         var adopted = false
         try {
@@ -82,7 +90,7 @@ class AndroidReportService(
             runCatching { dao.updateReportRendition(failed) }
             throw IllegalStateException("PDF generation failed; the service record is already finalized", failure)
         }
-    }
+    } }
 
     override suspend fun pageCount(relativePath: String): Int {
         val pdf = file(relativePath); require(pdf.isFile) { "Report file is missing" }
@@ -90,7 +98,7 @@ class AndroidReportService(
     }
 
     private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
-    private fun ReportRenditionEntity.toDomain() = ReportRendition(id, revisionId, versionNumber, generatedAtEpochMillis, relativePath, sha256, byteSize, pageCount, status, failureMessage)
+    private fun ReportRenditionEntity.toDomain() = ReportRendition(id, revisionId, versionNumber, generatedAtEpochMillis, relativePath, sha256, byteSize, pageCount, status, failureMessage, kind)
 
     private companion object { val mutex = Mutex() }
 }
@@ -137,7 +145,7 @@ object FixedServiceRecordPdf {
                 val bitmap=BitmapFactory.decodeFile(source.absolutePath) ?: error("Selected report photograph is missing or unreadable")
                 val pageNumber=pages.size+photoPageIndex+1; val page=document.startPage(PdfDocument.PageInfo.Builder(WIDTH,HEIGHT,pageNumber).create())
                 page.canvas.drawText("${line.equipmentReference} · ${line.equipmentName}",LEFT,TOP+LineStyle.SECTION.textSize,paint(LineStyle.SECTION))
-                page.canvas.drawText("Photograph ${photoIndex+1}${photo.caption?.let{": $it"}.orEmpty()}",LEFT,TOP+38f,paint(LineStyle.BODY))
+                page.canvas.drawText("Photograph ${photoIndex+1}${photo.caption?.let{": $it"}.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}",LEFT,TOP+38f,paint(LineStyle.BODY))
                 val availableHeight=HEIGHT-TOP-BOTTOM-70f; val scale=minOf(CONTENT_WIDTH/bitmap.width,availableHeight/bitmap.height); val width=bitmap.width*scale; val height=bitmap.height*scale
                 page.canvas.drawBitmap(bitmap,null,RectF(LEFT,TOP+55f,LEFT+width,TOP+55f+height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
                 val footer="${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-34f,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
@@ -167,12 +175,17 @@ object FixedServiceRecordPdf {
 
     private fun buildLines(model: PublicReportModel): List<ReportDrawLine> {
         val raw = mutableListOf(RawLine(model.businessName, LineStyle.TITLE), RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.BODY), RawLine("Technician: ${model.technicianName}", LineStyle.BODY), RawLine(model.businessContact, LineStyle.BODY), RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY), RawLine("Customer and site", LineStyle.SECTION), RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY), RawLine("${model.siteReference.orEmpty()} · ${model.siteName}", LineStyle.BODY), RawLine(model.siteAddress.orEmpty(), LineStyle.BODY))
+        if (model.voided) {
+            raw.add(0, RawLine("VOID NOTICE — this service record is void", LineStyle.TITLE))
+            raw.add(1, RawLine("Customer explanation: ${model.publicVoidReason.orEmpty()}", LineStyle.SECTION))
+        }
+        model.publicNote?.let { raw += RawLine("Record note: $it", LineStyle.BODY) }
         model.lines.forEach { line ->
             raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
             raw += listOf(RawLine(line.equipmentIdentification, LineStyle.BODY), RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY), RawLine("Outcome: ${line.outcome.replace('_', ' ')}", LineStyle.BODY))
             line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
             line.parts.forEach { part -> raw += RawLine("Part: ${part.description} — ${part.quantity} ${part.unit}", LineStyle.BODY) }
-            line.photos.forEachIndexed { photoIndex, photo -> raw += RawLine("Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}", LineStyle.BODY) }
+            line.photos.forEachIndexed { photoIndex, photo -> raw += RawLine("Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}", LineStyle.BODY) }
             raw += RawLine(when { line.historyOnly -> "Recurring historical work — History only; no current due-date effect"; !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
             line.checklist.forEach { q -> raw += RawLine("${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}", LineStyle.BODY) }
         }

@@ -4,9 +4,18 @@
 
 ## Current state
 
-- SL-4 is IMPLEMENTED as a development checkpoint: Room v5, complete/scoped history, append-only record correction and void provenance, report rendition versions and Attention, lifecycle/move dependency workflows, authenticated portable backup inspection/replacement, readable CSV export/create-only import, and local erase are reachable in the product. See `SL4_REQUIREMENT_COVERAGE.md`.
+- SL-4 correction pass is IMPLEMENTED and FOCUSED-TESTED as a development checkpoint: additive Room v6, startup-gated crash recovery, transaction-specific restore adoption identity, exact owned-file replacement/erase, snapshot-derived backup manifests, complete correction content and schedule reconciliation, void notices, retained revision/rendition navigation, complete readable records export, and bounded background SAF I/O are reachable in the product. See `SL4_REQUIREMENT_COVERAGE.md`.
 - SL-4 is not owner accepted and not release-ready. Exhaustive testing-AI-model verification, owner review, Stage 5 hardening/reminders, and B-008 remain.
 - B-008 is explicitly a later Romanian-localized real-technician pilot against a pilot-ready build. It is no longer described as an immediate pre-Stage-4 blocker, and no current automated or owner review is represented as satisfying it.
+
+### SL-4 correction checkpoint (2026-09-08)
+
+- Recovery format 2 rejects the earlier unaccepted development format. A coherent Room snapshot defines its own file set; DB references, manifest entries, hashes/sizes, missing declarations, and normalized availability states are cross-validated before replacement.
+- Restore/erase file adoption is journaled per path, including an in-progress path, and a random adoption token commits with the database transaction. Startup resolves a valid journal before seeding/repository use; a damaged journal enters a restricted recovery surface and can only be superseded by an explicitly inspected replacement.
+- The owned business roots are exactly `attachments/` and `reports/`. Old-only files participate in rollback and are absent after successful replacement; erase does not report success while rollback/private cleanup remains unresolved.
+- Correction drafts now retain corrected checklist answers/findings, parts, selected and newly added evidence, public/private notes, identity/date/work/outcome fields, due-date calculation/override meaning, and explicit follow-up effects. Original revisions and evidence remain immutable.
+- Record/report history binds historical routes to the requested revision/rendition. Missing historical PDFs recreate from that fixed snapshot; void notices are distinct handoff artifacts; voided originals cannot use ordinary Share and superseded nonvoid reports require acknowledgement.
+- Host/domain focused suites are passing at this checkpoint. Full host gates, bounded canonical instrumentation/smoke, independent testing-AI-model Phase B, and owner review remain required before any acceptance claim.
 
 - SL-1 is OWNER ACCEPTED.
 - SL-2 is OWNER ACCEPTED for continued development. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; later documentation-only commits record acceptance and deferred UX direction without changing product behavior.

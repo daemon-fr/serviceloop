@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 
 class ServiceLoopApplication : Application() {
     lateinit var container: AppContainer
@@ -20,12 +21,15 @@ class ServiceLoopApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         val database = ServiceLoopDatabase.open(this)
+        val restrictedRecoveryState = runBlocking(Dispatchers.IO) { database.serviceLoopDao().recoveryMetadata()?.restrictedRecoveryState == true }
         val businessTime = ClockBusinessTime()
         val startup = CoroutineScope(SupervisorJob() + Dispatchers.IO).async {
-            FixtureSeederFactory.create(database).seedIfNeeded()
+            if (!restrictedRecoveryState) {
+                FixtureSeederFactory.create(database).seedIfNeeded()
+            }
         }
         val repository = RoomServiceLoopRepository(database, businessTime, attachmentRoot = filesDir)
-        container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup)
+        container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup, restrictedRecoveryState)
     }
 }
 
@@ -34,6 +38,7 @@ data class AppContainer(
     val repository: ServiceLoopRepository,
     val reportService: ReportService,
     val startup: Deferred<Unit>,
+    val restrictedRecoveryState: Boolean = false,
 )
 
 fun interface StartupSeeder { suspend fun seedIfNeeded() }

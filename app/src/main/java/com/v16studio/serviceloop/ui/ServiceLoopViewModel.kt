@@ -40,6 +40,8 @@ sealed interface DueServicesProjection {
 
 data class UiState(
     val loading: Boolean = true,
+    val recoveryCheckComplete: Boolean = true,
+    val restrictedRecoveryState: Boolean = false,
     val home: HomeSummary? = null,
     val equipment: EquipmentDetail? = null,
     val equipmentList: List<EquipmentSummary> = emptyList(),
@@ -71,6 +73,7 @@ data class UiState(
     val visit: VisitDetail? = null,
     val followUps: List<FollowUpDetail> = emptyList(),
     val followUp: FollowUpDetail? = null,
+    val contactNote: ContactNoteDetail? = null,
     val parts: List<PartEntry> = emptyList(),
     val photos: List<PhotoEntry> = emptyList(),
     val searchResults: List<SearchTarget> = emptyList(),
@@ -116,16 +119,16 @@ data class PendingResponseTransition(
 class ServiceLoopViewModel(
     private val repository: ServiceLoopRepository,
     private val reportService: ReportService? = null,
+    restrictedRecoveryState: Boolean = false,
     private val startup: suspend () -> Unit,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(UiState())
+    private val _state = MutableStateFlow(UiState(restrictedRecoveryState = restrictedRecoveryState))
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var rootRefreshJob: Job? = null
     private var searchJob: Job? = null
 
     init {
-        observeDueServices()
-        loadInitialRootData()
+        if (restrictedRecoveryState) loadDatasetSummary() else { observeDueServices(); loadInitialRootData() }
     }
 
     private fun loadInitialRootData() = launchLoad {
@@ -141,6 +144,7 @@ class ServiceLoopViewModel(
             siteList = siteList,
             visits = visits,
             rootDataReady = true,
+            recoveryCheckComplete = true,
         )
     }
 
@@ -272,6 +276,7 @@ class ServiceLoopViewModel(
     fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { loadFieldEvidence(workItemId) }
     fun reportOperationFailure(message:String) { _state.value=_state.value.copy(operationInProgress=false,error=message,operationMessage=null) }
     fun createContactNote(input: ContactNoteInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createContactNote(input) }, onSuccess)
+    fun loadContactNote(id: String) = launchLoad { _state.value = _state.value.copy(contactNote = repository.contactNote(id)) }
     fun markContactNoteEnteredInError(id:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.markContactNoteEnteredInError(id,reason);id},onSuccess)
     fun createFollowUp(input: FollowUpInput, onSuccess: (String) -> Unit) = runOperation({ repository.createFollowUp(input) }, onSuccess)
     fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCorrectiveFollowUp(workItemId, title, dueDate, privateNote) }, onSuccess)
@@ -282,11 +287,13 @@ class ServiceLoopViewModel(
         _state.value = _state.value.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { SaveStatus.Saved(it) } ?: SaveStatus.Idle)
     }
     fun loadFinalRecord(id: String) { _state.value = _state.value.copy(finalRecord = null); launchLoad { _state.value = _state.value.copy(finalRecord = repository.finalRecord(id)) } }
+    fun loadFinalRecordRevision(recordId: String, revisionId: String, renditionId: String? = null) { _state.value = _state.value.copy(finalRecord = null); launchLoad { _state.value = _state.value.copy(finalRecord = repository.finalRecordRevision(recordId, revisionId, renditionId)) } }
     fun loadHistory(query: HistoryQuery) = launchLoad { _state.value = _state.value.copy(history = repository.history(query)) }
     fun loadAttention() = launchLoad { _state.value = _state.value.copy(attention = repository.attention()) }
     fun loadRecordVersions(id: String) = launchLoad { val versions = repository.recordVersions(id); _state.value = _state.value.copy(recordVersions = versions.first, reportVersions = versions.second) }
     fun loadCorrection(recordId: String) = launchLoad { _state.value = _state.value.copy(correction = repository.openCorrection(recordId)) }
     fun saveCorrection(value: CorrectionDraft) = runOperation({ repository.saveCorrection(value) }) { loadCorrection(value.recordId) }
+    fun addCorrectionEvidence(recordId: String, correctionWorkItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, caption: String?) = runOperation({ repository.addCorrectionEvidence(recordId, correctionWorkItemId, bytes, displayName, mimeType, caption) }) { loadCorrection(recordId) }
     fun commitCorrection(recordId: String, onSuccess: (String) -> Unit) = runOperation({ repository.commitCorrection(recordId) }, onSuccess)
     fun discardCorrection(recordId: String, onSuccess: (String) -> Unit) = runOperation({ repository.discardCorrection(recordId); recordId }, onSuccess)
     fun voidRecord(recordId: String, publicReason: String, privateReason: String, onSuccess: (String) -> Unit) = runOperation({ repository.voidRecord(recordId, publicReason, privateReason); recordId }, onSuccess)
@@ -300,8 +307,8 @@ class ServiceLoopViewModel(
     fun verifyWrittenBackup(bytes: ByteArray, passphrase: CharArray, destination: String) = runOperation({ val inspection = repository.inspectBackup(bytes, passphrase); val result = _state.value.backupResult ?: error("Prepared backup is unavailable"); require(inspection.snapshotAtEpochMillis == result.snapshotAtEpochMillis); if (result.complete) repository.recordVerifiedBackup(result, destination); inspection }) { inspection -> _state.value = _state.value.copy(backupInspection = inspection); loadDatasetSummary() }
     fun inspectBackup(bytes: ByteArray, passphrase: CharArray) = runOperation({ repository.inspectBackup(bytes, passphrase) }) { _state.value = _state.value.copy(backupInspection = it) }
     fun restoreBackup(confirmation: String, incompleteAcknowledged: Boolean, onSuccess: () -> Unit) { val inspection = _state.value.backupInspection ?: return; runOperation({ repository.restoreBackup(inspection, confirmation, incompleteAcknowledged); true }) { onSuccess() } }
-    fun prepareDirectoryCsv(includeInactive: Boolean, includePrivate: Boolean) = runOperation({ repository.directoryCsv(includeInactive, includePrivate) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
-    fun prepareRecordsCsv(includeInactive: Boolean, includePrivate: Boolean, previous: Boolean) = runOperation({ repository.recordsCsvPackage(includeInactive, includePrivate, previous) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
+    fun prepareDirectoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String? = null) = runOperation({ repository.directoryCsv(includeInactive, includePrivate, customerId) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
+    fun prepareRecordsCsv(includeInactive: Boolean, includePrivate: Boolean, previous: Boolean, customerId: String? = null) = runOperation({ repository.recordsCsvPackage(includeInactive, includePrivate, previous, customerId) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
     fun validateCsv(bytes: ByteArray) = runOperation({ repository.validateDirectoryCsv(bytes) }) { _state.value = _state.value.copy(csvPreview = it, importResult = null) }
     fun importCsv(createSeparate: Set<String> = emptySet(), skipped: Set<String> = emptySet()) { val preview = _state.value.csvPreview ?: return; runOperation({ repository.importDirectory(preview, createSeparate, skipped) }) { _state.value = _state.value.copy(importResult = it); refreshRootDataNonBlocking() } }
     fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) = runOperation({ repository.erase(acknowledged, confirmation); true }) { onSuccess() }
@@ -345,15 +352,15 @@ class ServiceLoopViewModel(
         }
     }
 
-    fun generateReport(recordId: String) {
+    fun generateReport(recordId: String, revisionId: String? = null) {
         val service = reportService ?: return
         if (_state.value.generatingReport) return
         _state.value = _state.value.copy(generatingReport = true, error = null)
         viewModelScope.launch {
             try {
-                val rendition = service.generate(recordId)
+                val rendition = if (revisionId == null) service.generate(recordId) else service.generateRevision(recordId, revisionId)
                 _state.value = _state.value.copy(generatingReport = false, finalRecord = _state.value.finalRecord?.copy(report = rendition))
-                try { _state.value = _state.value.copy(finalRecord = repository.finalRecord(recordId), contentRefreshError = null) }
+                try { _state.value = _state.value.copy(finalRecord = if (revisionId == null) repository.finalRecord(recordId) else repository.finalRecordRevision(recordId, revisionId, rendition.id), contentRefreshError = null) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) { _state.value = _state.value.copy(contentRefreshError = failure.message ?: "Report was generated, but the screen could not refresh") }
             }
@@ -470,7 +477,7 @@ class ServiceLoopViewModel(
     class Factory(private val container: AppContainer) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ServiceLoopViewModel(container.repository, container.reportService) { container.startup.await() } as T
+            ServiceLoopViewModel(container.repository, container.reportService, container.restrictedRecoveryState) { container.startup.await() } as T
     }
 
     private fun SaveStatus.lastSavedCheckpoint(): Long? = when (this) {

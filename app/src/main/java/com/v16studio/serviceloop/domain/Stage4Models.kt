@@ -33,6 +33,12 @@ data class HistoryQuery(
 data class RecordVersionSummary(val id: String, val revisionNumber: Int, val recordedAtEpochMillis: Long, val correctionReason: String?, val current: Boolean)
 data class ReportVersionSummary(val id: String, val revisionId: String, val versionNumber: Int, val generatedAtEpochMillis: Long?, val status: String, val kind: String, val relativePath: String, val currentRevision: Boolean)
 
+data class CorrectionChecklistDraft(val sourceId: String, val position: Int, val label: String, val responseType: String, val unit: String?, val required: Boolean, val disposition: String, val textValue: String?, val numberValue: String?, val reason: String?)
+data class CorrectionPartDraft(val sourceId: String?, val description: String, val quantity: String, val unit: String)
+data class CorrectionPhotoDraft(val sourceId: String?, val storedRelativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?, val selected: Boolean, val addedInCorrection: Boolean = false, val addedAtEpochMillis: Long? = null)
+data class CorrectionFollowUpDraft(val id: String, val title: String, val state: String, val action: String = "KEEP", val cancellationReason: String = "")
+data class CorrectionNewFollowUpDraft(val title: String, val dueDate: String, val privatePlanningNote: String = "")
+
 data class CorrectionWorkDraft(
     val id: String,
     val sourceFinalWorkItemId: String,
@@ -45,6 +51,11 @@ data class CorrectionWorkDraft(
     val fulfilledObligation: Boolean,
     val oldDueDate: String?,
     val proposedNextDueDate: String?,
+    val checklist: List<CorrectionChecklistDraft> = emptyList(),
+    val parts: List<CorrectionPartDraft> = emptyList(),
+    val photos: List<CorrectionPhotoDraft> = emptyList(),
+    val nextDueDateCalculated: Boolean? = null,
+    val nextDueOverrideReason: String = "",
 )
 
 data class CorrectionDraft(
@@ -58,10 +69,13 @@ data class CorrectionDraft(
     val siteAddress: String,
     val businessName: String,
     val technicianName: String,
+    val publicNote: String = "",
     val privateNote: String,
     val scheduleAcknowledged: Boolean,
     val modifiedAtEpochMillis: Long,
     val items: List<CorrectionWorkDraft>,
+    val followUps: List<CorrectionFollowUpDraft> = emptyList(),
+    val newFollowUps: List<CorrectionNewFollowUpDraft> = emptyList(),
 )
 
 data class LifecycleBlocker(val kind: String, val id: String, val label: String, val route: String)
@@ -100,6 +114,7 @@ data class DatasetSummary(
     val changedSinceBackup: Boolean,
     val backupReminderDays: Int,
     val restrictedRecoveryState: Boolean,
+    val restoredFromIncompleteCopy: Boolean = false,
 )
 
 data class BackupInspection(

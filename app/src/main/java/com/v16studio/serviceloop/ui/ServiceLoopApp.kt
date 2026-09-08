@@ -92,6 +92,8 @@ import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
 import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
+import com.v16studio.serviceloop.domain.RecordVersionSummary
+import com.v16studio.serviceloop.domain.ReportVersionSummary
 import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.domain.SiteRegisterSummary
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
@@ -127,10 +129,11 @@ internal enum class WorkTab(val label: String) {
 @Composable
 fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
     val state by viewModel.state.collectAsState()
+    if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
     NavHost(
         navController = nav,
-        startDestination = HOME,
+        startDestination = if (state.restrictedRecoveryState) "data-recovery" else HOME,
         enterTransition = { EnterTransition.None },
         exitTransition = { ExitTransition.None },
         popEnterTransition = { EnterTransition.None },
@@ -197,6 +200,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
         composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
         composable("contact/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Record contact",nav){ContactNoteEditorScreen(id,it,state,viewModel,nav)} }
+        composable("contact/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadContactNote(id)}; DetailScaffold("Contact note",nav){padding -> ContactNoteScreen(state.contactNote,padding)} }
         composable("search") { DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav)} }
         composable("inspection/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -221,8 +225,18 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) }
         }
         composable("record/{id}") { entry ->
-            val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
-            DetailScaffold("Final service record", nav) { padding -> FinalRecordScreen(state.finalRecord, state.generatingReport, state.error, padding, viewModel, nav) }
+            val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id); viewModel.loadRecordVersions(id) }
+            DetailScaffold("Final service record", nav) { padding -> FinalRecordScreen(state.finalRecord, state.recordVersions, state.reportVersions, false, state.generatingReport, state.error, padding, viewModel, nav) }
+        }
+        composable("record-version/{id}/{revisionId}") { entry ->
+            val recordId = entry.arguments?.getString("id").orEmpty(); val revisionId = entry.arguments?.getString("revisionId").orEmpty()
+            LaunchedEffect(recordId, revisionId) { viewModel.loadFinalRecordRevision(recordId, revisionId) }
+            DetailScaffold("Historical record revision", nav) { padding -> FinalRecordScreen(state.finalRecord, emptyList(), emptyList(), true, state.generatingReport, state.error, padding, viewModel, nav) }
+        }
+        composable("report-version/{id}/{revisionId}/{renditionId}") { entry ->
+            val recordId = entry.arguments?.getString("id").orEmpty(); val revisionId = entry.arguments?.getString("revisionId").orEmpty(); val renditionId = entry.arguments?.getString("renditionId").orEmpty()
+            LaunchedEffect(recordId, revisionId, renditionId) { viewModel.loadFinalRecordRevision(recordId, revisionId, renditionId) }
+            DetailScaffold("Historical report rendition", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding, initialTextView = false, historical = true, viewModel = viewModel) }
         }
         composable("report/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
@@ -264,7 +278,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) }
         }
         composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
-        composable("csv/import") { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel) } }
+        composable("csv/import") { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } }
         composable("data/erase") { DetailScaffold("Erase local data", nav) { padding -> EraseScreen(state, padding, viewModel, nav) } }
         composable("change/{id}") { entry ->
             val id = entry.arguments?.getString("id")
@@ -649,33 +663,36 @@ private fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveSta
 }
 
 @Composable
-private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, error: String?, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+private fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<RecordVersionSummary>, reportVersions: List<ReportVersionSummary>, historical: Boolean, generating: Boolean, error: String?, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     if (detail == null) return HonestPlaceholder(padding, "Reading final service record")
     val report = detail.public
     val context = LocalContext.current
     val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
     var voidReason by rememberSaveable(report.recordId) { mutableStateOf("") }
     LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
+        item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}"); report.publicNote?.let { Text("Record note: $it") } }
         items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
-            Text(when (detail.report?.status) { "READY" -> if (reportPresent) "Ready · Version 1 · ${detail.report.byteSize} bytes" else "File missing · Version 1"; "FAILED" -> "Generation failed"; "GENERATING" -> "Generating…"; else -> "Not generated" })
+            Text(when (detail.report?.status) { "READY" -> if (reportPresent) "Ready · Version ${detail.report.versionNumber} · ${detail.report.byteSize} bytes" else "File missing · Version ${detail.report.versionNumber}"; "MISSING" -> "File missing · Version ${detail.report.versionNumber}"; "FAILED" -> "Generation failed · Version ${detail.report.versionNumber}"; "GENERATING" -> "Generating…"; else -> "Not generated" })
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (detail.report?.status == "READY") Button(onClick = { nav.navigate(if (reportPresent) "report/${report.recordId}" else "report-text/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
-            else Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
+            if (detail.report?.status == "READY") Button(onClick = { nav.navigate(if (historical) "report-version/${report.recordId}/${report.revisionId}/${detail.report.id}" else if (reportPresent) "report/${report.recordId}" else "report-text/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
+            else Button(onClick = { viewModel.generateReport(report.recordId, if (historical) report.revisionId else null) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (historical) "Recreate this historical PDF" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
         }
-        item { if(!detail.voided) { Button(onClick={nav.navigate("correction/${report.recordId}")},modifier=Modifier.fillMaxWidth().testTag("correct-record")){Text("Correct record / Resume correction")}; OutlinedTextField(voidReason,{voidReason=it},label={Text("Customer-facing void explanation · Required")},modifier=Modifier.fillMaxWidth()); TextButton(onClick={viewModel.voidRecord(report.recordId,voidReason,""){viewModel.loadFinalRecord(report.recordId)}},enabled=voidReason.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Void this record")} } else Text("Ordinary customer Share is disabled for a voided original. Generate/use the current void notice for customer handoff.") }
+        if (historical) item { Text("Historical revision · The current record may be newer.", color = MaterialTheme.colorScheme.tertiary) }
+        if (recordVersions.isNotEmpty()) item { Text("Record revisions", style = MaterialTheme.typography.titleMedium); recordVersions.forEach { version -> SummaryRow("Revision ${version.revisionNumber}${if (version.current) " · Current" else " · Superseded"}", "${version.correctionReason.orEmpty()} · ${Instant.ofEpochMilli(version.recordedAtEpochMillis)}") { nav.navigate("record-version/${report.recordId}/${version.id}") } } }
+        if (reportVersions.isNotEmpty()) item { Text("Retained report renditions", style = MaterialTheme.typography.titleMedium); reportVersions.forEach { version -> SummaryRow("PDF v${version.versionNumber} · ${version.kind} · ${version.status}", "${version.id} · ${version.generatedAtEpochMillis?.let { Instant.ofEpochMilli(it) }}") { nav.navigate("report-version/${report.recordId}/${version.revisionId}/${version.id}") } } }
+        if (!historical) item { if(!detail.voided) { Button(onClick={nav.navigate("correction/${report.recordId}")},modifier=Modifier.fillMaxWidth().testTag("correct-record")){Text("Correct record / Resume correction")}; OutlinedTextField(voidReason,{voidReason=it},label={Text("Customer-facing void explanation · Required")},modifier=Modifier.fillMaxWidth()); TextButton(onClick={viewModel.voidRecord(report.recordId,voidReason,""){viewModel.loadFinalRecord(report.recordId)}},enabled=voidReason.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Void this record")} } else { Text("Ordinary customer Share is disabled for a voided original. Previously shared files cannot be revoked."); if (detail.report?.kind != "VOID_NOTICE") Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().testTag("generate-void-notice")) { Text("Generate customer void notice") } else Text("Current VOID NOTICE is ready for customer handoff.") } }
     }
 }
 
 @Composable
-private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues, initialTextView: Boolean) {
+private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues, initialTextView: Boolean, historical: Boolean = false, viewModel: ServiceLoopViewModel? = null) {
     val rendition = detail?.report
-    if (detail == null || rendition?.status != "READY") return HonestPlaceholder(padding, "Report file is not ready")
+    if (detail == null || rendition == null || rendition.status !in setOf("READY", "MISSING")) return HonestPlaceholder(padding, "Report file is not ready")
     val context = LocalContext.current; val file = remember(rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
-    var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }
+    var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }; var supersededShareAcknowledged by rememberSaveable(rendition.id) { mutableStateOf(false) }
     LaunchedEffect(file, pageIndex, textView) {
         if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
     }
@@ -687,14 +704,16 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
         if (textView) item { StructuredReportText(detail) }
         else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
-        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile, modifier = Modifier.fillMaxWidth().testTag("share-pdf").semantics { contentDescription = "Share PDF" }) { Text("Share PDF") }; Text("Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
+        if (historical && !detail.voided) item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }); Text("I understand this is a superseded historical report") } }
+        if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth()) { Text("Recreate from this fixed revision") } }
+        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile && (!detail.voided || rendition.kind == "VOID_NOTICE") && (!historical || detail.voided || supersededShareAcknowledged), modifier = Modifier.fillMaxWidth().testTag("share-pdf").semantics { contentDescription = "Share PDF" }) { Text(if (detail.voided && rendition.kind != "VOID_NOTICE") "Share disabled for voided original" else "Share PDF") }; Text(if (detail.voided && rendition.kind != "VOID_NOTICE") "Generate and share the current void notice. Previously shared files cannot be revoked." else if (historical) "Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
     }
     }
 }
 
 @Composable
 private fun StructuredReportText(detail: FinalRecordDetail) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.publicNote?.let { Text("Record note: $it") }; r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
 }
 
 @Composable

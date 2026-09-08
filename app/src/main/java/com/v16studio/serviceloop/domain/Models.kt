@@ -180,7 +180,7 @@ data class PublicWorkLine(
 )
 
 data class PublicPart(val description: String, val quantity: String, val unit: String)
-data class PublicPhoto(val relativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?)
+data class PublicPhoto(val relativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?, val addedInCorrection: Boolean = false, val addedAtEpochMillis: Long? = null)
 
 data class PublicReportModel(
     val recordId: String,
@@ -198,6 +198,9 @@ data class PublicReportModel(
     val lines: List<PublicWorkLine>,
     val customerReference: String? = null,
     val siteReference: String? = null,
+    val voided: Boolean = false,
+    val publicVoidReason: String? = null,
+    val publicNote: String? = null,
 )
 
 data class FinalRecordDetail(
@@ -219,6 +222,7 @@ data class ReportRendition(
     val pageCount: Int?,
     val status: String,
     val failureMessage: String?,
+    val kind: String = "ORIGINAL",
 )
 
 sealed interface FinalizeResult {
