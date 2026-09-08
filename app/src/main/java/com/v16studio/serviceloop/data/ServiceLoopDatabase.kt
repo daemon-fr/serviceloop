@@ -27,21 +27,29 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VisitScheduleEventEntity::class,
         CorrectionDraftEntity::class, CorrectionWorkItemEntity::class,
         ChangeEntryEntity::class, EquipmentMoveEntity::class, RecoveryMetadataEntity::class,
+        TechnicianIdentityEntity::class, DispatchTechnicianEntity::class,
+        DispatchTeamEntity::class, DispatchTeamMemberEntity::class,
+        DispatchOutboxVisitEntity::class, DispatchOutboxVisitTeamEntity::class,
+        DispatchOutboxItemEntity::class, DispatchOutboxItemAssigneeEntity::class,
+        DispatchVisitBindingEntity::class, DispatchItemBindingEntity::class,
+        FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
     abstract fun serviceLoopDao(): ServiceLoopDao
+    abstract fun dispatchDao(): DispatchDao
 
     companion object {
         fun open(context: Context): ServiceLoopDatabase = Room.databaseBuilder(
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
+                    configureDispatchIdentity(db)
                     configureStage4Tracking(db)
                 }
             })
@@ -204,10 +212,52 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS technician_identity (id TEXT NOT NULL PRIMARY KEY, technicianId TEXT NOT NULL, displayName TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_technician_identity_technicianId ON technician_identity(technicianId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_technicians (technicianId TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_teams (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_teams_name ON dispatch_teams(name)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_team_members (teamId TEXT NOT NULL, technicianId TEXT NOT NULL, isLeader INTEGER NOT NULL, PRIMARY KEY(teamId, technicianId), FOREIGN KEY(teamId) REFERENCES dispatch_teams(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(technicianId) REFERENCES dispatch_technicians(technicianId) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_team_members_teamId ON dispatch_team_members(teamId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_team_members_technicianId ON dispatch_team_members(technicianId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_outbox_visits (dispatchVisitId TEXT NOT NULL PRIMARY KEY, managerReference TEXT, siteId TEXT NOT NULL, serviceDate TEXT NOT NULL, appointmentLocalTime TEXT, appointmentZoneId TEXT NOT NULL, instructions TEXT, lastExportedGeneration INTEGER, lastExportedMaterialHash TEXT, lastExportedAtEpochMillis INTEGER, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(siteId) REFERENCES sites(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_visits_siteId ON dispatch_outbox_visits(siteId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_outbox_visit_teams (dispatchVisitId TEXT NOT NULL, teamId TEXT NOT NULL, PRIMARY KEY(dispatchVisitId, teamId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_outbox_visits(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(teamId) REFERENCES dispatch_teams(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_visit_teams_dispatchVisitId ON dispatch_outbox_visit_teams(dispatchVisitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_visit_teams_teamId ON dispatch_outbox_visit_teams(teamId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_outbox_items (dispatchItemId TEXT NOT NULL PRIMARY KEY, dispatchVisitId TEXT NOT NULL, position INTEGER NOT NULL, equipmentId TEXT NOT NULL, taskName TEXT NOT NULL, servicePlanReference TEXT, dueDateSnapshot TEXT, FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_outbox_visits(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId ON dispatch_outbox_items(dispatchVisitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_equipmentId ON dispatch_outbox_items(equipmentId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId_position ON dispatch_outbox_items(dispatchVisitId, position)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_outbox_item_assignees (dispatchItemId TEXT NOT NULL, technicianId TEXT NOT NULL, PRIMARY KEY(dispatchItemId, technicianId), FOREIGN KEY(dispatchItemId) REFERENCES dispatch_outbox_items(dispatchItemId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(technicianId) REFERENCES dispatch_technicians(technicianId) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_item_assignees_dispatchItemId ON dispatch_outbox_item_assignees(dispatchItemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_item_assignees_technicianId ON dispatch_outbox_item_assignees(technicianId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_visit_bindings (dispatchVisitId TEXT NOT NULL PRIMARY KEY, localVisitId TEXT NOT NULL, appliedGeneration INTEGER NOT NULL, packageId TEXT NOT NULL, senderLabel TEXT NOT NULL, managerReference TEXT, participantSnapshotJson TEXT NOT NULL, leaderIdsJson TEXT NOT NULL, teamSnapshotJson TEXT NOT NULL, appliedMaterialHash TEXT NOT NULL, controlledFingerprint TEXT NOT NULL, importedAtEpochMillis INTEGER NOT NULL, updatedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(localVisitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_visit_bindings_localVisitId ON dispatch_visit_bindings(localVisitId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS dispatch_item_bindings (dispatchVisitId TEXT NOT NULL, dispatchItemId TEXT NOT NULL, localWorkItemId TEXT, equipmentReferenceSnapshot TEXT NOT NULL, taskNameSnapshot TEXT NOT NULL, servicePlanReferenceSnapshot TEXT, dueDateSnapshot TEXT, assignedTechniciansJson TEXT NOT NULL, assignmentMeaning TEXT NOT NULL, localRole TEXT NOT NULL, documentationDisposition TEXT NOT NULL, deferredToTechnicianId TEXT, deferredToName TEXT, PRIMARY KEY(dispatchVisitId, dispatchItemId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_visit_bindings(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(localWorkItemId) REFERENCES work_items(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_item_bindings_dispatchVisitId ON dispatch_item_bindings(dispatchVisitId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_item_bindings_localWorkItemId ON dispatch_item_bindings(localWorkItemId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS final_dispatch_visits (revisionId TEXT NOT NULL PRIMARY KEY, dispatchVisitId TEXT NOT NULL, generation INTEGER NOT NULL, managerReference TEXT, senderLabel TEXT NOT NULL, documentingTechnicianId TEXT NOT NULL, documentingTechnicianName TEXT NOT NULL, FOREIGN KEY(revisionId) REFERENCES final_record_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_dispatch_visits_dispatchVisitId ON final_dispatch_visits(dispatchVisitId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS final_dispatch_items (finalWorkItemId TEXT NOT NULL PRIMARY KEY, dispatchItemId TEXT NOT NULL, assignedTechniciansJson TEXT NOT NULL, assignmentMeaning TEXT NOT NULL, localDocumentationRole TEXT NOT NULL, FOREIGN KEY(finalWorkItemId) REFERENCES final_work_items(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_dispatch_items_dispatchItemId ON final_dispatch_items(dispatchItemId)")
+                configureDispatchIdentity(db)
+                configureStage4Tracking(db)
+            }
+        }
+
+        private fun configureDispatchIdentity(db: SupportSQLiteDatabase) {
+            db.execSQL("INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', lower(hex(randomblob(16))), COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)")
+        }
+
         internal fun configureStage4Tracking(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
-            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves")
-            tracked.forEach { table ->
+            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items")
+            val existing = mutableSetOf<String>()
+            db.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor -> while (cursor.moveToNext()) existing += cursor.getString(0) }
+            tracked.filter { it in existing }.forEach { table ->
                 listOf("INSERT", "UPDATE", "DELETE").forEach { operation ->
                     val trigger = "track_${table}_${operation.lowercase()}"
                     db.execSQL("DROP TRIGGER IF EXISTS `$trigger`")

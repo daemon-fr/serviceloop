@@ -92,6 +92,8 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertWorkItems(values: List<WorkItemEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPublicDrafts(values: List<WorkItemPublicDraftEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPrivateDrafts(values: List<WorkItemPrivateDraftEntity>)
+    @Query("SELECT * FROM work_item_public_drafts WHERE workItemId=:workItemId") suspend fun publicDraft(workItemId: String): WorkItemPublicDraftEntity?
+    @Query("SELECT * FROM work_item_private_drafts WHERE workItemId=:workItemId") suspend fun privateDraft(workItemId: String): WorkItemPrivateDraftEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertResponses(values: List<WorkingResponseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAttachments(values: List<AttachmentEntity>)
     @Query("DELETE FROM attachments WHERE id=:id") suspend fun deleteAttachment(id: String): Int
@@ -370,6 +372,8 @@ interface ServiceLoopDao {
     suspend fun finalizeVisit(visitId: String, modified: Long): Int
 
     @Query("DELETE FROM visit_claims WHERE visitId=:visitId") suspend fun releaseVisitClaims(visitId: String): Int
+    @Query("DELETE FROM visit_claims WHERE obligationId=:obligationId") suspend fun releaseVisitClaim(obligationId: String): Int
+    @Query("SELECT COUNT(*) FROM visit_claims WHERE visitId=:visitId") suspend fun claimCountForVisit(visitId: String): Int
     @Query("SELECT COUNT(*) FROM visit_claims WHERE visitId=:visitId AND obligationId=:obligationId") suspend fun visitOwnsClaim(visitId: String, obligationId: String): Int
     @Query("UPDATE reusable_templates SET name=:name, currentRevisionId=:revisionId, modifiedAtEpochMillis=:modified WHERE id=:id") suspend fun publishTemplateRevision(id: String, name: String, revisionId: String, modified: Long): Int
     @Query("UPDATE contact_notes SET enteredInError=1, errorReason=:reason, editedAtEpochMillis=:modified WHERE id=:id AND enteredInError=0") suspend fun markContactNoteEnteredInError(id: String, reason: String, modified: Long): Int

@@ -42,7 +42,10 @@ class RecoveryPackage(
     private suspend fun createUnlocked(passphrase: CharArray, allowIncomplete: Boolean): BackupResult {
         require(passphrase.size >= 12) { "Passphrase must contain at least 12 characters" }
         val snapshotAt = System.currentTimeMillis()
-        val databaseObject = database.withTransaction { JSONObject(exportDatabase().toString(Charsets.UTF_8)) }
+        val databaseObject = database.withTransaction {
+            database.openHelper.writableDatabase.execSQL("INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', lower(hex(randomblob(16))), COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)")
+            JSONObject(exportDatabase().toString(Charsets.UTF_8))
+        }
         val files = requiredFiles(databaseObject)
         val missing = files.filterNot { File(fileRoot, it.path).isFile }.map { it.path }
         if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing")
@@ -231,10 +234,14 @@ class RecoveryPackage(
         require(tableRows(root, "correction_drafts").all { draft -> revisions[draft.getString("baseRevisionId")]?.getString("recordId") == draft.getString("recordId") }) { "A correction base revision does not belong to its record" }
         val recovery = tableRows(root, "recovery_metadata")
         require(recovery.size == 1 && recovery.single().getString("id") == "primary") { "Recovery metadata singleton is invalid" }
+        val identity = tableRows(root, "technician_identity")
+        require(identity.size == 1 && identity.single().getString("id") == "primary" && identity.single().getString("technicianId").isNotBlank()) { "Technician identity singleton is invalid" }
+        val visitIds = ids("working_visits")
+        require(tableRows(root, "dispatch_visit_bindings").all { it.getString("localVisitId") in visitIds }) { "Dispatch binding points to a missing Visit" }
         validateAgainstRoomSchema(root)
     }
 
-    /** Replays the generated Room v6 schema into an isolated throwaway database. */
+    /** Replays the generated Room v7 schema into an isolated throwaway database. */
     private fun validateAgainstRoomSchema(root: JSONObject) {
         // The platform temp directory avoids path-length failures while remaining app-private on Android.
         val stagingFile = File.createTempFile("slrv-", ".db")
@@ -441,7 +448,7 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        private const val SCHEMA_VERSION = 6
+        private const val SCHEMA_VERSION = 7
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -458,7 +465,11 @@ class RecoveryPackage(
             "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions",
             "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims",
             "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events",
-            "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "recovery_metadata",
+            "correction_drafts", "correction_work_items", "change_entries", "equipment_moves",
+            "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members",
+            "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees",
+            "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items",
+            "recovery_metadata",
         )
 
         /** Resolves a crashed cross-filesystem adoption using the token committed with the database transaction. */

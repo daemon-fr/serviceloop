@@ -110,6 +110,10 @@ class RoomServiceLoopRepository(
     private val attachmentRoot: File? = null,
 ) : ServiceLoopRepository {
     private val dao = database.serviceLoopDao()
+    private val dispatchDao = database.dispatchDao()
+    init {
+        database.openHelper.writableDatabase.execSQL("INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', lower(hex(randomblob(16))), COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)")
+    }
     private val stage4 by lazy { Stage4Service(database, businessTime, requireNotNull(attachmentRoot) { "App-owned storage is unavailable" }) }
 
     override suspend fun history(query: HistoryQuery) = stage4.history(query)
@@ -435,7 +439,9 @@ class RoomServiceLoopRepository(
 
     override suspend fun completionLines(visitId: String): List<CompletionLine> {
         val visit = dao.visit(visitId) ?: return emptyList()
-        return dao.visitWorkItems(visitId).map { item ->
+        val dispatchBinding = dispatchDao.visitBindingForLocalVisit(visitId)
+        val documentIds = dispatchBinding?.let { binding -> dispatchDao.itemBindings(binding.dispatchVisitId).filter { it.documentationDisposition == "DOCUMENT_LOCAL" }.mapNotNull { it.localWorkItemId }.toSet() }
+        return dao.visitWorkItems(visitId).filter { documentIds == null || it.id in documentIds }.map { item ->
             val plan = item.servicePlanId?.let { dao.plan(it) }
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
             val eligibility = when {
@@ -547,7 +553,11 @@ class RoomServiceLoopRepository(
         val visit = dao.visit(visitId) ?: return@withTransaction FinalizeResult.Blocked("Working visit no longer exists"); if (visit.state != "WORKING") return@withTransaction FinalizeResult.Blocked("Visit is not working")
         val profile = visitReportIdentity(visitId)
         if (profile == null || profile.businessName.trim().isEmpty() || profile.technicianName.trim().isEmpty() || profile.zoneId.trim().isEmpty() || visit.customerReferenceSnapshot.isNullOrBlank() || visit.siteReferenceSnapshot.isNullOrBlank()) return@withTransaction FinalizeResult.Blocked("Visit/report identity is incomplete — review it before finalizing")
-        val items = dao.visitWorkItems(visitId); if (items.isEmpty()) return@withTransaction FinalizeResult.Blocked("Visit has no work items")
+        val dispatchBinding = dispatchDao.visitBindingForLocalVisit(visitId)
+        val dispatchItems = dispatchBinding?.let { dispatchDao.itemBindings(it.dispatchVisitId) }.orEmpty()
+        if (dispatchBinding != null && dispatchItems.any { it.localRole == "ASSIGNED" && it.documentationDisposition == "PENDING" }) return@withTransaction FinalizeResult.Blocked("Choose who will document each assigned dispatch item")
+        val documentedIds = dispatchItems.filter { it.documentationDisposition == "DOCUMENT_LOCAL" }.mapNotNull { it.localWorkItemId }.toSet()
+        val items = dao.visitWorkItems(visitId).filter { dispatchBinding == null || it.id in documentedIds }; if (items.isEmpty()) return@withTransaction FinalizeResult.Blocked("Choose at least one dispatch item to document locally")
         data class Prepared(val item: WorkItemEntity, val work: String, val privateNote: String, val plan: ServicePlanEntity?, val oldObligation: ServiceObligationEntity?, val nextDue: String?)
         val prepared = mutableListOf<Prepared>()
         for (item in items) {
@@ -583,9 +593,14 @@ class RoomServiceLoopRepository(
         }
         finalizationWriteGate.beforeCommit(); val now = businessTime.instant().toEpochMilli(); val recordId = stableId("record", visitId); val revisionId = stableId("revision-1", visitId)
         dao.insertFinalRecord(FinalRecordEntity(recordId, visitId, revisionId, now)); dao.insertFinalRevision(FinalRecordRevisionEntity(revisionId, recordId, 1, visit.reference, visit.actualServiceDate, now, visit.customerNameSnapshot, visit.siteNameSnapshot, visit.siteAddressSnapshot, profile.businessName, profile.technicianName, profile.phone.ifBlank { null }, profile.email.ifBlank { null }, profile.postalAddress.ifBlank { null }, profile.zoneId, null, visit.customerReferenceSnapshot, visit.siteReferenceSnapshot))
+        if (dispatchBinding != null) {
+            val identity = dispatchDao.technicianIdentity() ?: return@withTransaction FinalizeResult.Blocked("Technician identity is unavailable")
+            dispatchDao.insertFinalDispatchVisit(FinalDispatchVisitEntity(revisionId, dispatchBinding.dispatchVisitId, dispatchBinding.appliedGeneration, dispatchBinding.managerReference, dispatchBinding.senderLabel, identity.technicianId, identity.displayName))
+        }
         prepared.forEachIndexed { index, p ->
             val finalItemId = stableId("final-work", revisionId, p.item.id); val fulfills = p.item.fulfillsCurrentObligation == true
             dao.insertFinalWorkItems(listOf(FinalWorkItemEntity(finalItemId, revisionId, index + 1, p.item.id, p.item.equipmentId, p.item.equipmentNameSnapshot, p.item.equipmentReferenceSnapshot, p.item.equipmentIdentifierSnapshot, p.item.equipmentMakeSnapshot, p.item.equipmentModelSnapshot, p.item.equipmentSerialSnapshot, p.item.serviceNameSnapshot, p.item.servicePlanId, p.item.planReferenceSnapshot, p.item.outcome!!, p.work.takeIf(String::isNotBlank), p.item.notPerformedReason, fulfills, p.item.dueDateSnapshot, p.nextDue.takeIf { fulfills }, p.item.intervalCountSnapshot, p.item.intervalUnitSnapshot, p.item.capturedObligationId, p.privateNote.takeIf(String::isNotBlank), p.item.nextDueDateCalculated.takeIf { fulfills }, p.item.nextDueOverrideReason.takeIf { fulfills })))
+            dispatchItems.find { it.localWorkItemId == p.item.id }?.let { source -> dispatchDao.insertFinalDispatchItems(listOf(FinalDispatchItemEntity(finalItemId, source.dispatchItemId, source.assignedTechniciansJson, source.assignmentMeaning, source.localRole))) }
             p.item.templateSnapshotId?.let { snapshotId -> val responseById = dao.responses(p.item.id).associateBy { it.checklistItemSnapshotId }; val template = dao.templateSnapshot(snapshotId); dao.insertFinalChecklistItems(dao.checklistItems(snapshotId).map { q -> val a = responseById[q.id]; FinalChecklistItemEntity(stableId("final-check", finalItemId, q.id), finalItemId, q.position, snapshotId, template?.revision, q.label, q.responseType, q.unit, q.required, a?.disposition ?: if (q.responseType == "STATUS") "NOT_CHECKED" else "UNANSWERED", a?.textValue, a?.numberValue, a?.reason) }) }
             dao.insertFinalParts(dao.parts(p.item.id).mapIndexed { partIndex, part -> FinalPartEntryEntity(stableId("final-part", finalItemId, part.id), finalItemId, partIndex + 1, part.description, part.quantity, part.unit) })
             dao.insertFinalPhotos(dao.workItemAttachments(p.item.id).filter { it.includedInCustomerReport && it.availability == "PRESENT" }.mapIndexed { photoIndex, photo -> FinalPhotoEntryEntity(stableId("final-photo", finalItemId, photo.id), finalItemId, photoIndex + 1, photo.id, photo.storedRelativePath, photo.sha256, photo.byteSize, photo.mimeType, photo.caption) })
@@ -601,8 +616,10 @@ class RoomServiceLoopRepository(
 
     override suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String?): FinalRecordDetail? {
         val record = dao.finalRecord(recordId) ?: return null; val revision = dao.finalRevision(revisionId)?.takeIf { it.recordId == recordId } ?: return null; val items = dao.finalWorkItems(revision.id)
-        val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption, it.addedInCorrection, it.addedAtEpochMillis) }, historyOnly=item.planId!=null&&item.capturedObligationId==null) }
-        val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference, record.voided, record.publicVoidReason, revision.publicNote)
+        val dispatchItemByFinalId = dispatchDao.finalDispatchItems(revision.id).associateBy { it.finalWorkItemId }
+        val publicLines = items.map { item -> val dispatchItem=dispatchItemByFinalId[item.id]; PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption, it.addedInCorrection, it.addedAtEpochMillis) }, historyOnly=item.planId!=null&&item.capturedObligationId==null, dispatchItemId=dispatchItem?.dispatchItemId, dispatchAssignment=dispatchItem?.let { if(it.assignmentMeaning=="EVERYONE") "Everyone" else DispatchPackageService(database).parseTech(it.assignedTechniciansJson).joinToString { t -> "${t.name} (${t.technicianId})" } }, dispatchDocumentationRole=dispatchItem?.localDocumentationRole) }
+        val finalDispatch = dispatchDao.finalDispatchVisit(revision.id)?.let { PublicDispatchProvenance(it.dispatchVisitId,it.generation,it.managerReference,it.senderLabel,it.documentingTechnicianId,it.documentingTechnicianName) }
+        val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference, record.voided, record.publicVoidReason, revision.publicNote, finalDispatch)
         val renditionEntity = renditionId?.let { dao.reportRenditionById(it)?.takeIf { row -> row.revisionId == revision.id } } ?: dao.reportRendition(revision.id)
         val rendition = renditionEntity?.let { ReportRendition(it.id, it.revisionId, it.versionNumber, it.generatedAtEpochMillis, it.relativePath, it.sha256, it.byteSize, it.pageCount, it.status, it.failureMessage, it.kind) }
         return FinalRecordDetail(model, items.mapNotNull { it.privateInternalNote }, rendition, record.voided, record.publicVoidReason)

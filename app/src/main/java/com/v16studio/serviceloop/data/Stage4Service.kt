@@ -19,6 +19,7 @@ class Stage4Service(
     private val fileRoot: File,
 ) {
     private val dao = database.serviceLoopDao()
+    private val dispatchDao = database.dispatchDao()
     private val recovery = RecoveryPackage(database, fileRoot)
 
     suspend fun history(query: HistoryQuery): List<HistoryEntry> {
@@ -217,9 +218,11 @@ class Stage4Service(
             }
         }
         dao.insertFinalRevision(base.copy(id = revisionId, revisionNumber = revisionNumber, actualServiceDate = draft.actualServiceDate, recordedAtEpochMillis = now, customerName = draft.customerName, siteName = draft.siteName, siteAddress = draft.siteAddress, businessName = draft.businessName, technicianName = draft.technicianName, privateInternalNote = draft.privateNote, supersedesRevisionId = base.id, correctionReason = draft.reason, publicNote = draft.publicNote))
+        dispatchDao.finalDispatchVisit(base.id)?.let { dispatchDao.insertFinalDispatchVisit(it.copy(revisionId = revisionId)) }
         proposedItems.forEach { proposed ->
             val source = sourceItems.getValue(proposed.sourceFinalWorkItemId); val newItemId = stable("correction-work", revisionId, source.id)
             dao.insertFinalWorkItems(listOf(source.copy(id = newItemId, revisionId = revisionId, outcome = proposed.outcome, publicWorkNote = proposed.publicWorkNote, notPerformedReason = proposed.notPerformedReason, fulfilledObligation = proposed.fulfilledObligation, nextDueDate = proposed.proposedNextDueDate, nextDueDateCalculated = proposed.nextDueDateCalculated, nextDueOverrideReason = proposed.nextDueOverrideReason)))
+            dispatchDao.finalDispatchItems(base.id).find { it.finalWorkItemId == source.id }?.let { dispatchDao.insertFinalDispatchItems(listOf(it.copy(finalWorkItemId = newItemId))) }
             dao.insertFinalChecklistItems(decodeChecklist(proposed.checklistJson).map { item -> FinalChecklistItemEntity(stable("correction-check", newItemId, item.sourceId), newItemId, item.position, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateSnapshotId, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateRevision, item.label, item.responseType, item.unit, item.required, item.disposition, item.textValue, item.numberValue, item.reason) })
             dao.insertFinalParts(decodeParts(proposed.partsJson).mapIndexed { index, item -> FinalPartEntryEntity(stable("correction-part", newItemId, item.sourceId ?: index.toString()), newItemId, index + 1, item.description, item.quantity, item.unit) })
             dao.insertFinalPhotos(decodePhotos(proposed.photosJson).filter { it.selected }.mapIndexed { index, item -> FinalPhotoEntryEntity(stable("correction-photo", newItemId, item.sourceId ?: item.sha256), newItemId, index + 1, item.sourceId ?: stable("correction-evidence", revisionId, item.sha256), item.storedRelativePath, item.sha256, item.byteSize, item.mimeType, item.caption, item.addedInCorrection, item.addedAtEpochMillis) })

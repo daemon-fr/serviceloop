@@ -177,10 +177,14 @@ data class PublicWorkLine(
     val parts: List<PublicPart> = emptyList(),
     val photos: List<PublicPhoto> = emptyList(),
     val historyOnly: Boolean = false,
+    val dispatchItemId: String? = null,
+    val dispatchAssignment: String? = null,
+    val dispatchDocumentationRole: String? = null,
 )
 
 data class PublicPart(val description: String, val quantity: String, val unit: String)
 data class PublicPhoto(val relativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?, val addedInCorrection: Boolean = false, val addedAtEpochMillis: Long? = null)
+data class PublicDispatchProvenance(val dispatchVisitId:String,val generation:Int,val managerReference:String?,val senderLabel:String,val documentingTechnicianId:String,val documentingTechnicianName:String)
 
 data class PublicReportModel(
     val recordId: String,
@@ -201,6 +205,7 @@ data class PublicReportModel(
     val voided: Boolean = false,
     val publicVoidReason: String? = null,
     val publicNote: String? = null,
+    val dispatch: PublicDispatchProvenance? = null,
 )
 
 data class FinalRecordDetail(

@@ -195,8 +195,16 @@ object FixedServiceRecordPdf {
             raw.add(1, RawLine("Customer explanation: ${model.publicVoidReason.orEmpty()}", LineStyle.SECTION))
         }
         model.publicNote?.let { raw += RawLine("Record note: $it", LineStyle.BODY) }
+        model.dispatch?.let { dispatch ->
+            raw += RawLine("Dispatch", LineStyle.SECTION)
+            raw += RawLine("Job: ${dispatch.managerReference ?: dispatch.dispatchVisitId}", LineStyle.BODY)
+            raw += RawLine("Generation: ${dispatch.generation}", LineStyle.BODY)
+            raw += RawLine("Documented by: ${dispatch.documentingTechnicianName}", LineStyle.BODY)
+            raw += RawLine("Technician ID: ${dispatch.documentingTechnicianId}", LineStyle.BODY)
+        }
         model.lines.forEach { line ->
             raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
+            line.dispatchItemId?.let { raw += RawLine("Dispatch item: $it · Assigned to: ${line.dispatchAssignment.orEmpty()}", LineStyle.BODY) }
             raw += listOf(RawLine(line.equipmentIdentification, LineStyle.BODY), RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY), RawLine("Outcome: ${line.outcome.replace('_', ' ')}", LineStyle.BODY))
             line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
             line.parts.forEach { part -> raw += RawLine("Part: ${part.description} — ${part.quantity} ${part.unit}", LineStyle.BODY) }

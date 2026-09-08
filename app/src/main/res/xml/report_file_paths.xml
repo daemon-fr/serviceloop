@@ -3,4 +3,5 @@
     <files-path name="customer_reports" path="reports/" />
     <cache-path name="camera_staging" path="camera-staging/" />
     <cache-path name="work_packages" path="work-packages/" />
+    <cache-path name="technician_identity" path="technician-identity/" />
 </paths>
