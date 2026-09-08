@@ -241,7 +241,7 @@ class RecoveryPackage(
         validateAgainstRoomSchema(root)
     }
 
-    /** Replays the generated Room v7 schema into an isolated throwaway database. */
+    /** Replays the generated Room v8 schema into an isolated throwaway database. */
     private fun validateAgainstRoomSchema(root: JSONObject) {
         // The platform temp directory avoids path-length failures while remaining app-private on Android.
         val stagingFile = File.createTempFile("slrv-", ".db")
@@ -448,7 +448,7 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        private const val SCHEMA_VERSION = 7
+        private const val SCHEMA_VERSION = 8
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000

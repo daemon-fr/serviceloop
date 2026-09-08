@@ -68,6 +68,6 @@ data class ContactNoteInput(val customerId: String, val siteId: String? = null, 
 
 data class SearchTarget(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
 
-enum class VisitFilter { ALL, BOOKED, WORKING, FINALIZED, CANCELLED }
+enum class VisitFilter { ALL, BOOKED, WORKING, FINALIZED, CANCELLED, PARTICIPATION_COMPLETE, DISPATCH_WITHDRAWN }
 enum class VisitDateWindow { ALL_DATES, PAST_30_DAYS, NEXT_30_DAYS }
 enum class FollowUpFilter { DUE_OR_OVERDUE, UPCOMING, ALL_OPEN, CLOSED }

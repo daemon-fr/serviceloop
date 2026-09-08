@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.report
 
 import com.v16studio.serviceloop.domain.PublicChecklistItem
 import com.v16studio.serviceloop.domain.PublicReportModel
+import com.v16studio.serviceloop.domain.PublicDispatchProvenance
 import com.v16studio.serviceloop.domain.PublicWorkLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,6 +37,13 @@ class ReportLayoutTest {
         assertTrue(pages.all { it.contentHeight <= FixedServiceRecordPdf.CONTENT_HEIGHT })
         assertTrue(pages.flatMap { it.lines }.all { FixedServiceRecordPdf.measuredWidth(it) <= FixedServiceRecordPdf.CONTENT_WIDTH + 0.01f })
         assertFalse(pages.any { it.lines.lastOrNull()?.style == FixedServiceRecordPdf.LineStyle.SECTION })
+    }
+
+    @Test fun customerReportUsesOnlyShortTechnicianReference() {
+        val fullId="12345678-1234-1234-1234-123456789abc"
+        val model=report(listOf(line(1,"Pump","Serviced").copy(dispatchItemId="dispatch-item",dispatchAssignment="Alex"))).copy(dispatch=PublicDispatchProvenance("dispatch-visit",2,"JOB-7","Office",fullId,"John"))
+        val text=FixedServiceRecordPdf.layout(model).flatMap{it.lines}.joinToString("\n"){it.text}
+        assertTrue(text.contains("Documented by: John"));assertTrue(text.contains("Technician reference: 12345678"));assertFalse(text.contains(fullId))
     }
 
     private fun report(lines: List<PublicWorkLine>) = PublicReportModel(

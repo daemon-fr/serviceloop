@@ -35,6 +35,7 @@ interface DispatchDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertOutboxVisitTeams(values: List<DispatchOutboxVisitTeamEntity>)
     @Query("DELETE FROM dispatch_outbox_visit_teams WHERE dispatchVisitId=:visitId") suspend fun clearOutboxVisitTeams(visitId: String)
     @Query("SELECT * FROM dispatch_outbox_items WHERE dispatchVisitId=:visitId ORDER BY position") suspend fun outboxItems(visitId: String): List<DispatchOutboxItemEntity>
+    @Query("SELECT * FROM dispatch_outbox_items ORDER BY dispatchVisitId, position") suspend fun outboxItems(): List<DispatchOutboxItemEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertOutboxItem(value: DispatchOutboxItemEntity)
     @Update suspend fun updateOutboxItem(value: DispatchOutboxItemEntity)
     @Query("DELETE FROM dispatch_outbox_items WHERE dispatchItemId=:id") suspend fun deleteOutboxItem(id: String)
@@ -58,6 +59,8 @@ interface DispatchDao {
     @Query("UPDATE work_items SET servicePlanId=:planId, capturedObligationId=:obligationId, planReferenceSnapshot=:planReference, dueDateSnapshot=:dueDate, intervalCountSnapshot=:intervalCount, intervalUnitSnapshot=:intervalUnit WHERE id=:id") suspend fun linkDispatchWork(id: String, planId: String, obligationId: String, planReference: String, dueDate: String, intervalCount: Int, intervalUnit: String): Int
     @Query("UPDATE work_items SET servicePlanId=NULL, capturedObligationId=NULL, planReferenceSnapshot=NULL, dueDateSnapshot=NULL, intervalCountSnapshot=NULL, intervalUnitSnapshot=NULL, fulfillsCurrentObligation=0, confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE id=:id") suspend fun unlinkDispatchWork(id: String): Int
     @Query("UPDATE working_visits SET state='PARTICIPATION_COMPLETE', modifiedAtEpochMillis=:now WHERE id=:id AND state='WORKING'") suspend fun completeParticipation(id: String, now: Long): Int
+    @Query("UPDATE working_visits SET state='DISPATCH_WITHDRAWN', modifiedAtEpochMillis=:now WHERE id=:id AND state='BOOKED'") suspend fun withdrawDispatchVisit(id: String, now: Long): Int
+    @Query("DELETE FROM visit_claims WHERE visitId=:visitId AND obligationId=:obligationId") suspend fun releaseItemClaim(visitId: String, obligationId: String): Int
 
     @Query("SELECT COUNT(*) FROM working_responses WHERE workItemId=:id") suspend fun responseCount(id: String): Int
     @Query("SELECT COUNT(*) FROM part_entries WHERE workItemId=:id") suspend fun partCount(id: String): Int
@@ -68,6 +71,8 @@ interface DispatchDao {
     @Query("DELETE FROM attachments WHERE ownerType='WORK_ITEM' AND ownerId=:id") suspend fun deleteWorkAttachments(id: String)
     @Query("UPDATE work_item_public_drafts SET workPerformed='' WHERE workItemId=:id") suspend fun clearPublicDraft(id: String)
     @Query("UPDATE work_item_private_drafts SET internalNote='' WHERE workItemId=:id") suspend fun clearPrivateDraft(id: String)
+    @Query("UPDATE work_item_private_drafts SET internalNote=:note WHERE workItemId=:id") suspend fun updatePrivateDraftNote(id: String, note: String)
+    @Query("UPDATE work_items SET checklistReviewed=0, outcome=NULL, fulfillsCurrentObligation=NULL, notPerformedReason=NULL, confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE id=:id") suspend fun clearCompletionDraft(id: String)
 
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalDispatchVisit(value: FinalDispatchVisitEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalDispatchItems(values: List<FinalDispatchItemEntity>)

@@ -112,6 +112,7 @@ data class DispatchVisitBindingEntity(
     val packageId: String,
     val senderLabel: String,
     val managerReference: String?,
+    val instructionsSnapshot: String?,
     val participantSnapshotJson: String,
     val leaderIdsJson: String,
     val teamSnapshotJson: String,

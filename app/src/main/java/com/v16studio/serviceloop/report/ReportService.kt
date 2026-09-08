@@ -200,7 +200,7 @@ object FixedServiceRecordPdf {
             raw += RawLine("Job: ${dispatch.managerReference ?: dispatch.dispatchVisitId}", LineStyle.BODY)
             raw += RawLine("Generation: ${dispatch.generation}", LineStyle.BODY)
             raw += RawLine("Documented by: ${dispatch.documentingTechnicianName}", LineStyle.BODY)
-            raw += RawLine("Technician ID: ${dispatch.documentingTechnicianId}", LineStyle.BODY)
+            raw += RawLine("Technician reference: ${dispatch.documentingTechnicianId.take(8)}", LineStyle.BODY)
         }
         model.lines.forEach { line ->
             raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
