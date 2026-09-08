@@ -128,6 +128,23 @@ class DailyOperationsIntegrityTest {
         assertNotNull(repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-10", 4))
     }
 
+    @Test fun cancelledBookingRestoresSameVisitAndClaimWithoutChangingDueDate() = runTest {
+        val ids=foundation(); val due=db.serviceLoopDao().plan(ids.plan)!!.currentDueDate; val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val obligation=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
+        repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")
+        assertEquals("BOOKED",repo.visit(visit)!!.state); assertEquals(1,db.serviceLoopDao().visitOwnsClaim(visit,obligation)); assertEquals(due,db.serviceLoopDao().plan(ids.plan)!!.currentDueDate); assertEquals(listOf("CANCELLED","RESTORED"),db.serviceLoopDao().visitScheduleEvents(visit).map{it.eventType})
+    }
+
+    @Test fun restoreRejectsStaleOrAlreadyClaimedObligationAtomically() = runTest {
+        val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); val old=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
+        db.serviceLoopDao().insertObligations(listOf(com.v16studio.serviceloop.data.ServiceObligationEntity("replacement",ids.plan,2,"2027-09-01",2))); db.serviceLoopDao().setCurrentObligationForTest(ids.plan,"replacement")
+        assertTrue(runCatching{repo.restoreVisit(visit,"2026-09-06")}.isFailure); assertEquals("CANCELLED",repo.visit(visit)!!.state); assertNull(db.serviceLoopDao().claimForObligation(old))
+    }
+
+    @Test fun oneOffOnlyCancelledVisitRestoresWithoutClaims() = runTest {
+        val ids=foundation(); val visit=repo.createVisitForSite(ids.site,emptyList(),ids.equipment,"Emergency","BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")
+        assertEquals("BOOKED",repo.visit(visit)!!.state); assertTrue(db.serviceLoopDao().visitWorkItems(visit).all{it.capturedObligationId==null})
+    }
+
     @Test fun concurrentBookingProducesOnlyOneActiveClaim() = runTest {
         val ids = foundation(); val outcomes = listOf(async { runCatching { repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", 1) } }, async { runCatching { repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-07", 2) } }).awaitAll()
         assertEquals(1, outcomes.count { it.isSuccess }); assertEquals(1, repo.dueServices().count { it.claimedVisitId != null })

@@ -1,6 +1,6 @@
 # ServiceLoop — SL-3 Requirement Coverage
 
-**Status:** Phase-B technically verified and ready for owner review; not owner accepted, product-valid, or release-ready.
+**Status:** Owner-review corrections implemented in a development checkpoint; final testing-AI verification and owner re-review pending. Not owner accepted, product-valid, or release-ready.
 
 ## Implemented
 
@@ -20,8 +20,11 @@
 | Unsaved forms | A reusable D01 guard intercepts app-bar and system Back for changed explicit-save directory, plan, template, follow-up, contact-note, and visit-setup buffers, offering Keep editing / Discard changes without claiming durability. Successful Save navigation is direct. |
 | Long text | One shared compact three-line editor with a bottom-right accessible expand/resize affordance opens the same buffer in a full-screen surface. Issue found uses this one mechanism; Done does not persist, and the parent Save remains authoritative. |
 | Report/privacy | Final records expose textual parts and selected photo entries; PDF/text include part and photo captions. Private/access/internal and unselected-photo fields remain structurally absent from the public model. PDF failure remains independent of business finalization. |
+| Owner-review corrections | Deterministic Home/Work/Customers root navigation without root-state restoration; Customers/Sites/Equipment registers and customer Sites/Equipment tabs; durable reschedule acknowledgement; conservative same-Visit cancelled-booking restoration; visible 48dp Expand action; structured actionable completion blockers with inspection targeting and Review resume refresh; solid New visit entries; date-dependent primary Book/Start/Record-past action. |
 
 ## Phase-B verification evidence
+
+The preceding Phase-B evidence applies to the earlier candidate. This owner-review correction checkpoint has focused development evidence only; the subsequent testing-AI verification remains required.
 
 - TESTED — host gate: 91 unit tests, 0 failures/errors/skips; `assembleDebug`, `assembleRelease`, and `assembleDebugAndroidTest` pass; lint reports 0 errors, 12 warnings, and 2 lower-severity findings.
 - UI-INSTRUMENTED — expanded normal canonical suite: 27 tests discovered in 341.863 seconds, with 20 passes and 7 deliberate assumption skips for the separately gated persistent/system-handoff cases. This covers v1→4, v2→4, and v3→4 migrations; retained SL-2 finalization/report/root behavior; D01 create/edit behavior; same-buffer long text; global equipment site selection; selected-photo PDF rendering; ordinary directory/plan UI; and lazy-list inspection continuation.

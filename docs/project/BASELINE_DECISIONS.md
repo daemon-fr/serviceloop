@@ -67,3 +67,9 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Its **Expand** action should eventually open the same text in a dedicated full-page or modal editing surface for long-form entry rather than merely making the inline box taller.
 - Longer multiline inputs should converge on one reusable editing component/pattern, including a visible bottom-right resize/expand affordance where appropriate, so long-text behavior is consistent across ServiceLoop.
 - This is a deferred UX refinement and does not block the accepted SL-2 workflow.
+
+## B-011 — SL-3 owner-review daily-operations corrections
+
+- The Customers root contains peer **Customers**, **Sites**, and **Equipment** registers; a customer detail contains **Sites** and **Equipment**, defaulting to Sites.
+- A cancelled booking may be restored only conservatively into the same Visit after transaction-local validation that every captured recurring obligation remains active, current, unconsumed, and unclaimed. Restoration reacquires all claims or none, preserves cancellation history, and does not fulfill or alter a due date.
+- The selected visit date determines the visually primary action: future Book, today Start, and past Record past.

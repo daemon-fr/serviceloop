@@ -3,11 +3,12 @@ package com.v16studio.serviceloop.domain
 data class CustomerDetail(
     val id: String, val reference: String, val name: String, val contactName: String,
     val phone: String, val email: String, val privateNote: String,
-    val sites: List<SiteSummary>, val openFollowUps: List<FollowUpDetail>,
+    val sites: List<SiteSummary>, val equipment: List<EquipmentSummary>, val openFollowUps: List<FollowUpDetail>,
     val recentContacts: List<ContactNoteDetail>,
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)
+data class SiteRegisterSummary(val id: String, val reference: String, val name: String, val customerName: String, val address: String, val equipmentCount: Int)
 
 data class VisitSiteOption(
     val id: String,

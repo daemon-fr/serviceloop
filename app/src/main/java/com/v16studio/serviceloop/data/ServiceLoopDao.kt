@@ -76,7 +76,7 @@ data class DueServiceRow(
 
 data class SearchRow(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
 
-data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String)
+    data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String, val address: String?)
 
 @Dao
 interface ServiceLoopDao {
@@ -138,7 +138,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM final_checklist_items WHERE finalWorkItemId=:workItemId ORDER BY position") suspend fun finalChecklistItems(workItemId: String): List<FinalChecklistItemEntity>
     @Query("SELECT * FROM report_renditions WHERE revisionId=:revisionId AND versionNumber=1") suspend fun reportRendition(revisionId: String): ReportRenditionEntity?
     @Query("SELECT * FROM sites WHERE customerId=:customerId ORDER BY isDefault DESC, name, reference") suspend fun sitesForCustomer(customerId: String): List<SiteEntity>
-    @Query("SELECT s.id, s.reference, s.name, c.name customerName FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
+    @Query("SELECT s.id, s.reference, s.name, c.name customerName, s.address FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
     @Query("SELECT * FROM equipment WHERE siteId=:siteId ORDER BY name, reference") suspend fun equipmentForSite(siteId: String): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans WHERE equipmentId=:equipmentId ORDER BY currentDueDate, reference") suspend fun plansForEquipment(equipmentId: String): List<ServicePlanEntity>
     @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
@@ -168,7 +168,8 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM reusable_templates") suspend fun reusableTemplateCount(): Int
     @Query("SELECT COUNT(*) FROM follow_ups") suspend fun followUpCount(): Int
     @Query("SELECT COUNT(*) FROM contact_notes") suspend fun contactNoteCount(): Int
-    @Query("SELECT * FROM visit_schedule_events WHERE visitId=:visitId ORDER BY occurredAtEpochMillis, id") suspend fun visitScheduleEvents(visitId: String): List<VisitScheduleEventEntity>
+    @Query("SELECT * FROM visit_schedule_events WHERE visitId=:visitId ORDER BY occurredAtEpochMillis, rowid") suspend fun visitScheduleEvents(visitId: String): List<VisitScheduleEventEntity>
+    @Query("SELECT visitId FROM visit_claims WHERE obligationId=:obligationId LIMIT 1") suspend fun claimForObligation(obligationId: String): String?
     @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
     @Query("UPDATE service_obligations SET dueDate=:dueDate WHERE id=:id AND consumedAtEpochMillis IS NULL") suspend fun updateCurrentObligationDueDate(id: String, dueDate: String): Int
     @Query("UPDATE customers SET name = :name WHERE id = :id") suspend fun renameCustomer(id: String, name: String)

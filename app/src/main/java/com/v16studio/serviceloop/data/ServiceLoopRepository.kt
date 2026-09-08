@@ -20,6 +20,7 @@ interface ServiceLoopRepository {
     suspend fun equipment(id: String): EquipmentDetail?
     suspend fun equipmentList(): List<EquipmentSummary>
     suspend fun customerList(): List<CustomerSummary>
+    suspend fun siteList(): List<SiteRegisterSummary> = emptyList()
     suspend fun inspection(workItemId: String): InspectionDraft?
     suspend fun completionLines(visitId: String): List<CompletionLine>
     suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long
@@ -62,6 +63,7 @@ interface ServiceLoopRepository {
     suspend fun startVisit(id: String): Long = error("Visit unavailable")
     suspend fun rescheduleVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?, reason: String): Long = error("Visit unavailable")
     suspend fun cancelVisit(id: String, reason: String): Long = error("Visit unavailable")
+    suspend fun restoreVisit(id: String, serviceDate: String): Long = error("Visit unavailable")
     suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String = error("Part entry unavailable")
     suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = error("Photo intake unavailable")
     suspend fun createContactNote(input: ContactNoteInput): String = error("Contact note unavailable")
@@ -92,13 +94,16 @@ class RoomServiceLoopRepository(
     override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, it.state, it.finalRecordId, it.resumeWorkItemId) }
     override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate) }
     override suspend fun customerList() = dao.customerList().map { CustomerSummary(it.id, it.name, it.reference, it.siteCount, it.equipmentCount) }
+    override suspend fun siteList() = dao.activeVisitSites().map { site -> SiteRegisterSummary(site.id, site.reference, site.name, site.customerName, site.address.orEmpty(), dao.equipmentForSite(site.id).size) }
 
     override suspend fun customer(id: String): CustomerDetail? {
         val customer = dao.customer(id) ?: return null
-        val sites = dao.sitesForCustomer(id).map { site -> SiteSummary(site.id, site.reference, site.name, site.address.orEmpty(), dao.equipmentForSite(site.id).size, site.isDefault) }
+        val siteEntities = dao.sitesForCustomer(id)
+        val sites = siteEntities.map { site -> SiteSummary(site.id, site.reference, site.name, site.address.orEmpty(), dao.equipmentForSite(site.id).size, site.isDefault) }
+        val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }) } }
         val followUps = dao.followUpsForCustomer(id).filter { it.state == "OPEN" }.map { followUpDetail(it) }
         val contacts = dao.contactNotesForCustomer(id).take(5).map { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
-        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, followUps, contacts)
+        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts)
     }
 
     override suspend fun site(id: String): SiteDetail? {
@@ -298,6 +303,26 @@ class RoomServiceLoopRepository(
         require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be cancelled"}; dao.updateVisit(visit.copy(state = "CANCELLED", cancellationReason = reason.trim(), cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELLED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
     }
 
+    override suspend fun restoreVisit(id: String, serviceDate: String): Long {
+        LocalDate.parse(serviceDate); require(!LocalDate.parse(serviceDate).isBefore(businessTime.today())) { "Choose today or a future appointment date" }
+        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val visit = dao.visit(id) ?: error("Visit no longer exists")
+            require(visit.state == "CANCELLED") { "Only a cancelled visit can be restored" }
+            val recurring = dao.visitWorkItems(id).filter { it.servicePlanId != null }
+            recurring.forEach { item ->
+                val plan = dao.plan(item.servicePlanId!!) ?: error("The old booking can no longer be restored because its service obligation changed or is already claimed")
+                val obligationId = item.capturedObligationId ?: error("The old booking can no longer be restored because its service obligation changed or is already claimed")
+                val obligation = dao.obligation(obligationId)
+                require(plan.state == "ACTIVE" && plan.currentObligationId == obligationId && obligation?.planId == plan.id && obligation.consumedAtEpochMillis == null && dao.claimForObligation(obligationId) == null) { "The old booking can no longer be restored because its service obligation changed or is already claimed" }
+            }
+            recurring.forEach { dao.insertVisitClaim(VisitClaimEntity(it.capturedObligationId!!, id, now)) }
+            dao.updateVisit(visit.copy(state = "BOOKED", actualServiceDate = serviceDate, scheduledAtEpochMillis = LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), cancellationReason = visit.cancellationReason, modifiedAtEpochMillis = now))
+            dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(), id, "RESTORED", visit.actualServiceDate, serviceDate, visit.scheduledAtEpochMillis, LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), "Restored booking", now))
+        }
+        return now
+    }
+
     override suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String {
         require(description.trim().isNotEmpty() && description.length <= 200); require(unit.trim().isNotEmpty() && unit.length <= 30); val numeric = runCatching { BigDecimal(quantity.trim()) }.getOrNull(); require(numeric != null && numeric > BigDecimal.ZERO) { "Quantity must be a finite positive number" }
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); dao.insertPart(PartEntryEntity(id, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now)); dao.touchVisit(item.visitId, now) }; return id
@@ -367,14 +392,14 @@ class RoomServiceLoopRepository(
                 val answers = dao.responses(item.id).associateBy { it.checklistItemSnapshotId }
                 dao.checklistItems(snapshot).map { it to answers[it.id] }
             }.orEmpty()
-            val issueMissing = questions.any { (_, answer) -> answer?.disposition == "ISSUE_FOUND" && answer.reason.isNullOrBlank() }
+            val missingFindings = questions.filter { (_, answer) -> answer?.disposition == "ISSUE_FOUND" && answer.reason.isNullOrBlank() }
             val blockers = buildList {
-                if (item.outcome == null) add("Choose an outcome")
-                if ((item.outcome == "PERFORMED" || item.outcome == "PARTLY_PERFORMED") && public.isBlank()) add("Work performed is required")
-                if (item.outcome == "NOT_PERFORMED" && item.notPerformedReason.isNullOrBlank()) add("Reason is required")
-                if (item.outcome == "PERFORMED" && item.templateSnapshotId != null && !item.checklistReviewed) add("Checklist needs review")
-                if (issueMissing) add("Issue found needs a public description")
-                if (fulfills && item.confirmedNextDueDate == null) add("Confirm the next due date")
+                if (item.outcome == null) add(CompletionBlocker(CompletionBlockerKind.OUTCOME, "Choose an outcome"))
+                if ((item.outcome == "PERFORMED" || item.outcome == "PARTLY_PERFORMED") && public.isBlank()) add(CompletionBlocker(CompletionBlockerKind.WORK_PERFORMED, "Work performed is required"))
+                if (item.outcome == "NOT_PERFORMED" && item.notPerformedReason.isNullOrBlank()) add(CompletionBlocker(CompletionBlockerKind.NOT_PERFORMED_REASON, "Reason is required"))
+                if (item.outcome == "PERFORMED" && item.templateSnapshotId != null && !item.checklistReviewed) add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_REVIEW, "Checklist needs review"))
+                missingFindings.forEach { (question, _) -> add(CompletionBlocker(CompletionBlockerKind.FINDING_DESCRIPTION, "${question.label}: Issue found needs a public description", question.id, question.label)) }
+                if (fulfills && item.confirmedNextDueDate == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Confirm the next due date"))
             }
             CompletionLine(item.id, item.equipmentNameSnapshot, item.equipmentReferenceSnapshot, item.serviceNameSnapshot, item.outcome, eligibility, fulfills, item.dueDateSnapshot, calculated, public, item.checklistReviewed, item.notPerformedReason, calculated, item.confirmedNextDueDate.takeIf { fulfills }, item.nextDueDateCalculated.takeIf { fulfills }, item.nextDueOverrideReason.takeIf { fulfills }, blockers)
         }

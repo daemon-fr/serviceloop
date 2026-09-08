@@ -35,6 +35,7 @@ data class UiState(
     val equipment: EquipmentDetail? = null,
     val equipmentList: List<EquipmentSummary> = emptyList(),
     val customerList: List<CustomerSummary> = emptyList(),
+    val siteList: List<SiteRegisterSummary> = emptyList(),
     val inspection: InspectionDraft? = null,
     val completionLines: List<CompletionLine> = emptyList(),
     val visits: List<VisitSummary> = emptyList(),
@@ -66,7 +67,10 @@ data class UiState(
     val searchResults: List<SearchTarget> = emptyList(),
     val operationInProgress: Boolean = false,
     val operationMessage: String? = null,
+    val inspectionFocus: InspectionFocus? = null,
 )
+
+data class InspectionFocus(val kind: CompletionBlockerKind, val questionId: String? = null)
 
 data class PendingResponseTransition(
     val questionId: String,
@@ -92,11 +96,13 @@ class ServiceLoopViewModel(
         val home = repository.home()
         val equipmentList = repository.equipmentList()
         val customerList = repository.customerList()
+        val siteList = repository.siteList()
         val visits = repository.visits()
         _state.value = _state.value.copy(
             home = home,
             equipmentList = equipmentList,
             customerList = customerList,
+            siteList = siteList,
             visits = visits,
             rootDataReady = true,
         )
@@ -110,12 +116,14 @@ class ServiceLoopViewModel(
                 val home = repository.home()
                 val equipmentList = repository.equipmentList()
                 val customerList = repository.customerList()
+                val siteList = repository.siteList()
                 val visits = repository.visits()
                 ensureActive()
                 _state.value = _state.value.copy(
                     home = home,
                     equipmentList = equipmentList,
                     customerList = customerList,
+                    siteList = siteList,
                     visits = visits,
                     rootRefreshError = null,
                 )
@@ -136,6 +144,8 @@ class ServiceLoopViewModel(
             saveStatus = draft?.let { SaveStatus.Saved(it.modifiedAtEpochMillis) } ?: SaveStatus.Idle,
         )
     }
+    fun focusInspection(kind: CompletionBlockerKind, questionId: String?) { _state.value = _state.value.copy(inspectionFocus = InspectionFocus(kind, questionId)) }
+    fun clearInspectionFocus() { _state.value = _state.value.copy(inspectionFocus = null) }
 
     fun loadCompletion(visitId: String) = launchLoad {
         _state.value = _state.value.copy(completionLines = repository.completionLines(visitId), businessProfile = repository.businessProfile(), visitReportIdentity = repository.visitReportIdentity(visitId))
@@ -176,8 +186,21 @@ class ServiceLoopViewModel(
     fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)
     fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, oneOffEquipmentId, oneOffName, state, date, scheduledAt) }, onSuccess)
     fun startVisit(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.startVisit(id); id }, onSuccess)
-    fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.rescheduleVisit(id, date, scheduledAt, reason); id }, onSuccess)
+    fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) {
+        if (_state.value.operationInProgress) return
+        _state.value = _state.value.copy(operationInProgress = true, operationMessage = null, error = null)
+        viewModelScope.launch {
+            try {
+                repository.rescheduleVisit(id, date, scheduledAt, reason)
+                val refreshed = repository.visit(id) ?: error("Visit was saved but could not be reloaded")
+                _state.value = _state.value.copy(visit = refreshed, site = repository.site(refreshed.siteId), operationInProgress = false, operationMessage = "Saved on this device")
+                refreshRootDataNonBlocking(); onSuccess(id)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.value = _state.value.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
+        }
+    }
     fun cancelVisit(id: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.cancelVisit(id, reason); id }, onSuccess)
+    fun restoreVisit(id: String, date: String, onSuccess: (String) -> Unit) = runOperation({ repository.restoreVisit(id, date); id }, onSuccess)
     fun addOneOff(visitId: String, equipmentId: String, name: String) = runOperation({ repository.addOneOffWork(visitId, equipmentId, name) }) { loadVisit(visitId) }
     fun addPart(workItemId: String, description: String, quantity: String, unit: String) = runOperation({ repository.addPart(workItemId, description, quantity, unit) }) { loadFieldEvidence(workItemId) }
     fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { loadFieldEvidence(workItemId) }

@@ -131,8 +131,11 @@ data class CompletionLine(
     val confirmedNextDueDate: String? = null,
     val nextDueDateCalculated: Boolean? = null,
     val nextDueOverrideReason: String? = null,
-    val blockers: List<String> = emptyList(),
+    val blockers: List<CompletionBlocker> = emptyList(),
 )
+
+enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_REVIEW, FINDING_DESCRIPTION, NEXT_DUE }
+data class CompletionBlocker(val kind: CompletionBlockerKind, val message: String, val questionId: String? = null, val questionLabel: String? = null)
 
 enum class FulfillmentEligibility {
     ELIGIBLE,

@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-07 — SL-3 Phase-B technical verification complete; ready for owner review
+**Updated:** 2026-09-08 — SL-3 owner-review corrections implemented; final testing verification pending
 
 ## Current state
 
@@ -15,7 +15,8 @@
 - Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The expanded normal canonical instrumentation suite discovers 27 tests and completes with 20 passes plus 7 deliberate assumption skips for separately gated persistent/system-handoff cases.
 - The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.
 - Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
-- SL-3 is technically ready for owner review, but is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
+- Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, and visit-action hierarchy. The development correction checkpoint implements these changes with focused host/device validation; exhaustive testing-AI verification and owner re-review remain pending.
+- SL-3 is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
 
 ## SL-3 implementation candidate
 

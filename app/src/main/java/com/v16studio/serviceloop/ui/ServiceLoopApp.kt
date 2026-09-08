@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,6 +50,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +70,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -85,6 +91,8 @@ import com.v16studio.serviceloop.domain.SaveStatus
 import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
 import com.v16studio.serviceloop.domain.VisitSummary
+import com.v16studio.serviceloop.domain.SiteRegisterSummary
+import com.v16studio.serviceloop.domain.CompletionBlockerKind
 import com.v16studio.serviceloop.domain.VisitFilter
 import com.v16studio.serviceloop.domain.VisitDateWindow
 import com.v16studio.serviceloop.domain.FollowUpFilter
@@ -155,7 +163,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers") { CustomersScreen(state.customerList, state.equipmentList, nav, equipmentMode) { equipmentMode = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers") { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav) }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -194,12 +202,14 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }
             DetailScaffold(state.inspection?.serviceName ?: "Inspection", nav) { padding ->
-                ScreenState(state.loading, state.error, padding) { state.inspection?.let { InspectionScreen(it, state.saveStatus, viewModel, nav) } }
+                ScreenState(state.loading, state.error, padding) { state.inspection?.let { InspectionScreen(it, state.saveStatus, state.inspectionFocus, viewModel, nav) } }
             }
         }
         composable("review/{visitId}") { entry ->
             val visitId = entry.arguments?.getString("visitId").orEmpty()
             LaunchedEffect(visitId) { viewModel.loadCompletion(visitId) }
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner, visitId) { val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.loadCompletion(visitId) }; lifecycleOwner.lifecycle.addObserver(observer); onDispose { lifecycleOwner.lifecycle.removeObserver(observer) } }
             LaunchedEffect(state.finalizedRecordId) { state.finalizedRecordId?.let { recordId -> viewModel.consumeFinalizedNavigation(); nav.navigate("record/$recordId") { popUpTo("review/{visitId}") { inclusive = true } } } }
             DetailScaffold("Review completion", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
         }
@@ -253,7 +263,7 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
             )
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
-        floatingActionButton = { if (selected == RootDestination.WORK) OutlinedButton(onClick = { nav.navigate("visit/new") }) { Text("New visit") } },
+        floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { Text("New visit") } },
         content = content,
     )
 }
@@ -278,9 +288,9 @@ private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestinati
 
 private fun NavHostController.navigateToRoot(destination: RootDestination) {
     navigate(destination.route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        popUpTo(graph.findStartDestination().id) { saveState = false }
         launchSingleTop = true
-        restoreState = true
+        restoreState = false
     }
 }
 
@@ -321,7 +331,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
         item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate("work/${WorkTab.DUE_SERVICES.name}/DUE_SOON") } }
         item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate("work/${WorkTab.FOLLOW_UPS.name}/DUE_OR_OVERDUE") } }
         item { SectionTitle("Records needing attention"); Text("No report or correction failures in this fixture.") }
-        item { OutlinedButton(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth()) { Text("New visit") } }
+        item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
     }
 }
 
@@ -361,20 +371,26 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
 }
 
 @Composable
-private fun CustomersScreen(customers: List<CustomerSummary>, equipment: List<EquipmentSummary>, nav: NavHostController, equipmentMode: Boolean, onEquipmentModeChanged: (Boolean) -> Unit) {
+private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
+    var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!equipmentMode) Button(onClick = {}) { Text("Customers") } else OutlinedButton(onClick = { onEquipmentModeChanged(false) }) { Text("Customers") }; if (equipmentMode) Button(onClick = {}) { Text("Equipment") } else OutlinedButton(onClick = { onEquipmentModeChanged(true) }) { Text("Equipment") } }; Text(if (equipmentMode) "Equipment register" else "Customer register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment").forEach { (value, label) -> if (tab == value) Button(onClick = {}, modifier = Modifier.testTag("customers-tab-$value")) { Text(label) } else OutlinedButton(onClick = { tab = value }, modifier = Modifier.testTag("customers-tab-$value")) { Text(label) } } }; Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
         item {
-            val addLabel = if (equipmentMode) "Add equipment" else "Add customer"
-            val addRoute = if (equipmentMode) "equipment/select-site" else "customer/new"
-            OutlinedButton(onClick = { nav.navigate(addRoute) }, modifier = Modifier.fillMaxWidth().testTag(if (equipmentMode) "add-equipment-from-register" else "add-customer")) { Text(addLabel) }
+            when (tab) { "CUSTOMERS" -> OutlinedButton(onClick = { nav.navigate("customer/new") }, modifier = Modifier.fillMaxWidth().testTag("add-customer")) { Text("Add customer") }; "EQUIPMENT" -> OutlinedButton(onClick = { nav.navigate("equipment/select-site") }, modifier = Modifier.fillMaxWidth().testTag("add-equipment-from-register")) { Text("Add equipment") }; else -> Unit }
         }
-        if (!equipmentMode) {
+        when (tab) {
+            "CUSTOMERS" -> {
             if (customers.isEmpty()) item { Text("Add a customer to begin.") }
             items(customers) { item -> SummaryRow("${item.name}\n${item.reference} · ${item.siteCount} site · ${item.equipmentCount} equipment", "Open") { nav.navigate("customer/${item.id}") } }
-        } else {
+            }
+            "SITES" -> {
+                if (sites.isEmpty()) item { Text("No sites yet.") }
+                items(sites) { item -> SummaryRow("${item.reference} · ${item.name}\n${item.customerName}\n${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment", "Open") { nav.navigate("site/${item.id}") } }
+            }
+            else -> {
             if (equipment.isEmpty()) item { Text("Add an equipment item to begin.") }
             items(equipment) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\n${item.customerName} · ${item.siteName}\nNext due ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
+            }
         }
     }
 }
@@ -405,7 +421,9 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
 }
 
 @Composable
-private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_REVIEW -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
     viewModel.state.collectAsState().value.pendingResponseTransition?.let { transition ->
         AlertDialog(
             onDismissRequest = viewModel::cancelResponseTransition,
@@ -415,7 +433,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, vie
             dismissButton = { TextButton(onClick = viewModel::cancelResponseTransition) { Text("Cancel") } },
         )
     }
-    LazyColumn(Modifier.testTag("inspection-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
@@ -495,7 +513,7 @@ private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>,
         item { Text("Outcome and fulfillment are separate decisions.", style = MaterialTheme.typography.titleMedium); Text("Only explicitly fulfilled recurring work advances its obligation.") }
         if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
         else item { AccentCard { Text("Report identity: ${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); OutlinedButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("refresh-report-identity")) { Text("Refresh report identity from current profile") } } }
-        items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel) }
+        items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav) }
         item { Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(16.dp)) { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, and findings will be included. Private notes stay excluded.") } } }
         state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
         item { Button(onClick = { viewModel.finalizeVisit(visitId) }, enabled = !state.finalizing && state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) { Text(if (state.finalizing) "Finalizing…" else "Finalize record") } }
@@ -503,7 +521,7 @@ private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>,
 }
 
 @Composable
-private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     AccentCard {
         Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.labelLarge)
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
@@ -542,7 +560,11 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             OutlinedTextField(overrideReason, { overrideReason = it }, label = { Text("Override reason") }, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, date, false, overrideReason, visitId) }, enabled = !saving && date.isNotBlank() && overrideReason.isNotBlank() && date != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Override next due" }) { Text("Save override") }
         }
-        line.blockers.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+        line.blockers.forEach { blocker ->
+            val actionable = blocker.kind in setOf(CompletionBlockerKind.WORK_PERFORMED, CompletionBlockerKind.CHECKLIST_REVIEW, CompletionBlockerKind.FINDING_DESCRIPTION)
+            if (actionable) TextButton(onClick = { viewModel.focusInspection(blocker.kind, blocker.questionId); nav.navigate("inspection/${line.workItemId}") }, modifier = Modifier.fillMaxWidth().testTag("completion-blocker-${line.workItemId}-${blocker.kind}-${blocker.questionId.orEmpty()}")) { Text(blocker.message, color = MaterialTheme.colorScheme.error) }
+            else Text(blocker.message, color = MaterialTheme.colorScheme.error)
+        }
         if (line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && !line.checklistReviewed) Text("Checklist incomplete — unrecorded items will remain explicit in the final record.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
