@@ -8,6 +8,12 @@
 - SL-4 is not owner accepted and not release-ready. Exhaustive testing-AI-model verification, owner review, Stage 5 hardening/reminders, and B-008 remain.
 - B-008 is explicitly a later Romanian-localized real-technician pilot against a pilot-ready build. It is no longer described as an immediate pre-Stage-4 blocker, and no current automated or owner review is represented as satisfying it.
 
+### Independent Phase-B verification checkpoint (2026-09-08)
+
+- The independent verification pass found and repaired a localized migration-test coverage gap: v5→v6 and its `PRAGMA foreign_key_check` assertion were missing. The isolated suite now covers v1→v6 through v5→v6 and passed 5/5.
+- Host unit verification passed 126 tests with zero failures. Debug, debug-Android-test, lint, and release builds passed. A non-destructive post-install rendered check reached the preserved canonical Home dataset without reset or mutation.
+- SL-4 remains unaccepted: this bounded verification checkpoint does not represent exhaustive recovery/provider/lifecycle adversarial execution, system-handoff evidence, whole-surface rendered review, owner review, or B-008 completion.
+
 ### SL-4 correction checkpoint (2026-09-08)
 
 - Recovery format 2 rejects the earlier unaccepted development format. A coherent Room snapshot defines its own file set; DB references, manifest entries, hashes/sizes, missing declarations, and normalized availability states are cross-validated before replacement.

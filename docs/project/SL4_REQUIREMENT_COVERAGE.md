@@ -22,6 +22,14 @@
 - Migration builders exercise every retained path through v6; device execution remains part of the development gate.
 - Debug unit/build/lint and canonical non-destructive smoke results are recorded in the SL-4 handoff, not inferred here.
 
+## Independent Phase-B verification (2026-09-08)
+
+- **TESTED:** Host `:app:testDebugUnitTest` completed with 126 tests and zero failures. It includes isolated P0 recovery crash, structural-inspection, erase rollback, backup integrity, correction/void, evidence-ownership, and CSV-idempotency coverage.
+- **UI-INSTRUMENTED:** `Migration1To2Test` passed 5/5 on the authorized `Pixel 10a ServiceLoop` AVD after explicit `install -r`. It executes v1→v6, v2→v6, v3→v6, v4→v6, and v5→v6; the v5 case asserts preserved recovery-era data and a clean `PRAGMA foreign_key_check`.
+- **UI-INSTRUMENTED:** A selected in-memory Compose run passed Due-services projection plus stale-obligation and missing-PDF report behavior before terminal runner output was unavailable; it is not counted as a complete suite result.
+- **HUMAN-RENDERED:** A non-destructive launch after `install -r` reached the preserved dataset Home screen, showing 25 unfinished visits, 2 booked visits, and 32 overdue services. No reset, clear, restore, or erase was performed.
+- **TESTED:** `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease` passed. P1/P2 provider/system-handoff, lifecycle-race, and broad rendered-surface campaigns are **NOT RUN**; this is not an acceptance claim.
+
 ## Known verification boundary
 
 This development milestone is IMPLEMENTED and FOCUSED-TESTED, but NOT YET EXHAUSTIVELY VERIFIED. It does not claim SL-4 technical acceptance, owner acceptance, release readiness, exhaustive large-data/accessibility/provider coverage, or B-008 completion. Independent testing must still challenge all recovery crash windows, canonical v4→v6 preservation, schedule/void concurrency, lifecycle races, and real system handoffs.

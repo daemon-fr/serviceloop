@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class Migration1To2Test {
     private val dbName = "sl3-migration-test.db"
 
-    @Test fun migrationOneToFivePreservesRowsThroughTheRegisteredChain() {
+    @Test fun migrationOneToSixPreservesRowsThroughTheRegisteredChain() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
@@ -46,7 +46,7 @@ class Migration1To2Test {
         } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationTwoToFiveBackfillsWorkingSnapshotsAndPreservesFinalReportAndObligation() {
+    @Test fun migrationTwoToSixBackfillsWorkingSnapshotsAndPreservesFinalReportAndObligation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/2.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -83,7 +83,7 @@ class Migration1To2Test {
         } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationThreeToFivePreservesDailyWorkAndBackfillsActiveClaim() {
+    @Test fun migrationThreeToSixPreservesDailyWorkAndBackfillsActiveClaim() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/3.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -104,7 +104,7 @@ class Migration1To2Test {
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("2026-12-05",dao.plan("p")!!.currentDueDate); assertEquals("v",dao.dueServices().single().claimedVisitId); assertEquals("ACTIVE",dao.customer("c")!!.state); assertEquals("PRIVATE_ACCESS",dao.site("s")!!.privateAccessNotes) } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationFourToFivePreservesDirectoryAndCreatesRecoveryFoundation() {
+    @Test fun migrationFourToSixPreservesDirectoryAndCreatesRecoveryFoundation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/4.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -117,5 +117,28 @@ class Migration1To2Test {
         }
         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6).build()
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("Version four customer",dao.customer("c4")!!.name); assertEquals(0,dao.correctionDrafts().size); assertEquals(32,dao.recoveryMetadata()!!.datasetId.length) } } finally { migrated.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun migrationFiveToSixPreservesRecoveryEraRowsAndForeignKeys() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        context.deleteDatabase(dbName)
+        val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/5.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i); val table = entity.getString("tableName")
+                old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                entity.optJSONArray("indices")?.let { indices -> for (j in 0 until indices.length()) old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}", table)) }
+            }
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers(id,reference,name,state) VALUES('c5','CU-5','Version five customer','ACTIVE')")
+            old.version = 5
+        }
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_5_6).build()
+        try {
+            kotlinx.coroutines.runBlocking { assertEquals("Version five customer", migrated.serviceLoopDao().customer("c5")!!.name) }
+            migrated.openHelper.writableDatabase.query("PRAGMA foreign_key_check").use { check -> assertEquals(false, check.moveToFirst()) }
+        } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 }
