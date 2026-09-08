@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertCountEquals
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -124,6 +125,17 @@ class Stage3DailyOperationsUiTest {
         val customer=repository.createCustomer(CustomerInput("Selector customer")); repository.createSite(customer,SiteInput("Selector site",""))
         compose.onNodeWithText("Customers").performClick(); compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("add-equipment-from-register").performClick()
         compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.onNodeWithText("Selector customer\nST-001 · Selector site").performClick(); compose.onNodeWithText("Equipment name · Required").assertIsDisplayed(); Unit
+    }
+
+    @Test fun customerRegistersAndCustomerScopedEquipmentRemainDisambiguated()=runBlocking {
+        val customerA=repository.createCustomer(CustomerInput("Customer A")); val a1=repository.createSite(customerA,SiteInput("A1","1 Alpha Street")); val a2=repository.createSite(customerA,SiteInput("A2","2 Alpha Street")); repository.createEquipment(a1,EquipmentInput("A machine one")); repository.createEquipment(a2,EquipmentInput("A machine two"))
+        val customerB=repository.createCustomer(CustomerInput("Customer B")); val b1=repository.createSite(customerB,SiteInput("B1","1 Beta Street")); repository.createEquipment(b1,EquipmentInput("B machine"))
+        val viewModel=ServiceLoopViewModel(repository){}; viewModel.refreshRootDataNonBlocking(); compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
+        compose.onNodeWithText("Customers").performClick(); compose.waitUntil(5_000){compose.onAllNodesWithText("Customer A",substring=true).fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithTag("customers-tab-CUSTOMERS").assertIsDisplayed(); compose.onNodeWithText("Customer A",substring=true).assertIsDisplayed(); compose.onNodeWithText("Customer B",substring=true).assertIsDisplayed()
+        compose.onNodeWithText("Sites").performClick(); compose.onNodeWithTag("customers-tab-SITES").assertIsDisplayed(); compose.onNodeWithText("1 Alpha Street",substring=true).assertIsDisplayed(); compose.onNodeWithText("Customer B",substring=true).assertIsDisplayed()
+        compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("customers-tab-EQUIPMENT").assertIsDisplayed(); compose.onNodeWithText("A machine one",substring=true).assertIsDisplayed(); compose.onAllNodesWithText("Customer A",substring=true).assertCountEquals(2); compose.onNodeWithText("B machine",substring=true).assertIsDisplayed(); compose.onNodeWithTag("add-equipment-from-register").performClick(); compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithTag("customers-tab-CUSTOMERS").performClick(); compose.onNodeWithText("Customer A",substring=true).performClick(); compose.onNodeWithTag("customer-tab-SITES").assertIsDisplayed(); compose.onNodeWithText("A1",substring=true).assertIsDisplayed(); compose.onNodeWithText("A2",substring=true).assertIsDisplayed(); compose.onNodeWithText("B1",substring=true).assertDoesNotExist()
+        compose.onNodeWithTag("customer-tab-EQUIPMENT").performClick(); compose.onNodeWithText("A machine one",substring=true).assertIsDisplayed(); compose.onNodeWithText("A machine two",substring=true).assertIsDisplayed(); compose.onNodeWithText("B machine",substring=true).assertDoesNotExist(); compose.onNodeWithText("A1",substring=true).assertIsDisplayed(); compose.onNodeWithText("A2",substring=true).assertIsDisplayed(); Unit
     }
 
     @Test fun dialerHandoffHasNoBusinessEffect()=contactHandoff("Call")
