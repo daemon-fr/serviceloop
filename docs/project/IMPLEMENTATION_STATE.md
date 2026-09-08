@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-08 — SL-3 Due-services observable-state correction implemented and verified; owner re-review remains
+**Updated:** 2026-09-08 — SL-3 OWNER ACCEPTED at `ad078faae3c73faa2a9bb02dd1251b1033237399`; ready to bank as the Stage-3 baseline
 
 ## Current state
 
@@ -8,21 +8,21 @@
 - SL-2 is OWNER ACCEPTED for continued development. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; later documentation-only commits record acceptance and deferred UX direction without changing product behavior.
 - SL-2 final safety/save closure before owner review: `b56dd2edbcfd31f910e510ddce5df5d3c347778b`.
 - SL-2 owner-review usability correction: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
-- B-008 real-technician pilot remains outstanding. This does not block Stage-3 development, but Stage 2 is not product-valid for release preparation until that pilot occurs.
-- SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
-- The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Testing confirmed the saved-reschedule acknowledgement needed its own layout row and corrected a persistent-journey readiness wait; exhaustive correction-specific runtime/regression verification remains pending. This checkpoint is not technical or owner acceptance.
+- B-008 real-technician pilot remains outstanding. This does not block continued development, but the product is not product-valid for release preparation until that pilot occurs.
+- SL-3 is OWNER ACCEPTED at `ad078faae3c73faa2a9bb02dd1251b1033237399` after technical verification and final owner re-review.
+- The independent-review corrections are implemented and accepted: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected.
 - Backward compatibility for pre-correction v4 Booked rows is closed: Start safely validates and reuses an already-captured deterministic snapshot when its immutable template revision is still current, or selects a newly captured current revision without rewriting the old snapshot.
 - Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The expanded normal canonical instrumentation suite discovers 27 tests and completes with 20 passes plus 7 deliberate assumption skips for separately gated persistent/system-handoff cases.
 - The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.
 - Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
-- Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, and visit-action hierarchy. The development correction checkpoint implements these changes with focused host/device validation; exhaustive testing-AI verification and owner re-review remain pending.
-- SL-3 is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
+- Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, visit-action hierarchy, and Due-services state ownership. Those corrections were implemented, technically verified, and finally re-reviewed and accepted by the owner.
+- SL-3 is accepted for continued development, but the product is not product-valid or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
 - The earlier Work-route consolidation fixed route identity but did not fix Due-services ownership. Commit `32dee7c` then added cancellable generation-based refreshes, but owner evidence proved that correction insufficient: retained cards could render before the Work-entry effect set loading, and a cancelled current owner had no terminal write, allowing the blocking `Refreshing due services` state to remain.
 - Due services are now one Room-observed projection owned by the ViewModel, not by Work navigation or mutation callbacks. The first successful emission atomically establishes availability and rows; later database invalidations replace that snapshot, claimed unconsumed obligations remain present, and collection failure preserves the last good rows with an explicit error. Work re-entry and New Visit consume the same coherent projection without initiating reads or clearing availability.
-- On the preserved canonical dataset, Room, DAO, repository, ViewModel, and rendered UI agreed on 40 rows. P-002/P-003/P-004 were ACTIVE through customer/site/equipment/plan, referenced current unconsumed obligations `obl-002`/`obl-003`/`obl-004`, and had no VisitClaim. Focused canonical instrumentation repeatedly switched Home/Work/Customers, Work subtabs, contextual Home → Work, and New Visit → Back without a card glimpse, blocking refresh, empty transition, or wedge. Owner re-review remains pending.
+- On the preserved canonical dataset, Room, DAO, repository, ViewModel, and rendered UI agreed on 40 rows. P-002/P-003/P-004 were ACTIVE through customer/site/equipment/plan, referenced current unconsumed obligations `obl-002`/`obl-003`/`obl-004`, and had no VisitClaim. Focused canonical instrumentation repeatedly switched Home/Work/Customers, Work subtabs, contextual Home → Work, and New Visit → Back without a card glimpse, blocking refresh, empty transition, or wedge. The owner then manually re-tested the problematic flow and accepted the final behavior.
 - Final gates after the production change passed 104 host tests, debug APK assembly, debug Android-test assembly, and lint with 0 errors (12 warnings, 2 hints). Focused in-memory Room/UI and preserved-dataset Due-services tests passed. The established persistent SL-3 journey exposed one ambiguous `Working` text wait after the visit claim was already durable; replacing it with the stable visit-line tag corrected the harness, and the journey then passed in 38.911 seconds. A final rendered screen showed P-004/P-002/P-003 populated under All with no loading or false-empty state.
 
-## SL-3 implementation candidate
+## Accepted SL-3 implementation
 
 - Room schema version 4 with registered additive `MIGRATION_3_4`, retained v1→2 and v2→3 migrations, and exported `4.json`.
 - Editable Customer → Site → Equipment → Service Plan directory with stable references, explicit saves, private field labelling, one default site, and plan creation that transactionally creates exactly one current obligation.
@@ -72,7 +72,7 @@ The later owner-review usability correction was independently source-reviewed an
 
 ## Stage-3 boundary
 
-Stage 3 must complete the remaining ordinary daily-operation workflows while preserving the accepted SL-2 integrity model. According to the delegated development plan, this includes:
+Stage 3 completes the remaining ordinary daily-operation workflows while preserving the accepted SL-2 integrity model. According to the delegated development plan, this includes:
 
 - customer/site/equipment/service-plan ordinary creation and editing;
 - booking/contact arrangements and visit setup/start flows;
@@ -88,13 +88,12 @@ Stage 5 remains whole-product hardening/reminders/accessibility/larger datasets/
 
 ## Deferred accepted UX direction
 
-B-010 records a later reusable multiline editing pattern:
+B-010 records a reusable multiline editing pattern:
 
 - compact inline text entry by default;
+- the expand affordance is icon-only with a modest visible glyph inside a larger accessible touch target;
 - Expand opens the same text in a dedicated full-page/modal editing surface;
-- longer multiline inputs should converge on a reusable component with a visible resize/expand affordance where appropriate.
-
-This is not a Stage-2 blocker and should be incorporated when Stage-3 touches reusable long-text editing without forcing unrelated redesign.
+- longer multiline inputs should converge on a reusable component with the same visible expand affordance where appropriate.
 
 ## Toolchain / environment baseline
 
