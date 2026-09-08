@@ -19,7 +19,8 @@ Matching HTML editions are reading formats and are intentionally not retained in
 
 - **SL-1:** owner accepted.
 - **SL-2:** owner accepted on 2026-09-06. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; subsequent documentation-only commits bank that acceptance and deferred UX direction without changing product behavior.
-- **B-008 pilot:** still outstanding. SL-2 acceptance authorizes continued development, but it is not yet product-valid evidence for release preparation until a reachable real technician/trade evaluates the first complete service loop/report.
-- **Next milestone:** Stage 3 / SL-3 — Complete daily operations.
+- **SL-3:** owner accepted on 2026-09-08. The accepted production implementation/review state is `ad078faae3c73faa2a9bb02dd1251b1033237399`; subsequent acceptance-documentation commits do not change product behavior.
+- **B-008 pilot:** still outstanding. SL-3 acceptance authorizes continued development, but the product is not yet product-valid evidence for release preparation until a reachable real technician/trade evaluates the first complete service loop/report.
+- **Next milestone:** Stage 4 / SL-4 — Complete history and recovery.
 
 Read `IMPLEMENTATION_STATE.md` for the current implementation summary and stage boundary, and the milestone coverage files for detailed evidence.
