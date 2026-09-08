@@ -60,6 +60,7 @@ data class EquipmentDetail(
     val make: String = "",
     val model: String = "",
     val privateNote: String = "",
+    val state: String = "ACTIVE",
 )
 
 enum class ResponseDisposition {
@@ -203,6 +204,8 @@ data class FinalRecordDetail(
     val public: PublicReportModel,
     val privateNotes: List<String>,
     val report: ReportRendition?,
+    val voided: Boolean = false,
+    val publicVoidReason: String? = null,
 )
 
 data class ReportRendition(

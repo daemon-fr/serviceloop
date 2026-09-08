@@ -4,7 +4,7 @@ data class CustomerDetail(
     val id: String, val reference: String, val name: String, val contactName: String,
     val phone: String, val email: String, val privateNote: String,
     val sites: List<SiteSummary>, val equipment: List<EquipmentSummary>, val openFollowUps: List<FollowUpDetail>,
-    val recentContacts: List<ContactNoteDetail>,
+    val recentContacts: List<ContactNoteDetail>, val state: String = "ACTIVE",
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)
@@ -22,7 +22,7 @@ data class SiteDetail(
     val id: String, val customerId: String, val customerName: String, val reference: String,
     val name: String, val address: String, val contactName: String, val phone: String,
     val email: String, val privateAccessNote: String, val isDefault: Boolean,
-    val equipment: List<EquipmentSummary>,
+    val equipment: List<EquipmentSummary>, val state: String = "ACTIVE",
 )
 
 data class CustomerInput(val name: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateNote: String = "")

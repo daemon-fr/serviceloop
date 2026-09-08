@@ -25,8 +25,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VisitClaimEntity::class, FinalPartEntryEntity::class, FinalPhotoEntryEntity::class,
         PlanScheduleChangeEntity::class,
         VisitScheduleEventEntity::class,
+        CorrectionDraftEntity::class, CorrectionWorkItemEntity::class,
+        ChangeEntryEntity::class, EquipmentMoveEntity::class, RecoveryMetadataEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -37,7 +39,13 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addCallback(object : Callback() {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    configureStage4Tracking(db)
+                }
+            })
+            .build().also { database -> RecoveryPackage.recoverInterrupted(database, context.applicationContext.filesDir) }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -146,6 +154,53 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_plan_schedule_changes_planId ON plan_schedule_changes(planId)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS visit_schedule_events (id TEXT NOT NULL PRIMARY KEY, visitId TEXT NOT NULL, eventType TEXT NOT NULL, oldServiceDate TEXT NOT NULL, newServiceDate TEXT, oldScheduledAtEpochMillis INTEGER, newScheduledAtEpochMillis INTEGER, reason TEXT NOT NULL, occurredAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(visitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_visit_schedule_events_visitId ON visit_schedule_events(visitId)")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE final_records ADD COLUMN voided INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE final_records ADD COLUMN voidedAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE final_records ADD COLUMN publicVoidReason TEXT")
+                db.execSQL("ALTER TABLE final_records ADD COLUMN privateVoidReason TEXT")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN supersedesRevisionId TEXT")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN correctionReason TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS correction_drafts (id TEXT NOT NULL PRIMARY KEY, recordId TEXT NOT NULL, baseRevisionId TEXT NOT NULL, reason TEXT NOT NULL, actualServiceDate TEXT NOT NULL, customerName TEXT NOT NULL, siteName TEXT NOT NULL, siteAddress TEXT, businessName TEXT NOT NULL, technicianName TEXT NOT NULL, publicNote TEXT, privateNote TEXT, scheduleAcknowledged INTEGER NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL, commitToken TEXT NOT NULL, FOREIGN KEY(recordId) REFERENCES final_records(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(baseRevisionId) REFERENCES final_record_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_correction_drafts_recordId ON correction_drafts(recordId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_correction_drafts_baseRevisionId ON correction_drafts(baseRevisionId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS correction_work_items (id TEXT NOT NULL PRIMARY KEY, draftId TEXT NOT NULL, sourceFinalWorkItemId TEXT NOT NULL, position INTEGER NOT NULL, outcome TEXT NOT NULL, publicWorkNote TEXT, notPerformedReason TEXT, fulfilledObligation INTEGER NOT NULL, proposedNextDueDate TEXT, FOREIGN KEY(draftId) REFERENCES correction_drafts(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_correction_work_items_draftId ON correction_work_items(draftId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_correction_work_items_draftId_position ON correction_work_items(draftId, position)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS change_entries (id TEXT NOT NULL PRIMARY KEY, subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, changeType TEXT NOT NULL, eventDate TEXT NOT NULL, recordedAtEpochMillis INTEGER NOT NULL, reason TEXT NOT NULL, oldValue TEXT, newValue TEXT, customerId TEXT, siteId TEXT, equipmentId TEXT, recordId TEXT, customerNameSnapshot TEXT, siteNameSnapshot TEXT, equipmentNameSnapshot TEXT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_change_entries_subjectType_subjectId ON change_entries(subjectType, subjectId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_change_entries_customerId ON change_entries(customerId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_change_entries_siteId ON change_entries(siteId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_change_entries_equipmentId ON change_entries(equipmentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_change_entries_recordId ON change_entries(recordId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS equipment_moves (id TEXT NOT NULL PRIMARY KEY, equipmentId TEXT NOT NULL, oldSiteId TEXT NOT NULL, newSiteId TEXT NOT NULL, effectiveDate TEXT NOT NULL, reason TEXT NOT NULL, recordedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_equipment_moves_equipmentId ON equipment_moves(equipmentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_equipment_moves_oldSiteId ON equipment_moves(oldSiteId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_equipment_moves_newSiteId ON equipment_moves(newSiteId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS recovery_metadata (id TEXT NOT NULL PRIMARY KEY, datasetId TEXT NOT NULL, firstBusinessWriteAtEpochMillis INTEGER, lastBusinessWriteAtEpochMillis INTEGER, lastBackupAttemptAtEpochMillis INTEGER, lastVerifiedFullBackupAtEpochMillis INTEGER, lastVerifiedSnapshotAtEpochMillis INTEGER, lastVerifiedDestination TEXT, lastVerifiedSize INTEGER, backupReminderDays INTEGER NOT NULL, restoredFromIncompleteCopy INTEGER NOT NULL, restrictedRecoveryState INTEGER NOT NULL)")
+                db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
+                configureStage4Tracking(db)
+            }
+        }
+
+        private fun configureStage4Tracking(db: SupportSQLiteDatabase) {
+            db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
+            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "working_visits", "work_items", "working_responses", "work_item_public_drafts", "work_item_private_drafts", "attachments", "part_entries", "follow_ups", "follow_up_events", "contact_notes", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "final_part_entries", "final_photo_entries", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves")
+            tracked.forEach { table ->
+                listOf("INSERT", "UPDATE", "DELETE").forEach { operation ->
+                    val trigger = "track_${table}_${operation.lowercase()}"
+                    db.execSQL(
+                        "CREATE TRIGGER IF NOT EXISTS `$trigger` AFTER $operation ON `$table` " +
+                            "BEGIN UPDATE recovery_metadata SET " +
+                            "firstBusinessWriteAtEpochMillis=COALESCE(firstBusinessWriteAtEpochMillis, CAST(strftime('%s','now') AS INTEGER)*1000), " +
+                            "lastBusinessWriteAtEpochMillis=CAST(strftime('%s','now') AS INTEGER)*1000 " +
+                            "WHERE id='primary'; END",
+                    )
+                }
             }
         }
     }

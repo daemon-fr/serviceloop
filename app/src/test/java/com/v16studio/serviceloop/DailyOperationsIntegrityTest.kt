@@ -222,7 +222,46 @@ class DailyOperationsIntegrityTest {
 
     @Test fun equipmentSearchIncludesMakeAndModel() = runTest { val ids=foundation(); repo.updateEquipment(ids.equipment,EquipmentInput("Compressor","C-01","Kaeser","Sigma 7","S1")); assertEquals(ids.equipment,repo.search("Kaeser").single().id); assertEquals(ids.equipment,repo.search("Sigma 7").single().id) }
 
+    @Test fun correctionAppendsImmutableRevisionAndTextOnlyChangeDoesNotAdvanceSchedule() = runTest {
+        val ids = foundation(); val recordId = finalizedRecord(ids); val beforePlan = db.serviceLoopDao().plan(ids.plan)!!
+        val original = repo.finalRecord(recordId)!!; val draft = repo.openCorrection(recordId)
+        repo.saveCorrection(draft.copy(reason = "Correct captured customer spelling", customerName = "Acme Service Customer SRL"))
+        val correctedRevision = repo.commitCorrection(recordId); val current = repo.finalRecord(recordId)!!; val versions = repo.recordVersions(recordId).first
+        assertEquals(2, versions.size); assertEquals(correctedRevision, current.public.revisionId); assertEquals("Acme Service Customer SRL", current.public.customerName)
+        assertEquals(original.public.customerName, db.serviceLoopDao().finalRevision(original.public.revisionId)!!.customerName)
+        assertEquals(original.public.revisionId, db.serviceLoopDao().finalRevision(correctedRevision)!!.supersedesRevisionId)
+        assertEquals(beforePlan.currentDueDate, db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
+        assertTrue(repo.history(HistoryQuery(search = "spelling")).any { it.eventKind == "CORRECTION" })
+    }
+
+    @Test fun correctionDraftIsDurableAndVoidingPreservesIssuedVersions() = runTest {
+        val ids = foundation(); val recordId = finalizedRecord(ids); val draft = repo.openCorrection(recordId)
+        repo.saveCorrection(draft.copy(reason = "Saved for later")); assertEquals(AttentionKind.CORRECTION_DRAFT, repo.attention().single().kind)
+        assertEquals(draft.id, repo.openCorrection(recordId).id); assertTrue(repo.discardCorrection(recordId))
+        assertTrue(repo.voidRecord(recordId, "Issued for the wrong service visit", "Operator verification")); assertFalse(repo.voidRecord(recordId, "duplicate", null))
+        val record = repo.finalRecord(recordId)!!; assertTrue(record.voided); assertEquals("Issued for the wrong service visit", record.publicVoidReason)
+        assertEquals(1, repo.recordVersions(recordId).first.size); assertTrue(repo.history(HistoryQuery(type = HistoryType.CHANGES)).any { it.eventKind == "VOID" })
+    }
+
+    @Test fun encryptedBackupRejectsWrongPassphraseAndRestoresAfterExplicitErase() = runTest {
+        foundation(); val password = "correct horse battery".toCharArray(); val backup = repo.createBackup(password)
+        assertTrue(backup.complete); assertFalse(backup.bytes.toString(Charsets.ISO_8859_1).contains("Acme Service Customer"))
+        assertTrue(runCatching { repo.inspectBackup(backup.bytes, "wrong password value".toCharArray()) }.isFailure)
+        val damaged = backup.bytes.clone().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+        assertTrue(runCatching { repo.inspectBackup(damaged, password) }.isFailure)
+        val inspection = repo.inspectBackup(backup.bytes, password); repo.erase(true, "ERASE"); assertEquals(0, repo.datasetSummary().customers)
+        repo.restoreBackup(inspection, "REPLACE", false); assertEquals(1, repo.datasetSummary().customers)
+    }
+
+    @Test fun directoryCsvEscapesSpreadsheetFormulasAndImportIsIdempotent() = runTest {
+        repo.createCustomer(CustomerInput("=2+2", "Dana")); val csv = repo.directoryCsv(includeInactive = true, includePrivate = false).toString(Charsets.UTF_8)
+        assertTrue(csv.contains("\"'=2+2\"")); val preview = repo.validateDirectoryCsv(csv.toByteArray())
+        assertEquals(preview.rows.toString(), 0, preview.errors); val result = repo.importDirectory(preview); assertTrue(result.existingUnchanged >= 1)
+        assertEquals(1, repo.datasetSummary().customers)
+    }
+
     private data class Ids(val customer: String, val site: String, val equipment: String, val plan: String)
+    private suspend fun finalizedRecord(ids: Ids): String { repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex", zoneId = "Europe/Bucharest")); val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!; repo.savePublicWork(work,"Annual service completed"); repo.saveCompletionDraft(work,"PERFORMED",true,null,"2027-09-05",true,null); return (repo.finalizeVisit(visit) as FinalizeResult.Success).recordId }
     private suspend fun attachPreCorrectionBookedSnapshot(visit:String,plan:String,template:String):String { val dao=db.serviceLoopDao(); val master=dao.reusableTemplate(template)!!; val revision=dao.reusableTemplateRevision(master.currentRevisionId)!!; val snapshot=stableTestId("template-snapshot",visit,plan,revision.id); dao.insertTemplateSnapshots(listOf(com.v16studio.serviceloop.data.TemplateSnapshotEntity(snapshot,master.id,revision.nameSnapshot,revision.revisionNumber,1))); dao.insertChecklistItems(dao.reusableTemplateItems(revision.id).map{item->com.v16studio.serviceloop.data.ChecklistItemSnapshotEntity(stableTestId("snapshot-item",snapshot,item.id),snapshot,item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance)}); val work=dao.firstWorkItemId(visit)!!; db.openHelper.writableDatabase.execSQL("UPDATE work_items SET templateSnapshotId=? WHERE id=?",arrayOf(snapshot,work)); return snapshot }
     private fun stableTestId(vararg parts:String)=UUID.nameUUIDFromBytes(parts.joinToString(":").toByteArray()).toString()
     private suspend fun foundation(): Ids { val customer=repo.createCustomer(CustomerInput("Acme Service Customer", "Dana")); val site=repo.createSite(customer, SiteInput("Main site", "1 Test Street")); val equipment=repo.createEquipment(site, EquipmentInput("Compressor", "C-01")); val plan=repo.createPlan(equipment, PlanInput("Annual service",1,"YEARS","2026-09-01")); return Ids(customer,site,equipment,plan) }

@@ -209,6 +209,10 @@ data class FinalRecordEntity(
     val visitId: String,
     val currentRevisionId: String,
     val createdAtEpochMillis: Long,
+    @ColumnInfo(defaultValue = "0") val voided: Boolean = false,
+    val voidedAtEpochMillis: Long? = null,
+    val publicVoidReason: String? = null,
+    val privateVoidReason: String? = null,
 )
 
 @Entity(
@@ -235,6 +239,8 @@ data class FinalRecordRevisionEntity(
     val privateInternalNote: String?,
     val customerReference: String? = null,
     val siteReference: String? = null,
+    val supersedesRevisionId: String? = null,
+    val correctionReason: String? = null,
 )
 
 @Entity(
@@ -538,4 +544,97 @@ data class VisitScheduleEventEntity(
     val newScheduledAtEpochMillis: Long?,
     val reason: String,
     val occurredAtEpochMillis: Long,
+)
+
+/** A durable, single-authority proposal. The referenced final revision is never mutated. */
+@Entity(
+    tableName = "correction_drafts",
+    foreignKeys = [
+        ForeignKey(FinalRecordEntity::class, ["id"], ["recordId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(FinalRecordRevisionEntity::class, ["id"], ["baseRevisionId"], onDelete = ForeignKey.RESTRICT),
+    ],
+    indices = [Index(value = ["recordId"], unique = true), Index("baseRevisionId")],
+)
+data class CorrectionDraftEntity(
+    @PrimaryKey val id: String,
+    val recordId: String,
+    val baseRevisionId: String,
+    val reason: String,
+    val actualServiceDate: String,
+    val customerName: String,
+    val siteName: String,
+    val siteAddress: String?,
+    val businessName: String,
+    val technicianName: String,
+    val publicNote: String?,
+    val privateNote: String?,
+    val scheduleAcknowledged: Boolean,
+    val createdAtEpochMillis: Long,
+    val modifiedAtEpochMillis: Long,
+    val commitToken: String,
+)
+
+@Entity(
+    tableName = "correction_work_items",
+    foreignKeys = [ForeignKey(CorrectionDraftEntity::class, ["id"], ["draftId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("draftId"), Index(value = ["draftId", "position"], unique = true)],
+)
+data class CorrectionWorkItemEntity(
+    @PrimaryKey val id: String,
+    val draftId: String,
+    val sourceFinalWorkItemId: String,
+    val position: Int,
+    val outcome: String,
+    val publicWorkNote: String?,
+    val notPerformedReason: String?,
+    val fulfilledObligation: Boolean,
+    val proposedNextDueDate: String?,
+)
+
+/** Append-only, human-readable provenance for lifecycle, move, correction and void actions. */
+@Entity(tableName = "change_entries", indices = [Index(value = ["subjectType", "subjectId"]), Index("customerId"), Index("siteId"), Index("equipmentId"), Index("recordId")])
+data class ChangeEntryEntity(
+    @PrimaryKey val id: String,
+    val subjectType: String,
+    val subjectId: String,
+    val changeType: String,
+    val eventDate: String,
+    val recordedAtEpochMillis: Long,
+    val reason: String,
+    val oldValue: String?,
+    val newValue: String?,
+    val customerId: String?,
+    val siteId: String?,
+    val equipmentId: String?,
+    val recordId: String?,
+    val customerNameSnapshot: String?,
+    val siteNameSnapshot: String?,
+    val equipmentNameSnapshot: String?,
+)
+
+@Entity(tableName = "equipment_moves", foreignKeys = [ForeignKey(EquipmentEntity::class, ["id"], ["equipmentId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("equipmentId"), Index("oldSiteId"), Index("newSiteId")])
+data class EquipmentMoveEntity(
+    @PrimaryKey val id: String,
+    val equipmentId: String,
+    val oldSiteId: String,
+    val newSiteId: String,
+    val effectiveDate: String,
+    val reason: String,
+    val recordedAtEpochMillis: Long,
+)
+
+@Entity(tableName = "recovery_metadata")
+data class RecoveryMetadataEntity(
+    @PrimaryKey val id: String = "primary",
+    val datasetId: String,
+    val firstBusinessWriteAtEpochMillis: Long?,
+    val lastBusinessWriteAtEpochMillis: Long?,
+    val lastBackupAttemptAtEpochMillis: Long?,
+    val lastVerifiedFullBackupAtEpochMillis: Long?,
+    val lastVerifiedSnapshotAtEpochMillis: Long?,
+    val lastVerifiedDestination: String?,
+    val lastVerifiedSize: Long?,
+    val backupReminderDays: Int = 7,
+    val restoredFromIncompleteCopy: Boolean = false,
+    val restrictedRecoveryState: Boolean = false,
 )

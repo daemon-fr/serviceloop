@@ -76,6 +76,29 @@ interface ServiceLoopRepository {
     suspend fun updateFollowUp(id: String, title: String, dueDate: String, privateNote: String, reason: String): Long = error("Follow-up unavailable")
     suspend fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String): String = error("Corrective follow-up unavailable")
     suspend fun changeFollowUpState(id: String, state: String, reason: String, newDueDate: String? = null): Long = error("Follow-up unavailable")
+    suspend fun history(query: HistoryQuery): List<HistoryEntry> = emptyList()
+    suspend fun attention(): List<AttentionItem> = emptyList()
+    suspend fun recordVersions(recordId: String): Pair<List<RecordVersionSummary>, List<ReportVersionSummary>> = emptyList<RecordVersionSummary>() to emptyList()
+    suspend fun openCorrection(recordId: String): CorrectionDraft = error("Correction unavailable")
+    suspend fun saveCorrection(value: CorrectionDraft): Long = error("Correction unavailable")
+    suspend fun commitCorrection(recordId: String): String = error("Correction unavailable")
+    suspend fun discardCorrection(recordId: String): Boolean = false
+    suspend fun voidRecord(recordId: String, publicReason: String, privateReason: String?): Boolean = error("Void unavailable")
+    suspend fun lifecycleReview(subjectType: String, id: String, action: String): LifecycleReview = error("Lifecycle unavailable")
+    suspend fun applyLifecycle(subjectType: String, id: String, action: String, reason: String): Boolean = error("Lifecycle unavailable")
+    suspend fun moveReview(equipmentId: String): MoveReview = error("Move unavailable")
+    suspend fun moveEquipment(equipmentId: String, destinationSiteId: String, effectiveDate: String, reason: String, acknowledged: Boolean): Boolean = error("Move unavailable")
+    suspend fun datasetSummary(): DatasetSummary = error("Recovery unavailable")
+    suspend fun setBackupReminder(days: Int) = Unit
+    suspend fun createBackup(passphrase: CharArray, incompleteAcknowledged: Boolean = false): BackupResult = error("Backup unavailable")
+    fun inspectBackup(bytes: ByteArray, passphrase: CharArray): BackupInspection = error("Backup unavailable")
+    suspend fun recordVerifiedBackup(result: BackupResult, destination: String) = Unit
+    suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean): Unit = error("Restore unavailable")
+    suspend fun directoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String? = null): ByteArray = error("Export unavailable")
+    suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean): ByteArray = error("Export unavailable")
+    suspend fun validateDirectoryCsv(bytes: ByteArray): CsvImportPreview = error("Import unavailable")
+    suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String> = emptySet(), skippedBranches: Set<String> = emptySet()): ImportResult = error("Import unavailable")
+    suspend fun erase(acknowledged: Boolean, confirmation: String): Unit = error("Erase unavailable")
 }
 
 fun interface DraftWriteGate { suspend fun beforeWrite() }
@@ -89,6 +112,31 @@ class RoomServiceLoopRepository(
     private val attachmentRoot: File? = null,
 ) : ServiceLoopRepository {
     private val dao = database.serviceLoopDao()
+    private val stage4 by lazy { Stage4Service(database, businessTime, requireNotNull(attachmentRoot) { "App-owned storage is unavailable" }) }
+
+    override suspend fun history(query: HistoryQuery) = stage4.history(query)
+    override suspend fun attention() = stage4.attention()
+    override suspend fun recordVersions(recordId: String) = stage4.versions(recordId)
+    override suspend fun openCorrection(recordId: String) = stage4.openCorrection(recordId)
+    override suspend fun saveCorrection(value: CorrectionDraft) = stage4.saveCorrection(value)
+    override suspend fun commitCorrection(recordId: String) = stage4.commitCorrection(recordId)
+    override suspend fun discardCorrection(recordId: String) = stage4.discardCorrection(recordId)
+    override suspend fun voidRecord(recordId: String, publicReason: String, privateReason: String?) = stage4.voidRecord(recordId, publicReason, privateReason)
+    override suspend fun lifecycleReview(subjectType: String, id: String, action: String) = stage4.lifecycleReview(subjectType, id, action)
+    override suspend fun applyLifecycle(subjectType: String, id: String, action: String, reason: String) = stage4.applyLifecycle(subjectType, id, action, reason)
+    override suspend fun moveReview(equipmentId: String) = stage4.moveReview(equipmentId)
+    override suspend fun moveEquipment(equipmentId: String, destinationSiteId: String, effectiveDate: String, reason: String, acknowledged: Boolean) = stage4.moveEquipment(equipmentId, destinationSiteId, effectiveDate, reason, acknowledged)
+    override suspend fun datasetSummary() = stage4.datasetSummary()
+    override suspend fun setBackupReminder(days: Int) = stage4.setBackupReminder(days)
+    override suspend fun createBackup(passphrase: CharArray, incompleteAcknowledged: Boolean) = stage4.createBackup(passphrase, incompleteAcknowledged)
+    override fun inspectBackup(bytes: ByteArray, passphrase: CharArray) = stage4.inspectBackup(bytes, passphrase)
+    override suspend fun recordVerifiedBackup(result: BackupResult, destination: String) = stage4.recordVerifiedBackup(result, destination)
+    override suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean) = stage4.restoreBackup(inspection, confirmation, incompleteAcknowledged)
+    override suspend fun directoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String?) = stage4.directoryCsv(includeInactive, includePrivate, customerId)
+    override suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean) = stage4.recordsCsvPackage(includeInactive, includePrivate, includePreviousRevisions)
+    override suspend fun validateDirectoryCsv(bytes: ByteArray) = stage4.validateDirectoryCsv(bytes)
+    override suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String>, skippedBranches: Set<String>) = stage4.importDirectory(preview, createSeparate, skippedBranches)
+    override suspend fun erase(acknowledged: Boolean, confirmation: String) = stage4.erase(acknowledged, confirmation)
 
     override suspend fun home(): HomeSummary {
         val today = businessTime.today(); val visit = dao.latestWorkingVisit(); val booked = dao.nextBookedVisit(); val followUp = dao.firstDueFollowUp(today.toString())
@@ -107,7 +155,7 @@ class RoomServiceLoopRepository(
         val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }) } }
         val followUps = dao.followUpsForCustomer(id).filter { it.state == "OPEN" }.map { followUpDetail(it) }
         val contacts = dao.contactNotesForCustomer(id).take(5).map { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
-        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts)
+        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts, customer.state)
     }
 
     override suspend fun site(id: String): SiteDetail? {
@@ -116,7 +164,7 @@ class RoomServiceLoopRepository(
         val equipment = dao.equipmentForSite(id).map { item ->
             EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate })
         }
-        return SiteDetail(site.id, customer.id, customer.name, site.reference, site.name, site.address.orEmpty(), site.contactName.orEmpty(), site.phone.orEmpty(), site.email.orEmpty(), site.privateAccessNotes.orEmpty(), site.isDefault, equipment)
+        return SiteDetail(site.id, customer.id, customer.name, site.reference, site.name, site.address.orEmpty(), site.contactName.orEmpty(), site.phone.orEmpty(), site.email.orEmpty(), site.privateAccessNotes.orEmpty(), site.isDefault, equipment, site.state)
     }
 
     override suspend fun dueServices(): List<DueService> {
@@ -372,7 +420,7 @@ class RoomServiceLoopRepository(
     override suspend fun equipment(id: String): EquipmentDetail? {
         val equipment=dao.equipment(id)?:return null; val site=dao.site(equipment.siteId)?:return null; val customer=dao.customer(site.customerId)?:return null
         return EquipmentDetail(equipment.id,equipment.name,equipment.reference,equipment.technicianIdentifier,listOfNotNull(equipment.make,equipment.model).joinToString(" "),equipment.serialNumber,site.name,customer.name,
-            dao.plansForEquipment(id).map { EquipmentPlan(it.id,it.name,it.reference,"Every ${it.intervalCount} ${it.intervalUnit.lowercase()}",it.currentDueDate,it.state,it.currentObligationId,LocalDate.parse(it.currentDueDate).isBefore(businessTime.today())) },dao.workingItemId(id),equipment.make.orEmpty(),equipment.model.orEmpty(),equipment.privateNotes.orEmpty())
+            dao.plansForEquipment(id).map { EquipmentPlan(it.id,it.name,it.reference,"Every ${it.intervalCount} ${it.intervalUnit.lowercase()}",it.currentDueDate,it.state,it.currentObligationId,LocalDate.parse(it.currentDueDate).isBefore(businessTime.today())) },dao.workingItemId(id),equipment.make.orEmpty(),equipment.model.orEmpty(),equipment.privateNotes.orEmpty(),equipment.state)
     }
 
     override suspend fun inspection(workItemId: String): InspectionDraft? {
@@ -548,7 +596,7 @@ class RoomServiceLoopRepository(
         val publicLines = items.map { item -> PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption) }, historyOnly=item.planId!=null&&item.capturedObligationId==null) }
         val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference)
         val rendition = dao.reportRendition(revision.id)?.let { ReportRendition(it.id, it.revisionId, it.versionNumber, it.generatedAtEpochMillis, it.relativePath, it.sha256, it.byteSize, it.pageCount, it.status, it.failureMessage) }
-        return FinalRecordDetail(model, items.mapNotNull { it.privateInternalNote }, rendition)
+        return FinalRecordDetail(model, items.mapNotNull { it.privateInternalNote }, rendition, record.voided, record.publicVoidReason)
     }
 
     private fun stableId(vararg parts: String) = UUID.nameUUIDFromBytes(parts.joinToString(":").toByteArray()).toString()

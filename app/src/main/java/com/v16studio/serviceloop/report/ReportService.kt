@@ -26,7 +26,7 @@ import kotlinx.coroutines.sync.withLock
 
 fun interface PdfWriteGate { suspend fun beforeRender() }
 fun interface ReportMetadataGate { suspend fun beforeReadyCommit() }
-fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File): Int }
+fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, versionNumber: Int, generatedAtEpochMillis: Long, file: File): Int }
 
 interface ReportService {
     suspend fun generate(recordId: String): ReportRendition
@@ -39,7 +39,7 @@ class AndroidReportService(
     private val database: ServiceLoopDatabase,
     private val repository: ServiceLoopRepository,
     private val writeGate: PdfWriteGate = PdfWriteGate {},
-    private val writer: ReportWriter = ReportWriter { model, renditionId, generatedAt, file -> FixedServiceRecordPdf.render(model, renditionId, generatedAt, file, context.filesDir) },
+    private val writer: ReportWriter = ReportWriter { model, renditionId, version, generatedAt, file -> FixedServiceRecordPdf.render(model, renditionId, version, generatedAt, file, context.filesDir) },
     private val metadataGate: ReportMetadataGate = ReportMetadataGate {},
 ) : ReportService {
     private val dao = database.serviceLoopDao()
@@ -48,21 +48,20 @@ class AndroidReportService(
 
     override suspend fun generate(recordId: String): ReportRendition = mutex.withLock {
         val detail = repository.finalRecord(recordId) ?: error("Final service record no longer exists")
-        dao.reportRendition(detail.public.revisionId)?.let { existing ->
-            if (existing.status == "READY" && file(existing.relativePath).isFile) return@withLock existing.toDomain()
-            if (existing.status == "READY") error("Report file is missing")
-        }
-        val renditionId = dao.reportRendition(detail.public.revisionId)?.id ?: UUID.nameUUIDFromBytes("report-v1:${detail.public.revisionId}".toByteArray()).toString()
+        val previous = dao.reportRendition(detail.public.revisionId)
+        previous?.let { existing -> if (existing.status == "READY" && file(existing.relativePath).isFile) return@withLock existing.toDomain() }
+        val recreatingMissing = previous?.status == "READY" && !file(previous.relativePath).isFile
+        val version = if (recreatingMissing) previous!!.versionNumber + 1 else previous?.versionNumber ?: 1
+        val renditionId = if (recreatingMissing) UUID.randomUUID().toString() else previous?.id ?: UUID.nameUUIDFromBytes("report-v1:${detail.public.revisionId}".toByteArray()).toString()
         val relative = "reports/$recordId/$renditionId.pdf"
-        val existing = dao.reportRendition(detail.public.revisionId)
-        val generating = ReportRenditionEntity(renditionId, detail.public.revisionId, 1, null, relative, null, null, null, "GENERATING", "ORIGINAL", null)
-        if (existing == null) dao.insertReportRendition(generating) else dao.updateReportRendition(generating)
+        val generating = ReportRenditionEntity(renditionId, detail.public.revisionId, version, null, relative, null, null, null, "GENERATING", if (recreatingMissing) "RECREATED" else "ORIGINAL", null)
+        if (recreatingMissing || previous == null) dao.insertReportRendition(generating) else dao.updateReportRendition(generating)
         val target = file(relative); target.parentFile?.mkdirs(); val temp = File(target.parentFile, "$renditionId.tmp")
         var adopted = false
         try {
             writeGate.beforeRender()
             val generatedAt = System.currentTimeMillis()
-            val pageCount = writer.render(detail.public, renditionId, generatedAt, temp)
+            val pageCount = writer.render(detail.public, renditionId, version, generatedAt, temp)
             require(temp.length() > 0) { "Generated PDF was empty" }
             if (target.exists()) target.delete()
             check(temp.renameTo(target)) { "Could not adopt generated report" }
@@ -114,7 +113,7 @@ object FixedServiceRecordPdf {
     internal data class ReportPage(val lines: List<ReportDrawLine>) { val contentHeight: Float get() = lines.sumOf { it.height.toDouble() }.toFloat() }
     private data class RawLine(val text: String, val style: LineStyle)
 
-    fun render(model: PublicReportModel, renditionId: String, generatedAtEpochMillis: Long, file: File, attachmentRoot: File? = null): Int {
+    fun render(model: PublicReportModel, renditionId: String, versionNumber: Int = 1, generatedAtEpochMillis: Long, file: File, attachmentRoot: File? = null): Int {
         val pages = layout(model)
         val photos = model.lines.flatMap { line -> line.photos.mapIndexed { index, photo -> Triple(line, index, photo) } }
         val totalPages = pages.size + photos.size
@@ -127,7 +126,7 @@ object FixedServiceRecordPdf {
                     page.canvas.drawText(line.text, LEFT, y + line.style.textSize, paint(line.style))
                     y += line.height
                 }
-                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of $totalPages"
+                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of $totalPages"
                 wrap(RawLine(footer, LineStyle.FOOTER)).take(4).forEachIndexed { footerIndex, line ->
                     page.canvas.drawText(line.text, LEFT, HEIGHT - 44f + footerIndex * LineStyle.FOOTER.height + LineStyle.FOOTER.textSize, paint(LineStyle.FOOTER).apply { color = Color.DKGRAY })
                 }
@@ -141,7 +140,7 @@ object FixedServiceRecordPdf {
                 page.canvas.drawText("Photograph ${photoIndex+1}${photo.caption?.let{": $it"}.orEmpty()}",LEFT,TOP+38f,paint(LineStyle.BODY))
                 val availableHeight=HEIGHT-TOP-BOTTOM-70f; val scale=minOf(CONTENT_WIDTH/bitmap.width,availableHeight/bitmap.height); val width=bitmap.width*scale; val height=bitmap.height*scale
                 page.canvas.drawBitmap(bitmap,null,RectF(LEFT,TOP+55f,LEFT+width,TOP+55f+height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-                val footer="${model.visitReference} · R${model.revisionNumber} · PDF v1 · ${renditionId.take(8)} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-34f,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
+                val footer="${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-34f,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
                 document.finishPage(page); bitmap.recycle()
             }
             FileOutputStream(file).use(document::writeTo)

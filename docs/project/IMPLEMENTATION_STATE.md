@@ -1,8 +1,12 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-08 — SL-3 OWNER ACCEPTED at `ad078faae3c73faa2a9bb02dd1251b1033237399`; ready to bank as the Stage-3 baseline
+**Updated:** 2026-09-08 — SL-4 development checkpoint prepared on `codex/sl-4-history-recovery`; independent testing-AI-model verification and owner review remain outstanding
 
 ## Current state
+
+- SL-4 is IMPLEMENTED as a development checkpoint: Room v5, complete/scoped history, append-only record correction and void provenance, report rendition versions and Attention, lifecycle/move dependency workflows, authenticated portable backup inspection/replacement, readable CSV export/create-only import, and local erase are reachable in the product. See `SL4_REQUIREMENT_COVERAGE.md`.
+- SL-4 is not owner accepted and not release-ready. Exhaustive testing-AI-model verification, owner review, Stage 5 hardening/reminders, and B-008 remain.
+- B-008 is explicitly a later Romanian-localized real-technician pilot against a pilot-ready build. It is no longer described as an immediate pre-Stage-4 blocker, and no current automated or owner review is represented as satisfying it.
 
 - SL-1 is OWNER ACCEPTED.
 - SL-2 is OWNER ACCEPTED for continued development. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; later documentation-only commits record acceptance and deferred UX direction without changing product behavior.
@@ -16,7 +20,7 @@
 - The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.
 - Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
 - Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, visit-action hierarchy, and Due-services state ownership. Those corrections were implemented, technically verified, and finally re-reviewed and accepted by the owner.
-- SL-3 is accepted for continued development, but the product is not product-valid or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
+- SL-3 remains the latest owner-accepted baseline. The newer SL-4 branch is a development checkpoint awaiting independent verification and owner review; B-008 and Stage 5 remain outstanding.
 - The earlier Work-route consolidation fixed route identity but did not fix Due-services ownership. Commit `32dee7c` then added cancellable generation-based refreshes, but owner evidence proved that correction insufficient: retained cards could render before the Work-entry effect set loading, and a cancelled current owner had no terminal write, allowing the blocking `Refreshing due services` state to remain.
 - Due services are now one Room-observed projection owned by the ViewModel, not by Work navigation or mutation callbacks. The first successful emission atomically establishes availability and rows; later database invalidations replace that snapshot, claimed unconsumed obligations remain present, and collection failure preserves the last good rows with an explicit error. Work re-entry and New Visit consume the same coherent projection without initiating reads or clearing availability.
 - On the preserved canonical dataset, Room, DAO, repository, ViewModel, and rendered UI agreed on 40 rows. P-002/P-003/P-004 were ACTIVE through customer/site/equipment/plan, referenced current unconsumed obligations `obl-002`/`obl-003`/`obl-004`, and had no VisitClaim. Focused canonical instrumentation repeatedly switched Home/Work/Customers, Work subtabs, contextual Home → Work, and New Visit → Back without a card glimpse, blocking refresh, empty transition, or wedge. The owner then manually re-tested the problematic flow and accepted the final behavior.
@@ -39,7 +43,7 @@ Canonical `Pixel 10a ServiceLoop` was upgraded in place from v3 to v4 with `inst
 
 The persistent canonical SL-3 journey passed on the preserved production database: template; customer, site, equipment, and plan; booking, rescheduling, cancellation, and start; inspection/finding; parts; corrective follow-up; finalization; search; and contextual due filtering. The normal canonical suite passed all 18 tests (the separately gated persistent journey is intentionally skipped in that normal run). Final local verification passed 82 unit tests, debug and release assembly, debug lint (0 errors; existing/toolchain and API-usage warnings only), and debug Android-test assembly.
 
-Stage 4 corrections/voiding, lifecycle/move dependency workflows, complete backup/restore/import/export, and full history presentation remain deferred. Stage 5 reminders, broad device/accessibility/performance hardening, and release work remain deferred. B-008 remains outstanding.
+Stage 4 corrections/voiding, lifecycle/move dependency workflows, report versions, backup/restore, CSV import/export, erase, and full history presentation are implemented on the SL-4 development branch and await independent verification and owner review. Stage 5 reminders, broad device/accessibility/performance hardening, and release work remain deferred. B-008 remains outstanding as the later Romanian-localized pilot.
 
 ## Accepted SL-2 outcome
 

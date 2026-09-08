@@ -107,12 +107,15 @@ class Sl2IntegrityTest {
         val due = db.serviceLoopDao().plan("plan-1")!!.currentDueDate
         try { AndroidReportService(context, db, repository, PdfWriteGate { error("controlled PDF failure") }).generate(record); fail("Expected PDF failure") } catch (_: IllegalStateException) {}
         assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
-        val fakeWriter = ReportWriter { _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val fakeWriter = ReportWriter { _, _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
         val ready = AndroidReportService(context, db, repository, writer = fakeWriter).generate(record)
         assertEquals("READY", ready.status); assertTrue(ready.byteSize!! > 0); assertEquals(64, ready.sha256!!.length); assertTrue(ready.pageCount!! >= 1)
         assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
         AndroidReportService(context, db, repository, writer = fakeWriter).file(ready.relativePath).delete()
-        try { AndroidReportService(context, db, repository, writer = fakeWriter).generate(record); fail("Expected missing file") } catch (expected: IllegalStateException) { assertEquals("Report file is missing", expected.message) }
+        val recreated = AndroidReportService(context, db, repository, writer = fakeWriter).generate(record)
+        assertEquals(2, recreated.versionNumber)
+        assertNotEquals(ready.id, recreated.id)
+        assertEquals("RECREATED", db.serviceLoopDao().reportRendition(repository.finalRecord(record)!!.public.revisionId)!!.kind)
         assertEquals(due, db.serviceLoopDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.serviceLoopDao().obligationCount("plan-1"))
     }
 
@@ -202,7 +205,7 @@ class Sl2IntegrityTest {
 
     @Test fun reportMetadataFailureRemovesAdoptedOrphanAndRetryIsSafe() = runTest {
         seed(); val repository = repo(); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
-        val fakeWriter = ReportWriter { _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val fakeWriter = ReportWriter { _, _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
         val failing = AndroidReportService(context, db, repository, writer = fakeWriter, metadataGate = ReportMetadataGate { error("metadata") })
         assertFails { failing.generate(record) }
         val failed = db.serviceLoopDao().reportRendition(repository.finalRecord(record)!!.public.revisionId)!!

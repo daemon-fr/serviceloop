@@ -139,7 +139,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, state.visits, nav) }
+                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
             }
         }
         composable(
@@ -232,6 +232,51 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id) }
             DetailScaffold("Customer report", nav) { padding -> ReportPreviewScreen(state.finalRecord, padding, initialTextView = true) }
         }
+        composable("history/global") {
+            DetailScaffold("History", nav) { padding ->
+                HistoryScreen(com.v16studio.serviceloop.domain.HistoryScope(com.v16studio.serviceloop.domain.HistoryScopeType.GLOBAL), state, padding, viewModel, nav)
+            }
+        }
+        composable("history/{scope}/{id}") { entry ->
+            val scope = runCatching { com.v16studio.serviceloop.domain.HistoryScopeType.valueOf(entry.arguments?.getString("scope").orEmpty()) }.getOrDefault(com.v16studio.serviceloop.domain.HistoryScopeType.GLOBAL)
+            val id = entry.arguments?.getString("id")
+            DetailScaffold("History", nav) { padding ->
+                HistoryScreen(com.v16studio.serviceloop.domain.HistoryScope(scope, id, "${scope.name.lowercase()} history"), state, padding, viewModel, nav)
+            }
+        }
+        composable("correction/{recordId}") { entry ->
+            val id = entry.arguments?.getString("recordId").orEmpty()
+            DetailScaffold("Correct service record", nav) { padding -> CorrectionScreen(id, state, padding, viewModel, nav) }
+        }
+        composable("lifecycle/{subject}/{id}/{action}") { entry ->
+            val subject = entry.arguments?.getString("subject").orEmpty()
+            val id = entry.arguments?.getString("id").orEmpty()
+            val action = entry.arguments?.getString("action").orEmpty()
+            DetailScaffold("Lifecycle review", nav) { padding -> LifecycleScreen(subject, id, action, state, padding, viewModel, nav) }
+        }
+        composable("equipment/move/{id}") { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            DetailScaffold("Move equipment", nav) { padding -> MoveEquipmentScreen(id, state, padding, viewModel, nav) }
+        }
+        composable("data-recovery") { DetailScaffold("Data and recovery", nav) { padding -> DataRecoveryScreen(state, padding, viewModel, nav) } }
+        composable("backup/{mode}") { entry ->
+            val mode = entry.arguments?.getString("mode").orEmpty()
+            DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) }
+        }
+        composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
+        composable("csv/import") { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel) } }
+        composable("data/erase") { DetailScaffold("Erase local data", nav) { padding -> EraseScreen(state, padding, viewModel, nav) } }
+        composable("change/{id}") { entry ->
+            val id = entry.arguments?.getString("id")
+            DetailScaffold("Recorded change", nav) { padding ->
+                val row = state.history.firstOrNull { it.id == id }
+                Column(Modifier.padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(row?.title.orEmpty(), style = MaterialTheme.typography.headlineSmall)
+                    Text(row?.subtitle.orEmpty())
+                    Text("This is a read-only historical change. It cannot be replayed or undone here.")
+                }
+            }
+        }
         composable("scope/{title}") { entry ->
             DetailScaffold(entry.arguments?.getString("title") ?: "ServiceLoop", nav) { padding ->
                 HonestPlaceholder(padding, "This foundation exposes the entry point without claiming the later workflow is complete.")
@@ -304,7 +349,8 @@ private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues
 }
 
 @Composable
-private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, nav: NavHostController) {
+private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, attention: List<com.v16studio.serviceloop.domain.AttentionItem>, nav: NavHostController, viewModel: ServiceLoopViewModel) {
+    LaunchedEffect(Unit) { viewModel.loadAttention() }
     if (home == null) return HonestPlaceholder(PaddingValues(), "Add a customer to create your first service obligation.")
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (home.workingVisitId != null) item {
@@ -330,7 +376,8 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
         items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
         item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON")) } }
         item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS, "DUE_OR_OVERDUE")) } }
-        item { SectionTitle("Records needing attention"); Text("No report or correction failures in this fixture.") }
+        item { SectionTitle("Records needing attention · ${attention.size}"); if(attention.isEmpty()) Text("No correction or report-file attention needed.") }
+        items(attention.take(3)) { item -> SummaryRow("${item.title}\n${item.detail}", "Open") { nav.navigate(item.route) } }
         item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
     }
 }
@@ -366,7 +413,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
                 items(filtered) { follow -> SummaryRow("${follow.reference} · ${follow.title}\n${follow.state} · Due ${follow.dueDate}\n${listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · ")}", "Open") { nav.navigate("follow-up/${follow.id}") } }
             }
         }
-        item { SummaryRow("History and records needing attention", "Open") { nav.navigate("scope/History") } }
+        item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
     }
 }
 
@@ -426,7 +473,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
                 TextButton(onClick = { nav.navigate("plan/${plan.id}") }) { Text("Open plan") }
             }
         }
-        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; SummaryRow("Equipment history", "Open") { nav.navigate("scope/History") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
+        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; SummaryRow("Equipment history", "Open") { nav.navigate("history/EQUIPMENT/${detail.id}") }; SummaryRow("Move equipment", "Open") { nav.navigate("equipment/move/${detail.id}") }; SummaryRow(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service", "Review") { nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
     }
 }
 
@@ -584,7 +631,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery · foundation", "Later") { nav.navigate("scope/Data and recovery") } }
+        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
     }
 }
 
@@ -607,8 +654,9 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, e
     val report = detail.public
     val context = LocalContext.current
     val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
+    var voidReason by rememberSaveable(report.recordId) { mutableStateOf("") }
     LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { SectionTitle("${report.visitReference} · Finalized"); Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
+        item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}") }
         items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
@@ -618,6 +666,7 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, generating: Boolean, e
             if (detail.report?.status == "READY") Button(onClick = { nav.navigate(if (reportPresent) "report/${report.recordId}" else "report-text/${report.recordId}") }, modifier = Modifier.fillMaxWidth()) { Text(if (reportPresent) "View report" else "View report text") }
             else Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
         }
+        item { if(!detail.voided) { Button(onClick={nav.navigate("correction/${report.recordId}")},modifier=Modifier.fillMaxWidth().testTag("correct-record")){Text("Correct record / Resume correction")}; OutlinedTextField(voidReason,{voidReason=it},label={Text("Customer-facing void explanation · Required")},modifier=Modifier.fillMaxWidth()); TextButton(onClick={viewModel.voidRecord(report.recordId,voidReason,""){viewModel.loadFinalRecord(report.recordId)}},enabled=voidReason.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Void this record")} } else Text("Ordinary customer Share is disabled for a voided original. Generate/use the current void notice for customer handoff.") }
     }
 }
 

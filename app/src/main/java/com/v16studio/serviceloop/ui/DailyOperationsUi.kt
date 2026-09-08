@@ -56,6 +56,7 @@ internal fun CustomerDetailScreen(detail: CustomerDetail?, padding: PaddingValue
         if (detail.recentContacts.isNotEmpty()) item { DailyHeading("Recent contact") }
         items(detail.recentContacts) { note -> var errorReason by rememberSaveable(note.id){mutableStateOf("")}; Column { Text("${note.reference} · ${note.channel} · ${note.outcome}${if (note.enteredInError) " · Entered in error: ${note.errorReason}" else ""}"); if(!note.enteredInError){ DailyField(errorReason,{errorReason=it},"Entered-in-error reason"); TextButton({viewModel.markContactNoteEnteredInError(note.id,errorReason){viewModel.loadCustomer(detail.id)}},enabled=errorReason.isNotBlank()){Text("Mark entered in error")} } } }
         if (detail.privateNote.isNotBlank()) item { PrivateBlock("Private customer note", detail.privateNote) }
+        item { DailyRow("Customer history") { nav.navigate("history/CUSTOMER/${detail.id}") }; DailyRow(if(detail.state=="ACTIVE") "Archive customer · dependency review" else "Restore customer only") { nav.navigate("lifecycle/CUSTOMER/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}") } }
     }
 }
 
@@ -81,6 +82,7 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
         if (detail.privateAccessNote.isNotBlank()) item { PrivateBlock("PRIVATE access note", detail.privateAccessNote) }
         item { DailyHeading("Equipment"); Button({ nav.navigate("equipment/new/${detail.id}") }, Modifier.fillMaxWidth().testTag("add-equipment")) { Text("Add equipment") } }
         items(detail.equipment) { equipment -> DailyRow("${equipment.reference} · ${equipment.name}\n${equipment.technicianIdentifier.orEmpty()} · Due ${equipment.nearestDueDate ?: "not scheduled"}") { nav.navigate("equipment/${equipment.id}") } }
+        item { DailyRow("Site history") { nav.navigate("history/SITE/${detail.id}") }; DailyRow(if(detail.state=="ACTIVE") "Archive site · dependency review" else "Restore site only") { nav.navigate("lifecycle/SITE/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}") } }
     }
 }
 
@@ -111,7 +113,7 @@ internal fun EquipmentEditorScreen(siteId: String?, existing: EquipmentDetail?, 
 @Composable
 internal fun PlanDetailScreen(plan: PlanDetail?, padding: PaddingValues, nav: NavHostController) {
     if (plan == null) return DailyEmpty(padding, "Reading service plan")
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("${plan.reference} · ${plan.name}", style = MaterialTheme.typography.headlineSmall); Text(plan.equipmentName); Text("Every ${plan.intervalCount} ${plan.intervalUnit.lowercase()} · Due ${plan.dueDate}"); Text("Current obligation remains separate from bookings and contact."); Button({ nav.navigate("plan/edit/${plan.id}") }, Modifier.fillMaxWidth()) { Text("Edit plan") }; OutlinedButton({ nav.navigate("visit/new/${plan.id}") }, Modifier.fillMaxWidth()) { Text("Create visit") } } }
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("${plan.reference} · ${plan.name}", style = MaterialTheme.typography.headlineSmall); Text(plan.equipmentName); Text("Every ${plan.intervalCount} ${plan.intervalUnit.lowercase()} · Due ${plan.dueDate}"); Text("Current obligation remains separate from bookings and contact."); Button({ nav.navigate("plan/edit/${plan.id}") }, Modifier.fillMaxWidth(), enabled=plan.state!="ENDED") { Text("Edit plan") }; OutlinedButton({ nav.navigate("visit/new/${plan.id}") }, Modifier.fillMaxWidth(), enabled=plan.state=="ACTIVE") { Text("Create visit") }; if(plan.state=="ACTIVE") OutlinedButton({nav.navigate("lifecycle/PLAN/${plan.id}/PAUSE")},Modifier.fillMaxWidth()){Text("Pause plan")} else if(plan.state=="PAUSED") OutlinedButton({nav.navigate("lifecycle/PLAN/${plan.id}/RESUME")},Modifier.fillMaxWidth()){Text("Resume plan")}; if(plan.state!="ENDED") TextButton({nav.navigate("lifecycle/PLAN/${plan.id}/END")},Modifier.fillMaxWidth()){Text("End plan")} } }
 }
 
 @Composable

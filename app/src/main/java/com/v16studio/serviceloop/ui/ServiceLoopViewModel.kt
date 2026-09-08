@@ -77,6 +77,19 @@ data class UiState(
     val operationInProgress: Boolean = false,
     val operationMessage: String? = null,
     val inspectionFocus: InspectionFocus? = null,
+    val history: List<HistoryEntry> = emptyList(),
+    val attention: List<AttentionItem> = emptyList(),
+    val recordVersions: List<RecordVersionSummary> = emptyList(),
+    val reportVersions: List<ReportVersionSummary> = emptyList(),
+    val correction: CorrectionDraft? = null,
+    val lifecycleReview: LifecycleReview? = null,
+    val moveReview: MoveReview? = null,
+    val datasetSummary: DatasetSummary? = null,
+    val backupResult: BackupResult? = null,
+    val backupInspection: BackupInspection? = null,
+    val csvPreview: CsvImportPreview? = null,
+    val importResult: ImportResult? = null,
+    val exportBytes: ByteArray? = null,
 ) {
     val dueServices: List<DueService>
         get() = (dueServicesProjection as? DueServicesProjection.Available)?.rows.orEmpty()
@@ -269,6 +282,29 @@ class ServiceLoopViewModel(
         _state.value = _state.value.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { SaveStatus.Saved(it) } ?: SaveStatus.Idle)
     }
     fun loadFinalRecord(id: String) { _state.value = _state.value.copy(finalRecord = null); launchLoad { _state.value = _state.value.copy(finalRecord = repository.finalRecord(id)) } }
+    fun loadHistory(query: HistoryQuery) = launchLoad { _state.value = _state.value.copy(history = repository.history(query)) }
+    fun loadAttention() = launchLoad { _state.value = _state.value.copy(attention = repository.attention()) }
+    fun loadRecordVersions(id: String) = launchLoad { val versions = repository.recordVersions(id); _state.value = _state.value.copy(recordVersions = versions.first, reportVersions = versions.second) }
+    fun loadCorrection(recordId: String) = launchLoad { _state.value = _state.value.copy(correction = repository.openCorrection(recordId)) }
+    fun saveCorrection(value: CorrectionDraft) = runOperation({ repository.saveCorrection(value) }) { loadCorrection(value.recordId) }
+    fun commitCorrection(recordId: String, onSuccess: (String) -> Unit) = runOperation({ repository.commitCorrection(recordId) }, onSuccess)
+    fun discardCorrection(recordId: String, onSuccess: (String) -> Unit) = runOperation({ repository.discardCorrection(recordId); recordId }, onSuccess)
+    fun voidRecord(recordId: String, publicReason: String, privateReason: String, onSuccess: (String) -> Unit) = runOperation({ repository.voidRecord(recordId, publicReason, privateReason); recordId }, onSuccess)
+    fun loadLifecycle(subjectType: String, id: String, action: String) = launchLoad { _state.value = _state.value.copy(lifecycleReview = repository.lifecycleReview(subjectType, id, action)) }
+    fun applyLifecycle(subjectType: String, id: String, action: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.applyLifecycle(subjectType, id, action, reason); id }, onSuccess)
+    fun loadMove(equipmentId: String) = launchLoad { _state.value = _state.value.copy(moveReview = repository.moveReview(equipmentId)) }
+    fun moveEquipment(equipmentId: String, destination: String, date: String, reason: String, acknowledged: Boolean, onSuccess: (String) -> Unit) = runOperation({ repository.moveEquipment(equipmentId, destination, date, reason, acknowledged); equipmentId }, onSuccess)
+    fun loadDatasetSummary() = launchLoad { _state.value = _state.value.copy(datasetSummary = repository.datasetSummary(), attention = repository.attention()) }
+    fun setBackupReminder(days: Int) = runOperation({ repository.setBackupReminder(days); days }) { loadDatasetSummary() }
+    fun createBackup(passphrase: CharArray, incomplete: Boolean) = runOperation({ repository.createBackup(passphrase, incomplete) }) { result -> _state.value = _state.value.copy(backupResult = result) }
+    fun verifyWrittenBackup(bytes: ByteArray, passphrase: CharArray, destination: String) = runOperation({ val inspection = repository.inspectBackup(bytes, passphrase); val result = _state.value.backupResult ?: error("Prepared backup is unavailable"); require(inspection.snapshotAtEpochMillis == result.snapshotAtEpochMillis); if (result.complete) repository.recordVerifiedBackup(result, destination); inspection }) { inspection -> _state.value = _state.value.copy(backupInspection = inspection); loadDatasetSummary() }
+    fun inspectBackup(bytes: ByteArray, passphrase: CharArray) = runOperation({ repository.inspectBackup(bytes, passphrase) }) { _state.value = _state.value.copy(backupInspection = it) }
+    fun restoreBackup(confirmation: String, incompleteAcknowledged: Boolean, onSuccess: () -> Unit) { val inspection = _state.value.backupInspection ?: return; runOperation({ repository.restoreBackup(inspection, confirmation, incompleteAcknowledged); true }) { onSuccess() } }
+    fun prepareDirectoryCsv(includeInactive: Boolean, includePrivate: Boolean) = runOperation({ repository.directoryCsv(includeInactive, includePrivate) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
+    fun prepareRecordsCsv(includeInactive: Boolean, includePrivate: Boolean, previous: Boolean) = runOperation({ repository.recordsCsvPackage(includeInactive, includePrivate, previous) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
+    fun validateCsv(bytes: ByteArray) = runOperation({ repository.validateDirectoryCsv(bytes) }) { _state.value = _state.value.copy(csvPreview = it, importResult = null) }
+    fun importCsv(createSeparate: Set<String> = emptySet(), skipped: Set<String> = emptySet()) { val preview = _state.value.csvPreview ?: return; runOperation({ repository.importDirectory(preview, createSeparate, skipped) }) { _state.value = _state.value.copy(importResult = it); refreshRootDataNonBlocking() } }
+    fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) = runOperation({ repository.erase(acknowledged, confirmation); true }) { onSuccess() }
     fun consumeFinalizedNavigation() { _state.value = _state.value.copy(finalizedRecordId = null) }
 
     fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
@@ -341,7 +377,7 @@ class ServiceLoopViewModel(
         }
     }
 
-    private fun runOperation(block: suspend () -> String, onSuccess: (String) -> Unit = {}) {
+    private fun <T> runOperation(block: suspend () -> T, onSuccess: (T) -> Unit = {}) {
         if (_state.value.operationInProgress) return
         _state.value = _state.value.copy(operationInProgress = true, operationMessage = null, error = null)
         viewModelScope.launch {
