@@ -53,7 +53,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 ## B-008 — Pilot and report validation boundary
 
 - Keep the fixed general customer report design as the implementation target unless later amended.
-- A reachable real technician/trade must evaluate the first complete working service loop/report before Stage 2 is considered product-valid and before release preparation. Agreement between AI agents is not a substitute for that pilot evidence.
+- The real-technician pilot is a **late-stage external validation gate**, not a blocker for SL-4/SL-5 implementation.
+- Before release preparation is considered product-valid, a **pilot-ready Romanian-localized build with no known ordinary-workflow placeholders** must be evaluated by at least one reachable real technician/trade user through a representative service workflow and customer report.
+- Agreement between AI agents, automated tests, emulator evidence, or owner/developer review is not a substitute for that external pilot evidence.
+- Localization infrastructure, Romanian UI/report copy, and ordinary functional completeness are prerequisites for a meaningful Romanian pilot; the pilot should occur early enough in the final hardening/release phase that terminology, workflow, report, and usability findings can still be incorporated.
 
 ## B-009 — Inline inspection finding description
 
