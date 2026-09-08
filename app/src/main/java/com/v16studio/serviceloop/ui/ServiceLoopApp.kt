@@ -75,9 +75,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.CustomerSummary
 import com.v16studio.serviceloop.domain.EquipmentDetail
@@ -107,6 +109,7 @@ import kotlinx.coroutines.withContext
 
 private const val HOME = "home"
 private const val WORK = "work"
+private const val WORK_ROUTE = "work?tab={tab}&filter={filter}"
 private const val CUSTOMERS = "customers"
 
 private enum class RootDestination(val route: String, val label: String) {
@@ -139,25 +142,22 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
                 ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, state.visits, nav) }
             }
         }
-        composable(WORK) {
-            var workTab by rememberSaveable { mutableStateOf(WorkTab.DUE_SERVICES) }
+        composable(
+            WORK_ROUTE,
+            arguments = listOf(
+                navArgument("tab") { type = NavType.StringType; defaultValue = WorkTab.DUE_SERVICES.name },
+                navArgument("filter") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { entry ->
+            val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
+            val contextualFilter = entry.arguments?.getString("filter")
+            var workTab by rememberSaveable(requested, contextualFilter) { mutableStateOf(requested) }
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadDueServices(); viewModel.loadFollowUps() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") { WorkScreen(state, nav, workTab, viewModel) { workTab = it } }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") {
+                    WorkScreen(state, nav, workTab, viewModel, contextualFilter) { workTab = it }
+                }
             }
-        }
-        composable("work/{tab}") { entry ->
-            val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
-            var workTab by rememberSaveable(requested) { mutableStateOf(requested) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadDueServices(); viewModel.loadFollowUps() }
-            RootScaffold(nav, RootDestination.WORK) { padding -> ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding) { WorkScreen(state, nav, workTab, viewModel) { workTab = it } } }
-        }
-        composable("work/{tab}/{filter}") { entry ->
-            val requested=runCatching{WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty())}.getOrDefault(WorkTab.DUE_SERVICES)
-            val contextualFilter=entry.arguments?.getString("filter")
-            var workTab by rememberSaveable(requested){mutableStateOf(requested)}
-            LaunchedEffect(Unit){viewModel.refreshRootDataNonBlocking();viewModel.loadVisits();viewModel.loadDueServices();viewModel.loadFollowUps()}
-            RootScaffold(nav,RootDestination.WORK){padding->ScreenState(state.loading&&!state.rootDataReady,state.error.takeUnless{state.rootDataReady},padding){WorkScreen(state,nav,workTab,viewModel,contextualFilter){workTab=it}}}
         }
         composable(CUSTOMERS) {
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
@@ -314,7 +314,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
                 Text("Saved on this device · ${formatTime(home.savedAtEpochMillis)}", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { home.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } }, modifier = Modifier.fillMaxWidth()) { Text("Resume visit") }
-                TextButton(onClick = { nav.navigate("work/${WorkTab.VISITS.name}/WORKING") }) { Text("View all unfinished") }
+                TextButton(onClick = { nav.navigate(workRoute(WorkTab.VISITS, "WORKING")) }) { Text("View all unfinished") }
             }
         }
         item {
@@ -324,12 +324,12 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
                 home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" },
                 bookedSite,
             ).joinToString("\n").ifBlank { "No booked visits" }
-            SummaryRow(bookedSummary, "Open") { nav.navigate("work/${WorkTab.VISITS.name}/BOOKED") }
+            SummaryRow(bookedSummary, "Open") { nav.navigate(workRoute(WorkTab.VISITS, "BOOKED")) }
         }
-        item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate("work/${WorkTab.DUE_SERVICES.name}/OVERDUE")} }
+        item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
         items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
-        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate("work/${WorkTab.DUE_SERVICES.name}/DUE_SOON") } }
-        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate("work/${WorkTab.FOLLOW_UPS.name}/DUE_OR_OVERDUE") } }
+        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next 14 business-local days", "View all") { nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON")) } }
+        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS, "DUE_OR_OVERDUE")) } }
         item { SectionTitle("Records needing attention"); Text("No report or correction failures in this fixture.") }
         item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
     }
@@ -394,6 +394,16 @@ private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRe
         }
     }
 }
+
+internal fun workRoute(tab: WorkTab, filter: String? = null): String =
+    buildString {
+        append("work?tab=")
+        append(tab.name)
+        if (filter != null) {
+            append("&filter=")
+            append(filter)
+        }
+    }
 
 @Composable
 private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {

@@ -9,6 +9,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -17,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -279,7 +281,27 @@ internal fun EquipmentSiteSelectorScreen(sites: List<VisitSiteOption>, padding: 
 internal fun LongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     val tag = "long-text-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    Column { Box(Modifier.fillMaxWidth()) { OutlinedTextField(value,onValueChange,label={Text(label)},minLines=3,maxLines=3,modifier=Modifier.fillMaxWidth().testTag(tag)); Button({expanded=true},Modifier.align(Alignment.BottomEnd).sizeIn(minWidth=48.dp,minHeight=48.dp).semantics{contentDescription="Expand text editor"}.testTag("$tag-expand")){Text("Expand")} }; if(private) Text("PRIVATE · Not included in the customer report",style=MaterialTheme.typography.bodySmall) }
+    val expandIconColor = MaterialTheme.colorScheme.primary
+    Column {
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedTextField(value,onValueChange,label={Text(label)},minLines=3,maxLines=3,modifier=Modifier.fillMaxWidth().testTag(tag))
+            IconButton(
+                onClick = { expanded = true },
+                modifier = Modifier.align(Alignment.BottomEnd).size(48.dp).semantics { contentDescription = "Expand text editor" }.testTag("$tag-expand"),
+            ) {
+                Canvas(Modifier.size(24.dp)) {
+                    val stroke = 2.dp.toPx()
+                    val inset = 3.dp.toPx()
+                    val arm = 7.dp.toPx()
+                    drawLine(expandIconColor, Offset(inset, arm + inset), Offset(inset, inset), stroke)
+                    drawLine(expandIconColor, Offset(inset, inset), Offset(arm + inset, inset), stroke)
+                    drawLine(expandIconColor, Offset(size.width - inset, size.height - arm - inset), Offset(size.width - inset, size.height - inset), stroke)
+                    drawLine(expandIconColor, Offset(size.width - arm - inset, size.height - inset), Offset(size.width - inset, size.height - inset), stroke)
+                }
+            }
+        }
+        if(private) Text("PRIVATE · Not included in the customer report",style=MaterialTheme.typography.bodySmall)
+    }
     if(expanded) Dialog(onDismissRequest={expanded=false},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) { Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) { Text(label,style=MaterialTheme.typography.headlineSmall); OutlinedTextField(value,onValueChange,modifier=Modifier.fillMaxWidth().weight(1f).testTag("$tag-expanded")); Button({expanded=false},Modifier.fillMaxWidth()){Text("Done")} } } }
 }
 

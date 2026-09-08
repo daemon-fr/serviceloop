@@ -64,9 +64,9 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 ## B-010 — Expanded multiline editing pattern
 
 - Keep the ordinary **Issue found** description compact and inline by default.
-- Its **Expand** action should eventually open the same text in a dedicated full-page or modal editing surface for long-form entry rather than merely making the inline box taller.
-- Longer multiline inputs should converge on one reusable editing component/pattern, including a visible bottom-right resize/expand affordance where appropriate, so long-text behavior is consistent across ServiceLoop.
-- This is a deferred UX refinement and does not block the accepted SL-2 workflow.
+- Its expand action opens the same text in a dedicated full-page or modal editing surface for long-form entry rather than merely making the inline box taller.
+- Longer multiline inputs use one reusable editing component/pattern with an icon-only bottom-right expand affordance where appropriate. The glyph remains modest (roughly mid-20dp) inside a comfortably accessible touch target (roughly 48dp); it must not use a field-covering text-labelled button.
+- This pattern is implemented in SL-3 and does not change explicit parent Save semantics.
 
 ## B-011 — SL-3 owner-review daily-operations corrections
 

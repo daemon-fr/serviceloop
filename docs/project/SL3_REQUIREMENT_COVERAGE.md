@@ -22,7 +22,11 @@
 | Report/privacy | Final records expose textual parts and selected photo entries; PDF/text include part and photo captions. Private/access/internal and unselected-photo fields remain structurally absent from the public model. PDF failure remains independent of business finalization. |
 | Owner-review corrections | Deterministic Home/Work/Customers root navigation without root-state restoration; Customers/Sites/Equipment registers and customer Sites/Equipment tabs; durable reschedule acknowledgement; conservative same-Visit cancelled-booking restoration; visible 48dp Expand action; structured actionable completion blockers with inspection targeting and Review resume refresh; solid New visit entries; date-dependent primary Book/Start/Record-past action. |
 
+Final owner-debug correction: the former `work`, `work/{tab}`, and `work/{tab}/{filter}` destinations are one optional-argument Work destination. Canonical root entry therefore initializes Due services in the same state owner used by contextual entry instead of allowing an old Visits/Follow-ups destination to participate in the transition. The reusable long-text control is now an icon-only 24dp expand glyph in a 48dp target with `Expand text editor` accessibility semantics; its modal continues editing the same buffer and parent Save remains authoritative.
+
 ## Phase-B verification evidence
+
+- TESTED / UI-INSTRUMENTED / HUMAN-RENDERED — final owner-debug focus: root switching passes after first selecting Visits, leaving Work, and returning from Customers; canonical Work immediately exposes Due services with no Visits list. Issue-found and public-work editor screenshots show the compact icon-only affordance, and the same-buffer Done/save journey passes. Full final host gates and repeated rendered root-transition results are recorded in the final task handoff rather than expanding this file into another campaign checklist.
 
 The preceding Phase-B evidence applies to the earlier candidate. This owner-review correction checkpoint has focused development evidence only; the subsequent testing-AI verification remains required.
 

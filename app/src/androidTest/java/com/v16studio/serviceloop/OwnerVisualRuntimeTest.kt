@@ -3,6 +3,7 @@ package com.v16studio.serviceloop
 import android.graphics.Bitmap
 import android.accessibilityservice.AccessibilityService
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -115,6 +116,17 @@ class OwnerVisualRuntimeTest {
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
+        composeRule.onNodeWithTag("field-search-due-services").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("work-visits-list").assertCountEquals(0)
+
+        composeRule.onNodeWithText("Visits").performClick()
+        composeRule.onNodeWithTag("work-visits-list").assertIsDisplayed()
+        composeRule.onNodeWithText("Customers").performClick()
+        assertOnlyRoot("root-customers")
+        composeRule.onNodeWithText("Work").performClick()
+        assertOnlyRoot("root-work")
+        composeRule.onNodeWithTag("field-search-due-services").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("work-visits-list").assertCountEquals(0)
         composeRule.onNodeWithText("Home").performClick()
         assertOnlyRoot("root-home")
     }
@@ -139,11 +151,17 @@ class OwnerVisualRuntimeTest {
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume visit").fetchSemanticsNode() }.isSuccess }
         composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.onNodeWithTag("long-text-public-work-performed", useUnmergedTree = true).performScrollTo()
+        captureRenderedEvidence("public-work-expand-icon")
         val field = composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true)
         field.performScrollTo()
+        captureRenderedEvidence("issue-found-expand-icon")
 
         composeRule.onNodeWithTag("long-text-public-finding-description-expand", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Done").performClick()
+        composeRule.onAllNodesWithText("Expand").assertCountEquals(0)
+        composeRule.onNodeWithTag("long-text-public-finding-description-expand", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Expand text editor")
 
         field.performTextClearance()
         field.performTextInput("Belt edge wear observed during inspection")

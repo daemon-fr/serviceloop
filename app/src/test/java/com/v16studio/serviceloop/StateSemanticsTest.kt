@@ -351,6 +351,8 @@ class StateSemanticsTest {
         assertEquals("Due services", com.v16studio.serviceloop.ui.WorkTab.DUE_SERVICES.label)
         assertEquals("Visits", com.v16studio.serviceloop.ui.WorkTab.VISITS.label)
         assertEquals("Follow-ups", com.v16studio.serviceloop.ui.WorkTab.FOLLOW_UPS.label)
+        assertEquals("work?tab=DUE_SERVICES", com.v16studio.serviceloop.ui.workRoute(com.v16studio.serviceloop.ui.WorkTab.DUE_SERVICES))
+        assertEquals("work?tab=VISITS&filter=WORKING", com.v16studio.serviceloop.ui.workRoute(com.v16studio.serviceloop.ui.WorkTab.VISITS, "WORKING"))
     }
 
     @Test fun releaseFactoryIsNoOpAndProductionSourceContainsNoFixtureCustomer() {

@@ -17,6 +17,7 @@
 - Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
 - Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, and visit-action hierarchy. The development correction checkpoint implements these changes with focused host/device validation; exhaustive testing-AI verification and owner re-review remain pending.
 - SL-3 is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
+- Final SL-3 owner-debug corrections consolidate canonical/contextual Work entry into one navigation destination so canonical root entry owns a fresh Due-services state from its first composition. The shared long-text editor now uses a modest icon-only expand glyph in a 48dp target; the full-screen editor still shares the parent buffer and does not save independently. Focused host/device and rendered checks pass; owner re-review remains pending.
 
 ## SL-3 implementation candidate
 
