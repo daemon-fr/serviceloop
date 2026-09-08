@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
@@ -10,6 +12,8 @@ import com.v16studio.serviceloop.report.PdfWriteGate
 import com.v16studio.serviceloop.report.ReportWriter
 import com.v16studio.serviceloop.report.ReportMetadataGate
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -125,6 +129,21 @@ class Sl2IntegrityTest {
         val original = reports.generate(record); val draft = repository.openCorrection(record); repository.saveCorrection(draft.copy(reason = "Correct public text", publicNote = "Corrected note")); val correctedRevision = repository.commitCorrection(record); reports.generate(record)
         reports.file(original.relativePath).delete(); val recreated = reports.generateRevision(record, original.revisionId)
         assertEquals(original.revisionId, recreated.revisionId); assertEquals(2, recreated.versionNumber); assertEquals("RECREATED", recreated.kind); assertEquals(listOf(original.revisionId, correctedRevision, original.revisionId), renderedRevisions)
+    }
+
+    @Test fun reportGenerationRequiresExactDecodableImmutablePhotoBytes() = runTest {
+        seed(); val repository = RoomServiceLoopRepository(db, time, attachmentRoot = context.filesDir)
+        val attachmentId = repository.savePhoto("work-1", testImageBytes(Color.BLUE), "evidence.png", "image/png", true, "Evidence")
+        val attachment = db.serviceLoopDao().attachment(attachmentId)!!; val source = File(context.filesDir, attachment.storedRelativePath); val exact = source.readBytes()
+        val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId; val historicalRevision = repository.finalRecord(record)!!.public.revisionId
+        val correction = repository.openCorrection(record); repository.saveCorrection(correction.copy(reason = "Create a newer revision", publicNote = "Newer revision")); repository.commitCorrection(record)
+        var renders = 0; val writer = ReportWriter { _, _, _, _, file -> renders++; FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val reports = AndroidReportService(context, db, repository, writer = writer); val ready = reports.generateRevision(record, historicalRevision)
+        assertEquals(1, renders); reports.file(ready.relativePath).delete()
+        assertTrue(source.delete()); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.parentFile!!.mkdirs(); source.writeBytes(exact + 1); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.writeBytes(exact.clone().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }); assertEquals(exact.size.toLong(), source.length()); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.writeBytes(exact); val recreated = reports.generateRevision(record, historicalRevision); assertEquals("READY", recreated.status); assertEquals(2, renders)
     }
 
     @Test fun optionalIssueWithoutDescriptionCannotBeReviewedOrFinalized() = runTest {
@@ -319,6 +338,8 @@ class Sl2IntegrityTest {
     }
 
     private fun repo() = RoomServiceLoopRepository(db, time)
+
+    private fun testImageBytes(color: Int): ByteArray = ByteArrayOutputStream().also { output -> Bitmap.createBitmap(16, 12, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }.compress(Bitmap.CompressFormat.PNG, 100, output) }.toByteArray()
 
     private suspend fun insertLine(id: String, outcome: String, work: String, reason: String? = null, oneOff: Boolean = false) {
         val dao = db.serviceLoopDao()

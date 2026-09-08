@@ -95,6 +95,10 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertResponses(values: List<WorkingResponseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAttachments(values: List<AttachmentEntity>)
     @Query("DELETE FROM attachments WHERE id=:id") suspend fun deleteAttachment(id: String): Int
+    @Query("SELECT * FROM attachments WHERE ownerType=:ownerType AND ownerId=:ownerId ORDER BY id") suspend fun attachmentsForOwner(ownerType: String, ownerId: String): List<AttachmentEntity>
+    @Query("DELETE FROM attachments WHERE ownerType=:ownerType AND ownerId=:ownerId") suspend fun deleteAttachmentsForOwner(ownerType: String, ownerId: String): Int
+    @Query("UPDATE attachments SET ownerType=:newOwnerType, ownerId=:newOwnerId, includedInCustomerReport=:included WHERE id=:id AND ownerType=:expectedOwnerType AND ownerId=:expectedOwnerId")
+    suspend fun reparentAttachment(id: String, expectedOwnerType: String, expectedOwnerId: String, newOwnerType: String, newOwnerId: String, included: Boolean): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUps(values: List<FollowUpEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertBusinessProfile(value: BusinessProfileEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRecord(value: FinalRecordEntity)

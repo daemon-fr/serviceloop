@@ -124,28 +124,55 @@ class Stage4Service(
         now
     }
 
-    suspend fun discardCorrection(recordId: String): Boolean = database.withTransaction { dao.correctionDraftForRecord(recordId)?.let { dao.deleteCorrectionDraft(it.id) == 1 } ?: false }
+    suspend fun discardCorrection(recordId: String): Boolean = BusinessFileCoordinator.mutex.withLock {
+        val draft = dao.correctionDraftForRecord(recordId) ?: return@withLock false
+        val attachments = dao.attachmentsForOwner("CORRECTION_DRAFT", draft.id)
+        val retainedBytes = attachments.associateWith { attachment ->
+            val file = File(fileRoot, attachment.storedRelativePath)
+            require(file.isFile) { "Correction evidence cleanup failed because a saved file is missing" }
+            file.readBytes().also { bytes -> require(bytes.size.toLong() == attachment.byteSize && sha256(bytes) == attachment.sha256) { "Correction evidence cleanup failed because a saved file changed" } }
+        }
+        try {
+            attachments.forEach { attachment ->
+                val file = File(fileRoot, attachment.storedRelativePath)
+                check(file.delete()) { "Correction evidence cleanup failed" }
+                val directory = file.parentFile
+                check(directory == null || directory.listFiles().isNullOrEmpty() && directory.delete()) { "Correction evidence directory cleanup failed" }
+            }
+            database.withTransaction {
+                check(dao.deleteAttachmentsForOwner("CORRECTION_DRAFT", draft.id) == attachments.size) { "Correction evidence metadata cleanup failed" }
+                check(dao.deleteCorrectionDraft(draft.id) == 1) { "Correction draft no longer exists" }
+            }
+            true
+        } catch (failure: Throwable) {
+            retainedBytes.forEach { (attachment, bytes) ->
+                val file = File(fileRoot, attachment.storedRelativePath)
+                if (!file.isFile) { file.parentFile?.mkdirs(); file.writeBytes(bytes) }
+            }
+            throw failure
+        }
+    }
 
     suspend fun addCorrectionEvidence(recordId: String, correctionWorkItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, caption: String?): Long = BusinessFileCoordinator.mutex.withLock {
-        require(bytes.isNotEmpty() && bytes.size <= 30 * 1024 * 1024) { "Choose an image smaller than 30 MiB" }
         require(mimeType.startsWith("image/")) { "Correction evidence must be an image" }
+        val normalized = AppOwnedImageNormalizer.normalize(bytes)
         val draft = dao.correctionDraftForRecord(recordId) ?: error("Correction draft no longer exists")
         val work = dao.correctionWorkItem(correctionWorkItemId)?.takeIf { it.draftId == draft.id } ?: error("Correction line no longer exists")
         val id = UUID.randomUUID().toString(); val relative = "attachments/$id/original"; val target = File(fileRoot, relative); val temp = File(target.parentFile, "incoming.tmp")
-        val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }; val now = businessTime.instant().toEpochMilli()
+        val hash = sha256(normalized.bytes); val now = businessTime.instant().toEpochMilli()
         target.parentFile?.mkdirs()
         try {
-            temp.writeBytes(bytes); require(temp.length() == bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }
+            temp.writeBytes(normalized.bytes); require(temp.length() == normalized.bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }
             database.withTransaction {
-                dao.insertAttachments(listOf(AttachmentEntity(id, "CORRECTION_DRAFT", draft.id, relative, hash, displayName, mimeType, true, "PRESENT", bytes.size.toLong(), caption?.trim()?.ifBlank { null })))
-                val photo = CorrectionPhotoDraft(id, relative, hash, bytes.size.toLong(), mimeType, caption?.trim()?.ifBlank { null }, true, true, now)
+                dao.insertAttachments(listOf(AttachmentEntity(id, "CORRECTION_DRAFT", draft.id, relative, hash, displayName, normalized.mimeType, true, "PRESENT", normalized.bytes.size.toLong(), caption?.trim()?.ifBlank { null })))
+                val photo = CorrectionPhotoDraft(id, relative, hash, normalized.bytes.size.toLong(), normalized.mimeType, caption?.trim()?.ifBlank { null }, true, true, now)
                 dao.updateCorrectionWorkItem(work.copy(photosJson = encodePhotos(decodePhotos(work.photosJson) + photo)))
             }
             now
         } catch (failure: Throwable) { temp.delete(); target.delete(); throw failure }
     }
 
-    suspend fun commitCorrection(recordId: String): String = database.withTransaction {
+    suspend fun commitCorrection(recordId: String): String = BusinessFileCoordinator.mutex.withLock { database.withTransaction {
         val record = dao.finalRecord(recordId) ?: error("Final record no longer exists")
         val draft = dao.correctionDraftForRecord(recordId) ?: return@withTransaction record.currentRevisionId
         require(!record.voided && record.currentRevisionId == draft.baseRevisionId) { "The current record changed; review the correction again" }
@@ -213,9 +240,13 @@ class Stage4Service(
             dao.insertFollowUp(FollowUpEntity(followUpId, "FU-${dao.followUpCount() + 1}", "CORRECTIVE", requested.title.trim(), requested.dueDate, "OPEN", visit.customerId, visit.siteId, firstWork?.equipmentId, requested.privatePlanningNote.trim().ifBlank { null }, visit.id, firstWork?.sourceWorkItemId, now))
             dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(), followUpId, "CREATED_BY_CORRECTION", now, draft.reason, requested.dueDate))
         }
-        dao.deleteCorrectionDraft(draft.id)
+        val selectedEvidenceIds = proposedItems.flatMap { decodePhotos(it.photosJson) }.filter { it.selected && it.addedInCorrection }.mapNotNull { it.sourceId }.toSet()
+        dao.attachmentsForOwner("CORRECTION_DRAFT", draft.id).forEach { attachment ->
+            check(dao.reparentAttachment(attachment.id, "CORRECTION_DRAFT", draft.id, "FINAL_REVISION", revisionId, attachment.id in selectedEvidenceIds) == 1) { "Correction evidence ownership could not be committed" }
+        }
+        check(dao.deleteCorrectionDraft(draft.id) == 1)
         revisionId
-    }
+    } }
 
     suspend fun voidRecord(recordId: String, publicReason: String, privateReason: String?): Boolean = database.withTransaction {
         require(publicReason.trim().isNotEmpty()) { "Customer-facing void explanation is required" }
@@ -461,6 +492,7 @@ class Stage4Service(
     private fun clean(value: String?) = value?.trim()?.ifBlank { null }
     private fun importedCell(value: String): String = value.trim().let { cell -> if (cell.length > 1 && cell[0] == '\'' && cell[1] in "=+-@") cell.drop(1) else cell }
     private fun normalize(value: String) = value.trim().lowercase().replace(Regex("\\s+"), " ")
+    private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private fun referenceProjection(key: String, values: Map<String, String>): Map<String, String> = when (key) {
         "customer_ref" -> CSV_HEADERS.take(6)
         "site_ref" -> listOf("customer_ref") + CSV_HEADERS.subList(6, 14)

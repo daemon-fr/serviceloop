@@ -8,12 +8,6 @@ import java.util.UUID
 import java.io.File
 import java.math.RoundingMode
 import java.security.MessageDigest
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.ExifInterface
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -395,8 +389,8 @@ class RoomServiceLoopRepository(
     override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = BusinessFileCoordinator.mutex.withLock { savePhotoUnlocked(workItemId, bytes, displayName, mimeType, includeInReport, caption) }
 
     private suspend fun savePhotoUnlocked(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String {
-        require(bytes.isNotEmpty()); require(bytes.size <= MAX_PHOTO_SOURCE_BYTES) { "Choose a photo smaller than 30 MB" }; require(mimeType.startsWith("image/")); val root = attachmentRoot ?: error("Attachment storage unavailable")
-        val normalized = normalizePhoto(bytes)
+        require(mimeType.startsWith("image/")); val root = attachmentRoot ?: error("Attachment storage unavailable")
+        val normalized = AppOwnedImageNormalizer.normalize(bytes)
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val relative = "attachments/$id/original"; val target = File(root, relative); val temp = File(target.parentFile, "incoming.tmp"); target.parentFile?.mkdirs(); try { temp.writeBytes(normalized.bytes); require(temp.length() == normalized.bytes.size.toLong()); if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = false); temp.delete() }; val hash = MessageDigest.getInstance("SHA-256").digest(normalized.bytes).joinToString("") { "%02x".format(it) }; database.withTransaction { val item=workingItem(workItemId); require(dao.machinePhotoCount(item.visitId,item.equipmentId)<20); require(dao.visitPhotoCount(item.visitId)<100); dao.insertAttachments(listOf(AttachmentEntity(id,"WORK_ITEM",workItemId,relative,hash,displayName,normalized.mimeType,includeInReport,"PRESENT",normalized.bytes.size.toLong(),clean(caption)))); dao.touchVisit(item.visitId,businessTime.instant().toEpochMilli()) }; return id } catch (failure: Throwable) { temp.delete(); target.delete(); throw failure }
     }
 
@@ -623,17 +617,6 @@ class RoomServiceLoopRepository(
     }
 
     private fun clean(value: String?): String? = value?.trim()?.ifBlank { null }
-    private data class NormalizedPhoto(val bytes: ByteArray, val mimeType: String)
-    private fun normalizePhoto(bytes: ByteArray): NormalizedPhoto {
-        val bounds=BitmapFactory.Options().apply{inJustDecodeBounds=true}; BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds); require(bounds.outWidth>0&&bounds.outHeight>0){"The selected file is not a readable image"}
-        var sample=1; while(bounds.outWidth/sample>5120||bounds.outHeight/sample>5120) sample*=2
-        val decoded=BitmapFactory.decodeByteArray(bytes,0,bytes.size,BitmapFactory.Options().apply{inSampleSize=sample})?:error("The selected image could not be decoded")
-        val orientation=runCatching{ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION,ExifInterface.ORIENTATION_NORMAL)}.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-        val degrees=when(orientation){ExifInterface.ORIENTATION_ROTATE_90->90f;ExifInterface.ORIENTATION_ROTATE_180->180f;ExifInterface.ORIENTATION_ROTATE_270->270f;else->0f}
-        val oriented=if(degrees==0f) decoded else Bitmap.createBitmap(decoded,0,0,decoded.width,decoded.height,Matrix().apply{postRotate(degrees)},true)
-        val scale=minOf(1f,2560f/maxOf(oriented.width,oriented.height)); val resized=if(scale<1f) Bitmap.createScaledBitmap(oriented,(oriented.width*scale).toInt().coerceAtLeast(1),(oriented.height*scale).toInt().coerceAtLeast(1),true) else oriented
-        val output=ByteArrayOutputStream(); val hasAlpha=resized.hasAlpha(); check(resized.compress(if(hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,if(hasAlpha) 100 else 90,output)){"The selected image could not be stored"}; return NormalizedPhoto(output.toByteArray(),if(hasAlpha)"image/png" else "image/jpeg")
-    }
     private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
     private fun reference(prefix: String, sequence: Int) = "$prefix-${sequence.toString().padStart(3, '0')}"
     private fun validateCustomer(input: CustomerInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.contactName.length <= 200 && input.phone.length <= 100 && input.email.length <= 320 && input.privateNote.length <= 5000) }
@@ -682,5 +665,5 @@ class RoomServiceLoopRepository(
         }
     }
 
-    private companion object { val SIGNED_DECIMAL = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$"); const val MAX_PHOTO_SOURCE_BYTES = 30 * 1024 * 1024 }
+    private companion object { val SIGNED_DECIMAL = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$") }
 }

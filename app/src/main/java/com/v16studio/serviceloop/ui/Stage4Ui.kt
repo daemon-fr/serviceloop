@@ -35,17 +35,30 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
+internal data class HistoryDateValidation(val from: String?, val to: String?, val fromError: String? = null, val toError: String? = null)
+
+internal fun validateHistoryDates(fromText: String, toText: String): HistoryDateValidation {
+    val from = fromText.trim().takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val to = toText.trim().takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val malformedFrom = fromText.isNotBlank() && from == null
+    val malformedTo = toText.isNotBlank() && to == null
+    val reversed = !malformedFrom && !malformedTo && from != null && to != null && from.isAfter(to)
+    if (malformedFrom || malformedTo || reversed) return HistoryDateValidation(null, null, if (malformedFrom) "Use YYYY-MM-DD" else if (reversed) "From must not be after To" else null, if (malformedTo) "Use YYYY-MM-DD" else if (reversed) "To must not be before From" else null)
+    return HistoryDateValidation(from?.toString(), to?.toString())
+}
+
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 internal fun HistoryScreen(scope: HistoryScope, state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var type by remember { mutableStateOf(HistoryType.ALL) }; var sort by remember { mutableStateOf(HistorySort.EVENT_NEWEST) }
     var from by remember { mutableStateOf("") }; var to by remember { mutableStateOf("") }; var search by remember { mutableStateOf("") }
-    val query = remember(scope, type, sort, from, to, search) { HistoryQuery(scope, type, from.ifBlank { null }, to.ifBlank { null }, sort, search) }
+    val dateValidation = remember(from, to) { validateHistoryDates(from, to) }
+    val query = remember(scope, type, sort, dateValidation, search) { HistoryQuery(scope, type, dateValidation.from, dateValidation.to, sort, search) }
     LaunchedEffect(query) { delay(150); viewModel.loadHistory(query) }
     LazyColumn(Modifier.padding(padding).testTag("history-list"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text(scope.label, style = MaterialTheme.typography.headlineSmall); OutlinedTextField(search, { search = it }, label = { Text("Search within history") }, modifier = Modifier.fillMaxWidth()) }
         item { Text("Type"); FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { HistoryType.entries.forEach { option -> FilterChip(type == option, { type = option }, { Text(option.name.lowercase().replace('_', ' ')) }) } } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(from, { from = it }, label = { Text("From · YYYY-MM-DD") }, modifier = Modifier.weight(1f)); OutlinedTextField(to, { to = it }, label = { Text("To · YYYY-MM-DD") }, modifier = Modifier.weight(1f)) }; TextButton(onClick = { from = ""; to = "" }) { Text("Clear dates") } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(from, { from = it }, label = { Text("From · YYYY-MM-DD") }, modifier = Modifier.weight(1f).testTag("history-from"), isError = dateValidation.fromError != null, supportingText = dateValidation.fromError?.let { message -> { Text(message) } }); OutlinedTextField(to, { to = it }, label = { Text("To · YYYY-MM-DD") }, modifier = Modifier.weight(1f).testTag("history-to"), isError = dateValidation.toError != null, supportingText = dateValidation.toError?.let { message -> { Text(message) } }) }; TextButton(onClick = { from = ""; to = "" }, modifier = Modifier.testTag("history-clear-dates")) { Text("Clear dates") } }
         item { Text("Sort"); HistorySort.entries.forEach { option -> FilterChip(sort == option, { sort = option }, { Text(option.name.lowercase().replace('_', ' ')) }) } }
         item { OutlinedButton(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth()) { Text("Record past visit") } }
         if (state.history.isEmpty()) item { Text("No activity matches this scope and filters.") }

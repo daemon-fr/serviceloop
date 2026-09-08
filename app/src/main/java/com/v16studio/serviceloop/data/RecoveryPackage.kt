@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.data
 
 import android.content.ContentValues
 import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
 import android.util.Base64
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.BackupInspection
@@ -217,7 +218,46 @@ class RecoveryPackage(
         require(tableRows(root, "equipment").all { it.getString("siteId") in sites })
         require(tableRows(root, "service_plans").all { it.getString("equipmentId") in equipment })
         require(tableRows(root, "service_obligations").all { it.getString("planId") in plans })
-        require(tableRows(root, "recovery_metadata").size == 1)
+        val revisions = tableRows(root, "final_record_revisions").associateBy { it.getString("id") }
+        val records = tableRows(root, "final_records").associateBy { it.getString("id") }
+        require(records.values.all { record -> revisions[record.getString("currentRevisionId")]?.getString("recordId") == record.getString("id") }) { "A final record points to a revision that does not belong to it" }
+        val obligations = tableRows(root, "service_obligations").associateBy { it.getString("id") }
+        require(tableRows(root, "service_plans").all { plan ->
+            val current = plan.optString("currentObligationId").takeIf { it.isNotBlank() }
+            (current == null && plan.getString("state") != "ACTIVE") || (current != null && obligations[current]?.getString("planId") == plan.getString("id") && obligations[current]?.getString("dueDate") == plan.getString("currentDueDate"))
+        }) { "A service plan has an invalid current obligation" }
+        val templateRevisions = tableRows(root, "reusable_template_revisions").associateBy { it.getString("id") }
+        require(tableRows(root, "reusable_templates").all { template -> templateRevisions[template.getString("currentRevisionId")]?.getString("templateId") == template.getString("id") }) { "A reusable template has an invalid current revision" }
+        require(tableRows(root, "correction_drafts").all { draft -> revisions[draft.getString("baseRevisionId")]?.getString("recordId") == draft.getString("recordId") }) { "A correction base revision does not belong to its record" }
+        val recovery = tableRows(root, "recovery_metadata")
+        require(recovery.size == 1 && recovery.single().getString("id") == "primary") { "Recovery metadata singleton is invalid" }
+        validateAgainstRoomSchema(root)
+    }
+
+    /** Replays the generated Room v6 schema into an isolated throwaway database. */
+    private fun validateAgainstRoomSchema(root: JSONObject) {
+        // The platform temp directory avoids path-length failures while remaining app-private on Android.
+        val stagingFile = File.createTempFile("slrv-", ".db")
+        var staging: SQLiteDatabase? = null
+        try {
+            val candidate = SQLiteDatabase.openOrCreateDatabase(stagingFile, null)
+            staging = candidate
+            database.openHelper.readableDatabase.query("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table','index') AND name NOT LIKE 'sqlite_%' AND name!='android_metadata' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END,name").use { cursor ->
+                while (cursor.moveToNext()) candidate.execSQL(cursor.getString(2))
+            }
+            candidate.setForeignKeyConstraintsEnabled(true)
+            TABLE_ORDER.forEach { table ->
+                tableRows(root, table).forEach { row ->
+                    require(candidate.insert(table, null, contentValues(row)) != -1L) { "Could not validate $table" }
+                }
+            }
+            candidate.rawQuery("PRAGMA foreign_key_check", null).use { require(!it.moveToFirst()) { "Restored references are invalid" } }
+        } catch (failure: Exception) {
+            throw IllegalArgumentException("Backup database relationships are invalid", failure)
+        } finally {
+            staging?.close()
+            listOf(stagingFile, File(stagingFile.path + "-wal"), File(stagingFile.path + "-shm"), File(stagingFile.path + "-journal")).forEach { it.delete() }
+        }
     }
 
     private fun replaceDatabase(root: JSONObject) {
@@ -225,23 +265,24 @@ class RecoveryPackage(
         TABLE_ORDER.asReversed().forEach { db.execSQL("DELETE FROM `$it`") }
         TABLE_ORDER.forEach { table ->
             tableRows(root, table).forEach { row ->
-                val values = ContentValues()
-                row.keys().forEach { key ->
-                    val value = row.get(key)
-                    when (value) {
-                        JSONObject.NULL -> values.putNull(key)
-                        is Int -> values.put(key, value)
-                        is Long -> values.put(key, value)
-                        is Double -> values.put(key, value)
-                        is String -> values.put(key, value)
-                        is JSONObject -> values.put(key, Base64.decode(value.getString("blob"), Base64.NO_WRAP))
-                        else -> error("Unsupported snapshot value")
-                    }
-                }
-                require(db.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_ABORT, values) != -1L) { "Could not restore $table" }
+                require(db.insert(table, SQLiteDatabase.CONFLICT_ABORT, contentValues(row)) != -1L) { "Could not restore $table" }
             }
         }
         db.query("PRAGMA foreign_key_check").use { require(!it.moveToFirst()) { "Restored references are invalid" } }
+    }
+
+    private fun contentValues(row: JSONObject) = ContentValues().also { values ->
+        row.keys().forEach { key ->
+            when (val value = row.get(key)) {
+                JSONObject.NULL -> values.putNull(key)
+                is Int -> values.put(key, value)
+                is Long -> values.put(key, value)
+                is Double -> values.put(key, value)
+                is String -> values.put(key, value)
+                is JSONObject -> values.put(key, Base64.decode(value.getString("blob"), Base64.NO_WRAP))
+                else -> error("Unsupported snapshot value")
+            }
+        }
     }
 
     private fun tableRows(root: JSONObject, name: String): List<JSONObject> {

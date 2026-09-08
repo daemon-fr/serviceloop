@@ -13,7 +13,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -117,6 +119,19 @@ class CompletionUiSemanticTest {
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         compose.onNodeWithText("Unfinished visits · 2").assertIsDisplayed()
         compose.onNodeWithText("Booked visits · 3").assertIsDisplayed()
+    }
+
+    @Test fun historyDateFieldsShowErrorsAndClearWithoutApplyingInvalidRanges() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.onNodeWithText("Work").performClick(); compose.onNodeWithText("Visits").performClick()
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(hasText("History")); compose.onNodeWithText("History").performClick()
+        compose.onNodeWithTag("history-from").performTextReplacement("not-a-date"); compose.onNodeWithText("Use YYYY-MM-DD").assertIsDisplayed()
+        compose.onNodeWithTag("history-from").performTextReplacement("2026-09-10"); compose.onNodeWithTag("history-to").performTextReplacement("2026-09-01")
+        compose.onNodeWithText("From must not be after To").assertIsDisplayed(); compose.onNodeWithText("To must not be before From").assertIsDisplayed()
+        compose.onNodeWithTag("history-clear-dates").performClick(); compose.onNodeWithText("From must not be after To").assertDoesNotExist(); compose.onNodeWithText("To must not be before From").assertDoesNotExist()
     }
 
     @Test fun staleObligationIsUnavailableInCompletionReview() {

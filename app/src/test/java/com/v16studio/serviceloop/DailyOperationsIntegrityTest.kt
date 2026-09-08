@@ -9,6 +9,7 @@ import com.v16studio.serviceloop.data.RoomServiceLoopRepository
 import com.v16studio.serviceloop.data.DraftWriteGate
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.RecoveryPackage
+import com.v16studio.serviceloop.ui.validateHistoryDates
 import com.v16studio.serviceloop.domain.*
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -255,6 +256,69 @@ class DailyOperationsIntegrityTest {
         repo.commitCorrection(recordId); val corrected = repo.finalRecord(recordId)!!.public.lines.single()
         assertEquals("ISSUE_FOUND", corrected.checklist.single().disposition); assertEquals("Corrected public finding", corrected.checklist.single().reason); assertEquals("New part", corrected.parts.single().description); assertEquals("Customer-visible correction note", repo.finalRecord(recordId)!!.public.publicNote); assertTrue(corrected.photos.single().addedInCorrection); assertNotNull(corrected.photos.single().addedAtEpochMillis)
         assertEquals("OK", db.serviceLoopDao().finalChecklistItems(original.public.lines.single().let { db.serviceLoopDao().finalWorkItems(original.public.revisionId).single().id }).single().disposition)
+    }
+
+    @Test fun correctionEvidenceIsNormalizedAndOpenDraftBackupRoundTripsWithDraftOwnership() = runTest {
+        val ids = foundation(); val recordId = finalizedRecord(ids); val draft = repo.openCorrection(recordId); val line = draft.items.single()
+        val raw = testImageBytes(Color.BLUE) + "PRIVATE_SOURCE_TRAILER".toByteArray()
+        repo.addCorrectionEvidence(recordId, line.id, raw, "raw.png", "image/png", "Draft proof")
+        val evidence = db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).single(); val stored = File(root, evidence.storedRelativePath)
+        assertTrue(stored.isFile); assertFalse(stored.readBytes().contentEquals(raw)); assertFalse(stored.readText(Charsets.ISO_8859_1).contains("PRIVATE_SOURCE_TRAILER")); assertEquals(stored.length(), evidence.byteSize)
+        val password = "draft evidence backup".toCharArray(); val inspection = repo.inspectBackup(repo.createBackup(password).bytes, password)
+        repo.erase(true, "ERASE"); repo.restoreBackup(inspection, "REPLACE", false)
+        val restored = db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).single()
+        assertEquals(evidence.id, restored.id); assertTrue(File(root, restored.storedRelativePath).isFile); assertEquals(draft.id, repo.openCorrection(recordId).id)
+    }
+
+    @Test fun discardedCorrectionEvidenceRemovesMetadataFileDirectoryAndStaysAbsentFromBackup() = runTest {
+        val ids = foundation(); val recordId = finalizedRecord(ids); val draft = repo.openCorrection(recordId); val line = draft.items.single()
+        repo.addCorrectionEvidence(recordId, line.id, testImageBytes(Color.GREEN), "discard.png", "image/png", null)
+        val evidence = db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).single(); val file = File(root, evidence.storedRelativePath); val directory = file.parentFile!!
+        assertTrue(repo.discardCorrection(recordId)); assertNull(db.serviceLoopDao().attachment(evidence.id)); assertFalse(file.exists()); assertFalse(directory.exists())
+        val password = "discarded evidence backup".toCharArray(); val inspection = repo.inspectBackup(repo.createBackup(password).bytes, password)
+        repo.erase(true, "ERASE"); repo.restoreBackup(inspection, "REPLACE", false)
+        assertNull(db.serviceLoopDao().attachment(evidence.id)); assertFalse(File(root, evidence.storedRelativePath).exists())
+    }
+
+    @Test fun committedCorrectionEvidenceGetsRevisionOwnershipAndRoundTripsSelectedAndUnselectedPolicy() = runTest {
+        val ids = foundation(); val recordId = finalizedRecord(ids); val draft = repo.openCorrection(recordId); val line = draft.items.single()
+        repo.addCorrectionEvidence(recordId, line.id, testImageBytes(Color.BLUE), "selected.png", "image/png", "Selected")
+        repo.addCorrectionEvidence(recordId, line.id, testImageBytes(Color.GREEN), "internal.png", "image/png", "Internal")
+        val enriched = repo.openCorrection(recordId); val added = enriched.items.single().photos.filter { it.addedInCorrection }
+        repo.saveCorrection(enriched.copy(reason = "Add corrected evidence", items = listOf(enriched.items.single().copy(photos = enriched.items.single().photos.map { if (it.sourceId == added.last().sourceId) it.copy(selected = false) else it }))))
+        val revisionId = repo.commitCorrection(recordId); val owned = db.serviceLoopDao().attachmentsForOwner("FINAL_REVISION", revisionId)
+        assertEquals(2, owned.size); assertTrue(owned.single { it.id == added.first().sourceId }.includedInCustomerReport); assertFalse(owned.single { it.id == added.last().sourceId }.includedInCustomerReport)
+        val finalPhoto = db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id).single { it.addedInCorrection }
+        assertEquals(added.first().sourceId, finalPhoto.sourceAttachmentId); assertTrue(db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).isEmpty())
+        val password = "committed evidence backup".toCharArray(); val inspection = repo.inspectBackup(repo.createBackup(password).bytes, password)
+        repo.erase(true, "ERASE"); repo.restoreBackup(inspection, "REPLACE", false)
+        assertEquals(2, db.serviceLoopDao().attachmentsForOwner("FINAL_REVISION", revisionId).size); assertEquals(finalPhoto.sourceAttachmentId, db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id).single { it.addedInCorrection }.sourceAttachmentId)
+    }
+
+    @Test fun backupInspectionRejectsAuthenticatedStructuralAndCurrentIdentityDamageWithoutMutatingLiveData() = runTest {
+        val ids = foundation(); val password = "structural validation".toCharArray(); val dao = db.serviceLoopDao(); val visit = repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", 1); val work = dao.firstWorkItemId(visit)!!
+        db.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys=OFF")
+        db.openHelper.writableDatabase.execSQL("UPDATE work_items SET equipmentId='missing-equipment' WHERE id=?", arrayOf(work))
+        val dangling = repo.createBackup(password).bytes
+        db.openHelper.writableDatabase.execSQL("UPDATE work_items SET equipmentId=? WHERE id=?", arrayOf(ids.equipment, work)); db.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys=ON")
+        assertTrue(runCatching { repo.inspectBackup(dangling, password) }.isFailure); assertEquals(ids.equipment, dao.workItem(work)!!.equipmentId); assertTrue(root.listFiles().orEmpty().none { it.name.startsWith("recovery-validation-") })
+        val originalObligation = dao.plan(ids.plan)!!.currentObligationId!!
+        db.openHelper.writableDatabase.execSQL("UPDATE service_plans SET currentObligationId='wrong-obligation' WHERE id=?", arrayOf(ids.plan))
+        val wrongCurrent = repo.createBackup(password).bytes
+        db.openHelper.writableDatabase.execSQL("UPDATE service_plans SET currentObligationId=? WHERE id=?", arrayOf(originalObligation, ids.plan))
+        assertTrue(runCatching { repo.inspectBackup(wrongCurrent, password) }.isFailure); assertEquals(originalObligation, dao.plan(ids.plan)!!.currentObligationId)
+        repo.cancelVisit(visit, "Clear validation booking"); val recordId = finalizedRecord(ids); val originalRevision = dao.finalRecord(recordId)!!.currentRevisionId
+        db.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId='wrong-revision' WHERE id=?", arrayOf(recordId)); val wrongRevision = repo.createBackup(password).bytes
+        db.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId=? WHERE id=?", arrayOf(originalRevision, recordId))
+        assertTrue(runCatching { repo.inspectBackup(wrongRevision, password) }.isFailure); assertEquals(originalRevision, dao.finalRecord(recordId)!!.currentRevisionId)
+    }
+
+    @Test fun historyDateValidationNeverAppliesMalformedOrReversedRanges() {
+        assertNull(validateHistoryDates("not-a-date", "").from); assertNotNull(validateHistoryDates("not-a-date", "").fromError)
+        assertNull(validateHistoryDates("", "2026-99-99").to); assertNotNull(validateHistoryDates("", "2026-99-99").toError)
+        val reversed = validateHistoryDates("2026-09-10", "2026-09-01"); assertNull(reversed.from); assertNull(reversed.to); assertNotNull(reversed.fromError)
+        val valid = validateHistoryDates("2026-09-01", "2026-09-10"); assertEquals("2026-09-01", valid.from); assertEquals("2026-09-10", valid.to)
+        val cleared = validateHistoryDates("", ""); assertNull(cleared.from); assertNull(cleared.to); assertNull(cleared.fromError); assertNull(cleared.toError)
     }
 
     @Test fun correctionFollowUpEffectsAreExplicitAndAtomic() = runTest {

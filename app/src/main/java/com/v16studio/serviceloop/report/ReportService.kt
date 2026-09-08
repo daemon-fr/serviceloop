@@ -57,6 +57,7 @@ class AndroidReportService(
             ?: error("Final service record revision no longer exists")
         val previous = dao.reportRendition(detail.public.revisionId)
         previous?.let { existing -> if (existing.status == "READY" && file(existing.relativePath).isFile && (!detail.voided || existing.kind == "VOID_NOTICE")) return@withLock existing.toDomain() }
+        verifySelectedPhotographs(detail.public)
         val recreatingMissing = previous?.status == "MISSING" || (previous?.status == "READY" && !file(previous.relativePath).isFile)
         val creatingVoidNotice = requestedRevisionId == null && detail.voided && previous?.kind != "VOID_NOTICE"
         val version = if (recreatingMissing || creatingVoidNotice) (previous?.versionNumber ?: 0) + 1 else previous?.versionNumber ?: 1
@@ -98,9 +99,23 @@ class AndroidReportService(
     }
 
     private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+    private fun verifySelectedPhotographs(model: PublicReportModel) {
+        model.lines.flatMap { it.photos }.forEach { photo ->
+            val source = file(photo.relativePath)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            if (!source.isFile || source.length() != photo.byteSize || sha256(source) != photo.sha256) {
+                error(PHOTO_INTEGRITY_FAILURE)
+            }
+            BitmapFactory.decodeFile(source.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) error(PHOTO_INTEGRITY_FAILURE)
+        }
+    }
     private fun ReportRenditionEntity.toDomain() = ReportRendition(id, revisionId, versionNumber, generatedAtEpochMillis, relativePath, sha256, byteSize, pageCount, status, failureMessage, kind)
 
-    private companion object { val mutex = Mutex() }
+    private companion object {
+        val mutex = Mutex()
+        const val PHOTO_INTEGRITY_FAILURE = "Selected report photograph is missing or no longer matches the recorded evidence. Restore the original exact file or use an explicit correction."
+    }
 }
 
 object FixedServiceRecordPdf {
