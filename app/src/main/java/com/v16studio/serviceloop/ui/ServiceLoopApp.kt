@@ -220,6 +220,9 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("settings") {
             DetailScaffold("Settings", nav) { padding -> SettingsScreen(padding, nav) }
         }
+        composable("dispatch/settings") { DetailScaffold("Coordinator tools",nav){DispatchSettings(it)} }
+        composable("dispatch/create") { DetailScaffold("Create work package",nav){CreateDispatchPackageScreen(it)} }
+        composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel)} }
         composable("business-profile") {
             LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
             DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) }
@@ -340,7 +343,7 @@ internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() ->
 private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestination) -> Unit) {
     NavigationBar {
         RootDestination.entries.forEach { destination ->
-            NavigationBarItem(selected = selected == destination, onClick = { onNavigate(destination) }, icon = { Text(if (destination == RootDestination.HOME) "⌂" else if (destination == RootDestination.WORK) "✓" else "◎") }, label = { Text(destination.label) })
+            NavigationBarItem(selected = selected == destination, onClick = { onNavigate(destination) }, icon = { Text(if (destination == RootDestination.HOME) "⌂" else if (destination == RootDestination.WORK) "✓" else "◎") }, label = { Text(destination.label) }, modifier = Modifier.testTag("root-nav-${destination.name.lowercase()}"))
         }
     }
 }
@@ -428,6 +431,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
             }
         }
         item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
+        item { Text("More",style=MaterialTheme.typography.titleLarge); SummaryRow("Import work package","Open"){nav.navigate("dispatch/import")}; val context=LocalContext.current; if(context.getSharedPreferences(DISPATCH_PREFS,0).getBoolean(COORDINATOR_ENABLED,false)) SummaryRow("Create work package","Open"){nav.navigate("dispatch/create")} }
     }
 }
 
@@ -645,7 +649,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
+        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools · Experimental", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · foundation", "Later") { nav.navigate("scope/Reminders") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
     }
 }
 
@@ -706,7 +710,7 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
         if (historical && !detail.voided) item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }); Text("I understand this is a superseded historical report") } }
         if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth()) { Text("Recreate from this fixed revision") } }
-        item { Button(onClick = { val uri = FileProvider.getUriForFile(context, "${context.packageName}.reports", file); val intent = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(Intent.createChooser(intent, "Share customer service record")) }, enabled = file.isFile && (!detail.voided || rendition.kind == "VOID_NOTICE") && (!historical || detail.voided || supersededShareAcknowledged), modifier = Modifier.fillMaxWidth().testTag("share-pdf").semantics { contentDescription = "Share PDF" }) { Text(if (detail.voided && rendition.kind != "VOID_NOTICE") "Share disabled for voided original" else "Share PDF") }; Text(if (detail.voided && rendition.kind != "VOID_NOTICE") "Generate and share the current void notice. Previously shared files cannot be revoked." else if (historical) "Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.", style = MaterialTheme.typography.bodySmall) }
+        item { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(reportShareIntent(uri,email),if(email==null)"Share customer service record" else "Send service report to office"))}; Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){Text("Send to office")}; Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Generate and share the current void notice. Previously shared files cannot be revoked." else if(historical)"Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.",style=MaterialTheme.typography.bodySmall) }
     }
     }
 }

@@ -192,6 +192,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM contact_notes ORDER BY occurredAtEpochMillis, id") suspend fun allContactNotes(): List<ContactNoteEntity>
     @Query("SELECT * FROM follow_up_events ORDER BY occurredAtEpochMillis, id") suspend fun allFollowUpEvents(): List<FollowUpEventEntity>
     @Query("SELECT * FROM change_entries ORDER BY recordedAtEpochMillis, id") suspend fun allChangeEntries(): List<ChangeEntryEntity>
+    @Query("SELECT * FROM change_entries WHERE id=:id") suspend fun changeEntry(id: String): ChangeEntryEntity?
     @Query("SELECT * FROM correction_drafts WHERE recordId=:recordId") suspend fun correctionDraftForRecord(recordId: String): CorrectionDraftEntity?
     @Query("SELECT * FROM correction_drafts WHERE id=:id") suspend fun correctionDraft(id: String): CorrectionDraftEntity?
     @Query("SELECT * FROM correction_drafts ORDER BY modifiedAtEpochMillis DESC") suspend fun correctionDrafts(): List<CorrectionDraftEntity>

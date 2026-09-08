@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="customer_reports" path="reports/" />
     <cache-path name="camera_staging" path="camera-staging/" />
+    <cache-path name="work_packages" path="work-packages/" />
 </paths>
