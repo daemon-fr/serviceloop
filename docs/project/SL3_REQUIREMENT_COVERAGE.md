@@ -1,6 +1,6 @@
 # ServiceLoop — SL-3 Requirement Coverage
 
-**Status:** Owner-review corrections implemented in a development checkpoint; final testing-AI verification and owner re-review pending. Not owner accepted, product-valid, or release-ready.
+**Status:** Owner-review corrections implemented in a development checkpoint; correction-specific verification remains incomplete and owner re-review is pending. Not owner accepted, product-valid, or release-ready.
 
 ## Implemented
 
@@ -25,6 +25,8 @@
 ## Phase-B verification evidence
 
 The preceding Phase-B evidence applies to the earlier candidate. This owner-review correction checkpoint has focused development evidence only; the subsequent testing-AI verification remains required.
+
+- TESTED — the correction verification run found and repaired a layout risk where a full-width reschedule date field could leave its "✓ Saved" acknowledgement without reliable rendered space. The acknowledgement now has a separate, right-aligned line beneath that field. The gated persistent journey also now waits for its asynchronously rendered selected site/plan before requesting Book; it passed in 18.794 seconds on the canonical AVD. This is partial verification, not final correction acceptance.
 
 - TESTED — host gate: 91 unit tests, 0 failures/errors/skips; `assembleDebug`, `assembleRelease`, and `assembleDebugAndroidTest` pass; lint reports 0 errors, 12 warnings, and 2 lower-severity findings.
 - UI-INSTRUMENTED — expanded normal canonical suite: 27 tests discovered in 341.863 seconds, with 20 passes and 7 deliberate assumption skips for the separately gated persistent/system-handoff cases. This covers v1→4, v2→4, and v3→4 migrations; retained SL-2 finalization/report/root behavior; D01 create/edit behavior; same-buffer long text; global equipment site selection; selected-photo PDF rendering; ordinary directory/plan UI; and lazy-list inspection continuation.

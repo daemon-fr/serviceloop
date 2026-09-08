@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-08 — SL-3 owner-review corrections implemented; final testing verification pending
+**Updated:** 2026-09-08 — SL-3 owner-review corrections implemented; independent verification remains in progress
 
 ## Current state
 
@@ -10,7 +10,7 @@
 - SL-2 owner-review usability correction: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - B-008 real-technician pilot remains outstanding. This does not block Stage-3 development, but Stage 2 is not product-valid for release preparation until that pilot occurs.
 - SL-3 is implemented on `codex/sl-3-complete-daily-operations` as a developer candidate for independent review; it is not owner accepted.
-- The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Exhaustive runtime/regression acceptance verification remains pending Testing AI Model Phase B; this checkpoint is not technical or owner acceptance.
+- The independent-review corrections are implemented as a development checkpoint: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected. Testing confirmed the saved-reschedule acknowledgement needed its own layout row and corrected a persistent-journey readiness wait; exhaustive correction-specific runtime/regression verification remains pending. This checkpoint is not technical or owner acceptance.
 - Backward compatibility for pre-correction v4 Booked rows is closed: Start safely validates and reuses an already-captured deterministic snapshot when its immutable template revision is still current, or selects a newly captured current revision without rewriting the old snapshot.
 - Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The expanded normal canonical instrumentation suite discovers 27 tests and completes with 20 passes plus 7 deliberate assumption skips for separately gated persistent/system-handoff cases.
 - The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.

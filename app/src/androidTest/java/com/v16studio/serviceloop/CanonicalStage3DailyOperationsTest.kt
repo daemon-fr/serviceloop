@@ -103,6 +103,10 @@ class CanonicalStage3DailyOperationsTest {
 
         compose.onNode(hasText("Create visit") and hasClickAction()).performClick()
         waitForText("Start now")
+        // The setup route composes before its asynchronously loaded site/plan projection.
+        // Wait for the selected plan's site rather than clicking a disabled Book action.
+        waitForText("$customerName · $siteName")
+        waitForText(planName)
         compose.onNodeWithText("Record past visit").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Book visit").performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.dueServices().single{it.planId==planId}.claimedVisitId!=null}}
