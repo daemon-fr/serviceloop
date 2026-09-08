@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-08 — SL-3 owner-review corrections implemented; independent verification remains in progress
+**Updated:** 2026-09-08 — SL-3 Due-services observable-state correction implemented and verified; owner re-review remains
 
 ## Current state
 
@@ -17,7 +17,10 @@
 - Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
 - Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, and visit-action hierarchy. The development correction checkpoint implements these changes with focused host/device validation; exhaustive testing-AI verification and owner re-review remain pending.
 - SL-3 is not owner accepted, product-valid, or release-ready. B-008 and the later Stage-4/Stage-5 boundaries remain outstanding.
-- Final SL-3 owner-debug corrections consolidate canonical/contextual Work entry into one navigation destination so canonical root entry owns a fresh Due-services state from its first composition. The shared long-text editor now uses a modest icon-only expand glyph in a 48dp target; the full-screen editor still shares the parent buffer and does not save independently. Focused host/device and rendered checks pass; owner re-review remains pending.
+- The earlier Work-route consolidation fixed route identity but did not fix Due-services ownership. Commit `32dee7c` then added cancellable generation-based refreshes, but owner evidence proved that correction insufficient: retained cards could render before the Work-entry effect set loading, and a cancelled current owner had no terminal write, allowing the blocking `Refreshing due services` state to remain.
+- Due services are now one Room-observed projection owned by the ViewModel, not by Work navigation or mutation callbacks. The first successful emission atomically establishes availability and rows; later database invalidations replace that snapshot, claimed unconsumed obligations remain present, and collection failure preserves the last good rows with an explicit error. Work re-entry and New Visit consume the same coherent projection without initiating reads or clearing availability.
+- On the preserved canonical dataset, Room, DAO, repository, ViewModel, and rendered UI agreed on 40 rows. P-002/P-003/P-004 were ACTIVE through customer/site/equipment/plan, referenced current unconsumed obligations `obl-002`/`obl-003`/`obl-004`, and had no VisitClaim. Focused canonical instrumentation repeatedly switched Home/Work/Customers, Work subtabs, contextual Home → Work, and New Visit → Back without a card glimpse, blocking refresh, empty transition, or wedge. Owner re-review remains pending.
+- Final gates after the production change passed 104 host tests, debug APK assembly, debug Android-test assembly, and lint with 0 errors (12 warnings, 2 hints). Focused in-memory Room/UI and preserved-dataset Due-services tests passed. The established persistent SL-3 journey exposed one ambiguous `Working` text wait after the visit claim was already durable; replacing it with the stable visit-line tag corrected the harness, and the journey then passed in 38.911 seconds. A final rendered screen showed P-004/P-002/P-003 populated under All with no loading or false-empty state.
 
 ## SL-3 implementation candidate
 
@@ -109,8 +112,9 @@ This is not a Stage-2 blocker and should be incorporated when Stage-3 touches re
 
 ## SL-3 Due-services state correction
 
-- The owner-observed populated-to-empty Due-services transition was not a Work-tab render artifact. `loadDueServices()` and `loadVisitSetup()` independently assigned the same projection without request ownership, so older asynchronous reads could settle after newer reads.
-- Due services now have an owned, cancellable, generation-guarded refresh and explicit unresolved/error state. Cached rows are never presented as settled current data during an authoritative refresh; booking/cancellation/restore/finalization paths request the same refresh owner.
+- The Work-route-only diagnosis and the first refresh-ordering correction at `32dee7c` both proved insufficient. The latter still made navigation start a new imperative read, split projection truth across rows/loading/error fields, exposed retained rows before `LaunchedEffect` ran, and rethrew cancellation without terminalizing the Boolean set before launch. Its broad Work-entry/Visit-setup/post-mutation fanout therefore retained a reachable no-owner loading state.
+- The final correction removes Due-services refresh generations, cancellation ownership, Work-entry reads, Visit-setup reads, and post-mutation refresh fanout. Room observes the complete active/unconsumed obligation join (including optional VisitClaim), the repository maps each emission to business-date buckets, and one ViewModel-lifetime collector publishes an atomic authoritative snapshot.
+- Before the first result, the projection is explicitly unresolved; an authoritative empty emission alone enables the empty UI. After a result, navigation never makes it unresolved again. A later collection error retains the last good rows and reports the update failure instead of manufacturing an empty result or permanent spinner.
 
 ## Historical provenance
 

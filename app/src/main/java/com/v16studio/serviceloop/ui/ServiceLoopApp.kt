@@ -152,7 +152,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
             val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
             val contextualFilter = entry.arguments?.getString("filter")
             var workTab by rememberSaveable(requested, contextualFilter) { mutableStateOf(requested) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadDueServices(); viewModel.loadFollowUps() }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadFollowUps() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
                 ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") {
                     WorkScreen(state, nav, workTab, viewModel, contextualFilter) { workTab = it }

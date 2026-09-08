@@ -131,7 +131,7 @@ class CanonicalStage3DailyOperationsTest {
         visitId=runBlocking{dao.dueServices().single{it.planId==planId}.claimedVisitId!!}
         val workId=runBlocking{dao.visitWorkItems(visitId).single().id}
         val questionId=runBlocking{dao.checklistItems(dao.workItem(workId)!!.templateSnapshotId!!).single().id}
-        waitForText("Working")
+        compose.waitUntil(15_000){compose.onAllNodesWithTag("visit-line-$workId").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("visit-line-$workId").performClick()
         compose.waitUntil(15_000){compose.onAllNodesWithTag("long-text-public-work-performed").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("long-text-public-work-performed").performTextInput("Completed runtime inspection")

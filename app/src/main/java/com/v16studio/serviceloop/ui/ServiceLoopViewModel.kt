@@ -20,14 +20,23 @@ import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.report.ReportService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+
+sealed interface DueServicesProjection {
+    data object Unresolved : DueServicesProjection
+    data class Available(val rows: List<DueService>, val updateError: String? = null) : DueServicesProjection
+    data class Unavailable(val message: String) : DueServicesProjection
+}
 
 data class UiState(
     val loading: Boolean = true,
@@ -55,13 +64,7 @@ data class UiState(
     val customer: CustomerDetail? = null,
     val site: SiteDetail? = null,
     val plan: PlanDetail? = null,
-    val dueServices: List<DueService> = emptyList(),
-    /**
-     * Due services have their own freshness contract.  A list retained from a previous
-     * Work entry is not current data while a newer authoritative read is unresolved.
-     */
-    val dueServicesLoading: Boolean = false,
-    val dueServicesError: String? = null,
+    val dueServicesProjection: DueServicesProjection = DueServicesProjection.Unresolved,
     val visitSites: List<VisitSiteOption> = emptyList(),
     val templates: List<TemplateSummary> = emptyList(),
     val template: TemplateDetail? = null,
@@ -74,7 +77,18 @@ data class UiState(
     val operationInProgress: Boolean = false,
     val operationMessage: String? = null,
     val inspectionFocus: InspectionFocus? = null,
-)
+) {
+    val dueServices: List<DueService>
+        get() = (dueServicesProjection as? DueServicesProjection.Available)?.rows.orEmpty()
+    val dueServicesReady: Boolean
+        get() = dueServicesProjection is DueServicesProjection.Available
+    val dueServicesError: String?
+        get() = when (val projection = dueServicesProjection) {
+            is DueServicesProjection.Available -> projection.updateError
+            is DueServicesProjection.Unavailable -> projection.message
+            DueServicesProjection.Unresolved -> null
+        }
+}
 
 data class InspectionFocus(val kind: CompletionBlockerKind, val questionId: String? = null)
 
@@ -95,10 +109,11 @@ class ServiceLoopViewModel(
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var rootRefreshJob: Job? = null
     private var searchJob: Job? = null
-    private var dueServicesRefreshJob: Job? = null
-    private var dueServicesRefreshGeneration = 0L
 
-    init { loadInitialRootData() }
+    init {
+        observeDueServices()
+        loadInitialRootData()
+    }
 
     private fun loadInitialRootData() = launchLoad {
         val home = repository.home()
@@ -163,47 +178,37 @@ class ServiceLoopViewModel(
     fun loadCustomer(id: String) = launchLoad { _state.value = _state.value.copy(customer = repository.customer(id)) }
     fun loadSite(id: String) = launchLoad { _state.value = _state.value.copy(site = repository.site(id)) }
     fun loadPlan(id: String) = launchLoad { _state.value = _state.value.copy(plan = repository.plan(id), templates = repository.templates()) }
-    /**
-     * There is one owner for the Due-services projection.  Work entry, visit setup and
-     * post-mutation refreshes used to start unrelated loads which could all assign this
-     * field.  An older query could consequently settle after a newer one.  Cancelling the
-     * prior job and checking its generation makes the newest Room result the only result
-     * that may settle the state, even if an underlying query is slow to observe cancellation.
-     */
-    fun loadDueServices() = refreshDueServices()
-
     fun loadVisitSetup() {
         launchLoad { _state.value = _state.value.copy(visitSites = repository.visitSites()) }
-        refreshDueServices()
     }
 
-    private fun refreshDueServices() {
-        val generation = ++dueServicesRefreshGeneration
-        dueServicesRefreshJob?.cancel()
-        _state.value = _state.value.copy(dueServicesLoading = true, dueServicesError = null)
-        dueServicesRefreshJob = viewModelScope.launch {
+    private fun observeDueServices() {
+        viewModelScope.launch {
             try {
                 startup()
-                val loaded = repository.dueServices()
-                ensureActive()
-                if (generation == dueServicesRefreshGeneration) {
+                repository.observeDueServices().collect { loaded ->
                     _state.value = _state.value.copy(
-                        dueServices = loaded,
-                        dueServicesLoading = false,
-                        dueServicesError = null,
+                        dueServicesProjection = DueServicesProjection.Available(loaded),
                     )
                 }
             } catch (cancelled: CancellationException) {
-                throw cancelled
+                if (!currentCoroutineContext().isActive) throw cancelled
+                settleDueServicesFailure(cancelled)
             } catch (failure: Exception) {
-                if (generation == dueServicesRefreshGeneration) {
-                    _state.value = _state.value.copy(
-                        dueServicesLoading = false,
-                        dueServicesError = failure.message ?: "Unable to refresh due services",
-                    )
-                }
+                settleDueServicesFailure(failure)
             }
         }
+    }
+
+    private fun settleDueServicesFailure(failure: Throwable) {
+        val message = failure.message ?: "Unable to read due services"
+        val projection = _state.value.dueServicesProjection
+        _state.value = _state.value.copy(
+            dueServicesProjection = when (projection) {
+                is DueServicesProjection.Available -> projection.copy(updateError = message)
+                is DueServicesProjection.Unavailable, DueServicesProjection.Unresolved -> DueServicesProjection.Unavailable(message)
+            },
+        )
     }
     fun loadTemplates() = launchLoad { _state.value = _state.value.copy(templates = repository.templates()) }
     fun loadTemplate(id: String) = launchLoad { _state.value = _state.value.copy(template = repository.template(id)) }
@@ -242,7 +247,7 @@ class ServiceLoopViewModel(
                 repository.rescheduleVisit(id, date, scheduledAt, reason)
                 val refreshed = repository.visit(id) ?: error("Visit was saved but could not be reloaded")
                 _state.value = _state.value.copy(visit = refreshed, site = repository.site(refreshed.siteId), operationInProgress = false, operationMessage = "Saved on this device")
-                refreshRootDataNonBlocking(); refreshDueServices(); onSuccess(id)
+                refreshRootDataNonBlocking(); onSuccess(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _state.value = _state.value.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
         }
@@ -295,7 +300,7 @@ class ServiceLoopViewModel(
                 when (val result = repository.finalizeVisit(visitId)) {
                     is FinalizeResult.Success -> {
                         _state.value = _state.value.copy(finalizing = false, finalizedRecordId = result.recordId)
-                        refreshRootDataNonBlocking(); refreshDueServices()
+                        refreshRootDataNonBlocking()
                     }
                     is FinalizeResult.Blocked -> _state.value = _state.value.copy(finalizing = false, error = result.message)
                 }
@@ -340,7 +345,7 @@ class ServiceLoopViewModel(
         if (_state.value.operationInProgress) return
         _state.value = _state.value.copy(operationInProgress = true, operationMessage = null, error = null)
         viewModelScope.launch {
-            try { val id = block(); _state.value = _state.value.copy(operationInProgress = false, operationMessage = "Saved on this device"); refreshRootDataNonBlocking(); refreshDueServices(); onSuccess(id) }
+            try { val id = block(); _state.value = _state.value.copy(operationInProgress = false, operationMessage = "Saved on this device"); refreshRootDataNonBlocking(); onSuccess(id) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _state.value = _state.value.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
         }

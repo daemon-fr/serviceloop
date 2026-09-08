@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
 
 data class EquipmentPlanRow(
     val equipmentId: String,
@@ -261,9 +262,23 @@ interface ServiceLoopDao {
         JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId
         LEFT JOIN visit_claims vc ON vc.obligationId=o.id
         WHERE p.state='ACTIVE' AND e.state='ACTIVE' AND s.state='ACTIVE' AND c.state='ACTIVE'
+          AND o.consumedAtEpochMillis IS NULL
         ORDER BY p.currentDueDate, c.name, s.name, e.name, p.reference
     """)
     suspend fun dueServices(): List<DueServiceRow>
+
+    @Query("""
+        SELECT p.id planId, p.reference planReference, p.name planName, p.currentDueDate dueDate,
+               o.id obligationId, e.id equipmentId, e.reference equipmentReference, e.name equipmentName,
+               s.id siteId, s.name siteName, c.id customerId, c.name customerName, vc.visitId claimedVisitId
+        FROM service_plans p JOIN service_obligations o ON o.id=p.currentObligationId
+        JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId
+        LEFT JOIN visit_claims vc ON vc.obligationId=o.id
+        WHERE p.state='ACTIVE' AND e.state='ACTIVE' AND s.state='ACTIVE' AND c.state='ACTIVE'
+          AND o.consumedAtEpochMillis IS NULL
+        ORDER BY p.currentDueDate, c.name, s.name, e.name, p.reference
+    """)
+    fun observeDueServices(): Flow<List<DueServiceRow>>
 
     @Query("""
         SELECT 'CUSTOMER' type, id, reference, name title, COALESCE(contactName,'') subtitle FROM customers WHERE name LIKE :pattern OR reference LIKE :pattern OR COALESCE(contactName,'') LIKE :pattern

@@ -14,6 +14,9 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 
 interface ServiceLoopRepository {
     suspend fun home(): HomeSummary
@@ -37,6 +40,7 @@ interface ServiceLoopRepository {
     suspend fun customer(id: String): CustomerDetail? = null
     suspend fun site(id: String): SiteDetail? = null
     suspend fun dueServices(): List<DueService> = emptyList()
+    fun observeDueServices(): Flow<List<DueService>> = flow { emit(dueServices()) }
     suspend fun visitSites(): List<VisitSiteOption> = emptyList()
     suspend fun plan(id: String): PlanDetail? = null
     suspend fun templates(): List<TemplateSummary> = emptyList()
@@ -116,8 +120,15 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun dueServices(): List<DueService> {
+        return mapDueServices(dao.dueServices())
+    }
+
+    override fun observeDueServices(): Flow<List<DueService>> =
+        dao.observeDueServices().map(::mapDueServices)
+
+    private fun mapDueServices(rows: List<DueServiceRow>): List<DueService> {
         val today = businessTime.today()
-        return dao.dueServices().map { row ->
+        return rows.map { row ->
             val due = LocalDate.parse(row.dueDate)
             val bucket = when { due.isBefore(today) -> DueBucket.OVERDUE; due == today -> DueBucket.TODAY; !due.isAfter(today.plusDays(14)) -> DueBucket.DUE_SOON; else -> DueBucket.UPCOMING }
             DueService(row.planId, row.planReference, row.planName, row.dueDate, row.obligationId, row.equipmentId, row.equipmentReference, row.equipmentName, row.siteId, row.siteName, row.customerId, row.customerName, row.claimedVisitId, bucket)
