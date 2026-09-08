@@ -107,6 +107,11 @@ This is not a Stage-2 blocker and should be incorporated when Stage-3 touches re
 - Room 2.8.4
 - canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
 
+## SL-3 Due-services state correction
+
+- The owner-observed populated-to-empty Due-services transition was not a Work-tab render artifact. `loadDueServices()` and `loadVisitSetup()` independently assigned the same projection without request ownership, so older asynchronous reads could settle after newer reads.
+- Due services now have an owned, cancellable, generation-guarded refresh and explicit unresolved/error state. Cached rows are never presented as settled current data during an authoritative refresh; booking/cancellation/restore/finalization paths request the same refresh owner.
+
 ## Historical provenance
 
 Earlier detailed SL-1/SL-2 implementation and verification lineage remains available in Git history and `SL1_REQUIREMENT_COVERAGE.md` / `SL2_REQUIREMENT_COVERAGE.md`. This current-state file intentionally summarizes the accepted present baseline rather than duplicating every prior task diary.

@@ -129,9 +129,17 @@ internal fun PlanEditorScreen(equipmentId: String?, existing: PlanDetail?, templ
 @Composable
 internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, modifier: Modifier = Modifier, initialBucket: DueBucket? = null) {
     var bucket by rememberSaveable(initialBucket) { mutableStateOf(initialBucket) }; var bookedOnly by rememberSaveable { mutableStateOf(false) }; var query by rememberSaveable { mutableStateOf("") }; var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    if (state.dueServicesLoading) {
+        DailyEmpty(padding, "Refreshing due services")
+        return
+    }
+    if (state.dueServicesError != null) {
+        DailyEmpty(padding, "Unable to refresh due services — ${state.dueServicesError}")
+        return
+    }
     val filtered = values.filter { (bucket == null || it.bucket == bucket) && (!bookedOnly || it.claimedVisitId != null) && (query.isBlank() || listOf(it.planReference,it.planName,it.equipmentName,it.equipmentReference,it.customerName,it.siteName).any { text -> text.contains(query, true) }) }
     val selectedRows = values.filter { it.planId in selected }; val selectionSite = selectedRows.firstOrNull()?.siteId
-    LazyColumn(modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(modifier.padding(padding).testTag("due-services-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { DailyField(query, { query = it }, "Search due services"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { FilterChip(bucket == null, { bucket = null }, { Text("All") }); DueBucket.entries.forEach { option -> FilterChip(bucket == option, { bucket = option }, { Text(option.name.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)) },modifier=Modifier.testTag("due-filter-${option.name}")) } }; FilterChip(bookedOnly,{bookedOnly=!bookedOnly},{Text("Booked only")},modifier=Modifier.testTag("due-filter-booked")); Text("Booking never changes the service due date.") }
         if (filtered.isEmpty()) item { Text("No services match these filters.") }
         items(filtered, key = { it.planId }) { due -> Card(Modifier.fillMaxWidth().clickable { nav.navigate("plan/${due.planId}") }) { Column(Modifier.padding(12.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(due.planId in selected, { checked -> if (checked && (selectionSite == null || selectionSite == due.siteId) && due.claimedVisitId == null) selected = selected + due.planId else if (!checked) selected = selected - due.planId }); Column { Text("${due.planReference} · ${due.planName}", fontWeight = FontWeight.Medium); Text("${due.equipmentReference} · ${due.equipmentName}\n${due.customerName} · ${due.siteName}\nDue ${due.dueDate} · ${due.bucket.name.lowercase().replace('_',' ')}"); due.claimedVisitId?.let { Text("Already in visit · Open existing", color = MaterialTheme.colorScheme.primary) } } } } } }
