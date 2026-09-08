@@ -145,6 +145,13 @@ class DailyOperationsIntegrityTest {
         assertEquals("BOOKED",repo.visit(visit)!!.state); assertTrue(db.serviceLoopDao().visitWorkItems(visit).all{it.capturedObligationId==null})
     }
 
+    @Test fun restoreRejectsConsumedOrInactivePlanAndConcurrentAttemptsLeaveOneClaim() = runTest {
+        suspend fun cancelled(): Pair<Ids,String> { val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); return ids to visit }
+        val (consumedIds, consumedVisit)=cancelled(); val obligation=db.serviceLoopDao().visitWorkItems(consumedVisit).single().capturedObligationId!!; db.serviceLoopDao().consumeObligation(obligation,consumedIds.plan,2,"revision"); assertTrue(runCatching { repo.restoreVisit(consumedVisit,"2026-09-06") }.isFailure); assertEquals("CANCELLED",repo.visit(consumedVisit)!!.state)
+        val (inactiveIds,inactiveVisit)=cancelled(); db.serviceLoopDao().updatePlan(db.serviceLoopDao().plan(inactiveIds.plan)!!.copy(state="INACTIVE")); assertTrue(runCatching { repo.restoreVisit(inactiveVisit,"2026-09-06") }.isFailure); assertEquals("CANCELLED",repo.visit(inactiveVisit)!!.state)
+        val (raceIds,raceVisit)=cancelled(); val attempts=listOf(async { runCatching{repo.restoreVisit(raceVisit,"2026-09-06")} },async { runCatching{repo.restoreVisit(raceVisit,"2026-09-06")} }).awaitAll(); assertEquals(1,attempts.count{it.isSuccess}); val claimed=db.serviceLoopDao().visitWorkItems(raceVisit).single().capturedObligationId!!; assertEquals(1,db.serviceLoopDao().visitOwnsClaim(raceVisit,claimed)); assertEquals("BOOKED",repo.visit(raceVisit)!!.state)
+    }
+
     @Test fun concurrentBookingProducesOnlyOneActiveClaim() = runTest {
         val ids = foundation(); val outcomes = listOf(async { runCatching { repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", 1) } }, async { runCatching { repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-07", 2) } }).awaitAll()
         assertEquals(1, outcomes.count { it.isSuccess }); assertEquals(1, repo.dueServices().count { it.claimedVisitId != null })
