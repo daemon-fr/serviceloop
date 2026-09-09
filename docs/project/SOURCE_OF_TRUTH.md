@@ -17,17 +17,17 @@ Matching HTML editions are reading formats and are intentionally not retained in
 
 ## Current authoritative technical development line
 
-SL-4 and Dispatch were deliberately reconciled/banked, SL-5A added time-aware work state and local reminders, and SL-5B added the adopted device-local Android Calendar projection.
+SL-4 and Dispatch were deliberately reconciled/banked; SL-5A added time-aware work state and local reminders; SL-5B added the adopted one-way Android Calendar projection; SL-5C completed the final broad functional hardening pass.
 
 Current technical line:
 
-- branch: `codex/sl-5-calendar`
-- SL-5B implementation/correction checkpoint: `2f8faf466c7ffd960c362078abbc6de83cc9e722`
+- branch: `codex/sl-5-functional-hardening`
+- SL-5C functional-freeze checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema: v11
 
-This branch is now the authoritative technical starting point for the remaining Stage-5 work. `master` and earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
+This branch is now the authoritative technical starting point for B-013. `master` and earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
 
-B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
+B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013, when the final interface and copy are stable. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 
 ## Current accepted / verified implementation state
 
@@ -37,11 +37,12 @@ B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the opti
 - **SL-4:** complete History/recovery implementation independently Phase-B verified and **VERIFIED AND BANKED**.
 - **Dispatch:** owner approved under B-015 and deliberately integrated/banked as product scope within the local-first/file-based boundary.
 - **B-014:** durable Working inspection-response drafts remain adopted core behavior through current Room v11.
-- **SL-5A — time-aware work state and local reminders:** implemented/reviewed at `d133a97171d05d4110204e62c69e423c49ba3bd5`; current line retains those semantics.
-- **SL-5B — optional Android Calendar integration:** implemented, corrected and independently source-reviewed through `2f8faf466c7ffd960c362078abbc6de83cc9e722`; B-016 now records the adopted semantics.
-- **B-008 pilot:** still outstanding. Release preparation is not product-valid until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
+- **SL-5A — time-aware work state and local reminders:** implemented/reviewed and retained on the current line.
+- **SL-5B — optional Android Calendar integration:** implemented, corrected, source-reviewed and banked under B-016.
+- **SL-5C — final functional completion/hardening:** implemented and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. No known ordinary-workflow functional placeholder remains before B-013.
+- **B-008 pilot:** still outstanding. Release preparation is not product-valid until a coherent finished-looking, Romanian-localized build is evaluated by at least one real technician/trade user.
 
-## SL-5A verification boundary
+## SL-5A retained boundary
 
 The current line retains:
 
@@ -55,42 +56,48 @@ The current line retains:
 
 Actual system notification delivery remains unclaimed on the preserved canonical dataset because notification permission/local delivery were deliberately left Off during validation.
 
-## SL-5B Calendar boundary
+## SL-5B retained Calendar boundary
 
-B-016 is implemented as a one-way local projection using Android `CalendarContract`/Calendar Provider. Calendar selection and managed event identity live in `noBackupFilesDir`, are scoped to the current ServiceLoop dataset ID, are excluded from portable backup, and reset Off on dataset replacement/erase without deleting old external events.
+B-016 remains implemented as a one-way local projection using Android `CalendarContract`/Calendar Provider. Calendar selection and managed event identity live in `noBackupFilesDir`, are scoped to the current ServiceLoop dataset ID, are excluded from portable backup, and reset Off on dataset replacement/erase without deleting old external events.
 
-Implemented behavior includes:
+The current line retains Off-by-default integration, deliberate `READ_CALENDAR` / `WRITE_CALENDAR` permission request, writable-calendar selection, timed-Booked-only creation, exactly one managed link per Visit, same-event update, external-delete → Missing, deliberate Recreate, per-Visit Remove/suppression/Add, historical retention for Working/Finalized/Participation-complete Visits, Cancelled/`DISPATCH_WITHDRAWN` deletion where possible, and Room-driven reconciliation over `working_visits`, `customers`, and `sites`.
 
-- integration Off by default;
-- deliberate `READ_CALENDAR` / `WRITE_CALENDAR` permission request;
-- writable Calendar enumeration and truthful unavailable-selection state;
-- automatic creation only for timed Booked local Visits;
-- fixed 60-minute Calendar display block using the stored appointment instant and ZoneId;
-- restrained event content with private ServiceLoop fields excluded;
-- exactly one managed link per Visit, same-event update after reschedule/public Site/Customer changes, external-delete → Missing, deliberate Recreate, per-Visit Remove/suppression/Add;
-- global Disable retaining existing events/links and changing preferred Calendar affecting only new/unlinked Visits;
-- future-event deletion for Cancelled / `DISPATCH_WITHDRAWN` Visits where provider access permits, with retryable `DELETE_PENDING` on failure;
-- historical event retention for Working / Finalized / `PARTICIPATION_COMPLETE` Visits;
-- Room-driven reconciliation observing only `working_visits`, `customers`, and `sites`, plus startup/resume/manual triggers; no polling/service;
-- automatic Dispatch import creation, generation update of the same event ID, and assignment-withdrawal deletion through persisted local Visit changes.
+Real provider mutation remains **NOT RUN** because no safely disposable writable Calendar was established on the canonical AVD. No Google/cloud synchronization claim is made.
 
-Real provider mutation was **NOT RUN** because the canonical AVD had both Calendar permissions denied and no safely disposable writable Calendar was established. No Google/cloud synchronization or delivery claim is made. Deterministic fake-provider tests and bounded canonical state/UI validation establish the current technical checkpoint.
+## SL-5C functional-freeze boundary
+
+SL-5C completed the final broad functional audit before B-013. The checkpoint:
+
+- removed stale user-facing Experimental wording from adopted Coordinator tools;
+- removed an unreachable legacy foundation-placeholder route;
+- made root refresh failures visible on Home, Work, and Customers with a functioning Retry while preserving the last durable result;
+- hardened Calendar device-state file replacement against transient/concurrent Windows contention using serialized access, unique temporary files, bounded retries, and last-good-file preservation;
+- added larger-data regression coverage spanning 250 Customer/Site/Equipment/Plan/Obligation branches and 120 Booked Visits across Home, registers, Due services, Visits, and search;
+- retained release fixture seeding as no-op and preserved debug/release separation;
+- retained Room v11 unchanged;
+- preserved SL-4/History/recovery, B-014, Dispatch, SL-5A reminders/time, and SL-5B Calendar semantics.
+
+Reported evidence at `bf55b0bd027fa25c48fc2dfd930d257688088ecb` includes 201 passing unit tests, 19 passing instrumentation tests, retained Room v1→v11 migration/FK coverage, Dispatch/reminder/Calendar regressions, larger-data hardening, debug/debug-Android-test/lint/release builds, `git diff --check`, and a non-destructive preserved-dataset canonical AVD review.
+
+The supported statement after SL-5C is:
+
+> There is no known ordinary-workflow functional placeholder or unfinished adopted functional path that should be fixed before the B-013 whole-product UI/UX overhaul begins.
+
+This is a **functional freeze**, not a claim that the current interface/copy is final, localized, pilot-valid, or release-ready.
 
 ## Current forward sequence
 
-1. **SL-5C — final functional completion/hardening**
-   - Romanian localization for UI, reports, notifications and relevant user-visible system/share text;
-   - remove remaining ordinary-workflow placeholders, stale prototype/experimental copy and obvious functional rough edges;
-   - larger-data and bounded platform/recovery hardening where current implementation reveals concrete risk;
-   - full functional-completeness inventory/gate without initiating the whole-product visual redesign.
+1. **B-013 — dedicated whole-product UI/UX overhaul**
+   - apply the forthcoming all-encompassing visual/UI design authority to the functionally frozen product;
+   - establish reusable components/primitives, hierarchy, task clarity, typography, spacing/density, semantic colors, complete light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
+   - the current incremental/default Compose presentation is explicitly not the final visual baseline.
 
-2. **Dedicated whole-product UI/UX milestone — B-013**
-   - implement the forthcoming all-encompassing visual/UI design authority after Stage-5 functional structure is frozen;
-   - establish reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
-   - the current incremental/default Compose presentation is not the final visual baseline.
+2. **Localization / final copy freeze — B-017 sequencing**
+   - after B-013 stabilizes final labels, helper copy, dialogs, component structure and interaction wording;
+   - then implement proper Android localization infrastructure and Romanian UI/report/notification/Calendar/system-handoff copy.
 
-3. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
+3. **B-008 real-technician pilot** on the coherent finished-looking Romanian-localized build.
 4. **Pilot findings / final hardening.**
 5. **Release preparation and submission.**
 
-Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining known gaps. Read milestone coverage files and the Dispatch reference for detailed verification evidence.
+Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining validation boundaries. Read milestone coverage files and the Dispatch reference for detailed verification evidence.
