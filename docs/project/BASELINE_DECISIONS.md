@@ -123,3 +123,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - The final pre-pilot sequence is therefore: **functional completion/hardening → B-013 whole-product UI/UX overhaul → Romanian localization/final copy freeze → B-008 real-technician pilot**.
 - The functional-completion milestone immediately preceding B-013 must remove known ordinary-workflow functional placeholders and harden the implemented product, but it must **not** perform broad string-resource migration, Romanian translation, report localization, notification localization, or Calendar-copy localization.
 - B-008 still requires a Romanian-localized pilot-ready build. Deferring localization changes sequencing only; it does not remove the localization requirement or lower the pilot gate.
+
+## B-018 — `master` is the single authoritative development branch
+
+- The owner designated `master` as the single authoritative ServiceLoop development baseline after the Stage-5 functional freeze.
+- `master` is advanced only through explicitly accepted/reviewed work or direct owner-authorized documentation/baseline maintenance. New substantial milestone branches start from the current `master` HEAD unless the owner explicitly authorizes another base.
+- Milestone/prototype branches are temporary implementation/review vehicles rather than long-lived authorities. After their accepted work is represented on `master`, they may be deleted to keep repository topology simple.
+- Historical verification meaning is preserved by commit SHA and, where useful, archive tags; keeping obsolete branches is not required merely to preserve history.
