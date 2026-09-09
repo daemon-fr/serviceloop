@@ -652,9 +652,9 @@ private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>,
         if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
         else item { AccentCard { Text("Report identity: ${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); OutlinedButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("refresh-report-identity")) { Text("Refresh report identity from current profile") } } }
         items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav) }
-        item { Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(16.dp)) { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, and findings will be included. Private notes stay excluded.") } } }
+        item { ServiceLoopSurfaceCard { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, and findings will be included. Private notes stay excluded.") } }
         state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
-        item { Button(onClick = { viewModel.finalizeVisit(visitId) }, enabled = !state.finalizing && state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) { Text(if (state.finalizing) "Finalizing…" else "Finalize record") } }
+        item { ServiceLoopPrimaryButton(label = if (state.finalizing) "Finalizing record" else "Finalize record", onClick = { viewModel.finalizeVisit(visitId) }, enabled = state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, busy = state.finalizing, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) }
     }
 }
 
@@ -839,7 +839,7 @@ private fun SaveStateBanner(status: SaveStatus) {
 
 @Composable private fun AccentCard(content: @Composable ColumnScope.() -> Unit) = ServiceLoopSurfaceCard(content = content)
 
-@Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) { Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(text, Modifier.weight(1f)); Spacer(Modifier.width(8.dp)); Text(action, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) } } }
+@Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) { Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(text, Modifier.weight(1f)); Spacer(Modifier.width(8.dp)); Text(action, color = LocalServiceLoopTokens.current.action, fontWeight = FontWeight.Medium) } } }
 
 @Composable private fun StatusChip(text: String, urgency: Boolean) { val colors = LocalServiceLoopTokens.current; Text(text, color = if (urgency) colors.warningInk else colors.infoInk, modifier = Modifier.background(if (urgency) colors.warningContainer else colors.infoContainer, MaterialTheme.shapes.extraSmall).padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 

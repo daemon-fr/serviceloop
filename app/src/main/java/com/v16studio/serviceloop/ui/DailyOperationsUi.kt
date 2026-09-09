@@ -11,6 +11,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopElevatedCardAdapter 
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
@@ -18,6 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -27,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -255,9 +260,30 @@ internal fun FieldEvidenceScreen(workItemId: String, state: UiState, padding: Pa
         item { DailyHeading("Parts used"); DailyField(description, { description=it }, "Description"); DailyField(quantity, { quantity=it }, "Positive quantity"); DailyField(unit, { unit=it }, "Unit"); Button({ viewModel.addPart(workItemId, description, quantity, unit); description="" }, enabled = description.isNotBlank() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Save part") } }
         items(state.parts) { part -> Text("${part.description} · ${part.quantity} ${part.unit}") }
         item { DailyHeading("Photographs"); Text("Maximum 20 per machine and 100 per visit; optimized to a 2,560 px longest edge."); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(include, { include=it }); Text("Include selected photo in customer report") }; DailyField(caption, { caption=it }, "Customer-visible caption"); Button({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth()) { Text("Choose photo") }; OutlinedButton({ val directory=File(context.cacheDir,"camera-staging").apply{mkdirs()}; val file=File(directory,"capture-${System.currentTimeMillis()}.jpg"); cameraPath=file.absolutePath; camera.launch(FileProvider.getUriForFile(context,"${context.packageName}.reports",file)) },Modifier.fillMaxWidth()){Text("Take photo")}; Text("The selected image is copied into ServiceLoop storage before it is marked Saved.") }
-        items(state.photos) { photo -> Text("${photo.id.take(8)} · ${photo.byteSize} bytes · ${if (photo.includedInReport) "Customer report" else "Private evidence"}") }
+        items(state.photos, key = { it.id }) { photo -> PhotoEvidenceCard(photo, context) }
         item { DailyHeading("Corrective follow-up"); DailyField(followTitle,{followTitle=it},"Follow-up title"); DailyField(followDue,{followDue=it},"Due date"); LongTextEditor(followNote,{followNote=it},"PRIVATE planning note",true); OutlinedButton({viewModel.createCorrectiveFollowUp(workItemId,followTitle,followDue,followNote);followTitle=""},enabled=followTitle.isNotBlank()&&runCatching{LocalDate.parse(followDue)}.isSuccess,modifier=Modifier.fillMaxWidth()){Text("Create corrective follow-up")} }
         state.inspection?.takeIf { it.workItemId == workItemId }?.let { draft -> item { Button({nav.navigate("review/${draft.visitId}")},Modifier.fillMaxWidth().testTag("field-review-completion")){Text("Review completion")} } }
+    }
+}
+
+@Composable
+private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context) {
+    val colors = com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens.current
+    val bitmap = remember(photo.relativePath, photo.byteSize) {
+        BitmapFactory.decodeFile(File(context.filesDir, photo.relativePath).absolutePath, BitmapFactory.Options().apply { inSampleSize = 4 })
+    }
+    ServiceLoopSurfaceCard {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Box(Modifier.size(88.dp).background(colors.photoMat, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                if (bitmap != null) Image(bitmap.asImageBitmap(), contentDescription = photo.caption?.takeIf(String::isNotBlank) ?: "Service evidence photograph", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                else Text("Image unavailable", color = colors.errorInk, style = MaterialTheme.typography.bodySmall)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(if (photo.includedInReport) "Included in customer report" else "Private evidence", fontWeight = FontWeight.SemiBold)
+                Text(photo.caption?.takeIf(String::isNotBlank) ?: "No caption", style = MaterialTheme.typography.bodyMedium)
+                Text("${photo.byteSize} bytes · Saved on this device", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }
 
@@ -323,7 +349,7 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
     ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag))
 }
 @Composable private fun DailyHeading(value:String){Text(value,style=MaterialTheme.typography.titleLarge)}
-@Composable private fun DailyRow(value:String,tag:String?=null,onClick:()->Unit){ServiceLoopSurfaceCard(Modifier.then(if(tag==null) Modifier else Modifier.testTag(tag)).clickable(onClick=onClick)){Text(value)}}
+@Composable private fun DailyRow(value:String,tag:String?=null,onClick:()->Unit){Card(onClick=onClick,modifier=Modifier.fillMaxWidth().then(if(tag==null) Modifier else Modifier.testTag(tag))){Text(value,Modifier.padding(16.dp))}}
 @Composable private fun DailyEmpty(padding:PaddingValues,value:String){Box(Modifier.fillMaxSize().padding(padding),contentAlignment=Alignment.Center){Text(value)}}
 @Composable private fun PrivateBlock(label:String,value:String){Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(12.dp)){Text(label,fontWeight=FontWeight.Bold);Text(value)}}}
 private fun handoff(context:Context,intent:Intent,label:String)=if(runCatching{context.startActivity(intent);true}.getOrDefault(false)) "Opened $label · no contact outcome was recorded" else "No compatible $label app is available · copy the saved details manually"
