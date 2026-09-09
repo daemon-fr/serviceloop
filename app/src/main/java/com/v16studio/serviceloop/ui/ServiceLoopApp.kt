@@ -235,6 +235,10 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             LaunchedEffect(Unit) { viewModel.loadReminderSettings() }
             DetailScaffold("Reminders", nav) { padding -> ReminderSettingsScreen(state, padding, viewModel, nav) }
         }
+        composable("calendar") {
+            LaunchedEffect(Unit) { viewModel.loadCalendarSettings() }
+            DetailScaffold("Calendar integration", nav) { padding -> CalendarSettingsScreen(state, padding, viewModel) }
+        }
         composable("dispatch/settings") { DetailScaffold("Coordinator tools",nav){DispatchSettings(it,nav)} }
         composable("dispatch/identity") { DetailScaffold("Technician identity",nav){TechnicianIdentityScreen(it)} }
         composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
@@ -671,7 +675,19 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools · Experimental", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
+        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools · Experimental", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Calendar · ${state.calendarRuntimeState.label}", "Open") { nav.navigate("calendar") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
+    }
+}
+
+@Composable
+private fun CalendarSettingsScreen(state:UiState,padding:PaddingValues,viewModel:ServiceLoopViewModel){
+    val context=LocalContext.current
+    val runtime=state.calendarRuntimeState
+    val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->if(result[Manifest.permission.READ_CALENDAR]==true&&result[Manifest.permission.WRITE_CALENDAR]==true)viewModel.setCalendarEnabled(true)else viewModel.loadCalendarSettings()}
+    LazyColumn(Modifier.padding(padding).testTag("calendar-settings"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        item{Text("One-way Calendar integration",style=MaterialTheme.typography.titleLarge);Text("ServiceLoop remains the source of truth. Calendar changes do not change ServiceLoop. Only Booked Visits with an appointment time are automatically synchronized.");Text("Status: ${runtime.label}",modifier=Modifier.testTag("calendar-status"));Row(verticalAlignment=Alignment.CenterVertically){Checkbox(runtime.enabled,{enabled->if(enabled&&!runtime.hasPermissions)permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))else viewModel.setCalendarEnabled(enabled)},Modifier.testTag("calendar-enabled"));Text("Enable Calendar integration")};if(!runtime.hasPermissions)OutlinedButton({permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))},Modifier.fillMaxWidth().testTag("calendar-request-permission")){Text("Allow Calendar access")}}
+        if(runtime.hasPermissions)item{Text("Preferred calendar",fontWeight=FontWeight.Bold);if(runtime.writableCalendars.isEmpty())Text("No writable calendar is available on this device.");runtime.writableCalendars.forEach{calendar->FilterChip(runtime.selectedCalendarLabel==calendar.label,{viewModel.selectCalendar(calendar)},{Text(listOfNotNull(calendar.label,calendar.accountLabel).joinToString(" · "))},Modifier.testTag("calendar-${calendar.id}"))};if(runtime.linkedFutureCount>0)Text("Changing this choice affects new events only; existing linked events stay in their original calendar.")}
+        item{Text("${runtime.linkedFutureCount} linked future Visits · ${runtime.problemCount} need attention");if(!runtime.hasPermissions)OutlinedButton({context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}")))},Modifier.fillMaxWidth()){Text("Open Android app permission settings")};state.operationMessage?.let{Text(it)};state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}}
     }
 }
 

@@ -21,6 +21,10 @@ import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.report.ReportService
 import com.v16studio.serviceloop.reminders.ReminderCoordinator
 import com.v16studio.serviceloop.domain.BusinessDateSignal
+import com.v16studio.serviceloop.calendar.CalendarCoordinator
+import com.v16studio.serviceloop.calendar.CalendarRuntimeState
+import com.v16studio.serviceloop.calendar.VisitCalendarState
+import com.v16studio.serviceloop.calendar.WritableCalendar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +103,8 @@ data class UiState(
     val reminderSaveStatus: SaveStatus = SaveStatus.Idle,
     val businessDate: java.time.LocalDate = java.time.LocalDate.now(),
     val businessZoneId: String = java.time.ZoneId.systemDefault().id,
+    val calendarRuntimeState: CalendarRuntimeState = CalendarRuntimeState(),
+    val visitCalendarState: VisitCalendarState? = null,
 ) {
     val dueServices: List<DueService>
         get() = (dueServicesProjection as? DueServicesProjection.Available)?.rows.orEmpty()
@@ -120,6 +126,7 @@ class ServiceLoopViewModel(
     restrictedRecoveryState: Boolean = false,
     private val businessDateSignal: BusinessDateSignal? = null,
     private val reminderCoordinator: ReminderCoordinator? = null,
+    private val calendarCoordinator: CalendarCoordinator? = null,
     private val startup: suspend () -> Unit,
 ) : ViewModel() {
     private val _state = MutableStateFlow(UiState(restrictedRecoveryState = restrictedRecoveryState, businessDate = businessDateSignal?.tokens?.value?.date ?: java.time.LocalDate.now(), businessZoneId = businessDateSignal?.tokens?.value?.zoneId?.id ?: java.time.ZoneId.systemDefault().id))
@@ -238,14 +245,16 @@ class ServiceLoopViewModel(
     }
     fun loadTemplates() = launchLoad { _state.value = _state.value.copy(templates = repository.templates()) }
     fun loadTemplate(id: String) = launchLoad { _state.value = _state.value.copy(template = repository.template(id)) }
-    fun loadVisit(id: String) = launchLoad { val visit=repository.visit(id); _state.value = _state.value.copy(visit = visit, site = visit?.let { repository.site(it.siteId) }) }
+    fun loadVisit(id: String) = launchLoad { val visit=repository.visit(id); _state.value = _state.value.copy(visit = visit, site = visit?.let { repository.site(it.siteId) }, visitCalendarState=calendarCoordinator?.visitState(id)) }
     fun loadFollowUps() = launchLoad { _state.value = _state.value.copy(followUps = repository.followUps()) }
     fun loadFollowUp(id: String) = launchLoad { _state.value = _state.value.copy(followUp = repository.followUp(id)) }
     fun onAppResumed() {
         businessDateSignal?.invalidate()
         reminderCoordinator?.reconcileAsync()
+        calendarCoordinator?.reconcileAsync()
         refreshRootDataNonBlocking()
         loadReminderSettings()
+        loadCalendarSettings()
     }
 
     fun loadReminderSettings() = launchLoad {
@@ -271,6 +280,14 @@ class ServiceLoopViewModel(
         val requested = reminderCoordinator?.sendTestNotification() == true
         _state.value = _state.value.copy(operationMessage = if (requested) "Test notification requested — Android controls delivery" else "Test notification unavailable — review Android permission and channels", reminderRuntimeState = reminderCoordinator?.runtimeState() ?: ReminderRuntimeState())
     }
+
+    fun loadCalendarSettings() = launchLoad { _state.value = _state.value.copy(calendarRuntimeState=calendarCoordinator?.runtimeState()?:CalendarRuntimeState()) }
+    fun setCalendarEnabled(enabled:Boolean)=runOperation({calendarCoordinator?.setEnabled(enabled);enabled}){loadCalendarSettings()}
+    fun selectCalendar(value:WritableCalendar)=runOperation({calendarCoordinator?.select(value);value.id}){loadCalendarSettings()}
+    fun loadVisitCalendar(visitId:String)=launchLoad{_state.value=_state.value.copy(visitCalendarState=calendarCoordinator?.visitState(visitId))}
+    fun addVisitToCalendar(visitId:String)=runOperation({calendarCoordinator?.add(visitId);visitId}){loadVisitCalendar(it);loadCalendarSettings()}
+    fun removeVisitFromCalendar(visitId:String)=runOperation({calendarCoordinator?.remove(visitId);visitId}){loadVisitCalendar(it);loadCalendarSettings()}
+    fun calendarEventIntent(eventId:Long)=calendarCoordinator?.eventIntent(eventId)
 
     fun setAppointmentReminderLead(visitId: String, minutes: Int?) = runOperation({ repository.setAppointmentReminderLead(visitId, minutes); visitId }) { loadVisit(it) }
     fun loadFieldEvidence(workItemId: String) = launchLoad { _state.value = _state.value.copy(parts = repository.parts(workItemId), photos = repository.photos(workItemId)) }
@@ -347,12 +364,12 @@ class ServiceLoopViewModel(
     fun createBackup(passphrase: CharArray, incomplete: Boolean) = runOperation({ repository.createBackup(passphrase, incomplete) }) { result -> _state.value = _state.value.copy(backupResult = result) }
     fun verifyWrittenBackup(bytes: ByteArray, passphrase: CharArray, destination: String) = runOperation({ val inspection = repository.inspectBackup(bytes, passphrase); val result = _state.value.backupResult ?: error("Prepared backup is unavailable"); require(inspection.snapshotAtEpochMillis == result.snapshotAtEpochMillis); if (result.complete) repository.recordVerifiedBackup(result, destination); inspection }) { inspection -> _state.value = _state.value.copy(backupInspection = inspection); loadDatasetSummary() }
     fun inspectBackup(bytes: ByteArray, passphrase: CharArray) = runOperation({ repository.inspectBackup(bytes, passphrase) }) { _state.value = _state.value.copy(backupInspection = it) }
-    fun restoreBackup(confirmation: String, incompleteAcknowledged: Boolean, onSuccess: () -> Unit) { val inspection = _state.value.backupInspection ?: return; runOperation({ reminderCoordinator?.resetForDatasetReplacement(); repository.restoreBackup(inspection, confirmation, incompleteAcknowledged); true }) { onSuccess() } }
+    fun restoreBackup(confirmation: String, incompleteAcknowledged: Boolean, onSuccess: () -> Unit) { val inspection = _state.value.backupInspection ?: return; runOperation({ reminderCoordinator?.resetForDatasetReplacement(); calendarCoordinator?.resetForDatasetReplacement(); repository.restoreBackup(inspection, confirmation, incompleteAcknowledged); true }) { onSuccess() } }
     fun prepareDirectoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String? = null) = runOperation({ repository.directoryCsv(includeInactive, includePrivate, customerId) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
     fun prepareRecordsCsv(includeInactive: Boolean, includePrivate: Boolean, previous: Boolean, customerId: String? = null) = runOperation({ repository.recordsCsvPackage(includeInactive, includePrivate, previous, customerId) }) { bytes -> _state.value = _state.value.copy(exportBytes = bytes) }
     fun validateCsv(bytes: ByteArray) = runOperation({ repository.validateDirectoryCsv(bytes) }) { _state.value = _state.value.copy(csvPreview = it, importResult = null) }
     fun importCsv(createSeparate: Set<String> = emptySet(), skipped: Set<String> = emptySet()) { val preview = _state.value.csvPreview ?: return; runOperation({ repository.importDirectory(preview, createSeparate, skipped) }) { _state.value = _state.value.copy(importResult = it); refreshRootDataNonBlocking() } }
-    fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) = runOperation({ reminderCoordinator?.resetForDatasetReplacement(); repository.erase(acknowledged, confirmation); true }) { onSuccess() }
+    fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) = runOperation({ reminderCoordinator?.resetForDatasetReplacement(); calendarCoordinator?.resetForDatasetReplacement(); repository.erase(acknowledged, confirmation); true }) { onSuccess() }
     fun consumeFinalizedNavigation() { _state.value = _state.value.copy(finalizedRecordId = null) }
 
     fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { _state.value = _state.value.copy(inspection = repository.inspection(workItemId)) }
@@ -429,7 +446,7 @@ class ServiceLoopViewModel(
         if (_state.value.operationInProgress) return
         _state.value = _state.value.copy(operationInProgress = true, operationMessage = null, error = null)
         viewModelScope.launch {
-            try { val id = block(); _state.value = _state.value.copy(operationInProgress = false, operationMessage = "Saved on this device"); refreshRootDataNonBlocking(); onSuccess(id) }
+            try { val id = block(); try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* Calendar is an independent projection; business writes stay committed. */ }; _state.value = _state.value.copy(operationInProgress = false, operationMessage = "Saved on this device"); refreshRootDataNonBlocking(); onSuccess(id) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _state.value = _state.value.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
         }
@@ -493,7 +510,7 @@ class ServiceLoopViewModel(
     class Factory(private val container: AppContainer) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ServiceLoopViewModel(container.repository, container.reportService, container.restrictedRecoveryState, container.businessDateSignal, container.reminderCoordinator) { container.startup.await() } as T
+            ServiceLoopViewModel(container.repository, container.reportService, container.restrictedRecoveryState, container.businessDateSignal, container.reminderCoordinator, container.calendarCoordinator) { container.startup.await() } as T
     }
 
     private fun SaveStatus.lastSavedCheckpoint(): Long? = when (this) {
