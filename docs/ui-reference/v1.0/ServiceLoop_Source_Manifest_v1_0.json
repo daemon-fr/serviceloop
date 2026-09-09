@@ -1,0 +1,225 @@
+{
+  "repository": "daemon-fr/serviceloop",
+  "branch": "master",
+  "commit": "1fd51131b040ab62af3874c1106615b75f3008fe",
+  "functionalFreeze": "bf55b0bd027fa25c48fc2dfd930d257688088ecb",
+  "accessDate": "2026-09-09",
+  "readOnly": true,
+  "currentBranchReverified": true,
+  "sourceInspectionMethod": "Read-only connected GitHub file/tree requests across checkpoint and continuation; no compiler AST or locally executable whole-repo clone.",
+  "sources": [
+    {
+      "id": "SRC01",
+      "path": "docs/project/SOURCE_OF_TRUTH.md",
+      "blobSha": "ec2eaf48bd4ce31990df608dd0d64fdcb0227e13",
+      "inspection": "Read authority and current freeze/forward sequence",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/project/SOURCE_OF_TRUTH.md"
+    },
+    {
+      "id": "SRC02",
+      "path": "docs/project/BASELINE_DECISIONS.md",
+      "blobSha": "f187588bad45feb1d306ecaa86419a45d7343d64",
+      "inspection": "Read B-001 through B-018 owner amendments",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/project/BASELINE_DECISIONS.md"
+    },
+    {
+      "id": "SRC03",
+      "path": "docs/project/IMPLEMENTATION_STATE.md",
+      "blobSha": "80d2e860f71d98812eb143db283a8757566c61ed",
+      "inspection": "Read reported tests/provider gaps/toolchain",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/project/IMPLEMENTATION_STATE.md"
+    },
+    {
+      "id": "SRC04",
+      "path": "AGENTS.md",
+      "blobSha": "d3f272f672406e370ff936a9744b8571a54151cd",
+      "inspection": "Read implementation/verification/Git/AVD boundaries",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/AGENTS.md"
+    },
+    {
+      "id": "SRC05",
+      "path": "docs/product/ServiceLoop_Conceptual_App_Map_v0_1.md",
+      "blobSha": "6423a3c64442b71f3a25fedf98985a6ab5674db4",
+      "inspection": "Read named357 C action groups, rules and workflows; later amendments override",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/product/ServiceLoop_Conceptual_App_Map_v0_1.md"
+    },
+    {
+      "id": "SRC06",
+      "path": "docs/product/ServiceLoop_Conceptual_UI_UX_Design_v0_1.md",
+      "blobSha": "870ac5f3c78ee79a33b7e7e67d739b696770dcd6",
+      "inspection": "Authority/visual/background and conflict/coverage structure inspected; old visual language superseded by four supplied mockups",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/product/ServiceLoop_Conceptual_UI_UX_Design_v0_1.md"
+    },
+    {
+      "id": "SRC07",
+      "path": "docs/product/ServiceLoop_UI_UX_Action_Coverage_v0_1.md",
+      "blobSha": "798206315a9460b3e039e66f4f0bbbef3e541ab3",
+      "inspection": "C/F source-family and action-coverage structure inspected;375 F rows not independently adopted",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/product/ServiceLoop_UI_UX_Action_Coverage_v0_1.md"
+    },
+    {
+      "id": "SRC08",
+      "path": "docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md",
+      "blobSha": "c35c7f63c7ea360e199c7baa4ae93f16eca2419a",
+      "inspection": "Read adopted Dispatch implementation/reference including generation/import/ownership",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md"
+    },
+    {
+      "id": "SRC09",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt",
+      "blobSha": "9391e05542329572595ff69e2c72165a221af26b",
+      "inspection": "Principal navigation, root/detail/settings/inspection/completion/report UI read across checkpoint/continuation",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt"
+    },
+    {
+      "id": "SRC10",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt",
+      "blobSha": "6edc56c685e2cd2cd6d74a847f3233253db04ed8",
+      "inspection": "Directory/edit/setup/fieldwork/contact/long-text functions inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt"
+    },
+    {
+      "id": "SRC11",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/Stage4Ui.kt",
+      "blobSha": "4d17fdfe66f6e9fa67233dfe25a26fa997c5b1b1",
+      "inspection": "History/correction/lifecycle/recovery/CSV/erase inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/Stage4Ui.kt"
+    },
+    {
+      "id": "SRC12",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt",
+      "blobSha": "ed2a34863dce055d6cff304e1b9e8eff4905d997",
+      "inspection": "Identity/directory/Teams/import/handoff inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt"
+    },
+    {
+      "id": "SRC13",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt",
+      "blobSha": "0d0788d6ec15ea8bb2a7573a949af3d57d0a4974",
+      "inspection": "Outbox/editor/pickers/export/conditional Home inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt"
+    },
+    {
+      "id": "SRC14",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/theme/Theme.kt",
+      "blobSha": "6ba5a572c462d6baa42251454a06cbd2beef98a1",
+      "inspection": "Current light/dark Material mapping inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/theme/Theme.kt"
+    },
+    {
+      "id": "SRC15",
+      "path": "app/src/main/java/com/v16studio/serviceloop/ui/theme/ServiceLoopColors.kt",
+      "blobSha": "73a515d84c5e97e837fb244f4627d6a4cee88a02",
+      "inspection": "Current palette/semantic family source inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/ui/theme/ServiceLoopColors.kt"
+    },
+    {
+      "id": "SRC16",
+      "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "blobSha": "3308cd115badbcb75b3be40a56d39caa09657354",
+      "inspection": "Existing108dp document-loop vector inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/res/drawable/ic_launcher_foreground.xml"
+    },
+    {
+      "id": "SRC17",
+      "path": "app/src/main/res/mipmap-anydpi/ic_launcher.xml",
+      "blobSha": "6f3b755bf50c6b03d8714a9c6184705e6a08389f",
+      "inspection": "Background/foreground/monochrome refs inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/res/mipmap-anydpi/ic_launcher.xml"
+    },
+    {
+      "id": "SRC18",
+      "path": "app/src/main/res/values/strings.xml",
+      "blobSha": "04bc93bf1100c9d69fb809f8a63a82b0376810d5",
+      "inspection": "Only app_name; no reviewed Romanian catalogue established",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/res/values/strings.xml"
+    },
+    {
+      "id": "SRC19",
+      "path": "app/src/main/java/com/v16studio/serviceloop/report/ReportService.kt",
+      "blobSha": "ee59e6525a045d049ee3f337c60baa9bf0e66481",
+      "inspection": "Report output, geometry/retained bytes/photo generation inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/report/ReportService.kt"
+    },
+    {
+      "id": "SRC20",
+      "path": "app/src/main/java/com/v16studio/serviceloop/domain/ReminderModels.kt",
+      "blobSha": "bdc9f18664d18d0fae1b78d331482ac35df0bb5e",
+      "inspection": "Reminder runtime/summary/due states inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/domain/ReminderModels.kt"
+    },
+    {
+      "id": "SRC21",
+      "path": "app/src/main/java/com/v16studio/serviceloop/calendar/CalendarIntegration.kt",
+      "blobSha": "f0364919347c1a6c41479bf8d6d45008d423a074",
+      "inspection": "UI-relevant Calendar model/provider states inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/calendar/CalendarIntegration.kt"
+    },
+    {
+      "id": "SRC22",
+      "path": "app/src/main/java/com/v16studio/serviceloop/data/DispatchPackage.kt",
+      "blobSha": "f7432bbb2eafa6908f36ef6b97d24c3239a70b2e",
+      "inspection": "Codec bounds/current classification enums/preparation and import projection inspected",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/main/java/com/v16studio/serviceloop/data/DispatchPackage.kt"
+    },
+    {
+      "id": "SRC23",
+      "path": "app/src/androidTest/java/com/v16studio/serviceloop/DispatchCoordinatorUiTest.kt",
+      "blobSha": "4801b9640a679ee804805da02de2250cb8ed18ed",
+      "inspection": "Test file/tree and reported coverage reference; not run here",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/androidTest/java/com/v16studio/serviceloop/DispatchCoordinatorUiTest.kt"
+    },
+    {
+      "id": "SRC24",
+      "path": "app/src/androidTest/java/com/v16studio/serviceloop/CompletionUiSemanticTest.kt",
+      "blobSha": "78621c90d7b6cccfc5044055e2d232dffa29e7f4",
+      "inspection": "Test file/tree and reported coverage reference; not run here",
+      "url": "https://github.com/daemon-fr/serviceloop/blob/1fd51131b040ab62af3874c1106615b75f3008fe/app/src/androidTest/java/com/v16studio/serviceloop/CompletionUiSemanticTest.kt"
+    }
+  ],
+  "images": [
+    {
+      "id": "M01",
+      "name": "mockup_outbox.png",
+      "title": "Outbox · unselected",
+      "width": 618,
+      "height": 1328,
+      "sha256": "993b5c8376eebf052c9df01e97932b1d77da3572f853733f97b2e2a165bc7184"
+    },
+    {
+      "id": "M02",
+      "name": "mockup_selected.png",
+      "title": "Outbox · selected",
+      "width": 618,
+      "height": 1328,
+      "sha256": "cdabb353913d28486ee7979a0a17e77037153c200a92e9781fabbf8005ac5616"
+    },
+    {
+      "id": "M03",
+      "name": "mockup_editor.png",
+      "title": "New dispatch visit",
+      "width": 618,
+      "height": 1328,
+      "sha256": "3e81229e7c921fea9d475dedcba91e4ff4c5ac2811b2009d51053988b8dcdb20"
+    },
+    {
+      "id": "M04",
+      "name": "mockup_review.png",
+      "title": "Review export",
+      "width": 618,
+      "height": 1328,
+      "sha256": "34d574e194eec80cec5b73f57120cd2282be34b16620755c498026539dab9a46"
+    }
+  ],
+  "runtimeTestsPerformed": false,
+  "reportedBaselineTests": {
+    "unit": 201,
+    "instrumentation": 19
+  },
+  "verificationGaps": [
+    "Real canonical notification delivery",
+    "Actual Calendar provider mutation",
+    "B-008 external Romanian technician pilot",
+    "Automated complete source control/route census"
+  ]
+}

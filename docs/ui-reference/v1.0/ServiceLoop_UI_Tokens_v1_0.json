@@ -1,0 +1,4347 @@
+{
+  "schemaVersion": 1,
+  "specificationVersion": "1.0",
+  "sourceCommit": "1fd51131b040ab62af3874c1106615b75f3008fe",
+  "status": "handoff-proposal-not-adopted",
+  "color": {
+    "canvas": {
+      "light": "#F4F7F7",
+      "dark": "#10191C",
+      "use": "Page background",
+      "avoid": "Do not tint all content mint"
+    },
+    "surface": {
+      "light": "#FFFFFF",
+      "dark": "#19262B",
+      "use": "Cards, fields and bars",
+      "avoid": "Do not overlay translucent green"
+    },
+    "surfaceSubtle": {
+      "light": "#EDF2F3",
+      "dark": "#223239",
+      "use": "Read-only/supporting regions",
+      "avoid": "Not selected state"
+    },
+    "surfaceRaised": {
+      "light": "#FFFFFF",
+      "dark": "#293C43",
+      "use": "Menus and modal surfaces",
+      "avoid": "No automatic tonal overlay"
+    },
+    "textPrimary": {
+      "light": "#182A30",
+      "dark": "#EAF2F4",
+      "use": "Main content and headings",
+      "avoid": "Never lower opacity for ordinary text"
+    },
+    "textSecondary": {
+      "light": "#566870",
+      "dark": "#B7C7CD",
+      "use": "Metadata and helpers",
+      "avoid": "Not an error color"
+    },
+    "textMuted": {
+      "light": "#586D75",
+      "dark": "#9AAFBA",
+      "use": "Optional minor metadata",
+      "avoid": "Not body text over photography"
+    },
+    "onAction": {
+      "light": "#FFFFFF",
+      "dark": "#062F32",
+      "use": "Text/icons on primary fill",
+      "avoid": "Not default text"
+    },
+    "action": {
+      "light": "#08666B",
+      "dark": "#79D4CE",
+      "use": "Primary buttons and interactive text",
+      "avoid": "Not generic success"
+    },
+    "actionPressed": {
+      "light": "#07565B",
+      "dark": "#69BDB8",
+      "use": "Pressed solid button",
+      "avoid": "No darkening beyond this token"
+    },
+    "selection": {
+      "light": "#E7F3F1",
+      "dark": "#173C3D",
+      "use": "Selected row fill",
+      "avoid": "Not completed work"
+    },
+    "onSelection": {
+      "light": "#075C62",
+      "dark": "#A4E6DF",
+      "use": "Selection labels/meaningful marks",
+      "avoid": "Not arbitrary badge colors"
+    },
+    "selectionOutline": {
+      "light": "#08747A",
+      "dark": "#79D4CE",
+      "use": "Selected row outline/check glyph family",
+      "avoid": "Not destructive state"
+    },
+    "outlineDecorative": {
+      "light": "#D8E1E3",
+      "dark": "#344951",
+      "use": "Nonessential card edges/dividers",
+      "avoid": "Never sole field/checkbox boundary"
+    },
+    "outlineControl": {
+      "light": "#6A828C",
+      "dark": "#809AA5",
+      "use": "Meaningful field/control boundary",
+      "avoid": "Not table separators everywhere"
+    },
+    "icon": {
+      "light": "#566870",
+      "dark": "#B7C7CD",
+      "use": "Non-decorative secondary icons",
+      "avoid": "Do not tint user photographs"
+    },
+    "focus": {
+      "light": "#005A61",
+      "dark": "#A4E6DF",
+      "use": "External keyboard focus ring",
+      "avoid": "Never focus ring adjacent to same-color action fill without gap"
+    },
+    "disabledContainer": {
+      "light": "#E6ECEE",
+      "dark": "#2A383E",
+      "use": "Unavailable command background",
+      "avoid": "No error/permission messages"
+    },
+    "disabledText": {
+      "light": "#75858B",
+      "dark": "#82969F",
+      "use": "Unavailable command text only",
+      "avoid": "Read-only values must remain full contrast"
+    },
+    "neutralContainer": {
+      "light": "#EDF2F3",
+      "dark": "#263A42",
+      "use": "Neutral lifecycle badge",
+      "avoid": "No success implication"
+    },
+    "neutralInk": {
+      "light": "#425D67",
+      "dark": "#D1E0E5",
+      "use": "Neutral lifecycle text/icon",
+      "avoid": "Not disabled text"
+    },
+    "infoContainer": {
+      "light": "#EAF0FA",
+      "dark": "#20384F",
+      "use": "Booked/Dispatched/informational",
+      "avoid": "Never delivered receipt"
+    },
+    "infoInk": {
+      "light": "#315F96",
+      "dark": "#B8D7FF",
+      "use": "Info text/icon",
+      "avoid": "Do not erase warning with selection"
+    },
+    "warningContainer": {
+      "light": "#FFF3DD",
+      "dark": "#493519",
+      "use": "Draft/overdue/caution container",
+      "avoid": "Not selected"
+    },
+    "warningInk": {
+      "light": "#875100",
+      "dark": "#FFDA97",
+      "use": "Warning text/icon",
+      "avoid": "Not all warnings block work"
+    },
+    "errorContainer": {
+      "light": "#FBE9E8",
+      "dark": "#49282D",
+      "use": "Failed/invalid/destructive attention",
+      "avoid": "Not ordinary overdue by itself"
+    },
+    "errorInk": {
+      "light": "#A32D35",
+      "dark": "#FFC0C4",
+      "use": "Error/destructive text and icon",
+      "avoid": "Do not call all partial work failure"
+    },
+    "destructive": {
+      "light": "#A32D35",
+      "dark": "#FFB3B9",
+      "use": "Destructive confirmation fill",
+      "avoid": "Not ordinary Cancel navigation"
+    },
+    "onDestructive": {
+      "light": "#FFFFFF",
+      "dark": "#3B0A12",
+      "use": "Destructive filled button label",
+      "avoid": "Not normal report ink"
+    },
+    "successContainer": {
+      "light": "#E5F2EB",
+      "dark": "#173C30",
+      "use": "Saved/verified explicit local success",
+      "avoid": "No safety certification"
+    },
+    "successInk": {
+      "light": "#236347",
+      "dark": "#A5E3BF",
+      "use": "Saved/verified label and check",
+      "avoid": "Not fulfilled unless domain says so"
+    },
+    "workingContainer": {
+      "light": "#E5F3F2",
+      "dark": "#163B3E",
+      "use": "Working/review-in-progress",
+      "avoid": "No percentage completion claim"
+    },
+    "workingInk": {
+      "light": "#07666B",
+      "dark": "#A0E4DF",
+      "use": "Working labels",
+      "avoid": "Not remote live presence"
+    },
+    "historyContainer": {
+      "light": "#EEEAF4",
+      "dark": "#362E45",
+      "use": "Superseded/revision context",
+      "avoid": "Voided still needs error treatment"
+    },
+    "historyInk": {
+      "light": "#66517F",
+      "dark": "#D9C9F1",
+      "use": "Revision/history cue",
+      "avoid": "Not active data ownership"
+    },
+    "photoMat": {
+      "light": "#E6ECEE",
+      "dark": "#0C1316",
+      "use": "Photo/PDF surroundings",
+      "avoid": "Never change PDF paper with theme"
+    },
+    "scrimBase": {
+      "light": "#000000",
+      "dark": "#000000",
+      "use": "Modal background compositing only",
+      "avoid": "No transparent content surfaces"
+    }
+  },
+  "space": {
+    "none": 0,
+    "hair": 2,
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "section": 24,
+    "major": 32,
+    "hero": 40,
+    "large": 48
+  },
+  "radius": {
+    "badge": 8,
+    "field": 12,
+    "card": 16,
+    "dialog": 24,
+    "pill": 999
+  },
+  "stroke": {
+    "divider": 1,
+    "outline": 1,
+    "selected": 1.5,
+    "focus": 2
+  },
+  "size": {
+    "touchMin": 48,
+    "iconSmall": 20,
+    "icon": 24,
+    "iconLarge": 32,
+    "checkboxGlyph": 24,
+    "buttonMin": 48,
+    "buttonPrimaryMin": 52,
+    "fieldMin": 64,
+    "pickerMin": 64,
+    "topBarMin": 64,
+    "bottomNavMin": 80,
+    "listRowMin": 64,
+    "photoThumb": 64,
+    "photoGridMin": 88,
+    "sheetMaxWidth": 560,
+    "dialogMaxWidth": 560,
+    "menuMinWidth": 196,
+    "menuMaxWidth": 320,
+    "formMaxWidth": 640,
+    "contentMaxWidth": 840,
+    "narrowThreshold": 360,
+    "mediumThreshold": 600,
+    "expandedThreshold": 840,
+    "compactHeightThreshold": 480,
+    "pairMinCellWidth": 148
+  },
+  "type": {
+    "screenTitle": {
+      "sizeSp": 22,
+      "lineHeightSp": 28,
+      "weight": 700,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "heroCount": {
+      "sizeSp": 32,
+      "lineHeightSp": 40,
+      "weight": 700,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "sectionTitle": {
+      "sizeSp": 18,
+      "lineHeightSp": 24,
+      "weight": 600,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "itemTitle": {
+      "sizeSp": 16,
+      "lineHeightSp": 22,
+      "weight": 600,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "body": {
+      "sizeSp": 16,
+      "lineHeightSp": 24,
+      "weight": 400,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "supporting": {
+      "sizeSp": 14,
+      "lineHeightSp": 20,
+      "weight": 400,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "label": {
+      "sizeSp": 14,
+      "lineHeightSp": 20,
+      "weight": 600,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "meta": {
+      "sizeSp": 12,
+      "lineHeightSp": 18,
+      "weight": 400,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "dayHeading": {
+      "sizeSp": 12,
+      "lineHeightSp": 18,
+      "weight": 700,
+      "letterSpacingSp": 0.6,
+      "family": "system-sans"
+    },
+    "button": {
+      "sizeSp": 16,
+      "lineHeightSp": 22,
+      "weight": 600,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    },
+    "identifier": {
+      "sizeSp": 14,
+      "lineHeightSp": 20,
+      "weight": 500,
+      "letterSpacingSp": 0,
+      "family": "system-monospace"
+    },
+    "badge": {
+      "sizeSp": 12,
+      "lineHeightSp": 16,
+      "weight": 600,
+      "letterSpacingSp": 0,
+      "family": "system-sans"
+    }
+  },
+  "motion": {
+    "pressMs": 80,
+    "smallMs": 120,
+    "containerMs": 180,
+    "dialogMs": 180,
+    "routeMs": 0,
+    "reducedMs": 0,
+    "easing": "cubic-bezier(0.2,0,0,1)"
+  },
+  "elevation": {
+    "restDp": 0,
+    "menuDp": 3,
+    "dialogDp": 6,
+    "bottomBarDp": 0
+  },
+  "alpha": {
+    "pressed": 0.08,
+    "hover": 0.04,
+    "scrimLight": 0.4,
+    "scrimDark": 0.64
+  },
+  "layout": {
+    "pageInsetCompact": 16,
+    "pageInsetMedium": 24,
+    "pageInsetExpanded": 32,
+    "bodyGap": 12,
+    "sectionGap": 24,
+    "buttonGap": 8,
+    "cardPadding": 16,
+    "barPadding": 16,
+    "pairGap": 8,
+    "fontScaleStackThreshold": 1.3,
+    "badgeFontScaleStackThreshold": 1.5,
+    "bodyMinimumVisibleHeight": 160
+  },
+  "font": {
+    "uiFamily": "system sans-serif / FontFamily.SansSerif",
+    "identifierFamily": "system monospace",
+    "bundledFontRequired": false,
+    "downloadedFonts": false,
+    "dynamicColor": false,
+    "appearance": "follow system; no new appearance settings"
+  },
+  "report": {
+    "pageWidthPt": 595,
+    "pageHeightPt": 842,
+    "marginLeftPt": 42,
+    "marginRightPt": 42,
+    "marginTopPt": 48,
+    "marginBottomPt": 54,
+    "fontSizeBodyPt": 10,
+    "lineHeightBodyPt": 15,
+    "fontSizeTitlePt": 18,
+    "lineHeightTitlePt": 31,
+    "fontSizeSectionPt": 12,
+    "lineHeightSectionPt": 20,
+    "fontSizeCaptionPt": 10,
+    "lineHeightCaptionPt": 15,
+    "fontSizeFooterPt": 8,
+    "lineHeightFooterPt": 10,
+    "photoMaxWidthPt": 511,
+    "photoBaseMaxHeightPt": 670,
+    "logoMaxWidthPt": 96,
+    "logoMaxHeightPt": 48,
+    "background": "#FFFFFF",
+    "ink": "#000000",
+    "supporting": "#444444",
+    "accent": "#08666B",
+    "rule": "#B7C8CC",
+    "policy": "Preserve pinned fixed report geometry and immutable bytes. Logo space is adopted/pending; text layout must subtract measured caption/header/footer heights, never use fixed caption clipping."
+  },
+  "composites": {
+    "light": {
+      "rowPressedOnSurface": "#EBF3F3",
+      "rowPressedOnSelection": "#D5E8E6",
+      "modalScrimOnCanvas": "#929494",
+      "hoverOnSurface": "#F5F9F9"
+    },
+    "dark": {
+      "rowPressedOnSurface": "#213438",
+      "rowPressedOnSelection": "#1F4849",
+      "modalScrimOnCanvas": "#06090A",
+      "hoverOnSurface": "#1D2D32"
+    }
+  },
+  "contrastChecks": [
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "canvas",
+      "ratio": 13.799,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "surface",
+      "ratio": 14.865,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "surfaceSubtle",
+      "ratio": 13.163,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "surfaceRaised",
+      "ratio": 14.865,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "selection",
+      "ratio": 13.087,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "canvas",
+      "ratio": 5.4,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "surface",
+      "ratio": 5.818,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "surfaceSubtle",
+      "ratio": 5.152,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "surfaceRaised",
+      "ratio": 5.818,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "selection",
+      "ratio": 5.122,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textMuted",
+      "background": "canvas",
+      "ratio": 5.051,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textMuted",
+      "background": "surface",
+      "ratio": 5.441,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textMuted",
+      "background": "surfaceSubtle",
+      "ratio": 4.819,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textMuted",
+      "background": "surfaceRaised",
+      "ratio": 5.441,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textMuted",
+      "background": "selection",
+      "ratio": 4.791,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "canvas",
+      "ratio": 6.242,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "surface",
+      "ratio": 6.724,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "surfaceSubtle",
+      "ratio": 5.954,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "surfaceRaised",
+      "ratio": 6.724,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "selection",
+      "ratio": 5.92,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "canvas",
+      "ratio": 5.4,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "surface",
+      "ratio": 5.818,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "surfaceSubtle",
+      "ratio": 5.152,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "surfaceRaised",
+      "ratio": 5.818,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "selection",
+      "ratio": 5.122,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "onAction",
+      "background": "action",
+      "ratio": 6.724,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "onAction",
+      "background": "actionPressed",
+      "ratio": 8.43,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "onSelection",
+      "background": "selection",
+      "ratio": 6.806,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "onDestructive",
+      "background": "destructive",
+      "ratio": 7.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "neutralContainer",
+      "ratio": 6.213,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "infoContainer",
+      "ratio": 5.718,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "warningContainer",
+      "ratio": 5.961,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "errorContainer",
+      "ratio": 6.006,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "successContainer",
+      "ratio": 6.186,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "workingContainer",
+      "ratio": 5.905,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "historyContainer",
+      "ratio": 5.81,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "canvas",
+      "ratio": 3.76,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "surface",
+      "ratio": 4.05,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "surfaceSubtle",
+      "ratio": 3.587,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "surfaceRaised",
+      "ratio": 4.05,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "selection",
+      "ratio": 3.566,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "canvas",
+      "ratio": 7.398,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "surface",
+      "ratio": 7.969,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "surfaceSubtle",
+      "ratio": 7.057,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "surfaceRaised",
+      "ratio": 7.969,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "selection",
+      "ratio": 7.016,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "canvas",
+      "ratio": 5.144,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "surface",
+      "ratio": 5.542,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "surfaceSubtle",
+      "ratio": 4.907,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "surfaceRaised",
+      "ratio": 5.542,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "selection",
+      "ratio": 4.879,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "canvas",
+      "ratio": 15.711,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "surface",
+      "ratio": 13.673,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "surfaceSubtle",
+      "ratio": 11.688,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "surfaceRaised",
+      "ratio": 10.159,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "selection",
+      "ratio": 10.574,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "canvas",
+      "ratio": 10.243,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "surface",
+      "ratio": 8.914,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "surfaceSubtle",
+      "ratio": 7.62,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "surfaceRaised",
+      "ratio": 6.623,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "selection",
+      "ratio": 6.893,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textMuted",
+      "background": "canvas",
+      "ratio": 7.824,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textMuted",
+      "background": "surface",
+      "ratio": 6.808,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textMuted",
+      "background": "surfaceSubtle",
+      "ratio": 5.82,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textMuted",
+      "background": "surfaceRaised",
+      "ratio": 5.059,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textMuted",
+      "background": "selection",
+      "ratio": 5.265,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "canvas",
+      "ratio": 10.291,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "surface",
+      "ratio": 8.956,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "surfaceSubtle",
+      "ratio": 7.656,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "surfaceRaised",
+      "ratio": 6.654,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "selection",
+      "ratio": 6.926,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "canvas",
+      "ratio": 10.243,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "surface",
+      "ratio": 8.914,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "surfaceSubtle",
+      "ratio": 7.62,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "surfaceRaised",
+      "ratio": 6.623,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "selection",
+      "ratio": 6.893,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "onAction",
+      "background": "action",
+      "ratio": 8.3,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "onAction",
+      "background": "actionPressed",
+      "ratio": 6.554,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "onSelection",
+      "background": "selection",
+      "ratio": 8.549,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "onDestructive",
+      "background": "destructive",
+      "ratio": 10.016,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "neutralContainer",
+      "ratio": 8.778,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "infoContainer",
+      "ratio": 8.162,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "warningContainer",
+      "ratio": 8.706,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "errorContainer",
+      "ratio": 8.364,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "successContainer",
+      "ratio": 8.311,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "workingContainer",
+      "ratio": 8.476,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "historyContainer",
+      "ratio": 8.31,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "canvas",
+      "ratio": 6.014,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "surface",
+      "ratio": 5.234,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "surfaceSubtle",
+      "ratio": 4.474,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "surfaceRaised",
+      "ratio": 3.888,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "selection",
+      "ratio": 4.047,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "canvas",
+      "ratio": 12.703,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "surface",
+      "ratio": 11.055,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "surfaceSubtle",
+      "ratio": 9.45,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "surfaceRaised",
+      "ratio": 8.214,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "selection",
+      "ratio": 8.549,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "canvas",
+      "ratio": 10.291,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "surface",
+      "ratio": 8.956,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "surfaceSubtle",
+      "ratio": 7.656,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "surfaceRaised",
+      "ratio": 6.654,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "selection",
+      "ratio": 6.926,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "rowPressedOnSurface",
+      "ratio": 13.199,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "rowPressedOnSurface",
+      "ratio": 5.166,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "rowPressedOnSurface",
+      "ratio": 5.97,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "rowPressedOnSurface",
+      "ratio": 3.597,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "rowPressedOnSelection",
+      "ratio": 11.69,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "rowPressedOnSelection",
+      "ratio": 4.575,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "rowPressedOnSelection",
+      "ratio": 5.288,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "rowPressedOnSelection",
+      "ratio": 3.185,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "hoverOnSurface",
+      "ratio": 14.016,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "hoverOnSurface",
+      "ratio": 5.485,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "hoverOnSurface",
+      "ratio": 6.34,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "hoverOnSurface",
+      "ratio": 3.819,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "rowPressedOnSurface",
+      "ratio": 11.473,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "rowPressedOnSurface",
+      "ratio": 7.48,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "rowPressedOnSurface",
+      "ratio": 7.515,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "rowPressedOnSurface",
+      "ratio": 4.392,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "rowPressedOnSelection",
+      "ratio": 8.891,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "rowPressedOnSelection",
+      "ratio": 5.796,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "rowPressedOnSelection",
+      "ratio": 5.824,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "rowPressedOnSelection",
+      "ratio": 3.403,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "hoverOnSurface",
+      "ratio": 12.558,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "hoverOnSurface",
+      "ratio": 8.187,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "hoverOnSurface",
+      "ratio": 8.226,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "hoverOnSurface",
+      "ratio": 4.807,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "canvas",
+      "ratio": 6.513,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "surface",
+      "ratio": 7.016,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "surfaceSubtle",
+      "ratio": 6.213,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "surfaceRaised",
+      "ratio": 7.016,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "neutralInk",
+      "background": "selection",
+      "ratio": 6.177,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "canvas",
+      "ratio": 6.077,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "surface",
+      "ratio": 6.546,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "surfaceSubtle",
+      "ratio": 5.797,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "surfaceRaised",
+      "ratio": 6.546,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "infoInk",
+      "background": "selection",
+      "ratio": 5.763,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "canvas",
+      "ratio": 6.078,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "surface",
+      "ratio": 6.548,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "surfaceSubtle",
+      "ratio": 5.798,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "surfaceRaised",
+      "ratio": 6.548,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "warningInk",
+      "background": "selection",
+      "ratio": 5.765,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "canvas",
+      "ratio": 6.533,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "surface",
+      "ratio": 7.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "surfaceSubtle",
+      "ratio": 6.232,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "surfaceRaised",
+      "ratio": 7.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "errorInk",
+      "background": "selection",
+      "ratio": 6.196,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "canvas",
+      "ratio": 6.614,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "surface",
+      "ratio": 7.125,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "surfaceSubtle",
+      "ratio": 6.31,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "surfaceRaised",
+      "ratio": 7.125,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "successInk",
+      "background": "selection",
+      "ratio": 6.273,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "canvas",
+      "ratio": 6.244,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "surface",
+      "ratio": 6.727,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "surfaceSubtle",
+      "ratio": 5.957,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "surfaceRaised",
+      "ratio": 6.727,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "workingInk",
+      "background": "selection",
+      "ratio": 5.922,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "canvas",
+      "ratio": 6.395,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "surface",
+      "ratio": 6.889,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "surfaceSubtle",
+      "ratio": 6.1,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "surfaceRaised",
+      "ratio": 6.889,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "historyInk",
+      "background": "selection",
+      "ratio": 6.065,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "canvas",
+      "ratio": 6.533,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "surface",
+      "ratio": 7.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "surfaceSubtle",
+      "ratio": 6.232,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "surfaceRaised",
+      "ratio": 7.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "selection",
+      "ratio": 6.196,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textPrimary",
+      "background": "photoMat",
+      "ratio": 12.457,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "textSecondary",
+      "background": "photoMat",
+      "ratio": 4.875,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "icon",
+      "background": "photoMat",
+      "ratio": 4.875,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "photoMat",
+      "ratio": 5.634,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "outlineControl",
+      "background": "photoMat",
+      "ratio": 3.394,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "canvas",
+      "ratio": 6.242,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "surface",
+      "ratio": 6.724,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "surfaceRaised",
+      "ratio": 6.724,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "action",
+      "background": "selection",
+      "ratio": 5.92,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "canvas",
+      "ratio": 6.533,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "surface",
+      "ratio": 7.037,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "surfaceRaised",
+      "ratio": 7.037,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "destructive",
+      "background": "selection",
+      "ratio": 6.196,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "canvas",
+      "ratio": 5.144,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "surface",
+      "ratio": 5.542,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "surfaceRaised",
+      "ratio": 5.542,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "selectionOutline",
+      "background": "selection",
+      "ratio": 4.879,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "canvas",
+      "ratio": 13.164,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "surface",
+      "ratio": 11.456,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "surfaceSubtle",
+      "ratio": 9.792,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "surfaceRaised",
+      "ratio": 8.511,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "neutralInk",
+      "background": "selection",
+      "ratio": 8.859,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "canvas",
+      "ratio": 12.058,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "surface",
+      "ratio": 10.493,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "surfaceSubtle",
+      "ratio": 8.97,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "surfaceRaised",
+      "ratio": 7.796,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "infoInk",
+      "background": "selection",
+      "ratio": 8.115,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "canvas",
+      "ratio": 13.353,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "surface",
+      "ratio": 11.62,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "surfaceSubtle",
+      "ratio": 9.933,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "surfaceRaised",
+      "ratio": 8.633,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "warningInk",
+      "background": "selection",
+      "ratio": 8.986,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "canvas",
+      "ratio": 11.537,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "surface",
+      "ratio": 10.04,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "surfaceSubtle",
+      "ratio": 8.582,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "surfaceRaised",
+      "ratio": 7.46,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "errorInk",
+      "background": "selection",
+      "ratio": 7.764,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "canvas",
+      "ratio": 12.175,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "surface",
+      "ratio": 10.595,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "surfaceSubtle",
+      "ratio": 9.057,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "surfaceRaised",
+      "ratio": 7.872,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "successInk",
+      "background": "selection",
+      "ratio": 8.193,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "canvas",
+      "ratio": 12.444,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "surface",
+      "ratio": 10.83,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "surfaceSubtle",
+      "ratio": 9.257,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "surfaceRaised",
+      "ratio": 8.046,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "workingInk",
+      "background": "selection",
+      "ratio": 8.375,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "canvas",
+      "ratio": 11.525,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "surface",
+      "ratio": 10.03,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "surfaceSubtle",
+      "ratio": 8.574,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "surfaceRaised",
+      "ratio": 7.452,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "historyInk",
+      "background": "selection",
+      "ratio": 7.757,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "canvas",
+      "ratio": 10.528,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "surface",
+      "ratio": 9.162,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "surfaceSubtle",
+      "ratio": 7.832,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "surfaceRaised",
+      "ratio": 6.807,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "selection",
+      "ratio": 7.085,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textPrimary",
+      "background": "photoMat",
+      "ratio": 16.518,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "textSecondary",
+      "background": "photoMat",
+      "ratio": 10.768,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "icon",
+      "background": "photoMat",
+      "ratio": 10.768,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "photoMat",
+      "ratio": 10.819,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "outlineControl",
+      "background": "photoMat",
+      "ratio": 6.322,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "canvas",
+      "ratio": 10.291,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "surface",
+      "ratio": 8.956,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "surfaceRaised",
+      "ratio": 6.654,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "action",
+      "background": "selection",
+      "ratio": 6.926,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "canvas",
+      "ratio": 10.528,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "surface",
+      "ratio": 9.162,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "surfaceRaised",
+      "ratio": 6.807,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "destructive",
+      "background": "selection",
+      "ratio": 7.085,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "canvas",
+      "ratio": 10.291,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "surface",
+      "ratio": 8.956,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "surfaceRaised",
+      "ratio": 6.654,
+      "threshold": 3
+    },
+    {
+      "theme": "dark",
+      "foreground": "selectionOutline",
+      "background": "selection",
+      "ratio": 6.926,
+      "threshold": 3
+    },
+    {
+      "theme": "light",
+      "foreground": "inverseOnSurface",
+      "background": "inverseSurface",
+      "ratio": 11.688,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "inversePrimary",
+      "background": "inverseSurface",
+      "ratio": 7.656,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "inverseOnSurface",
+      "background": "inverseSurface",
+      "ratio": 13.163,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "inversePrimary",
+      "background": "inverseSurface",
+      "ratio": 5.954,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "primary fixed ink #075C62",
+      "background": "#E7F3F1",
+      "ratio": 6.806,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "primary fixed ink #075C62",
+      "background": "#CCEBE5",
+      "ratio": 6.105,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "primary fixed ink #182A30",
+      "background": "#E7F3F1",
+      "ratio": 13.087,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "primary fixed ink #182A30",
+      "background": "#CCEBE5",
+      "ratio": 11.738,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "secondary fixed ink #075C62",
+      "background": "#E7F3F1",
+      "ratio": 6.806,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "secondary fixed ink #075C62",
+      "background": "#CCEBE5",
+      "ratio": 6.105,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "secondary fixed ink #425D67",
+      "background": "#E7F3F1",
+      "ratio": 6.177,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "secondary fixed ink #425D67",
+      "background": "#CCEBE5",
+      "ratio": 5.54,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "tertiary fixed ink #66517F",
+      "background": "#EEEAF4",
+      "ratio": 5.81,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "tertiary fixed ink #66517F",
+      "background": "#DDD4EA",
+      "ratio": 4.816,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "tertiary fixed ink #44305D",
+      "background": "#EEEAF4",
+      "ratio": 9.696,
+      "threshold": 4.5
+    },
+    {
+      "theme": "both fixed roles",
+      "foreground": "tertiary fixed ink #44305D",
+      "background": "#DDD4EA",
+      "ratio": 8.037,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "onSecondary→surface",
+      "background": "secondary→onSelection",
+      "ratio": 7.731,
+      "threshold": 4.5
+    },
+    {
+      "theme": "light",
+      "foreground": "onTertiary→surface",
+      "background": "tertiary→historyInk",
+      "ratio": 6.889,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "onSecondary→onAction",
+      "background": "secondary→onSelection",
+      "ratio": 10.246,
+      "threshold": 4.5
+    },
+    {
+      "theme": "dark",
+      "foreground": "onTertiary→onAction",
+      "background": "tertiary→historyInk",
+      "ratio": 9.295,
+      "threshold": 4.5
+    },
+    {
+      "theme": "report",
+      "foreground": "report.ink",
+      "background": "report.background",
+      "ratio": 21.0,
+      "threshold": 4.5
+    },
+    {
+      "theme": "report",
+      "foreground": "report.supporting",
+      "background": "report.background",
+      "ratio": 9.74,
+      "threshold": 4.5
+    },
+    {
+      "theme": "report",
+      "foreground": "report.accent",
+      "background": "report.background",
+      "ratio": 6.724,
+      "threshold": 4.5
+    }
+  ],
+  "materialRoles": {
+    "primary": "action",
+    "onPrimary": "onAction",
+    "primaryContainer": "selection",
+    "onPrimaryContainer": "onSelection",
+    "secondary": "onSelection",
+    "onSecondary": "surface",
+    "secondaryContainer": "selection",
+    "onSecondaryContainer": "onSelection",
+    "tertiary": "historyInk",
+    "onTertiary": "surface",
+    "tertiaryContainer": "historyContainer",
+    "onTertiaryContainer": "historyInk",
+    "background": "canvas",
+    "onBackground": "textPrimary",
+    "surface": "surface",
+    "onSurface": "textPrimary",
+    "surfaceVariant": "surfaceSubtle",
+    "onSurfaceVariant": "textSecondary",
+    "surfaceTint": "action",
+    "surfaceDim": "canvas",
+    "surfaceBright": "surfaceRaised",
+    "surfaceContainerLowest": "canvas",
+    "surfaceContainerLow": "surface",
+    "surfaceContainer": "surfaceSubtle",
+    "surfaceContainerHigh": "surfaceRaised",
+    "surfaceContainerHighest": "surfaceRaised",
+    "outline": "outlineControl",
+    "outlineVariant": "outlineDecorative",
+    "error": "destructive",
+    "onError": "onDestructive",
+    "errorContainer": "errorContainer",
+    "onErrorContainer": "errorInk",
+    "scrim": "scrimBase"
+  },
+  "materialSpecialRoles": {
+    "inverseSurface": {
+      "light": "#223239",
+      "dark": "#EDF2F3"
+    },
+    "inverseOnSurface": {
+      "light": "#EAF2F4",
+      "dark": "#182A30"
+    },
+    "inversePrimary": {
+      "light": "#79D4CE",
+      "dark": "#08666B"
+    }
+  },
+  "materialRoleOverrides": {
+    "dark": {
+      "onSecondary": "onAction",
+      "onTertiary": "onAction"
+    }
+  },
+  "materialFixedRoles": {
+    "primaryFixed": {
+      "light": "#E7F3F1",
+      "dark": "#E7F3F1"
+    },
+    "primaryFixedDim": {
+      "light": "#CCEBE5",
+      "dark": "#CCEBE5"
+    },
+    "onPrimaryFixed": {
+      "light": "#075C62",
+      "dark": "#075C62"
+    },
+    "onPrimaryFixedVariant": {
+      "light": "#182A30",
+      "dark": "#182A30"
+    },
+    "secondaryFixed": {
+      "light": "#E7F3F1",
+      "dark": "#E7F3F1"
+    },
+    "secondaryFixedDim": {
+      "light": "#CCEBE5",
+      "dark": "#CCEBE5"
+    },
+    "onSecondaryFixed": {
+      "light": "#075C62",
+      "dark": "#075C62"
+    },
+    "onSecondaryFixedVariant": {
+      "light": "#425D67",
+      "dark": "#425D67"
+    },
+    "tertiaryFixed": {
+      "light": "#EEEAF4",
+      "dark": "#EEEAF4"
+    },
+    "tertiaryFixedDim": {
+      "light": "#DDD4EA",
+      "dark": "#DDD4EA"
+    },
+    "onTertiaryFixed": {
+      "light": "#66517F",
+      "dark": "#66517F"
+    },
+    "onTertiaryFixedVariant": {
+      "light": "#44305D",
+      "dark": "#44305D"
+    }
+  },
+  "componentTokenUse": {
+    "C01": [
+      "canvas",
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative"
+    ],
+    "C02": [
+      "surface",
+      "textPrimary",
+      "action",
+      "outlineDecorative"
+    ],
+    "C03": [
+      "surface",
+      "selection",
+      "action",
+      "textSecondary",
+      "focus"
+    ],
+    "C04": [
+      "textPrimary",
+      "textSecondary",
+      "action"
+    ],
+    "C05": [
+      "action",
+      "onAction",
+      "actionPressed",
+      "surface",
+      "outlineControl",
+      "disabledContainer",
+      "disabledText",
+      "focus"
+    ],
+    "C06": [
+      "destructive",
+      "onDestructive",
+      "errorInk",
+      "errorContainer",
+      "focus"
+    ],
+    "C07": [
+      "action",
+      "focus",
+      "disabledText",
+      "surface"
+    ],
+    "C08": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "outlineControl",
+      "focus",
+      "errorInk",
+      "disabledContainer",
+      "disabledText"
+    ],
+    "C09": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "icon",
+      "outlineDecorative",
+      "outlineControl",
+      "focus",
+      "errorInk"
+    ],
+    "C10": [
+      "surfaceSubtle",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative"
+    ],
+    "C11": [
+      "surface",
+      "canvas",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative",
+      "icon",
+      "focus"
+    ],
+    "C12": [
+      "surface",
+      "selection",
+      "selectionOutline",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative",
+      "outlineControl",
+      "action",
+      "onAction",
+      "focus"
+    ],
+    "C13": [
+      "action",
+      "onAction",
+      "outlineControl",
+      "textPrimary",
+      "textSecondary",
+      "focus",
+      "disabledText"
+    ],
+    "C14": [
+      "action",
+      "onAction",
+      "surfaceSubtle",
+      "outlineControl",
+      "textPrimary",
+      "textSecondary",
+      "errorInk",
+      "focus"
+    ],
+    "C15": [
+      "neutralContainer",
+      "neutralInk",
+      "infoContainer",
+      "infoInk",
+      "warningContainer",
+      "warningInk",
+      "errorContainer",
+      "errorInk",
+      "successContainer",
+      "successInk",
+      "workingContainer",
+      "workingInk",
+      "historyContainer",
+      "historyInk"
+    ],
+    "C16": [
+      "selection",
+      "onSelection",
+      "selectionOutline",
+      "surface",
+      "textPrimary",
+      "outlineControl",
+      "focus"
+    ],
+    "C17": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "icon",
+      "outlineDecorative",
+      "focus"
+    ],
+    "C18": [
+      "infoContainer",
+      "infoInk",
+      "warningContainer",
+      "warningInk",
+      "errorContainer",
+      "errorInk",
+      "successContainer",
+      "successInk"
+    ],
+    "C19": [
+      "surfaceRaised",
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "selection",
+      "outlineControl",
+      "focus"
+    ],
+    "C20": [
+      "surfaceRaised",
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "errorInk",
+      "destructive",
+      "onDestructive",
+      "focus"
+    ],
+    "C21": [
+      "surfaceRaised",
+      "textPrimary",
+      "action",
+      "outlineDecorative",
+      "focus",
+      "disabledText"
+    ],
+    "C22": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative",
+      "action",
+      "onAction"
+    ],
+    "C23": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "outlineControl",
+      "focus",
+      "errorInk"
+    ],
+    "C24": [
+      "photoMat",
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "outlineDecorative",
+      "selection",
+      "selectionOutline"
+    ],
+    "C25": [
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "errorInk",
+      "warningInk",
+      "successInk"
+    ],
+    "C26": [
+      "textPrimary",
+      "textSecondary",
+      "historyContainer",
+      "historyInk",
+      "errorContainer",
+      "errorInk",
+      "outlineDecorative"
+    ],
+    "C27": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "warningInk",
+      "warningContainer",
+      "errorInk",
+      "successInk",
+      "action"
+    ],
+    "C28": [
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "outlineControl",
+      "disabledText",
+      "focus"
+    ],
+    "C29": [
+      "textPrimary",
+      "textSecondary",
+      "icon",
+      "outlineDecorative",
+      "focus"
+    ],
+    "C30": [
+      "surfaceRaised",
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "selection",
+      "outlineControl",
+      "errorInk",
+      "focus"
+    ],
+    "C31": [
+      "photoMat",
+      "surface",
+      "textPrimary",
+      "textSecondary",
+      "warningInk",
+      "errorInk",
+      "action"
+    ],
+    "C32": [
+      "surfaceRaised",
+      "textPrimary",
+      "action"
+    ],
+    "C33": [
+      "textPrimary",
+      "textSecondary",
+      "action",
+      "historyInk"
+    ],
+    "C34": [
+      "textPrimary",
+      "textSecondary",
+      "errorInk",
+      "warningInk",
+      "action"
+    ],
+    "C35": [
+      "action",
+      "onAction",
+      "canvas",
+      "surface",
+      "textPrimary"
+    ],
+    "C36": [
+      "textPrimary"
+    ]
+  },
+  "screenLayoutUse": {
+    "S01": "L01",
+    "S02": "L02",
+    "S03": "L03",
+    "S04": "L03",
+    "S05": "L03",
+    "S06": "L04",
+    "S07": "L05",
+    "S08": "L04",
+    "S09": "L05",
+    "S10": "L04",
+    "S11": "L05",
+    "S12": "L07",
+    "S13": "L04",
+    "S14": "L05",
+    "S15": "L03",
+    "S16": "L04",
+    "S17": "L05",
+    "S18": "L05",
+    "S19": "L04",
+    "S20": "L06",
+    "S21": "L06",
+    "S22": "L06",
+    "S23": "L05",
+    "S24": "L07",
+    "S25": "L08",
+    "S26": "L06",
+    "S27": "L04",
+    "S28": "L05",
+    "S29": "L05",
+    "S30": "L04",
+    "S31": "L05",
+    "S32": "L05",
+    "S33": "L04",
+    "S34": "L09",
+    "S35": "L09",
+    "S36": "L09",
+    "S37": "L09",
+    "S38": "L04",
+    "S39": "L10",
+    "S40": "L08",
+    "D01": "L11",
+    "D02": "L11",
+    "D03": "L11",
+    "D04": "L11",
+    "D05": "L11",
+    "D06": "L11",
+    "D07": "L11",
+    "D08": "L11",
+    "D09": "L11",
+    "D10": "L11",
+    "D11": "L11",
+    "D12": "L11",
+    "D13": "L11",
+    "X01": "L04",
+    "X02": "L05",
+    "X03": "L03",
+    "X04": "L04",
+    "X05": "L03",
+    "X06": "L05",
+    "X07": "L11",
+    "X08": "L11",
+    "X09": "L05",
+    "X10": "L07",
+    "X11": "L09",
+    "X12": "L06",
+    "X13": "L11",
+    "X14": "L11",
+    "X15": "L11",
+    "X16": "L04",
+    "X17": "L04",
+    "X18": "L12",
+    "X19": "L09",
+    "X20": "L05"
+  },
+  "semanticStates": {
+    "ST-DUE-OVERDUE": {
+      "code": "OVERDUE",
+      "english": "Overdue",
+      "romanian": "Restant",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "schedule",
+      "meaning": "Business due date before Today; may coexist with Booked/Working. Not failed work or permission error.",
+      "notPersistenceEnum": true
+    },
+    "ST-DUE-TODAY": {
+      "code": "TODAY",
+      "english": "Due today",
+      "romanian": "Scadent azi",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "today",
+      "meaning": "Business due date today; no assertion that visit is already late.",
+      "notPersistenceEnum": true
+    },
+    "ST-DUE-DUE_SOON": {
+      "code": "DUE_SOON",
+      "english": "Due soon",
+      "romanian": "Scadent în curând",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event",
+      "meaning": "Tomorrow through configured horizon; Home range may explicitly include Today as aggregate.",
+      "notPersistenceEnum": true
+    },
+    "ST-DUE-UPCOMING": {
+      "code": "UPCOMING",
+      "english": "Upcoming",
+      "romanian": "Viitor",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event",
+      "meaning": "Beyond horizon; not due soon merely because not overdue.",
+      "notPersistenceEnum": true
+    },
+    "ST-DUE-NONE": {
+      "code": "NONE",
+      "english": "No active plan",
+      "romanian": "Fără plan activ",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Only when domain proves no active plan. Missing read is not this state.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-BOOKED": {
+      "code": "BOOKED",
+      "english": "Booked",
+      "romanian": "Programată",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "event",
+      "meaning": "Appointment exists; obligation can remain overdue.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-WORKING": {
+      "code": "WORKING",
+      "english": "Working",
+      "romanian": "În lucru",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Durable unfinished visit; no finalized result.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-FINALIZED": {
+      "code": "FINALIZED",
+      "english": "Finalized",
+      "romanian": "Finalizată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "description",
+      "meaning": "Immutable service record exists; not proof of fulfilled all work, safety or successful PDF.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-CANCELLED": {
+      "code": "CANCELLED",
+      "english": "Cancelled",
+      "romanian": "Anulată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Booking cancelled, history retained; outstanding services not fulfilled.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-PASSED": {
+      "code": "PASSED",
+      "english": "Appointment passed — outcome not recorded",
+      "romanian": "Programare trecută — rezultat neînregistrat",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "history",
+      "meaning": "Derived Booked attention cue, not automatic no-show/cancellation.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-PARTICIPATION_COMPLETE": {
+      "code": "PARTICIPATION_COMPLETE",
+      "english": "Participation complete",
+      "romanian": "Participare încheiată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "person_check",
+      "meaning": "Only local involvement ended; no fake final report or central completion.",
+      "notPersistenceEnum": true
+    },
+    "ST-VISIT-DISPATCH_WITHDRAWN": {
+      "code": "DISPATCH_WITHDRAWN",
+      "english": "Assignment withdrawn",
+      "romanian": "Repartizare retrasă",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "person_off",
+      "meaning": "Newer package removed final applicable assignment from untouched Booked work; no central cancellation.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTCOME-PERFORMED": {
+      "code": "PERFORMED",
+      "english": "Performed",
+      "romanian": "Efectuată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Human outcome for this work line; does not automatically fulfill obligation.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTCOME-PARTLY_PERFORMED": {
+      "code": "PARTLY_PERFORMED",
+      "english": "Partly performed",
+      "romanian": "Efectuată parțial",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "remove_done",
+      "meaning": "Partial recorded work; obligation usually remains outstanding.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTCOME-NOT_PERFORMED": {
+      "code": "NOT_PERFORMED",
+      "english": "Not performed",
+      "romanian": "Neefectuată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "remove",
+      "meaning": "Legitimate recorded outcome with required reason, not parser/save failure.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTCOME-UNSET": {
+      "code": "UNSET",
+      "english": "Choose outcome",
+      "romanian": "Alege rezultatul",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "help_outline",
+      "meaning": "No selected result; finalization blocker where required.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-NOT_STARTED": {
+      "code": "NOT_STARTED",
+      "english": "Not started",
+      "romanian": "Neîncepută",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "list_alt",
+      "meaning": "No reviewed progress asserted.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-IN_PROGRESS": {
+      "code": "IN_PROGRESS",
+      "english": "In progress",
+      "romanian": "În curs",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Some active answer state; review still required.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-REVIEWED": {
+      "code": "REVIEWED",
+      "english": "Reviewed",
+      "romanian": "Revizuită",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "fact_check",
+      "meaning": "Required active answers accounted for and acknowledged; not all OK/safety.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-OK": {
+      "code": "OK",
+      "english": "OK",
+      "romanian": "În regulă",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Technician answer to this item only.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-ISSUE_FOUND": {
+      "code": "ISSUE_FOUND",
+      "english": "Issue found",
+      "romanian": "Problemă constatată",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "report_problem",
+      "meaning": "Needs active public description; does not automatically prevent inspection fulfillment.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-NOT_APPLICABLE": {
+      "code": "NOT_APPLICABLE",
+      "english": "Not applicable",
+      "romanian": "Nu se aplică",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "remove_circle_outline",
+      "meaning": "Active reason required; inactive prior drafts retained.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-NOT_CHECKED": {
+      "code": "NOT_CHECKED",
+      "english": "Not checked",
+      "romanian": "Neverificat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "radio_button_unchecked",
+      "meaning": "Explicit unperformed check; never equivalent to OK.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-UNANSWERED": {
+      "code": "UNANSWERED",
+      "english": "Not recorded",
+      "romanian": "Neînregistrat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "radio_button_unchecked",
+      "meaning": "No active text/value; not coerced to0.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-VALUE": {
+      "code": "VALUE",
+      "english": "Value recorded",
+      "romanian": "Valoare înregistrată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "text_fields",
+      "meaning": "Actual active value, with captured unit; no automatic threshold judgement.",
+      "notPersistenceEnum": true
+    },
+    "ST-CHECKLIST-INVALID": {
+      "code": "INVALID",
+      "english": "Check response",
+      "romanian": "Verifică răspunsul",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Active required/parse error, not ordinary unanswered optional field.",
+      "notPersistenceEnum": true
+    },
+    "ST-FOLLOWUP-OPEN": {
+      "code": "OPEN",
+      "english": "Open",
+      "romanian": "Deschisă",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "pending_actions",
+      "meaning": "Outstanding task, may coexist with separate overdue/today cue.",
+      "notPersistenceEnum": true
+    },
+    "ST-FOLLOWUP-RESOLVED": {
+      "code": "RESOLVED",
+      "english": "Resolved",
+      "romanian": "Rezolvată",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "check_circle_outline",
+      "meaning": "Explicit task resolution only; not machine certification or plan fulfillment.",
+      "notPersistenceEnum": true
+    },
+    "ST-FOLLOWUP-CANCELLED": {
+      "code": "CANCELLED",
+      "english": "Cancelled",
+      "romanian": "Anulată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "cancel",
+      "meaning": "Reasoned task cancellation; does not prove fault repaired.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-ACTIVE": {
+      "code": "ACTIVE",
+      "english": "Active",
+      "romanian": "Activ",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "circle",
+      "meaning": "Current usable record, not selected UI state.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-ARCHIVED": {
+      "code": "ARCHIVED",
+      "english": "Archived",
+      "romanian": "Arhivat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "archive",
+      "meaning": "Retained historical record; unavailable for new current work until eligible restore.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-IN_SERVICE": {
+      "code": "IN_SERVICE",
+      "english": "In service",
+      "romanian": "În serviciu",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "build",
+      "meaning": "Equipment participates in work; no Healthy claim.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-RETIRED": {
+      "code": "RETIRED",
+      "english": "Retired",
+      "romanian": "Retras",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "inventory_2",
+      "meaning": "Equipment retained outside active workflow; not hard delete.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-PAUSED": {
+      "code": "PAUSED",
+      "english": "Paused",
+      "romanian": "Suspendat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "pause_circle_outline",
+      "meaning": "Plan retains due date but stops active participation.",
+      "notPersistenceEnum": true
+    },
+    "ST-MASTER-ENDED": {
+      "code": "ENDED",
+      "english": "Ended",
+      "romanian": "Încheiat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "stop_circle",
+      "meaning": "No future plan obligation; not reversible enable switch.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-NOT_ASSESSED": {
+      "code": "NOT_ASSESSED",
+      "english": "Not assessed",
+      "romanian": "Neevaluat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "help_outline",
+      "meaning": "Legitimate dated observation; not safe/healthy.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-NO_ISSUE_OBSERVED": {
+      "code": "NO_ISSUE_OBSERVED",
+      "english": "No issue observed",
+      "romanian": "Nicio problemă observată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "visibility",
+      "meaning": "Observation within this visit only; not automatic full safety.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-ISSUE_OBSERVED": {
+      "code": "ISSUE_OBSERVED",
+      "english": "Issue observed",
+      "romanian": "Problemă observată",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "report_problem",
+      "meaning": "Dated human observation, distinct from open follow-up counts.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-RESOLVED_DURING_VISIT": {
+      "code": "RESOLVED_DURING_VISIT",
+      "english": "Resolved during visit",
+      "romanian": "Rezolvată în timpul vizitei",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "build_circle",
+      "meaning": "Finding disposition with public work note, not whole-equipment certification.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-FOLLOWUP_NEEDED": {
+      "code": "FOLLOWUP_NEEDED",
+      "english": "Corrective follow-up needed",
+      "romanian": "Este necesară o acțiune corectivă",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "assignment_late",
+      "meaning": "Requires actual valid proposal/link; proposal not live until parent commit.",
+      "notPersistenceEnum": true
+    },
+    "ST-OBSERVATION-NO_FURTHER_ACTION": {
+      "code": "NO_FURTHER_ACTION",
+      "english": "No further action",
+      "romanian": "Fără acțiuni suplimentare",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "remove",
+      "meaning": "Technician judgement with reason, not app endorsement.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-CURRENT": {
+      "code": "CURRENT",
+      "english": "Current version",
+      "romanian": "Versiune curentă",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "description",
+      "meaning": "Authoritative current record/report context, not receipt.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-CORRECTION_DRAFT": {
+      "code": "CORRECTION_DRAFT",
+      "english": "Correction draft",
+      "romanian": "Ciornă de corecție",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "edit_document",
+      "meaning": "Original remains current; draft retained independently.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-SUPERSEDED": {
+      "code": "SUPERSEDED",
+      "english": "Superseded",
+      "romanian": "Înlocuită de o versiune nouă",
+      "tokenRoles": [
+        "historyInk",
+        "historyContainer"
+      ],
+      "glyphAlias": "history",
+      "meaning": "Old revision retained; warning before permitted sharing, no promotion on open.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-VOIDED": {
+      "code": "VOIDED",
+      "english": "Voided",
+      "romanian": "Invalidată",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "block",
+      "meaning": "No longer valid service evidence; retained view/export; ordinary share of original blocked.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-VOID_NOTICE": {
+      "code": "VOID_NOTICE",
+      "english": "Void notice",
+      "romanian": "Notificare de invalidare",
+      "tokenRoles": [
+        "historyInk",
+        "historyContainer"
+      ],
+      "glyphAlias": "notification_important",
+      "meaning": "New public notice of invalidation; not overwritten old PDF.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-RECREATED": {
+      "code": "RECREATED",
+      "english": "Re-created copy",
+      "romanian": "Copie recreată",
+      "tokenRoles": [
+        "historyInk",
+        "historyContainer"
+      ],
+      "glyphAlias": "file_copy",
+      "meaning": "New rendition identity/time from preserved snapshot, not recovered original bytes.",
+      "notPersistenceEnum": true
+    },
+    "ST-HISTORY-ENTERED_IN_ERROR": {
+      "code": "ENTERED_IN_ERROR",
+      "english": "Entered in error",
+      "romanian": "Introdusă eronat",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Saved contact history retained with reason under B-002.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-DIRTY": {
+      "code": "DIRTY",
+      "english": "Unsaved changes",
+      "romanian": "Modificări nesalvate",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Only local input buffer; not durable record.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-SAVING": {
+      "code": "SAVING",
+      "english": "Saving…",
+      "romanian": "Se salvează…",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "progress_activity",
+      "meaning": "Actual write pending; no fabricated timestamp/progress percentage.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-SAVED": {
+      "code": "SAVED",
+      "english": "Saved on this device",
+      "romanian": "Salvat pe acest dispozitiv",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Actual durable acknowledgement with time; not backed up/synchronized.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-FAILED": {
+      "code": "FAILED",
+      "english": "Not saved — action needed",
+      "romanian": "Nesalvat — este necesară o acțiune",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Keep input and last durable checkpoint; priority above routine status.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-RECOVERED_BUFFER": {
+      "code": "RECOVERED_BUFFER",
+      "english": "Recovered unsaved input",
+      "romanian": "Date nesalvate recuperate",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "restore",
+      "meaning": "Not automatically applied to record; explicit resume/discard.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-LOADING": {
+      "code": "LOADING",
+      "english": "Reading saved records…",
+      "romanian": "Se citesc înregistrările salvate…",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "progress_activity",
+      "meaning": "No zero counts/empty state until read complete.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-REFRESH_FAILED": {
+      "code": "REFRESH_FAILED",
+      "english": "Could not refresh — showing saved data",
+      "romanian": "Actualizare eșuată — se afișează datele salvate",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "refresh",
+      "meaning": "Keep previous durable list, Retry; not current fresh read claim.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-EMPTY": {
+      "code": "EMPTY",
+      "english": "No records yet",
+      "romanian": "Nu există încă înregistrări",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "inbox",
+      "meaning": "Successful read and genuinely empty relevant dataset.",
+      "notPersistenceEnum": true
+    },
+    "ST-SAVE-NO_RESULTS": {
+      "code": "NO_RESULTS",
+      "english": "No records match",
+      "romanian": "Nicio înregistrare nu corespunde",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "search_off",
+      "meaning": "Successful filtered empty result; Clear filters, not reset data.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-NOT_GENERATED": {
+      "code": "NOT_GENERATED",
+      "english": "Not generated",
+      "romanian": "Negenerat",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "description",
+      "meaning": "Final record may exist without PDF.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-GENERATING": {
+      "code": "GENERATING",
+      "english": "Generating PDF…",
+      "romanian": "Se generează PDF…",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "progress_activity",
+      "meaning": "Actual rendering operation; no received/sent meaning.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-READY": {
+      "code": "READY",
+      "english": "PDF ready",
+      "romanian": "PDF pregătit",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "task",
+      "meaning": "Stored verified usable rendition exists; not delivered.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-FAILED": {
+      "code": "FAILED",
+      "english": "PDF generation failed",
+      "romanian": "Generarea PDF a eșuat",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Final record remains finalized; retry generation only.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-MISSING": {
+      "code": "MISSING",
+      "english": "Report file missing",
+      "romanian": "Fișierul raportului lipsește",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "file_present",
+      "meaning": "Recorded identity remains; recovery or explicit new rendition, not silently reconstructed original.",
+      "notPersistenceEnum": true
+    },
+    "ST-REPORT-DRAFT": {
+      "code": "DRAFT",
+      "english": "Draft preview",
+      "romanian": "Previzualizare ciornă",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "draft",
+      "meaning": "Public staged data, no external Save/Share allowed.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-DRAFT": {
+      "code": "DRAFT",
+      "english": "Draft",
+      "romanian": "Ciornă",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "draft",
+      "meaning": "No successful usable export artifact; itemless Draft valid but not export-ready.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-DISPATCHED": {
+      "code": "DISPATCHED",
+      "english": "Dispatched",
+      "romanian": "Exportată pentru trimitere",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "outbox",
+      "meaning": "Usable package created/export metadata committed; NOT delivered/received/accepted.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-CONCLUDED": {
+      "code": "CONCLUDED",
+      "english": "Concluded",
+      "romanian": "Încheiată în coordonare",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "archive",
+      "meaning": "Office bookkeeping only; readonly until Reopen; not technician completion.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-MATERIAL_CHANGED": {
+      "code": "MATERIAL_CHANGED",
+      "english": "Changes not exported",
+      "romanian": "Modificări neexportate",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Last successful generation remains until new export; no automatic push.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-EXPORT_STALE": {
+      "code": "EXPORT_STALE",
+      "english": "Review changed — review again",
+      "romanian": "Date modificate — revizuiește din nou",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "refresh",
+      "meaning": "Prepared material stale; no false status/generation advance.",
+      "notPersistenceEnum": true
+    },
+    "ST-OUTBOX-NOT_READY": {
+      "code": "NOT_READY",
+      "english": "Needs work before export",
+      "romanian": "Necesită lucrare înainte de export",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "assignment_late",
+      "meaning": "Itemless Draft cannot export; not inability to save Draft.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-NEW_VISIT": {
+      "code": "NEW_VISIT",
+      "english": "New visit",
+      "romanian": "Vizită nouă",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "add",
+      "meaning": "Eligible new local copy only after Apply.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-UPDATE": {
+      "code": "UPDATE",
+      "english": "Update available",
+      "romanian": "Actualizare disponibilă",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "update",
+      "meaning": "Higher generation may update same untouched eligible local Visit after review.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-ASSIGNMENT_REMOVED": {
+      "code": "ASSIGNMENT_REMOVED",
+      "english": "Assignment withdrawal",
+      "romanian": "Retragere repartizare",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "person_off",
+      "meaning": "Safe higher-generation removal reviewed; not delete started historical evidence.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-ALREADY_CURRENT": {
+      "code": "ALREADY_CURRENT",
+      "english": "Already current",
+      "romanian": "Deja actuală",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Same generation/material; no mutation/replay.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-OLDER_GENERATION": {
+      "code": "OLDER_GENERATION",
+      "english": "Older version — not applied",
+      "romanian": "Versiune mai veche — neaplicată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "history",
+      "meaning": "No rollback to old generation.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-CONFLICT": {
+      "code": "CONFLICT",
+      "english": "Package conflict",
+      "romanian": "Conflict în pachet",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Same identity/version different material or hard directory conflict; no overwrite.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-LOCAL_CONFLICT": {
+      "code": "LOCAL_CONFLICT",
+      "english": "Local changes — not overwritten",
+      "romanian": "Modificări locale — nesuprascrise",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "edit_note",
+      "meaning": "Local material changed; incoming copy cannot silently rewrite.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-UPDATE_BLOCKED": {
+      "code": "UPDATE_BLOCKED",
+      "english": "Update blocked",
+      "romanian": "Actualizare blocată",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "block",
+      "meaning": "Current state prevents safe update; show cause/route not fake success.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-NOT_ASSIGNED": {
+      "code": "NOT_ASSIGNED",
+      "english": "Not assigned to you",
+      "romanian": "Nu îți este repartizată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "person_off",
+      "meaning": "Not applicable to this identity; leader-visible/current/conflict are not this classification.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-EXISTING_UNCHANGED": {
+      "code": "EXISTING_UNCHANGED",
+      "english": "Existing unchanged",
+      "romanian": "Existentă nemodificată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Directory same reference/fields; safe reuse without mutation.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-NEW": {
+      "code": "NEW",
+      "english": "New directory entry",
+      "romanian": "Înregistrare nouă în registru",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "add",
+      "meaning": "Proposed create-only directory entry; not durable yet.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-POSSIBLE_DUPLICATE": {
+      "code": "POSSIBLE_DUPLICATE",
+      "english": "Possible duplicate",
+      "romanian": "Posibil duplicat",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "content_copy",
+      "meaning": "Human identity decision needed; similar name alone not same entity.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-SKIPPED": {
+      "code": "SKIPPED",
+      "english": "Skipped branch",
+      "romanian": "Ramură omisă",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "skip_next",
+      "meaning": "Explicit skip with dependent scope retained in result; no partial hidden hierarchy.",
+      "notPersistenceEnum": true
+    },
+    "ST-IMPORT-APPLIED": {
+      "code": "APPLIED",
+      "english": "Applied on this device",
+      "romanian": "Aplicată pe acest dispozitiv",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "check",
+      "meaning": "Actual local transaction committed; no remote acceptance/status broadcast.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-ASSIGNED": {
+      "code": "ASSIGNED",
+      "english": "Assigned to you",
+      "romanian": "Repartizată ție",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "person",
+      "meaning": "Package assignment, not exclusive central claim.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-EVERYONE": {
+      "code": "EVERYONE",
+      "english": "Everyone on selected teams",
+      "romanian": "Toți din echipele selectate",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "groups",
+      "meaning": "Empty explicit assignees means participant union, not nobody.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-LEADER_OBSERVE": {
+      "code": "LEADER_OBSERVE",
+      "english": "Leader overview",
+      "romanian": "Privire de ansamblu pentru lider",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "visibility",
+      "meaning": "Visible for overview, not automatically mandatory documentation.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-PENDING": {
+      "code": "PENDING",
+      "english": "Choose documentation responsibility",
+      "romanian": "Alege responsabilitatea documentării",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "pending_actions",
+      "meaning": "No local documentation decision yet.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-DOCUMENT_LOCAL": {
+      "code": "DOCUMENT_LOCAL",
+      "english": "Documenting on this device",
+      "romanian": "Documentare pe acest dispozitiv",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "edit_document",
+      "meaning": "Local responsibility selected; may strictly match current local obligation.",
+      "notPersistenceEnum": true
+    },
+    "ST-DOCUMENT-DEFERRED": {
+      "code": "DEFERRED",
+      "english": "Documentation handed off locally",
+      "romanian": "Documentare predată local",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "forward",
+      "meaning": "Local handoff only; acceptance and exclusivity not proven.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-FULL_VERIFIED": {
+      "code": "FULL_VERIFIED",
+      "english": "Verified complete backup",
+      "romanian": "Copie completă verificată",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "verified_user",
+      "meaning": "Actual written package read back/verified against captured full snapshot; later changes may exist.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-WRITTEN_UNVERIFIED": {
+      "code": "WRITTEN_UNVERIFIED",
+      "english": "Written — not verified",
+      "romanian": "Scrisă — neverificată",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "help_outline",
+      "meaning": "External write acknowledgement only, not verified full recovery coverage.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-INCOMPLETE": {
+      "code": "INCOMPLETE",
+      "english": "Incomplete recovery copy",
+      "romanian": "Copie de recuperare incompletă",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "report_problem",
+      "meaning": "Known missing-file manifest explicitly acknowledged; never Full backup.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-INVALID": {
+      "code": "INVALID",
+      "english": "Invalid or damaged package",
+      "romanian": "Pachet invalid sau deteriorat",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Cannot safely import/replace; retain current dataset.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-UNLOCK_FAILED": {
+      "code": "UNLOCK_FAILED",
+      "english": "Could not unlock package",
+      "romanian": "Pachetul nu poate fi deblocat",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "lock",
+      "meaning": "Wrong secret or damaged data not distinguished without evidence; no live replacement.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-CHANGED": {
+      "code": "CHANGED",
+      "english": "Changed since verified backup",
+      "romanian": "Modificat după copia verificată",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "backup",
+      "meaning": "New business edits after snapshot, not merely after slow write finished.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-REPLACING": {
+      "code": "REPLACING",
+      "english": "Finishing replacement…",
+      "romanian": "Se finalizează înlocuirea…",
+      "tokenRoles": [
+        "workingInk",
+        "workingContainer"
+      ],
+      "glyphAlias": "progress_activity",
+      "meaning": "Short atomic phase; dismiss/cancel temporarily disabled; recoverable swap.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-RESTORED": {
+      "code": "RESTORED",
+      "english": "Restored on this device",
+      "romanian": "Restaurat pe acest dispozitiv",
+      "tokenRoles": [
+        "successInk",
+        "successContainer"
+      ],
+      "glyphAlias": "restore",
+      "meaning": "Dataset replacement succeeded; local reminders/Calendar reset Off; not merge/sync.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-RESTRICTED": {
+      "code": "RESTRICTED",
+      "english": "Recovery required",
+      "romanian": "Recuperare necesară",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "warning",
+      "meaning": "Business dataset not safe to open; preserve files, expose safe recovery only.",
+      "notPersistenceEnum": true
+    },
+    "ST-RECOVERY-FILE_MISSING": {
+      "code": "FILE_MISSING",
+      "english": "Evidence file missing",
+      "romanian": "Fișier de dovezi lipsă",
+      "tokenRoles": [
+        "errorInk",
+        "errorContainer"
+      ],
+      "glyphAlias": "broken_image",
+      "meaning": "Specific retained reference unavailable; no guessed image or silent omission.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-OFF": {
+      "code": "OFF",
+      "english": "Off",
+      "romanian": "Dezactivată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Local integration disabled; prior external events can remain.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-PERMISSION": {
+      "code": "PERMISSION",
+      "english": "Permission needed",
+      "romanian": "Permisiune necesară",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "lock",
+      "meaning": "Actual Calendar read/write capability missing; Visit unaffected.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-CHOOSE": {
+      "code": "CHOOSE",
+      "english": "Choose calendar",
+      "romanian": "Alege calendarul",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "event",
+      "meaning": "Need actual writable destination; no invented default Google account.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-UNAVAILABLE": {
+      "code": "UNAVAILABLE",
+      "english": "Selected calendar unavailable",
+      "romanian": "Calendarul selectat nu este disponibil",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Previously selected provider missing/unavailable; keep bindings/error truth.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-ACTIVE": {
+      "code": "ACTIVE",
+      "english": "Active",
+      "romanian": "Activă",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_available",
+      "meaning": "One-way projection enabled, not proof of cloud sync.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-SYNCED": {
+      "code": "SYNCED",
+      "english": "Linked calendar event",
+      "romanian": "Eveniment asociat în calendar",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "link",
+      "meaning": "Actual managed local provider link; external changes do not update ServiceLoop.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-MISSING": {
+      "code": "MISSING",
+      "english": "Calendar event missing",
+      "romanian": "Evenimentul din calendar lipsește",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "External event deleted; explicit Recreate, not automatic duplicate.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-SUPPRESSED": {
+      "code": "SUPPRESSED",
+      "english": "Removed from Calendar",
+      "romanian": "Eliminat din calendar",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Explicit per-visit suppression; Add required to resume projection.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-DELETE_PENDING": {
+      "code": "DELETE_PENDING",
+      "english": "Removal pending",
+      "romanian": "Eliminare în așteptare",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "pending_actions",
+      "meaning": "Business cancellation committed; provider removal still needs retry.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-INELIGIBLE": {
+      "code": "INELIGIBLE",
+      "english": "Not eligible for Calendar",
+      "romanian": "Neeligibilă pentru calendar",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "event_busy",
+      "meaning": "Date-only/non-Booked or otherwise ineligible; no all-day/labour duration fiction.",
+      "notPersistenceEnum": true
+    },
+    "ST-CALENDAR-NEEDS_ATTENTION": {
+      "code": "NEEDS_ATTENTION",
+      "english": "Calendar needs attention",
+      "romanian": "Calendarul necesită atenție",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "error_outline",
+      "meaning": "Actual store/provider problem; not business failure.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-OFF": {
+      "code": "OFF",
+      "english": "Reminders off",
+      "romanian": "Mementouri dezactivate",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "notifications_off",
+      "meaning": "Local delivery intent Off, saved preferred schedule may remain.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-BLOCKED": {
+      "code": "BLOCKED",
+      "english": "Requested — blocked by Android",
+      "romanian": "Solicitate — blocate de Android",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "notifications_off",
+      "meaning": "User intent retained; actual permission/channel prevents posting.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-RETRY": {
+      "code": "RETRY",
+      "english": "Scheduling needs retry",
+      "romanian": "Programarea necesită reîncercare",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "refresh",
+      "meaning": "Actual local scheduling error; no precise/exact promise.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-APPROXIMATE": {
+      "code": "APPROXIMATE",
+      "english": "Active — approximate",
+      "romanian": "Active — aproximative",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "notifications",
+      "meaning": "Eligible ordinary delivery; timing may be delayed.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-REQUESTED": {
+      "code": "REQUESTED",
+      "english": "Test requested",
+      "romanian": "Test solicitat",
+      "tokenRoles": [
+        "infoInk",
+        "infoContainer"
+      ],
+      "glyphAlias": "notifications_active",
+      "meaning": "Notify request made, not proof of display/hearing.",
+      "notPersistenceEnum": true
+    },
+    "ST-NOTIFY-SUPPRESSED": {
+      "code": "SUPPRESSED",
+      "english": "Not requested: no eligible content",
+      "romanian": "Nesolicitat: fără conținut eligibil",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "notifications_off",
+      "meaning": "No stale/past/ineligible reminder posted; underlying work state unchanged.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-SELECTED": {
+      "code": "SELECTED",
+      "english": "Selected",
+      "romanian": "Selectat",
+      "tokenRoles": [
+        "onSelection",
+        "selection"
+      ],
+      "glyphAlias": "check_box",
+      "meaning": "Mint background plus checkbox/outline; never completion.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-UNSELECTED": {
+      "code": "UNSELECTED",
+      "english": "Not selected",
+      "romanian": "Neselectat",
+      "tokenRoles": [
+        "textPrimary",
+        "surface"
+      ],
+      "glyphAlias": "check_box_outline_blank",
+      "meaning": "Row opening remains separate from selection.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-READ_ONLY": {
+      "code": "READ_ONLY",
+      "english": "Read-only",
+      "romanian": "Doar citire",
+      "tokenRoles": [
+        "textPrimary",
+        "surfaceSubtle"
+      ],
+      "glyphAlias": "lock",
+      "meaning": "Full-contrast retained value; not disabled/faded content.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-DISABLED": {
+      "code": "DISABLED",
+      "english": "Unavailable",
+      "romanian": "Indisponibil",
+      "tokenRoles": [
+        "disabledText",
+        "disabledContainer"
+      ],
+      "glyphAlias": "block",
+      "meaning": "Unavailable command only; visible reason uses normal readable text.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-FOCUSED": {
+      "code": "FOCUSED",
+      "english": "Keyboard focus",
+      "romanian": "Focalizare tastatură",
+      "tokenRoles": [
+        "focus",
+        "surface"
+      ],
+      "glyphAlias": "keyboard",
+      "meaning": "2dp outline separated by2dp surface gap; not selected state.",
+      "notPersistenceEnum": true
+    },
+    "ST-UI-PRESSED": {
+      "code": "PRESSED",
+      "english": "Pressed",
+      "romanian": "Apăsat",
+      "tokenRoles": [
+        "textPrimary",
+        "surface"
+      ],
+      "glyphAlias": "touch_app",
+      "meaning": "Momentary action feedback, no durable state change.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-ELIGIBLE": {
+      "code": "ELIGIBLE",
+      "english": "Eligible — not selected",
+      "romanian": "Eligibilă — neselectată",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "check_box_outline_blank",
+      "meaning": "May explicitly fulfill current obligation; not prechecked automatically.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-HISTORY_ONLY": {
+      "code": "HISTORY_ONLY",
+      "english": "History only",
+      "romanian": "Doar istoric",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "history",
+      "meaning": "Recorded historical work without current recurrence effect.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-NO_CURRENT_OBLIGATION": {
+      "code": "NO_CURRENT_OBLIGATION",
+      "english": "One-off work — no recurrence effect",
+      "romanian": "Lucrare ocazională — fără efect recurent",
+      "tokenRoles": [
+        "neutralInk",
+        "neutralContainer"
+      ],
+      "glyphAlias": "description",
+      "meaning": "No recurring obligation exists for this line.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-OUTCOME_INELIGIBLE": {
+      "code": "OUTCOME_INELIGIBLE",
+      "english": "Outcome cannot fulfill this obligation",
+      "romanian": "Rezultatul nu poate îndeplini obligația",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "block",
+      "meaning": "Partial/unperformed outcome cannot fulfill; can still record truthful visit.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-CHECKLIST_NOT_REVIEWED": {
+      "code": "CHECKLIST_NOT_REVIEWED",
+      "english": "Review checklist first",
+      "romanian": "Revizuiește întâi lista",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "fact_check",
+      "meaning": "Checklist review missing; go to actual item, do not infer OK.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-PLAN_INELIGIBLE": {
+      "code": "PLAN_INELIGIBLE",
+      "english": "Plan is not active",
+      "romanian": "Planul nu este activ",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "pause_circle_outline",
+      "meaning": "Current plan lifecycle prevents fulfillment.",
+      "notPersistenceEnum": true
+    },
+    "ST-FULFILL-CURRENT_OBLIGATION_CHANGED": {
+      "code": "CURRENT_OBLIGATION_CHANGED",
+      "english": "Current obligation changed",
+      "romanian": "Obligația curentă s-a schimbat",
+      "tokenRoles": [
+        "warningInk",
+        "warningContainer"
+      ],
+      "glyphAlias": "update",
+      "meaning": "Revalidate exact obligation, never consume newer one by accident.",
+      "notPersistenceEnum": true
+    }
+  },
+  "applicability": {
+    "nativeUI": true,
+    "htmlSpecimens": "illustrative, no dp-to-CSS-pixel certification",
+    "pdf": "separate point-based report tokens",
+    "localizationStage": "after B-013 per B-017",
+    "runtimeVerified": false
+  },
+  "units": {
+    "space": "dp",
+    "radius": "dp",
+    "stroke": "dp",
+    "size": "dp",
+    "elevation": "dp",
+    "motion": "ms except easing",
+    "alpha": "fraction",
+    "type": "sp size/line/spacing, numeric font weight",
+    "layout": "dp except fontScale thresholds",
+    "report": "pt geometry; literal color strings"
+  }
+}

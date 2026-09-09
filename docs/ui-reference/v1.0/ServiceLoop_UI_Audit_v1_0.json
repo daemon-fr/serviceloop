@@ -1,0 +1,114 @@
+{
+  "specVersion": "1.0",
+  "sourceCommit": "1fd51131b040ab62af3874c1106615b75f3008fe",
+  "date": "2026-09-09",
+  "counts": {
+    "conceptual_C_source_action_groups_discovered": 357,
+    "conceptual_C_source_action_groups_mapped": 357,
+    "reference_F_action_groups_not_automatically_adopted": 375,
+    "current_additional_action_groups": 93,
+    "compound_action_variants_explicitly_named": 282,
+    "explicit_input_controls": 183,
+    "traceability_rows_including_parent_groups_and_variants": 915,
+    "surface_contracts": 73,
+    "app_owned_or_integrated_surface_contracts": 72,
+    "external_notification_surface_contracts": 1,
+    "component_contracts": 36,
+    "layout_patterns": 12,
+    "interaction_patterns": 20,
+    "semantic_state_mappings": 129,
+    "theme_color_roles": 37,
+    "material_base_role_mappings": 33,
+    "material_fixed_roles": 12,
+    "contrast_pair_checks": 263,
+    "contrast_failures": 0,
+    "copy_entries_including_traceability_aliases": 1457,
+    "acceptance_scenario_families": 20,
+    "exception_records": 12
+  },
+  "actionGroupClassifications": {
+    "implemented": 263,
+    "adopted/pending (partial control exposed)": 50,
+    "adopted/pending": 130,
+    "implemented / amended by B-002": 1,
+    "out-of-scope/superseded": 1,
+    "implemented actions / proposed menu grouping": 1,
+    "implemented fields / proposed grouping": 1,
+    "external/system-owned with app handoff contract": 3
+  },
+  "fieldClassifications": {
+    "implemented field": 134,
+    "adopted/pending field": 43,
+    "implemented inline controls / adopted item-editor pending": 5,
+    "adopted/pending": 1
+  },
+  "scope": "Enumerated conceptual/current UI inventory; not automated whole-repo AST census or runtime coverage. Parent action groups, explicit variants and fields may describe intersecting controls and are intentionally not summed as unique business effects.",
+  "structureErrors": [],
+  "androidBuildsRun": false,
+  "androidRuntimeTestsRun": false,
+  "nativeAccessibilityTested": false,
+  "RomanianNativeReviewCompleted": false,
+  "B008PilotCompleted": false,
+  "renderedHtmlTables": 63,
+  "unrenderedMarkdownTableParagraphs": 0,
+  "internalHtmlAnchors": 1303,
+  "externalRequiredResources": [],
+  "structuralValidation": "PASS",
+  "contrastValidation": "PASS",
+  "checks": [
+    "JSON parsed and round-tripped",
+    "CSV parsed and round-tripped with all rows intact",
+    "Unique element IDs",
+    "All coverage references resolve",
+    "Light/Dark semantic role lookup",
+    "EN/RO numbered placeholder parity",
+    "HTML anchors resolve",
+    "No external required HTML resource",
+    "Calculated contrast pair thresholds",
+    "Source image hashes retained",
+    "Markdown tables render as HTML tables",
+    "HTML reading edition sampled in desktop and narrow viewports",
+    "Paired specimen panel overflow checks",
+    "Reading appearance and jump controls exercised"
+  ],
+  "files": {
+    "ServiceLoop_UI_UX_Implementation_Reference_v1_0.md": {
+      "bytes": 990442,
+      "sha256": "5cfdbd8c520f73eeb4ff66216d9f21a3a0137a800378f70c8de77d907b0dbdbe"
+    },
+    "ServiceLoop_UI_UX_Implementation_Reference_v1_0.html": {
+      "bytes": 1909094,
+      "sha256": "98120be8cc1d1bc407687616463ebe0ceb33f1b5e2903937177c8ee482ee07b2"
+    },
+    "ServiceLoop_UI_Tokens_v1_0.json": {
+      "bytes": 110033,
+      "sha256": "7757a15c129b198f043faf40111836395946a54a8c3c1f2a49fe0780c7ef919c"
+    },
+    "ServiceLoop_UI_Coverage_v1_0.csv": {
+      "bytes": 809050,
+      "sha256": "1b6f13d40f05977d92b3bb043e623753f1f599065d3897bf052af0c0c147e4e2"
+    }
+  },
+  "htmlReadingEditionRendering": {
+    "status": "PASS",
+    "method": "Headless Chromium rendering of final HTML supplied via set_content; file:// navigation is blocked by the container browser policy.",
+    "sampleViewportsCssPixels": [
+      "1440 × 1000",
+      "390 × 844 / 1000"
+    ],
+    "embeddedReferencesLoaded": true,
+    "all14SpecimenFamiliesHavePairedLightDarkPanels": true,
+    "noHorizontalPageOverflowAtTestedWidths": true,
+    "noSpecimenPanelOverflowAtTestedWidths": true,
+    "readingThemeToggleWorks": true,
+    "jumpControlWorks": true,
+    "javascriptErrors": [],
+    "visualSamplesInspected": [
+      "opening",
+      "paired selection/status specimens",
+      "mobile selection specimen"
+    ],
+    "scope": "HTML reading-edition checks only. No Android runtime, device usability, accessibility certification or external pilot evidence.",
+    "htmlSha256": "98120be8cc1d1bc407687616463ebe0ceb33f1b5e2903937177c8ee482ee07b2"
+  }
+}
