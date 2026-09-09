@@ -79,6 +79,8 @@ data class InspectionQuestion(
     val textValue: String?,
     val numberValue: String?,
     val reason: String?,
+    val issueFoundReasonDraft: String? = null,
+    val notApplicableReasonDraft: String? = null,
 )
 
 data class InspectionDraft(

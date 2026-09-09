@@ -506,15 +506,6 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
 private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     val listState = rememberLazyListState()
     LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_REVIEW -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
-    viewModel.state.collectAsState().value.pendingResponseTransition?.let { transition ->
-        AlertDialog(
-            onDismissRequest = viewModel::cancelResponseTransition,
-            title = { Text("Discard saved response detail?") },
-            text = { Text("Changing this answer will discard the ${transition.detailBeingDiscarded}.") },
-            confirmButton = { TextButton(onClick = viewModel::confirmResponseTransition) { Text("Discard and change") } },
-            dismissButton = { TextButton(onClick = viewModel::cancelResponseTransition) { Text("Cancel") } },
-        )
-    }
     LazyColumn(Modifier.testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
@@ -544,30 +535,33 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, foc
 
 @Composable
 private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    var issueBuffer by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.issueFoundReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.ISSUE_FOUND }.orEmpty()) }
+    var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}") { mutableStateOf(question.notApplicableReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.NOT_APPLICABLE }.orEmpty()) }
     AccentCard {
         Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
         Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
         when (question.responseType) {
             "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
-                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value, reason = if (value == ResponseDisposition.NOT_APPLICABLE) "Not applicable during this visit" else null) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
+                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
             }
             else -> ValueQuestion(question, saving, viewModel)
         }
-        if (question.disposition != ResponseDisposition.ISSUE_FOUND) question.reason?.takeIf { it.isNotBlank() }?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
         if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
-            InlineFindingEditor(question, saving, viewModel)
+            InlineFindingEditor(question, issueBuffer, { issueBuffer = it }, saving, viewModel)
+        }
+        if (question.disposition == ResponseDisposition.NOT_APPLICABLE) {
+            NotApplicableEditor(question, notApplicableBuffer, { notApplicableBuffer = it }, saving, viewModel)
         }
     }
 }
 
 @Composable
-private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    var text by rememberSaveable(question.snapshotItemId, question.reason) { mutableStateOf(question.reason.orEmpty()) }
-    val changed = text != question.reason.orEmpty()
+private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    val changed = text.trim() != question.reason.orEmpty()
     Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium)
-            LongTextEditor(text,{text=it},"Public finding description",false)
+            LongTextEditor(text,onTextChange,"Public finding description",false)
             Button(
                 onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
                 enabled = !saving && changed,
@@ -578,13 +572,19 @@ private fun InlineFindingEditor(question: InspectionQuestion, saving: Boolean, v
 }
 
 @Composable
+private fun NotApplicableEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    OutlinedTextField(text, onTextChange, label = { Text("Not applicable reason") }, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("not-applicable-reason-${question.snapshotItemId}"))
+    Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}")) { Text("Save reason") }
+}
+
+@Composable
 private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    var value by remember(question.snapshotItemId, question.textValue, question.numberValue) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
+    var value by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
     val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
     OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
-        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit") }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
+        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
     }
     if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
 }

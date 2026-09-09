@@ -338,8 +338,8 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM service_plans WHERE state='ACTIVE' AND currentDueDate BETWEEN :today AND :horizon")
     suspend fun dueSoonCount(today: String, horizon: String): Int
 
-    @Query("UPDATE working_responses SET disposition=:disposition, textValue=:textValue, numberValue=:numberValue, reason=:reason, modifiedAtEpochMillis=:modified WHERE id=:id")
-    suspend fun updateResponse(id: String, disposition: String, textValue: String?, numberValue: String?, reason: String?, modified: Long): Int
+    @Query("UPDATE working_responses SET disposition=:disposition, textValue=:textValue, numberValue=:numberValue, reason=:reason, modifiedAtEpochMillis=:modified, issueFoundReasonDraft=:issueFoundReasonDraft, notApplicableReasonDraft=:notApplicableReasonDraft WHERE id=:id")
+    suspend fun updateResponse(id: String, disposition: String, textValue: String?, numberValue: String?, reason: String?, modified: Long, issueFoundReasonDraft: String?, notApplicableReasonDraft: String?): Int
 
     @Query("UPDATE working_visits SET modifiedAtEpochMillis=:modified WHERE id=:visitId")
     suspend fun touchVisit(visitId: String, modified: Long)
@@ -401,7 +401,7 @@ interface ServiceLoopDao {
 
     @Transaction
     suspend fun persistResponse(response: WorkingResponseEntity, visitId: String, invalidateReview: Boolean = true) {
-        val changed = updateResponse(response.id, response.disposition, response.textValue, response.numberValue, response.reason, response.modifiedAtEpochMillis)
+        val changed = updateResponse(response.id, response.disposition, response.textValue, response.numberValue, response.reason, response.modifiedAtEpochMillis, response.issueFoundReasonDraft, response.notApplicableReasonDraft)
         if (changed == 0) upsertResponses(listOf(response))
         if (invalidateReview) updateChecklistReviewed(response.workItemId, false)
         touchVisit(visitId, response.modifiedAtEpochMillis)

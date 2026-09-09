@@ -348,6 +348,8 @@ data class WorkingResponseEntity(
     val numberValue: String?,
     val reason: String?,
     val modifiedAtEpochMillis: Long,
+    val issueFoundReasonDraft: String? = null,
+    val notApplicableReasonDraft: String? = null,
 )
 
 @Entity(

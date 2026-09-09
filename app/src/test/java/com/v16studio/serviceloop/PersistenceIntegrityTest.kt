@@ -112,9 +112,9 @@ class PersistenceIntegrityTest {
         assertEquals(ResponseDisposition.NOT_CHECKED, RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single().disposition)
     }
 
-    @Test fun issueReasonCannotSurviveTransitionToOk() = runTest {
+    @Test fun issueReasonBecomesInactiveDraftAfterTransitionToOk() = runTest {
         seedFoundation()
-        database.serviceLoopDao().upsertResponses(listOf(WorkingResponseEntity("response-1", "work-1", "check-1", "ISSUE_FOUND", null, null, "Fraying edge", 2)))
+        database.serviceLoopDao().upsertResponses(listOf(WorkingResponseEntity("response-1", "work-1", "check-1", "ISSUE_FOUND", null, null, "Fraying edge", 2, issueFoundReasonDraft = "Fraying edge")))
 
         RoomServiceLoopRepository(database, time).saveResponse("work-1", "check-1", ResponseDisposition.OK, null, "Fraying edge")
 
@@ -123,9 +123,10 @@ class PersistenceIntegrityTest {
         assertEquals(null, question.reason)
         assertEquals(null, question.textValue)
         assertEquals(null, question.numberValue)
+        assertEquals("Fraying edge", question.issueFoundReasonDraft)
     }
 
-    @Test fun savedNumericValueCannotSurviveIncompatibleDisposition() = runTest {
+    @Test fun savedNumericValueSurvivesAsInactiveDraft() = runTest {
         seedFoundation()
         val dao = database.serviceLoopDao()
         dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-snapshot-1", 2, "Reading", "NUMBER", "km", true, null)))
@@ -135,8 +136,43 @@ class PersistenceIntegrityTest {
 
         val question = RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.first { it.snapshotItemId == "check-number" }
         assertEquals(ResponseDisposition.NOT_APPLICABLE, question.disposition)
-        assertEquals(null, question.numberValue)
+        assertEquals("1240.5", question.numberValue)
         assertEquals("Not fitted", question.reason)
+    }
+
+    @Test fun statusModeDraftsSurviveSwitchingAndRestoreOnlyActiveReason() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "Belt frayed")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "Access impossible")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_CHECKED, null, null)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, null)
+        var question = repository.inspection("work-1")!!.questions.single()
+        assertEquals("Belt frayed", question.reason)
+        assertEquals("Access impossible", question.notApplicableReasonDraft)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, null)
+        question = repository.inspection("work-1")!!.questions.single()
+        assertEquals("Access impossible", question.reason)
+        assertEquals("Belt frayed", question.issueFoundReasonDraft)
+    }
+
+    @Test fun inactiveDraftsDoNotLeakIntoOkFinalSnapshot() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "Frayed belt")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "Access blocked")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        assertEquals(null, repository.inspection("work-1")!!.questions.single().reason)
+        repository.markChecklistReviewed("work-1")
+        val result=repository.finalizeVisit("visit-1") as com.v16studio.serviceloop.domain.FinalizeResult.Success
+        val record=database.serviceLoopDao().finalRecord(result.recordId)!!
+        val finalWork=database.serviceLoopDao().finalWorkItems(record.currentRevisionId).single()
+        val finalAnswer=database.serviceLoopDao().finalChecklistItems(finalWork.id).single()
+        assertEquals("OK",finalAnswer.disposition)
+        assertEquals(null,finalAnswer.reason)
+        assertEquals(null,finalAnswer.textValue)
+        assertEquals(null,finalAnswer.numberValue)
     }
 
     @Test fun harmlessStatusChangePersistsWithoutContradictoryFields() = runTest {

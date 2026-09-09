@@ -220,47 +220,38 @@ class StateSemanticsTest {
         assertFalse(viewModel.state.value.generatingReport)
     }
 
-    @Test fun cancellingDestructiveTransitionLeavesSavedIssueResponseUntouched() = runTest {
+    @Test fun switchingFromIssuePersistsImmediatelyWithoutDestructiveConfirmation() = runTest {
         val repository = MutableInspectionRepository(issueDraft())
         val viewModel = ServiceLoopViewModel(repository) {}
         viewModel.loadInspection("work-1")
 
         viewModel.requestResponseChange("check-1", ResponseDisposition.OK)
-        assertEquals("saved issue detail", viewModel.state.value.pendingResponseTransition?.detailBeingDiscarded)
-        assertEquals(0, repository.saveCount)
-
-        viewModel.cancelResponseTransition()
-        assertEquals(null, viewModel.state.value.pendingResponseTransition)
-        assertEquals(ResponseDisposition.ISSUE_FOUND, viewModel.state.value.inspection?.questions?.single()?.disposition)
-        assertEquals("Fraying edge", viewModel.state.value.inspection?.questions?.single()?.reason)
-        assertEquals(0, repository.saveCount)
+        assertEquals(1, repository.saveCount)
+        assertEquals(ResponseDisposition.OK, viewModel.state.value.inspection?.questions?.single()?.disposition)
     }
 
-    @Test fun confirmingDestructiveTransitionPersistsOnlyAfterConfirmation() = runTest {
+    @Test fun switchingResponseNeedsNoConfirmation() = runTest {
         val repository = MutableInspectionRepository(issueDraft())
         val viewModel = ServiceLoopViewModel(repository) {}
         viewModel.loadInspection("work-1")
 
         viewModel.requestResponseChange("check-1", ResponseDisposition.OK)
-        assertEquals(0, repository.saveCount)
-        viewModel.confirmResponseTransition()
-
         assertEquals(1, repository.saveCount)
         assertEquals(ResponseDisposition.OK, viewModel.state.value.inspection?.questions?.single()?.disposition)
         assertEquals(null, viewModel.state.value.inspection?.questions?.single()?.reason)
         assertTrue(viewModel.state.value.saveStatus is SaveStatus.Saved)
     }
 
-    @Test fun repeatedNotApplicablePreservesSpecificReasonAndCheckpoint() = runTest {
+    @Test fun changedNotApplicableReasonIsSemanticUpdate() = runTest {
         val repository = MutableInspectionRepository(responseDraft(ResponseDisposition.NOT_APPLICABLE, reason = "Not fitted"))
         val viewModel = ServiceLoopViewModel(repository) {}
         viewModel.loadInspection("work-1")
 
-        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit")
+        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Access blocked")
 
-        assertEquals(0, repository.saveCount)
-        assertEquals("Not fitted", viewModel.state.value.inspection?.questions?.single()?.reason)
-        assertEquals(SaveStatus.Saved(100), viewModel.state.value.saveStatus)
+        assertEquals(1, repository.saveCount)
+        assertEquals("Access blocked", viewModel.state.value.inspection?.questions?.single()?.reason)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
     }
 
     @Test fun repeatedOkIsSemanticNoOp() = runTest {
@@ -297,19 +288,15 @@ class StateSemanticsTest {
         assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
     }
 
-    @Test fun transitionIntoNotApplicableUsesReasonAndStillConfirmsDestructiveChange() = runTest {
+    @Test fun transitionIntoNotApplicablePersistsEditableReasonWithoutConfirmation() = runTest {
         val repository = MutableInspectionRepository(issueDraft())
         val viewModel = ServiceLoopViewModel(repository) {}
         viewModel.loadInspection("work-1")
 
-        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Not applicable during this visit")
-        assertEquals(0, repository.saveCount)
-        assertEquals("saved issue detail", viewModel.state.value.pendingResponseTransition?.detailBeingDiscarded)
-
-        viewModel.confirmResponseTransition()
+        viewModel.requestResponseChange("check-1", ResponseDisposition.NOT_APPLICABLE, reason = "Access blocked")
         assertEquals(1, repository.saveCount)
         assertEquals(ResponseDisposition.NOT_APPLICABLE, viewModel.state.value.inspection?.questions?.single()?.disposition)
-        assertEquals("Not applicable during this visit", viewModel.state.value.inspection?.questions?.single()?.reason)
+        assertEquals("Access blocked", viewModel.state.value.inspection?.questions?.single()?.reason)
     }
 
     @Test fun savedIssueFindingLoadsAndUnchangedSaveIsNoOp() = runTest {

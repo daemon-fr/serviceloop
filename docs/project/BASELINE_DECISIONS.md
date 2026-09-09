@@ -89,3 +89,9 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - After functional completion/hardening and before the B-008 real-technician pilot, ServiceLoop requires a **dedicated whole-product UI/UX pass**. It must not be reduced to incidental styling during feature implementation or deferred until release preparation.
 - The pass must establish a coherent finished-product presentation across the app: information hierarchy, task clarity, interaction consistency, navigation/action hierarchy, reusable components, typography, spacing/density, colors and semantic state usage, light and dark themes, loading/empty/error states, accessibility, contrast, and touch targets.
 - The objective is to remove the current semi-default/semi-incremental Compose appearance and make the pilot build feel like one deliberately designed product. The pilot should evaluate that coherent build rather than spend its feedback budget on presentation problems already known before external testing.
+
+## B-014 — Durable Working inspection response drafts
+
+- Working inspection response modes retain their own saved detail drafts. Switching disposition is non-destructive: Issue-found descriptions, Not-applicable reasons, and text/number Values survive switching and ordinary switching requires no destructive confirmation.
+- Only the currently selected disposition and its applicable detail determine checklist validity, finalization, and customer-facing history/report content. Inactive drafts remain Working-state convenience data and do not satisfy or leak into the active answer.
+- Selecting Not applicable does not inject a canned reason; its reason is technician-editable and remains subject to the existing active-answer validity rules.

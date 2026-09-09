@@ -132,7 +132,7 @@ class OwnerVisualRuntimeTest {
     }
 
     @Test
-    fun inlineFindingEditsPersistsAndPreservesDestructiveTransitionSemantics() {
+    fun inspectionResponseDraftsSwitchWithoutWarningAndRestoreSavedAndLocalBuffers() {
         val database = Room.inMemoryDatabaseBuilder(composeRule.activity, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         runBlocking {
             val dao = database.serviceLoopDao()
@@ -144,7 +144,7 @@ class OwnerVisualRuntimeTest {
             dao.insertVisits(listOf(WorkingVisitEntity("v", "V-TEST", "c", "s", "2026-09-05", "Customer", "Site", null, "WORKING", 1)))
             dao.insertWorkItems(listOf(WorkItemEntity("w", "v", "e", null, null, "t", "Equipment", "EQ-1", "Inspection", null, null, null, null, false, null, false)))
             dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("w", ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("w", "")))
-            dao.upsertResponses(listOf(WorkingResponseEntity("response", "w", "check-belt", "ISSUE_FOUND", null, null, "Initial finding", 1)))
+            dao.upsertResponses(listOf(WorkingResponseEntity("response", "w", "check-belt", "ISSUE_FOUND", null, null, "Initial finding", 1, issueFoundReasonDraft = "Initial finding")))
         }
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
@@ -177,19 +177,21 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
-        composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
-
-        composeRule.onNodeWithTag("response-check-belt-OK").performClick()
-        composeRule.onNodeWithText("Discard and change").performClick()
         composeRule.onAllNodesWithTag("long-text-public-finding-description", useUnmergedTree = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("Discard saved response detail?").assertCountEquals(0)
 
+        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE").performClick()
+        val naField=composeRule.onNodeWithTag("not-applicable-reason-check-belt")
+        naField.performTextInput("Guard unavailable")
+        composeRule.onNodeWithTag("not-applicable-save-check-belt").performClick()
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
-        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performTextInput("Belt edge wear observed; inspect before next use")
-        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performScrollTo().performClick()
-        composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
-        }
+        val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
+        restored.performTextInput("; local unsaved note")
+        composeRule.onNodeWithTag("response-check-belt-OK").performClick()
+        composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
+        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("local unsaved note", substring = true)
+        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE").performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-belt").assertTextContains("Guard unavailable")
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
         composeRule.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Parts and photographs").assertIsDisplayed()
