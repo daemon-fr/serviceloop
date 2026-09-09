@@ -21,11 +21,11 @@ SL-4 and Dispatch were deliberately reconciled/banked; SL-5A added time-aware wo
 
 Current technical line:
 
-- branch: `codex/sl-5-functional-hardening`
-- SL-5C functional-freeze checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
+- authoritative branch: `master`
+- SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema: v11
 
-This branch is now the authoritative technical starting point for B-013. `master` and earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
+`master` is the single authoritative development baseline. It was fast-forwarded to the accepted Stage-5 line; documentation-only commits may advance `master` beyond the production checkpoint without changing that checkpoint's verification meaning. New substantial work should start from the current `master` HEAD unless an explicit owner instruction says otherwise. Accepted milestone work returns to `master` after review; old milestone/prototype branches are historical and need not remain as active development branches.
 
 B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013, when the final interface and copy are stable. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 
