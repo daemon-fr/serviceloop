@@ -48,12 +48,14 @@ data class CalendarRuntimeState(
     val problemCount: Int = 0,
     val writableCalendars: List<WritableCalendar> = emptyList(),
     val needsAttention: Boolean = false,
+    val selectedCalendarUnavailable: Boolean = false,
 ) {
     val label: String get() = when {
         needsAttention -> "Needs attention"
         !enabled -> "Off"
         !hasPermissions -> "Permission needed"
         selectedCalendarLabel == null -> "Choose calendar"
+        selectedCalendarUnavailable -> "Selected calendar unavailable"
         else -> "Active"
     }
 }
@@ -119,7 +121,7 @@ class CalendarDeviceStore(context: Context) {
 class CalendarCoordinator(private val context:Context, private val database:ServiceLoopDatabase, private val gateway:CalendarGateway, private val store:CalendarDeviceStore, private val scope:CoroutineScope) {
     private val mutex=Mutex()
     fun reconcileAsync() { scope.launch(Dispatchers.IO){ reconcile() } }
-    suspend fun runtimeState():CalendarRuntimeState=withContext(Dispatchers.IO){ mutex.withLock { val (state,visits)=current();val permitted=gateway.hasPermissions();val calendars=if(permitted) runCatching{gateway.writableCalendars()}.getOrDefault(emptyList()) else emptyList();CalendarRuntimeState(state.enabled,permitted,state.selectedCalendarLabel,state.links.values.count{it.state==CalendarLinkState.SYNCED&&visits[it.visitId]?.state=="BOOKED"},state.links.values.count{it.state!=CalendarLinkState.SYNCED},calendars,state.storeProblem) } }
+    suspend fun runtimeState():CalendarRuntimeState=withContext(Dispatchers.IO){ mutex.withLock { val (state,visits)=current();val permitted=gateway.hasPermissions();val calendars=if(permitted) runCatching{gateway.writableCalendars()}.getOrDefault(emptyList()) else emptyList();CalendarRuntimeState(state.enabled,permitted,state.selectedCalendarLabel,state.links.values.count{it.state==CalendarLinkState.SYNCED&&visits[it.visitId]?.state=="BOOKED"},state.links.values.count{it.state!=CalendarLinkState.SYNCED},calendars,state.storeProblem,state.selectedCalendarId!=null&&calendars.none{it.id==state.selectedCalendarId}) } }
     suspend fun setEnabled(enabled:Boolean){ mutex.withLock{val (s,_)=current();store.write(s.copy(enabled=enabled));};if(enabled)reconcile() }
     suspend fun select(calendar:WritableCalendar){mutex.withLock{val(s,_)=current();store.write(s.copy(selectedCalendarId=calendar.id,selectedCalendarLabel=calendar.label))};reconcile()}
     suspend fun visitState(visitId:String):VisitCalendarState=mutex.withLock{val(s,visits)=current();val v=visits[visitId]?:return@withLock VisitCalendarState("Unavailable");val l=s.links[visitId];when{!s.enabled->VisitCalendarState("Calendar integration Off");!gateway.hasPermissions()->VisitCalendarState("Calendar permission needed");v.state!="BOOKED"->l?.let{VisitCalendarState("Calendar event retained",eventId=it.eventId)}?:VisitCalendarState("Not applicable");v.scheduledAtEpochMillis==null->VisitCalendarState("Calendar event will be added when an appointment time is set");l?.state==CalendarLinkState.MISSING->VisitCalendarState("Calendar event missing","Recreate event");l?.state==CalendarLinkState.DELETE_PENDING->VisitCalendarState("Calendar removal needs attention","Remove from Calendar");l!=null->VisitCalendarState("Synced to ${runCatching{gateway.writableCalendars().firstOrNull{it.id==l.calendarId}?.label}.getOrNull()?:"calendar"}","Remove from Calendar",l.eventId);visitId in s.suppressedVisitIds->VisitCalendarState("Removed from Calendar","Add to Calendar");else->VisitCalendarState("Not added","Add to Calendar")}}

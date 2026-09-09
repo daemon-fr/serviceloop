@@ -83,6 +83,11 @@ class CalendarIntegrationTest {
         assertFalse(broken.enabled);assertTrue(broken.storeProblem);assertEquals(0,gateway.inserts+gateway.updates+gateway.deletes)
     }
 
+    @Test fun unavailableSelectedCalendarIsReportedTruthfully()=runBlocking{
+        coordinator.setEnabled(true);coordinator.select(gateway.calendar);gateway.available=false
+        assertEquals("Selected calendar unavailable",coordinator.runtimeState().label)
+    }
+
     @Test fun eventContentIsMinimalAndPrivateFieldsCannotLeak(){
         val event=CalendarCoordinator.event(visit())
         assertEquals("ServiceLoop · Site",event.title);assertEquals("1 Public Road",event.location);assertEquals("Visit V-1\nCustomer",event.description);assertEquals(60*60*1000,event.endMillis-event.startMillis)
@@ -97,9 +102,9 @@ class CalendarIntegrationTest {
 
 private class FakeCalendarGateway:CalendarGateway{
     val calendar=WritableCalendar(7,"Test calendar","local")
-    val events=linkedMapOf<Long,ManagedCalendarEvent>();var inserts=0;var updates=0;var deletes=0;var failDeletes=false;private var next=100L
+    val events=linkedMapOf<Long,ManagedCalendarEvent>();var inserts=0;var updates=0;var deletes=0;var failDeletes=false;var available=true;private var next=100L
     override fun hasPermissions()=true
-    override fun writableCalendars()=listOf(calendar)
+    override fun writableCalendars()=if(available)listOf(calendar)else emptyList()
     override fun eventExists(calendarId:Long,eventId:Long)=eventId in events
     override fun insert(calendarId:Long,event:ManagedCalendarEvent):Long{inserts++;return next++.also{events[it]=event}}
     override fun update(calendarId:Long,eventId:Long,event:ManagedCalendarEvent):Boolean{updates++;return if(eventId in events){events[eventId]=event;true}else false}
