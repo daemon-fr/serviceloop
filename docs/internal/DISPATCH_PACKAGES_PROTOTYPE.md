@@ -1,57 +1,175 @@
-# Dispatch packages prototype v2
+# Dispatch packages v2 — accepted integration reference
 
-**EXPERIMENTAL — NOT PRODUCT BASELINE — NOT APPROVED FOR MERGE**
+**OWNER APPROVED FOR PRODUCT INTEGRATION UNDER B-015 — NOT YET BANKED ONTO THE AUTHORITATIVE DEVELOPMENT LINE**
 
-This isolated branch tests asynchronous coordinator-to-technician work handoff through readable, unsigned `.slwork` JSON files and Android sharing. Technician IDs provide deterministic normal import routing, not authentication or tamper resistance. It adds no backend, accounts, live synchronization, shared database, status-return protocol, messaging, presence, cross-device locking, or separate Desk product.
+This document remains the detailed implementation reference for the asynchronous coordinator-to-technician Dispatch design developed on `prototype/dispatch-v2`. The owner approved this design for ServiceLoop product integration after hands-on review through commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`.
+
+Product adoption does not change the hard architectural boundary: Dispatch remains local-first and file-based. It adds no backend, accounts/login, live synchronization, push dispatch, shared database, chat, presence, centralized report ingestion, server acknowledgement, or automatic cross-device conflict resolution.
 
 ## Identity and coordinator directory
 
-Every new dataset has a stable canonical Technician ID in Room using `SLT-XXXX-XXXX-XXXX-CC`: twelve random Crockford Base32 payload characters (60 bits from `SecureRandom`) plus a two-character checksum derived from the first ten SHA-256 bits of `SLT:` and the uppercase payload. The checksum detects common transcription/format errors; it is not authentication, identity proof, authorization, or server registration. Canonical input tolerates case, omitted hyphens, and surrounding whitespace but never substitutes ambiguous characters. Existing UUID and 32-hex legacy identities remain byte-for-byte preserved and routable through stored rows, packages, `.sltech`, history, and recovery. Manual coordinator entry accepts only checksum-valid canonical IDs; `.sltech` remains the legacy transfer route. Renaming the display name does not change the ID. Complete backup/restore includes the identity; erase removes it so a genuinely new dataset can receive a new canonical identity.
+Every new dataset has a stable canonical Technician ID in Room using:
 
-Coordinator tools remain off by default. Settings configures Technician identity, the enabled preference, explanatory copy, Office report recipient, and other actual configuration; it does not act as the coordinator workspace. When enabled, Home reacts without an app restart and exposes compact **Technicians**, **Teams**, and **Outbox** actions with one equally weighted subdued filled treatment. Their durable directory stores technicians by Technician ID. A same-ID/new-name import now requires an explicit **Keep existing name** or **Update name** choice. Teams are many-to-many, and each membership independently carries `isLeader`, so a team may have zero, one, or multiple leaders and a technician may belong to several teams. The Teams matrix explicitly labels **Member**, **Technician**, and **Leader** columns; membership gates leader selection.
+`SLT-XXXX-XXXX-XXXX-CC`
 
-## Durable outbox and generations
+The twelve payload characters use Crockford Base32 and 60 random bits from `SecureRandom`; the two checksum characters use the first ten SHA-256 bits of `SLT:` plus the uppercase payload. The checksum detects transcription/format errors only. It is not authentication, authorization, identity proof, or server registration.
 
-The coordinator outbox is Room-backed and does not create normal planner Visits. It is now a list-first management screen: existing Visits, search, compact status/date filters, visible selection checkboxes, and **New visit** appear without an inline Site directory or creation form. Search matches manager reference, Site reference/name, and Customer reference/name. Rows sort by service date, appointment time, creation time, and stable Visit ID; truthful empty/no-match states replace the old empty editor.
+Canonical manual input tolerates case, omitted hyphens and surrounding whitespace but does not silently substitute ambiguous characters. Existing UUID and 32-hex legacy identities remain byte-for-byte preserved and routable through stored rows, `.sltech`, `.slwork`, history and recovery. Manual coordinator entry accepts only checksum-valid canonical IDs; `.sltech` remains the preferred identity handoff and legacy-compatible route.
 
-**New visit** and Visit-row taps navigate to one dedicated editor for New, Draft, Dispatched, and read-only Concluded Visits. The editor shows only the chosen Site/Customer summary and opens a searchable on-demand Site picker covering Site/Customer reference and name plus address. Teams are also selected on demand. Site changes that would invalidate work require explicit confirmation and clear the staged items rather than retargeting Equipment. Work items are staged before first persistence, use only Equipment at the chosen Site, preserve `dispatchItemId` on edit, and retain Everyone versus explicit eligible-Technician assignment meaning. One transactional Save validates the referenced Site, Teams, Equipment, and assignees, checks optimistic editor freshness and Concluded state, and writes the Visit, Team links, items, and assignees coherently. Missing Site, Team, date, ZoneId, Equipment, or task prerequisites are stated directly; an itemless Draft is saved truthfully but labelled non-export-ready. The established unsaved-change guard protects changed editable forms.
+The Technician identity screen shows the stable ID prominently with Copy/Share actions. Renaming the display name never changes the ID.
 
-Generation belongs to the Visit. First export is generation 1. Re-exporting an unchanged material snapshot keeps its generation; exporting after a material change advances exactly once. `packageId` is transport provenance only and never participates in Visit/item identity.
+Coordinator tools remain off by default. Settings configures Technician identity, the enabled preference, explanatory copy, Office report recipient and other real settings; it is not the coordinator workspace. When enabled, Home reacts without restart and exposes equally weighted subdued filled **Technicians**, **Teams** and **Outbox** actions.
 
-The outbox now derives exactly three office-side statuses. A Visit is **Draft** until ServiceLoop has created a verified usable `.slwork` containing it, **Dispatched** after that factual export, and **Concluded** only after an explicit coordinator bookkeeping action. Concluded is not delivery, receipt, acceptance, completion, cancellation, or a technician-device update. Concluding and reopening preserve generation and all export evidence; reopening returns to Dispatched. Draft cannot be concluded or manually marked Dispatched, and Concluded content is read-only until reopened. Individual and homogeneous multi-selection actions conclude or reopen atomically.
+The coordinator Technician directory stores technicians by Technician ID. Same-ID/new-name import requires explicit keep/update handling. Teams are many-to-many; each membership independently records leader state, so a Team may have zero/one/multiple leaders and a technician may belong to several Teams. The Teams matrix explicitly labels **Member**, **Technician** and **Leader** columns; leader selection requires membership.
 
-The active view hides Concluded work by default and supports Active, Draft, Dispatched, Concluded, and All status scopes plus Today, Tomorrow, ISO Monday–Sunday This week, Next 7 days, Custom range, and All dates. Every visible row can be selected; **Select all** toggles to **Deselect all** when every filtered row is selected, and changing filters removes hidden selections. One **Export selected (N)** action produces one package containing exactly the selected Draft/Dispatched Visits, up to the codec's 100-Visit bound. Dispatch Visit work-item cards show resolved Technician names separated by dots, **Everyone** for empty assignment, and a safe short reference for stale unresolved IDs.
+## Outbox and Visit editing
 
-Export begins only after explicit checkbox selection reveals a persistent batch-action region with selected count, Clear, export, and homogeneous conclude/reopen actions; the Select/Deselect toggle affects only the current filtered result and filter/search changes predictably remove hidden selections. **Export selected (N)** opens a dedicated review instead of creating a file immediately. The review contains count, date range, total work-item count, sender label, per-Visit identity, and New/Unchanged/Updated proposed generation meaning. Sender validation is explicit. Opening or leaving review does not mutate status, generation, or export history. The exact non-mutating preparation displayed in review is then written to a verified cache file, transactionally revalidated/committed, and handed to the Android chooser. A stale review is rejected and refreshed without sharing stale bytes or falsely advancing metadata. File/write/verification/commit failure leaves Draft/export metadata truthful. Chooser cancellation after commit still means Dispatched because the usable artifact exists, but never means delivered.
+The coordinator Outbox is Room-backed and does not create normal planner Visits merely by composing/exporting packages. It is list-first: existing Dispatch Visits, search, compact status/date filters, visible checkboxes and **New visit** appear without an inline Site directory or giant creation form.
 
-## `.slwork` format 2
+Search covers manager reference, Site reference/name and Customer reference/name. Rows sort by service date, appointment time, creation time and stable Visit ID. Empty/no-match states are explicit.
 
-Format 2 carries explicit local appointment time plus IANA zone, frozen team/participant/leader snapshots, stable item IDs, and per-item assignees. An empty assignee list means every participating technician. Assignees must belong to the selected-team participant union. The codec bounds bytes, counts and strings and validates dates, times, zones, global Visit/item uniqueness, per-Visit Team uniqueness, duplicate-free member/leader lists, per-Team leader membership, participant/team/leader unions, consistent Technician names, assignment membership, and directory references. V1 files are rejected.
+**New visit** and Visit-row taps navigate to a dedicated editor for New, Draft, Dispatched and read-only Concluded Visits. The editor uses a searchable on-demand Site picker and on-demand Team selection. Site changes that invalidate staged work require explicit confirmation and clear the affected staged items instead of silently retargeting Equipment.
 
-## Import and updates
+Work items are staged before first persistence, use Equipment from the chosen Site, preserve stable `dispatchItemId` on edit and retain Everyone versus explicit eligible-Technician assignment semantics. Cards show actual technician names; empty assignment is shown as **Everyone**. One transactional Save validates Site, Teams, Equipment and assignees, checks optimistic editor freshness/Concluded state, and writes the Visit, Team links, items and assignees coherently.
 
-Preview is read-only and shows the local identity, recipient-scoped directory classifications, recipient role, generation state, and concise before → after controlled-field changes. Ordinary technicians receive and create directory data only for explicitly assigned/everyone items; selected-team leaders receive every item, with unassigned items marked `LEADER_VISIBLE`. Customer and Site remain Visit-scoped, while unrelated equipment branches are not previewed or imported. When every Visit is genuinely `NOT_ASSIGNED`, preview prominently warns that no work is assigned to the local Technician and shows the local name/ID for comparison; already-current, older-generation, conflict, blocked, assignment-removal, and leader-visible work do not trigger that warning. A participant with no applicable items gets no local Visit unless leader visibility applies. Possible-directory duplicates require an explicit **Create separate** or **Skip branch** decision; exact-reference conflicts remain hard conflicts.
+An itemless Draft may be saved truthfully but is clearly non-export-ready. Missing prerequisites are reported explicitly rather than hidden behind a mysterious disabled primary action. Unsaved editor changes use the established ServiceLoop guard pattern.
 
-A many-Visit package has one consolidated preview with package/applicable/new/update/withdrawal/current/review/not-assigned counts. Directory dependencies are evaluated per Visit: an unresolved duplicate or exact-reference conflict blocks only Visits that depend on that branch, while a shared conflicting Customer/Site blocks every dependent Visit. **Apply N safe Visits** atomically applies the independently safe new/update/withdrawal set in one database transaction; conflicts, locally changed/started Visits, older/current generations, skipped branches, and other technicians' work remain unapplied. The result reports the applied breakdown and explicitly avoids claiming the whole package imported.
+## Dispatch identity and generation semantics
 
-`DispatchVisitBinding` is keyed by `dispatchVisitId`. Same generation/same material is current; same generation/different material conflicts; older generations do not roll back; higher generations update the same still-unmodified Booked local Visit. Local rescheduling conflicts conservatively. If a newer generation removes this Technician's last applicable item, an untouched Booked Visit becomes `DISPATCH_WITHDRAWN` without being called cancelled; the binding and append-only history retain the withdrawal. Started/finalized/participation-complete Visits reject that automatic rewrite and do not duplicate.
+Every coordinator Visit has a stable `dispatchVisitId`; every work item has a stable `dispatchItemId`. Package transport identity never replaces those domain identities.
 
-Applied Dispatch instructions are Visit-scoped binding metadata. They update with a safe Booked generation update and are never stored as, or cleared with, the Technician's private work note.
+Generation belongs to the Visit:
 
-Imported work never claims recurrence. After Start, choosing **Document this item** attempts the strict local current-plan/obligation match; a safe match claims locally, otherwise the item remains one-off. Leader-only items default to observe-only and do not block completion.
+- first successful export → generation 1;
+- unchanged re-export → same generation;
+- material edit followed by export → next generation exactly once.
 
-## Documentation handoff and reports
+A single `.slwork` package may contain many Visits with different generations.
 
-Handoff records only that this installation will not document the item. A real picker lists every other assignee (or participant for everyone items) plus Visit leaders, deduplicated by Technician ID. It does not notify the target, prove acceptance, reassign physical work, or establish exclusivity. Every successful handoff releases the exact item claim, removes dispatch-created plan/obligation linkage, and clears recurrence draft state without advancing recurrence. Substantive local draft/evidence requires an explicit evidence-loss confirmation. Attachment deletion is serialized through `BusinessFileCoordinator`, restricted to exact app-owned work-item paths, and rollback-backed across file/Room failure or cancellation. Undo does not reclaim automatically.
+## Coordinator lifecycle
 
-Handoff, undo, participation completion, and assignment withdrawal append truthful `ChangeEntry` provenance. These events retain local/dispatch identities and target context without claiming central cancellation, recipient acceptance, or report delivery. If all assigned items are deferred and no item is locally documented, **Finish my involvement** moves the Visit to `PARTICIPATION_COMPLETE` without a final record, PDF, fake Not performed result, or recurrence effect.
+The Outbox derives exactly three office-side states:
 
-Finalization includes only `DOCUMENT_LOCAL` items. Deferred and leader-observe items are omitted, not converted into failures. Immutable final snapshot tables retain full dispatch Visit/item IDs, generation, manager reference, sender, documenting Technician identity, assignment meaning, and assigned-name/ID snapshots. The customer PDF adds a restrained Dispatch section but shows the documenting name and only a short Technician reference; full opaque Technician IDs remain in machine-readable/database provenance. Independent devices may therefore produce valid parallel reports for the same dispatch item without local duplicate suppression.
+- **Draft** — never successfully exported into a usable `.slwork`;
+- **Dispatched** — a usable package artifact containing the Visit was successfully created and export metadata committed;
+- **Concluded** — coordinator-side administrative closure only.
 
-Completed eligible PDFs may still use **Send to office** or ordinary Share through Android’s chooser. This does not prove delivery, and the B-003 void/superseded restrictions remain authoritative.
+Dispatched does not mean delivered, received, imported, accepted, started or completed. Concluded does not alter technician devices. Reopen returns Concluded → Dispatched and preserves prior export evidence/generation.
 
-## Recovery and prototype boundary
+Batch lifecycle actions require homogeneous eligible selections and apply atomically. Draft cannot be concluded manually; Concluded must be reopened before editing/export.
 
-Room schema v9 adds only nullable `concludedAtEpochMillis` to the outbox Visit. The nondestructive v8→v9 migration leaves every existing Visit Draft or Dispatched according to its historical export evidence. Draft, Dispatched, and Concluded survive complete backup/isolated restore; outbox lifecycle state remains covered by existing dirty tracking and erase. Dispatch identity, instructions, team/item assignment, handoff target, terminal state, and provenance remain covered. Temporary `.slwork`/`.sltech` cache output is excluded.
+## Selection and batch export
 
-The UI is intentionally plain and tester-oriented; this patch changes coordinator information architecture, navigation, discoverability, and functional ergonomics only. It exercises the Home workspace entry, list-first Outbox, separate Visit editor, searchable Site and on-demand Team selection, explicit batch selection, export review, truthful export, mass lifecycle actions, consolidated many-Visit preview, safe-set apply, and consolidated results. No theme, palette, typography system, reusable visual-primitives program, or whole-product polish work is part of this prototype patch. A later product-adoption decision would still require a dedicated visual/accessibility/polish pass. Dispatch remains outside the adopted ServiceLoop product baseline.
+The active Outbox hides Concluded work by default and supports:
+
+- status scopes: Active / Draft / Dispatched / Concluded / All;
+- date scopes: Today / Tomorrow / ISO calendar week / Next 7 days / Custom range / All dates.
+
+Every visible Visit can be selected. **Select all** changes to **Deselect all** when every currently visible result is selected; hidden rows are not silently targeted.
+
+One **Export selected (N)** action produces one `.slwork` containing exactly the selected Draft/Dispatched Visits, up to the 100-Visit package bound.
+
+Export has an explicit review step showing count, date range, total work-item count, sender and per-Visit New/Unchanged/Updated generation meaning. Review itself is non-mutating.
+
+The final export sequence remains truthful:
+
+1. prepare selected Visit snapshots/generations without durable export mutation;
+2. review the exact preparation;
+3. write and verify the cache artifact;
+4. transactionally revalidate Visit material and referenced directory snapshot;
+5. commit export generation/hash/time;
+6. hand the file to the Android system chooser.
+
+If the preparation becomes stale, export is rejected and must be reviewed again. File/write/verification/commit failure does not falsely advance status or generation. Cancelling the Android chooser after successful artifact creation still leaves the Visit Dispatched because the artifact exists, but ServiceLoop never calls that delivered or received.
+
+## `.slwork` v2
+
+Format v2 is readable unsigned JSON. It carries explicit local appointment time plus IANA ZoneId, frozen Team/participant/leader snapshots, stable Visit/item identities and per-item assignees. Empty assignee list means Everyone among the selected Visit Teams. Leaders receive visibility according to the adopted role semantics.
+
+The codec bounds bytes/counts/strings and validates dates, times, zones, global Visit/item uniqueness, Team uniqueness, membership/leader consistency, participant unions, Technician-name consistency, assignment membership and directory references. Earlier v1 prototype packages are rejected.
+
+## Technician import and generation updates
+
+Preview is read-only and recipient-scoped. Ordinary technicians receive directory/equipment branches only for applicable work; leaders receive leader-visible items without that becoming mandatory local documentation.
+
+If every Visit is genuinely `NOT_ASSIGNED` to the local identity, preview prominently warns:
+
+**No work in this package is assigned to this Technician.**
+
+The screen explains that the coordinator may not have included the technician or may hold the wrong Technician ID, and shows the local Technician name/ID for comparison. This warning is not shown for already-current, older-generation, conflict, blocked, assignment-removal or leader-visible work because those remain applicable provenance/work states for the local technician.
+
+Possible-directory duplicates require explicit **Create separate** or **Skip branch** decisions. Exact-reference conflicts remain hard conflicts. One conflicting Visit does not block unrelated safe Visits unless they depend on the same conflicting directory branch.
+
+`DispatchVisitBinding` is keyed by `dispatchVisitId`:
+
+- same generation + same material → already current;
+- same generation + different material → conflict;
+- older generation → no rollback;
+- higher generation → update the same untouched Booked local Visit if safe;
+- locally changed/started/terminal Visit → no silent rewrite.
+
+If a newer generation removes the local technician's final applicable assignment, an untouched Booked Visit becomes `DISPATCH_WITHDRAWN`; started/historical work is not silently rewritten.
+
+A many-Visit package has one consolidated preview and **Apply N safe Visits**. Safe new/update/withdrawal work applies in one rollback-capable transaction; blocked/conflicting/no-op/unassigned work remains unapplied and is reported honestly.
+
+## Documentation ownership and handoff
+
+Imported recurring work does not claim the local Service Plan obligation at import time. After Start, **Document this item** attempts the strict current-plan/current-obligation match; otherwise the work remains one-off.
+
+Documentation handoff is local documentation responsibility only. It does not prove recipient acceptance, reassign central work or establish exclusivity. Eligible recipients are the other applicable assignees/participants plus Visit leaders according to the adopted assignment semantics.
+
+A successful handoff releases that item's local recurrence claim/link and clears recurrence draft state without advancing recurrence. If substantive local evidence/draft content exists, destructive cleanup requires explicit confirmation and uses rollback-safe app-owned file/database coordination. Undo does not silently reclaim recurrence.
+
+If all assigned items are handed off and no item is locally documented, **Finish my involvement** moves the local Visit to `PARTICIPATION_COMPLETE` without a final record, PDF, fake Not performed result, central cancellation or recurrence effect.
+
+Parallel independent technician reports for the same dispatch item are valid.
+
+## Final records and sharing
+
+Finalization includes only items with local documentation ownership. Deferred/leader-observe items are omitted rather than converted into fake failures.
+
+Immutable final Dispatch snapshots retain Visit/item IDs, generation, manager reference, sender, documenting Technician identity and assignment meaning. Customer-facing PDF output shows restrained Dispatch provenance and avoids dumping full opaque Technician IDs where a name/short stable reference is sufficient.
+
+Completed eligible PDFs may use **Send to office** or ordinary Share through the Android chooser. This proves handoff to the chooser only, not delivery/receipt. B-003 void/superseded restrictions remain authoritative.
+
+## Recovery, Room v10 and B-014
+
+The current accepted prototype branch is Room **v10**.
+
+Dispatch lifecycle/state introduced through v9 remains part of complete backup/restore and erase semantics. Room v10 additionally implements adopted B-014 Working inspection-response draft retention:
+
+- `issueFoundReasonDraft`;
+- `notApplicableReasonDraft`;
+- retained text/number Value drafts.
+
+Migration 9→10 backfills only the active v9 Issue-found/N/A reason into the matching draft column. Inactive Working drafts survive switching and recovery, but only the current selected disposition/detail participates in checklist validity, finalization and customer-facing snapshots.
+
+Temporary `.slwork` / `.sltech` cache output is not part of the complete recovery payload.
+
+## Verification checkpoint
+
+Final owner-approved integration checkpoint:
+
+`813fed417330fc7d3e5e7bce68ced29edd6dfb23`
+
+Recorded final evidence includes:
+
+- 172 unit tests PASS;
+- retained migration coverage through v10 with foreign-key checks;
+- debug, debug-Android-test, lint and release builds PASS;
+- `git diff --check` PASS;
+- 13 focused device tests PASS on the canonical AVD;
+- large Site-directory/list-first Outbox validation;
+- dedicated Visit editor, multi-selection, export-review and assignment-name validation;
+- canonical Technician-ID codec/generation/validation and legacy compatibility tests;
+- durable inspection response switching/final-record isolation tests;
+- Android chooser surface reached in bounded system-handoff validation without delivery overclaim;
+- owner hands-on review found the module working well enough for product adoption and integration.
+
+## Integration boundary
+
+B-015 adopts this asynchronous Dispatch design for ServiceLoop product integration. The current branch is still a development/prototype branch, not the new authoritative production line.
+
+The next milestone must deliberately reconcile this v10 branch with the verified SL-4 line, preserve migration/recovery integrity and B-014 behavior, run the full regression gate, and establish one authoritative development HEAD.
+
+Current UI styling remains intentionally provisional. B-013 requires the later whole-product UI/UX pass before the real-technician pilot; Dispatch adoption does not make the current prototype appearance the final visual baseline.
