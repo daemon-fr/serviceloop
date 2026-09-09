@@ -6,13 +6,13 @@ This file is the concise current-state summary. Detailed milestone evidence rema
 
 ## Authoritative technical development line
 
-Current development branch:
+Current authoritative branch:
 
-- branch: `codex/sl-5-functional-hardening`
-- SL-5C functional-freeze checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
+- branch: `master`
+- SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema: v11
 
-This branch is now the technical starting point for the B-013 whole-product UI/UX overhaul. `master` and earlier milestone branches are protected historical/reference heads rather than current implementation authority.
+`master` is now the single technical starting point for B-013 and subsequent accepted work. Documentation-only commits may advance `master` beyond the production checkpoint without changing the verification meaning of `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. New milestone branches should start from the current `master` HEAD unless the owner explicitly authorizes another base.
 
 ## Current accepted / verified state
 
