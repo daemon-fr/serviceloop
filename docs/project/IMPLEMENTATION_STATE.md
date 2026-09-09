@@ -1,136 +1,175 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-08 — SL-4 development checkpoint prepared on `codex/sl-4-history-recovery`; independent testing-AI-model verification and owner review remain outstanding
+**Updated:** 2026-09-09
 
-## Current state
+This file is the concise current-state summary. Detailed milestone evidence remains in the milestone coverage documents and Git history; experimental Dispatch details remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
-- SL-4 correction pass is IMPLEMENTED and FOCUSED-TESTED as a development checkpoint: additive Room v6, startup-gated crash recovery, transaction-specific restore adoption identity, exact owned-file replacement/erase, snapshot-derived backup manifests, complete correction content and schedule reconciliation, void notices, retained revision/rendition navigation, complete readable records export, and bounded background SAF I/O are reachable in the product. See `SL4_REQUIREMENT_COVERAGE.md`.
-- SL-4 is not owner accepted and not release-ready. Exhaustive testing-AI-model verification, owner review, Stage 5 hardening/reminders, and B-008 remain.
-- B-008 is explicitly a later Romanian-localized real-technician pilot against a pilot-ready build. It is no longer described as an immediate pre-Stage-4 blocker, and no current automated or owner review is represented as satisfying it.
+## Current accepted/product state
 
-### SL-4 correction checkpoint (2026-09-08)
+- **SL-1:** OWNER ACCEPTED.
+- **SL-2:** OWNER ACCEPTED. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
+- **SL-3:** OWNER ACCEPTED. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
+- **SL-4:** IMPLEMENTED and independently Phase-B verified on `codex/sl-4-history-recovery` at `5fc7a7383d6b6ad15cd45dce9ea5926a6ef0ac84`, but **NOT YET OWNER ACCEPTED**. The Phase-B checkpoint added retained v5→v6 migration/FK coverage, passed 126 host tests, debug/debug-Android-test/lint/release builds, and a non-destructive canonical rendered check. It does not claim exhaustive provider/system-handoff/lifecycle-race or whole-surface rendered verification.
+- **B-008 real-technician pilot:** still outstanding and remains a release-validity gate.
 
-- Recovery format 2 rejects the earlier unaccepted development format. A coherent Room snapshot defines its own file set; DB references, manifest entries, hashes/sizes, missing declarations, and normalized availability states are cross-validated before replacement.
-- Restore/erase file adoption is journaled per path, including an in-progress path, and a random adoption token commits with the database transaction. Startup resolves a valid journal before seeding/repository use; a damaged journal enters a restricted recovery surface and can only be superseded by an explicitly inspected replacement.
-- The owned business roots are exactly `attachments/` and `reports/`. Old-only files participate in rollback and are absent after successful replacement; erase does not report success while rollback/private cleanup remains unresolved.
-- Correction drafts now retain corrected checklist answers/findings, parts, selected and newly added evidence, public/private notes, identity/date/work/outcome fields, due-date calculation/override meaning, and explicit follow-up effects. Original revisions and evidence remain immutable.
-- Correction evidence now uses the same orientation-normalizing, metadata-stripping app-owned image pipeline as working visits. Open-draft evidence remains draft-owned and backup-complete; discard coordinates metadata/file/directory cleanup without claiming success on failure; commit reparents every added item to the immutable final revision. Unselected added evidence is retained as internal historical evidence and excluded from the customer report.
-- Record/report history binds historical routes to the requested revision/rendition. Missing historical PDFs recreate from that fixed snapshot only after every selected photograph passes immutable path, size, SHA-256 and decode checks; void notices are distinct handoff artifacts; voided originals cannot use ordinary Share and superseded nonvoid reports require acknowledgement.
-- Backup inspection now stages candidate rows in an isolated temporary SQLite database created from the actual Room v6 schema, runs all schema/FK constraints there, removes staging, and additionally verifies current record/obligation/template and correction-base identities before replacement can be offered. Failed inspection leaves the live dataset unchanged.
-- History From/To fields now reject malformed or reversed ranges with in-field errors; an invalid pair is not applied, and Clear removes both bounds.
-- Host/domain focused suites are passing at this checkpoint. Full host gates, bounded canonical instrumentation/smoke, independent testing-AI-model Phase B, and owner review remain required before any acceptance claim.
+## SL-4 implemented capability
 
-- SL-1 is OWNER ACCEPTED.
-- SL-2 is OWNER ACCEPTED for continued development. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; later documentation-only commits record acceptance and deferred UX direction without changing product behavior.
-- SL-2 final safety/save closure before owner review: `b56dd2edbcfd31f910e510ddce5df5d3c347778b`.
-- SL-2 owner-review usability correction: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
-- B-008 real-technician pilot remains outstanding. This does not block continued development, but the product is not product-valid for release preparation until that pilot occurs.
-- SL-3 is OWNER ACCEPTED at `ad078faae3c73faa2a9bb02dd1251b1033237399` after technical verification and final owner re-review.
-- The independent-review corrections are implemented and accepted: Record past is History-only, Booked work refreshes authoritative Working snapshots at Start, state-sensitive writes revalidate within their Room transaction, explicit-save forms guard unsaved changes, and the reviewed SL-3 completeness/long-text issues are corrected.
-- Backward compatibility for pre-correction v4 Booked rows is closed: Start safely validates and reuses an already-captured deterministic snapshot when its immutable template revision is still current, or selects a newly captured current revision without rewriting the old snapshot.
-- Phase-B host verification passes with 91 unit tests, debug/release/APK assembly, and lint at 0 errors (12 warnings and 2 lower-severity findings). The expanded normal canonical instrumentation suite discovers 27 tests and completes with 20 passes plus 7 deliberate assumption skips for separately gated persistent/system-handoff cases.
-- The earlier persistent-journey blocker was confirmed as a test-harness error: the test incorrectly waited for an off-screen lazy child before asking its owning `inspection-list` to compose and scroll to it. After replacing lazy/ambiguous locators with their owning list or stable visit-line tag, the corrected gated journey passes end-to-end on the final APK in 86.931 seconds without a production change.
-- Safe fictional-data system-handoff instrumentation reached the Android Photo Picker, camera, Dialer, SMS composer, Email composer, Maps, and Sharesheet. Returning/teardown produced no automatic contact note, follow-up, obligation, or photo business effect.
-- Owner hands-on review found bounded SL-3 corrections in root navigation, directory recall, reschedule feedback, cancelled-booking recovery, long-text discoverability, completion-blocker reachability, visit-action hierarchy, and Due-services state ownership. Those corrections were implemented, technically verified, and finally re-reviewed and accepted by the owner.
-- SL-3 remains the latest owner-accepted baseline. The newer SL-4 branch is a development checkpoint awaiting independent verification and owner review; B-008 and Stage 5 remain outstanding.
-- The earlier Work-route consolidation fixed route identity but did not fix Due-services ownership. Commit `32dee7c` then added cancellable generation-based refreshes, but owner evidence proved that correction insufficient: retained cards could render before the Work-entry effect set loading, and a cancelled current owner had no terminal write, allowing the blocking `Refreshing due services` state to remain.
-- Due services are now one Room-observed projection owned by the ViewModel, not by Work navigation or mutation callbacks. The first successful emission atomically establishes availability and rows; later database invalidations replace that snapshot, claimed unconsumed obligations remain present, and collection failure preserves the last good rows with an explicit error. Work re-entry and New Visit consume the same coherent projection without initiating reads or clearing availability.
-- On the preserved canonical dataset, Room, DAO, repository, ViewModel, and rendered UI agreed on 40 rows. P-002/P-003/P-004 were ACTIVE through customer/site/equipment/plan, referenced current unconsumed obligations `obl-002`/`obl-003`/`obl-004`, and had no VisitClaim. Focused canonical instrumentation repeatedly switched Home/Work/Customers, Work subtabs, contextual Home → Work, and New Visit → Back without a card glimpse, blocking refresh, empty transition, or wedge. The owner then manually re-tested the problematic flow and accepted the final behavior.
-- Final gates after the production change passed 104 host tests, debug APK assembly, debug Android-test assembly, and lint with 0 errors (12 warnings, 2 hints). Focused in-memory Room/UI and preserved-dataset Due-services tests passed. The established persistent SL-3 journey exposed one ambiguous `Working` text wait after the visit claim was already durable; replacing it with the stable visit-line tag corrected the harness, and the journey then passed in 38.911 seconds. A final rendered screen showed P-004/P-002/P-003 populated under All with no loading or false-empty state.
+The SL-4 branch contains the complete History/recovery milestone: correction and void workflows; immutable revision/rendition history; correction evidence ownership/integrity; conservative lifecycle/move dependency handling; global/scoped History; complete authenticated backup; staged replacement restore; incomplete-copy truthfulness; CSV export/directory import; erase/restricted-recovery handling; historical report recreation/void notices; and recovery structural validation against the actual Room schema.
 
-## Accepted SL-3 implementation
+Owner review is still required before SL-4 is banked as accepted product state.
 
-- Room schema version 4 with registered additive `MIGRATION_3_4`, retained v1→2 and v2→3 migrations, and exported `4.json`.
-- Editable Customer → Site → Equipment → Service Plan directory with stable references, explicit saves, private field labelling, one default site, and plan creation that transactionally creates exactly one current obligation.
-- Append-only reusable inspection-template masters/revisions/items; working visits copy the then-current revision into the existing immutable snapshot model.
-- Due-service search/buckets/booked scope, one-site multi-selection, a real New visit setup with Book/Start now/Record past and one-off work, transactionally exclusive obligation claims, append-only reasoned reschedule/cancel provenance, cancellation claim release, and claim-ownership stale-start protection.
-- Contact handoffs for dialer/SMS/email/maps remain separate from manually saved contact outcomes. Saved notes can be retained as Entered in error. Contact and corrective follow-ups support reasoned edit/resolve/cancel/reopen without recurrence effects.
-- Textual parts and bounded app-owned photo intake through Android Photo Picker/camera staging, orientation-corrected metadata-stripped optimization, explicit customer-report inclusion, selected-file integrity checks, final-record part/photo snapshots, PDF photo pages, and public-model privacy selection.
-- Global local search routes customers, sites, equipment, plans, visits/final records, and follow-ups to their typed destinations.
-- One reusable compact multiline pattern with a bottom-right expand affordance and full-screen same-buffer editor, including Issue found without competing expansion controls. Parent explicit Save remains authoritative.
-- Template revision items have staged accessible Move up/Move down controls; the global Equipment-register Add action now opens a real active-site chooser; equipment search includes make and model; explicit-save directory, plan, template, follow-up, contact-note, and visit-setup forms protect changed local buffers on app-bar and system Back.
-- Home contextual actions enter explicit Work due/visit/follow-up filters rather than restoring an unrelated previous tab; Work includes visit state/date-window and follow-up due/open/closed filters.
+## Experimental Dispatch v2 checkpoint
 
-Canonical `Pixel 10a ServiceLoop` was upgraded in place from v3 to v4 with `install -r`; V-001/P-001/report preservation and all registered migration chains were validated. The historical V-001 PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`.
+The owner separately authorized the asynchronous Dispatch experiment under B-012. It remains **EXPERIMENTAL — NOT PRODUCT BASELINE — NOT APPROVED FOR MERGE**.
 
-The persistent canonical SL-3 journey passed on the preserved production database: template; customer, site, equipment, and plan; booking, rescheduling, cancellation, and start; inspection/finding; parts; corrective follow-up; finalization; search; and contextual due filtering. The normal canonical suite passed all 18 tests (the separately gated persistent journey is intentionally skipped in that normal run). Final local verification passed 82 unit tests, debug and release assembly, debug lint (0 errors; existing/toolchain and API-usage warnings only), and debug Android-test assembly.
+Current prototype branch:
 
-Stage 4 corrections/voiding, lifecycle/move dependency workflows, report versions, backup/restore, CSV import/export, erase, and full history presentation are implemented on the SL-4 development branch and await independent verification and owner review. Stage 5 reminders, broad device/accessibility/performance hardening, and release work remain deferred. B-008 remains outstanding as the later Romanian-localized pilot.
+- branch: `prototype/dispatch-v2`
+- implementation checkpoint reviewed by the orchestrator: `cdca7c460bb7271654c5ed3da4e9c95e11688eb3`
+- parent v1 prototype remains: `e58e0345c78548ec899c5e9456c8d9c15ec85aaf`
+- prototype schema: Room v9; this schema number belongs to the experimental branch and does not replace the accepted/SL-4 production-line schema state.
 
-## Accepted SL-2 outcome
+The current prototype demonstrates:
 
-SL-2 implements the first complete local service-recording loop:
+- stable local Technician identity and `.sltech` sharing;
+- coordinator Technician directory;
+- many-to-many Teams with zero/one/multiple leaders;
+- durable coordinator outbox independent of normal planner Visits;
+- Visit-level Team selection;
+- stable `dispatchVisitId` and per-item `dispatchItemId`;
+- per-item assignment to none/one/many participating Technicians, with none meaning Everyone;
+- leader visibility without mandatory documentation;
+- readable unsigned `.slwork` format v2 with per-Visit generations and explicit appointment ZoneId;
+- recipient-scoped import and directory projection;
+- safe Booked-generation update, older/same-generation conflict handling, assignment withdrawal, and started/historical rewrite protection;
+- recurrence claim only after a technician explicitly chooses to document locally;
+- non-exclusive documentation handoff to eligible colleagues/leaders with claim release and rollback-safe evidence cleanup;
+- `PARTICIPATION_COMPLETE` without fake cancellation/report/recurrence effect;
+- parallel independent reports carrying immutable dispatch provenance;
+- optional Office PDF recipient using the ordinary Android chooser and existing B-003 report-share restrictions;
+- batch selection/export of up to 100 outbox Visits into one `.slwork`;
+- Today/Tomorrow/ISO-week/Next-7-days/custom/all date scopes plus Active/Draft/Dispatched/Concluded/All outbox scopes;
+- truthful export sequencing: prepare → verified cache file → transactionally revalidated export metadata → chooser;
+- coordinator-side derived **Draft → Dispatched → Concluded** bookkeeping, with individual and atomic bulk conclude/reopen;
+- consolidated many-Visit technician preview and **Apply N safe Visits**, leaving independent conflicts/review items unapplied;
+- complete prototype backup/restore coverage including Dispatch lifecycle state.
 
-- Room schema version 3 with additive migrations and no destructive fallback.
-- Customer/site/equipment/service-plan/obligation persistence sufficient for the complete loop.
-- Durable Working visits and checklist responses with truthful save states.
-- Inline public Issue found description with compact editor and long-text expand control.
-- Explicit Performed / Partly performed / Not performed outcomes and separate Fulfills current obligation decision.
-- Exact current-obligation comparison and exactly-once Room finalization transaction.
-- Completion-date-based recurrence and immutable final record/revision snapshots.
-- Structural public/private report separation.
-- Native offline PDF generation, app-private persistence, hash/size/page metadata, PDF/Text preview, and Sharesheet handoff.
-- Work → Visits reopening of Working/Booked/Finalized records.
-- Root navigation visual atomicity and non-blocking freshness.
-- Owner-review fixes: Equipment-mode Add action labelled Add equipment; Home shows subtle ServiceLoop identity and booked-site context; debug-only V-003 Working inspection enables direct owner review without modifying finalized V-001.
+Latest reported/accepted technical checkpoint at `cdca7c46`:
 
-## Accepted verification evidence
+- 161/161 host unit tests passed;
+- retained v1→v9 migrations passed with `PRAGMA foreign_key_check`;
+- focused emulator instrumentation passed 8/8;
+- debug, debug-Android-test, lint and release builds passed;
+- `git diff --check` passed;
+- a non-destructive rendered Dispatch outbox capture was inspected;
+- actual `.slwork` chooser handoff was not exercised in the latest pass, and no delivery claim is made.
 
-Before the final owner-review usability correction:
+The orchestrator accepts this as a **technical prototype checkpoint suitable for owner/rendered evaluation**. Dispatch still requires an explicit owner product-adoption decision before authoritative product docs or the main development line are changed to include it.
 
-- `:app:testDebugUnitTest`: PASS — 67 tests.
-- Canonical `Pixel 10a ServiceLoop` instrumentation: PASS — 13 tests.
-- `:app:assembleDebug`, `:app:lintDebug`, `:app:assembleRelease`, `:app:assembleDebugAndroidTest`: PASS.
-- Canonical V-001 remained Finalized and P-001 remained due `2026-12-05` with exactly-once recurrence provenance.
-- Historical PDF remained 65,369 bytes with SHA-256 `2cc923ef53f53fb6d0c8e314e7b854009708c5107af4f7ad4bee58f01c71b1b8`.
+## Known current time-refresh gap
 
-The later owner-review usability correction was independently source-reviewed and owner-validated visually. It did not alter finalization, recurrence, report history, Room schema, or production fixture boundaries.
+The accepted Due-services architecture correctly observes Room changes, but due/overdue bucketing depends on the current business date. Passage of time alone does not invalidate Room, so an app left open across midnight can retain stale date-derived Home/Work classification until another refresh/re-entry occurs.
 
-## Stage-3 boundary
+Planned hardening direction:
 
-Stage 3 completes the remaining ordinary daily-operation workflows while preserving the accepted SL-2 integrity model. According to the delegated development plan, this includes:
+- do **not** add a one-second polling service;
+- refresh/recompute at the next relevant business-date/time boundary;
+- refresh on app foreground/resume and relevant timezone/date changes;
+- continue using Room observation for actual persisted-data changes.
 
-- customer/site/equipment/service-plan ordinary creation and editing;
-- booking/contact arrangements and visit setup/start flows;
-- reusable inspection-template management;
-- multiple machines/plans within ordinary visits;
-- partial work and corrective follow-ups as normal reachable workflows;
-- required search and filtering;
-- removal of ordinary placeholder dead ends for daily-operation paths.
+This is not yet implemented.
 
-Stage 3 does **not** absorb Stage-4 history/recovery work merely because related records exist. Corrections/voids, lifecycle/move rules, report-version workflows, complete backup/restore, import/export, and their failure paths remain Stage 4 unless a narrow dependency is unavoidable.
+## Planned Calendar integration direction
 
-Stage 5 remains whole-product hardening/reminders/accessibility/larger datasets/release configuration. Stage 6 remains real-user pilot and release preparation.
+A future Stage-5 candidate is optional Android Calendar integration for booked ServiceLoop Visits, using the Android Calendar Provider rather than a ServiceLoop backend.
 
-## Deferred accepted UX direction
+If adopted, the intended shape is:
 
-B-010 records a reusable multiline editing pattern:
+- integration off by default;
+- user chooses a writable device calendar;
+- create a calendar event for a Booked appointment;
+- store the created calendar/event identity locally;
+- reschedule/generation changes update the same event where safe;
+- cancellation/dispatch withdrawal before work starts may remove it;
+- started/finalized historical appointments remain rather than being erased merely because work completed;
+- no private checklist/findings/internal-note leakage to calendar content;
+- no Google OAuth/backend requirement merely to use a Google-synchronized Android calendar.
 
-- compact inline text entry by default;
-- the expand affordance is icon-only with a modest visible glyph inside a larger accessible touch target;
-- Expand opens the same text in a dedicated full-page/modal editing surface;
-- longer multiline inputs should converge on a reusable component with the same visible expand affordance where appropriate.
+This direction is feasible but **not yet an adopted/implemented product requirement**; exact permission, failure, user-edit and reconciliation semantics must be designed before implementation.
+
+## Current forward sequence
+
+1. **Owner/rendered Dispatch review and product decision**
+   - decide whether the file-based Dispatch module becomes real ServiceLoop scope;
+   - if not adopted, leave it isolated;
+   - if adopted, freeze semantics before production integration.
+
+2. **Formal closure/banking of SL-4 and adopted Dispatch work**
+   - owner acceptance of SL-4;
+   - clean deliberate integration onto the real development line rather than treating the experimental branch as automatically authoritative.
+
+3. **Stage 5 — functional product completion/hardening**
+   - Romanian localization/UI/report copy;
+   - reminders/notifications;
+   - remove remaining ordinary-workflow placeholders/prototype shortcuts;
+   - time-aware Home/Work invalidation at date/time boundaries and resume;
+   - Calendar integration if explicitly adopted;
+   - regression, recovery, larger-data and platform hardening;
+   - productionize Dispatch if adopted.
+
+4. **Dedicated whole-product UI/UX milestone — B-013**
+   - coherent visual hierarchy and task clarity;
+   - consistent components/navigation/action hierarchy;
+   - typography, spacing and density;
+   - deliberate color/semantic-state system;
+   - complete light and dark themes;
+   - loading/empty/error presentation;
+   - accessibility, contrast and touch-target review;
+   - remove the current semi-default/semi-incremental Compose appearance.
+
+5. **B-008 real-technician pilot**
+   - pilot-ready Romanian-localized build;
+   - no known ordinary-workflow placeholders;
+   - representative customer/site/equipment/visit/documentation/report flow evaluated by at least one real technician/trade user.
+
+6. **Pilot fixes / final hardening**
+
+7. **Release preparation**
+   - final regression/device validation;
+   - release configuration/versioning/signing;
+   - Play listing/privacy/support material;
+   - production build and submission.
+
+## Accepted SL-3 architecture still in force
+
+- Customer → Site → Equipment → Service Plan local domain with stable references.
+- One current obligation per active plan and exactly-once fulfillment semantics.
+- One-site Visits containing multiple service lines.
+- Room-observed authoritative Due-services projection.
+- reusable immutable inspection template snapshots;
+- explicit Performed / Partly performed / Not performed separate from Fulfills current obligation;
+- app-owned normalized photographs and immutable final evidence snapshots;
+- fixed local PDF/report flow with B-003 historical-share safety;
+- global search, filters, contact/follow-up workflow, cancellation restoration safeguards, and reusable expanded multiline editor pattern.
 
 ## Toolchain / environment baseline
 
-- package/application ID `com.v16studio.serviceloop`
+- package/application ID: `com.v16studio.serviceloop`
 - minSdk 29
 - compileSdk / targetSdk 37
 - AGP 9.3.2
-- Gradle 9.5.0 exact wrapper filename `gradle-9.5.0-bin.zip`
+- Gradle 9.5.0; wrapper must remain exact `gradle-9.5.0-bin.zip`
 - Gradle JVM/project JDK 20
 - Java source/target 11
 - Kotlin 2.2.10
 - Compose BOM 2026.02.01
 - Room 2.8.4
-- canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
+- canonical AVD display name: `Pixel 10a ServiceLoop`; resolve the adb serial dynamically every run
 
-## SL-3 Due-services state correction
+## Verification/acceptance boundaries
 
-- The Work-route-only diagnosis and the first refresh-ordering correction at `32dee7c` both proved insufficient. The latter still made navigation start a new imperative read, split projection truth across rows/loading/error fields, exposed retained rows before `LaunchedEffect` ran, and rethrew cancellation without terminalizing the Boolean set before launch. Its broad Work-entry/Visit-setup/post-mutation fanout therefore retained a reachable no-owner loading state.
-- The final correction removes Due-services refresh generations, cancellation ownership, Work-entry reads, Visit-setup reads, and post-mutation refresh fanout. Room observes the complete active/unconsumed obligation join (including optional VisitClaim), the repository maps each emission to business-date buckets, and one ViewModel-lifetime collector publishes an atomic authoritative snapshot.
-- Before the first result, the projection is explicitly unresolved; an authoritative empty emission alone enables the empty UI. After a result, navigation never makes it unresolved again. A later collection error retains the last good rows and reports the update failure instead of manufacturing an empty result or permanent spinner.
-
-## Historical provenance
-
-Earlier detailed SL-1/SL-2 implementation and verification lineage remains available in Git history and `SL1_REQUIREMENT_COVERAGE.md` / `SL2_REQUIREMENT_COVERAGE.md`. This current-state file intentionally summarizes the accepted present baseline rather than duplicating every prior task diary.
+- Automated or AI review is not owner acceptance unless explicitly recorded as such.
+- Dispatch is technically reviewed but remains experimental.
+- SL-4 is independently verified but remains owner-unaccepted.
+- B-008 cannot be satisfied by emulator/AI/owner-only review.
+- The dedicated B-013 UI/UX pass must happen before B-008 so the pilot evaluates a coherent product rather than known presentation debt.
