@@ -1,6 +1,6 @@
 # ServiceLoop — Adopted Baseline Decisions
 
-**Adopted:** 2026-09-06
+**Adopted:** 2026-09-06; amendments through 2026-09-09
 
 The owner approved the orchestrator's recommended working baseline.
 
@@ -76,3 +76,16 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - The Customers root contains peer **Customers**, **Sites**, and **Equipment** registers; a customer detail contains **Sites** and **Equipment**, defaulting to Sites.
 - A cancelled booking may be restored only conservatively into the same Visit after transaction-local validation that every captured recurring obligation remains active, current, unconsumed, and unclaimed. Restoration reacquires all claims or none, preserves cancellation history, and does not fulfill or alter a due date.
 - The selected visit date determines the visually primary action: future Book, today Start, and past Record past.
+
+## B-012 — Experimental asynchronous Dispatch scope
+
+- The owner separately authorized an **isolated experimental Dispatch prototype** as the narrow exception contemplated by B-004. This does not by itself amend the adopted product baseline or authorize merge into the main development line.
+- The experiment is strictly asynchronous and file-based: local coordinator definitions → portable `.slwork` package → Android sharing → technician import/local work → customer PDF sharing back. It may include local Technician identities, Teams/leaders, item-level assignments, generations, documentation handoff, batch packages, and coordinator bookkeeping where implemented on the prototype branch.
+- The experiment does **not** authorize a backend, accounts/login, cloud/live synchronization, push dispatch, chat, presence, centralized report ingestion, automatic cross-device conflict resolution, or a shared central database.
+- `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` documents the implemented experiment but remains explicitly **EXPERIMENTAL — NOT PRODUCT BASELINE — NOT APPROVED FOR MERGE** until a later owner product-adoption decision.
+
+## B-013 — Dedicated pre-pilot UI/UX milestone
+
+- After functional completion/hardening and before the B-008 real-technician pilot, ServiceLoop requires a **dedicated whole-product UI/UX pass**. It must not be reduced to incidental styling during feature implementation or deferred until release preparation.
+- The pass must establish a coherent finished-product presentation across the app: information hierarchy, task clarity, interaction consistency, navigation/action hierarchy, reusable components, typography, spacing/density, colors and semantic state usage, light and dark themes, loading/empty/error states, accessibility, contrast, and touch targets.
+- The objective is to remove the current semi-default/semi-incremental Compose appearance and make the pilot build feel like one deliberately designed product. The pilot should evaluate that coherent build rather than spend its feedback budget on presentation problems already known before external testing.
