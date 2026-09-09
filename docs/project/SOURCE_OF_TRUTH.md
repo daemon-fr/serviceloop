@@ -19,13 +19,13 @@ Matching HTML editions are reading formats and are intentionally not retained in
 
 B-015 adopts the completed asynchronous file-based Dispatch design for ServiceLoop product integration after owner hands-on review. The adopted design remains strictly local-first/file-based and does not authorize a backend, accounts/login, live/cloud synchronization, push dispatch, chat, presence, a shared central database, centralized report ingestion, server acknowledgement, or automatic cross-device conflict resolution.
 
-The integration/banking milestone is complete on:
+SL-4 and Dispatch were deliberately reconciled and banked on `codex/integrate-sl4-dispatch`. SL-5A subsequently advanced the authoritative technical development line to:
 
-- branch: `codex/integrate-sl4-dispatch`
-- integrated technical checkpoint: `132a0586969dfe7e7fbe88501ba6f413ce6ef724`
-- Room schema: v10
+- branch: `codex/sl-5-time-reminders`
+- SL-5A implementation/verification checkpoint: `d133a97171d05d4110204e62c69e423c49ba3bd5`
+- Room schema: v11
 
-This integrated branch is now the authoritative technical development starting point for Stage 5. `master` remains an older protected reference and is not the current implementation authority.
+This branch is now the authoritative technical starting point for subsequent Stage-5 work. `master` and the earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
 
 `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics, despite its historical filename.
 
@@ -34,41 +34,40 @@ This integrated branch is now the authoritative technical development starting p
 - **SL-1:** owner accepted.
 - **SL-2:** owner accepted on 2026-09-06. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** owner accepted on 2026-09-08. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** the complete History/recovery implementation is independently Phase-B verified and is now **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE** at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`. This does not retroactively claim a separate earlier standalone owner-acceptance event for SL-4.
-- **Dispatch:** owner approved under B-015 and deliberately integrated/banked into the same authoritative technical line at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`.
-- **B-014 durable Working inspection-response drafts:** adopted core behavior and integrated in Room v10.
+- **SL-4:** the complete History/recovery implementation is independently Phase-B verified and **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE**. This does not retroactively claim a separate earlier standalone owner-acceptance event for SL-4.
+- **Dispatch:** owner approved under B-015 and deliberately integrated/banked into the authoritative technical line.
+- **B-014 durable Working inspection-response drafts:** adopted core behavior and retained through current Room v11.
+- **SL-5A — time-aware work state and local reminders:** implemented and independently reviewed at `d133a97171d05d4110204e62c69e423c49ba3bd5`. The milestone implements business-date invalidation without polling, adopted S32 reminder settings, approximate daily summaries/appointment reminders, Room-v11 preference persistence, recovery semantics and platform reconciliation. Actual system notification delivery was deliberately not exercised on the canonical dataset because local delivery and Android permission remained Off; no delivery claim is made.
 - **B-008 pilot:** still outstanding. The product is not product-valid for release preparation until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
 
-## Integration verification boundary
+## SL-5A verification boundary
 
-The integration milestone deliberately reconciled the Dispatch/Room-v10 line with the final unique SL-4 verification intent rather than blindly merging/cherry-picking old milestone history. The shared merge base was `8052cdca8a1a87806d371347a99aeabae250a1b4`; no missing SL-4 production implementation was found.
+The SL-5A checkpoint established:
 
-The integrated checkpoint verified, among other evidence:
+- an injectable business-time/date signal that recomputes date-derived Home/Work state at the next business-local midnight and on foreground/time/zone invalidation, without continuous polling or manufactured database writes;
+- one shared persisted due-soon horizon for Home, Due services and reminder calculations;
+- Room-v11 reminder preferences with adopted defaults and device-local reminder-delivery intent kept separate from portable backup state;
+- stable Work-summary and Appointment-reminder notification channels plus contextual Android notification permission handling;
+- one-shot approximate `AlarmManager.setWindow` scheduling without exact-alarm permission, foreground service or battery-exemption demands;
+- current-state revalidation, privacy-safe notification text, duplicate-summary suppression, stale-appointment suppression and dataset-scoped PendingIntent identity;
+- reboot/package-replacement/time/timezone/process reconciliation;
+- restore semantics that preserve reminder preferences while resetting local delivery Off;
+- retained Room v1→v11 migration coverage and schema-9/10 backup compatibility.
 
-- coherent retained Room v1→v10 migration coverage;
-- representative populated v5→v10 and v6→v10 preservation with zero `PRAGMA foreign_key_check` violations;
-- integrated SL-4 + Dispatch + B-014 replacement backup/restore;
-- Dispatch/Working-response dirty tracking and erase semantics in isolated fixtures;
-- active-response-only final record/report content;
-- ordinary non-Dispatch and adopted Dispatch regression;
-- canonical non-destructive AVD smoke/history/report navigation.
-
-Two focused integration production corrections were made in `RecoveryPackage.kt`: new backups now identify schema v10 while retaining schema-v9 compatibility, and backup-triggered Technician identity initialization uses the canonical `SLT-XXXX-XXXX-XXXX-CC` format rather than creating new legacy 32-hex IDs.
+Recorded final evidence at the implementation checkpoint includes 184 host unit tests, 16 focused instrumentation tests, one preserved-canonical due-services regression, retained migration/FK and recovery coverage, debug/debug-Android-test/lint/release builds, `git diff --check`, explicit install-r on the canonical AVD and non-destructive rendered Home/Reminders inspection.
 
 ## Current forward sequence
 
-1. **Stage 5 — functional product completion/hardening**
+1. **Remaining Stage 5 — functional product completion/hardening**
+   - finalize and implement optional Calendar integration semantics;
    - Romanian localization and report/UI copy;
-   - reminders/notifications;
    - remaining ordinary-workflow cleanup and placeholder removal;
-   - time-aware Home/Work recomputation at relevant date/time boundaries and app resume rather than polling;
-   - design/implement Calendar integration after final semantics are adopted;
    - larger-data, recovery and platform hardening;
    - production hardening of adopted Dispatch without expanding its no-backend boundary.
 
 2. **Dedicated whole-product UI/UX milestone — B-013**
-   - one coherent design system and interaction/presentation pass across ServiceLoop;
-   - reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
+   - implement the forthcoming all-encompassing visual/UI design authority across ServiceLoop only after Stage-5 functional work is stable;
+   - establish reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
    - the current semi-default/incremental Compose presentation is not the final visual baseline.
 
 3. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
