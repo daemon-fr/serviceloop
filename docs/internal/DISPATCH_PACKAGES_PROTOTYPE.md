@@ -1,8 +1,12 @@
 # Dispatch packages v2 — accepted integration reference
 
-**OWNER APPROVED FOR PRODUCT INTEGRATION UNDER B-015 — NOT YET BANKED ONTO THE AUTHORITATIVE DEVELOPMENT LINE**
+**OWNER APPROVED UNDER B-015 — BANKED ON THE AUTHORITATIVE TECHNICAL DEVELOPMENT LINE**
 
-This document remains the detailed implementation reference for the asynchronous coordinator-to-technician Dispatch design developed on `prototype/dispatch-v2`. The owner approved this design for ServiceLoop product integration after hands-on review through commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`.
+This document remains the detailed implementation reference for the asynchronous coordinator-to-technician Dispatch design first developed on `prototype/dispatch-v2` and now deliberately integrated with verified SL-4 on `codex/integrate-sl4-dispatch`.
+
+Current integrated technical checkpoint:
+
+`132a0586969dfe7e7fbe88501ba6f413ce6ef724`
 
 Product adoption does not change the hard architectural boundary: Dispatch remains local-first and file-based. It adds no backend, accounts/login, live synchronization, push dispatch, shared database, chat, presence, centralized report ingestion, server acknowledgement, or automatic cross-device conflict resolution.
 
@@ -134,7 +138,7 @@ Completed eligible PDFs may use **Send to office** or ordinary Share through the
 
 ## Recovery, Room v10 and B-014
 
-The current accepted prototype branch is Room **v10**.
+The integrated development line is Room **v10**.
 
 Dispatch lifecycle/state introduced through v9 remains part of complete backup/restore and erase semantics. Room v10 additionally implements adopted B-014 Working inspection-response draft retention:
 
@@ -144,32 +148,37 @@ Dispatch lifecycle/state introduced through v9 remains part of complete backup/r
 
 Migration 9→10 backfills only the active v9 Issue-found/N/A reason into the matching draft column. Inactive Working drafts survive switching and recovery, but only the current selected disposition/detail participates in checklist validity, finalization and customer-facing snapshots.
 
+The integration milestone also corrected recovery-version truthfulness: newly created backups identify schema v10 while existing schema-v9 backups remain accepted under the established compatibility contract. Any backup-triggered creation of a previously absent Technician identity now uses the canonical SLT generator rather than a legacy 32-hex form.
+
 Temporary `.slwork` / `.sltech` cache output is not part of the complete recovery payload.
 
-## Verification checkpoint
+## Integrated verification checkpoint
 
-Final owner-approved integration checkpoint:
+Current integrated technical checkpoint:
 
-`813fed417330fc7d3e5e7bce68ced29edd6dfb23`
+`132a0586969dfe7e7fbe88501ba6f413ce6ef724`
 
-Recorded final evidence includes:
+Recorded integration evidence includes:
 
-- 172 unit tests PASS;
-- retained migration coverage through v10 with foreign-key checks;
+- 175 host unit tests PASS;
+- retained migration instrumentation 8/8 PASS through v10;
+- representative populated v5→v10 and v6→v10 preservation with zero foreign-key violations;
+- focused Dispatch/coordinator/B-014 instrumentation 6/6 PASS;
+- canonical non-destructive instrumentation 2/2 PASS;
 - debug, debug-Android-test, lint and release builds PASS;
 - `git diff --check` PASS;
-- 13 focused device tests PASS on the canonical AVD;
-- large Site-directory/list-first Outbox validation;
-- dedicated Visit editor, multi-selection, export-review and assignment-name validation;
-- canonical Technician-ID codec/generation/validation and legacy compatibility tests;
-- durable inspection response switching/final-record isolation tests;
-- Android chooser surface reached in bounded system-handoff validation without delivery overclaim;
-- owner hands-on review found the module working well enough for product adoption and integration.
+- combined SL-4 + Dispatch + B-014 replacement backup/restore PASS in isolated fixtures;
+- malformed Dispatch foreign-key recovery structure rejected;
+- integrated erase and dirty-tracking semantics verified in isolated fixtures;
+- canonical AVD Home/Work/Customers and existing History/report navigation PASS without destructive dataset operations;
+- no security-command block encountered.
 
-## Integration boundary
+The integration audit found no missing SL-4 production implementation. The one unique post-implementation SL-4 verification commit was semantically banked in current v10 test form rather than blindly merged/cherry-picked.
 
-B-015 adopts this asynchronous Dispatch design for ServiceLoop product integration. The current branch is still a development/prototype branch, not the new authoritative production line.
+## Current status and next boundary
 
-The next milestone must deliberately reconcile this v10 branch with the verified SL-4 line, preserve migration/recovery integrity and B-014 behavior, run the full regression gate, and establish one authoritative development HEAD.
+B-015 adopts this asynchronous Dispatch design, and the integration milestone has now banked it together with verified SL-4 and B-014 on the authoritative technical development line.
 
-Current UI styling remains intentionally provisional. B-013 requires the later whole-product UI/UX pass before the real-technician pilot; Dispatch adoption does not make the current prototype appearance the final visual baseline.
+The next milestone is Stage 5 functional completion/hardening. Dispatch may be hardened as part of that stage, but its no-backend/local-first boundary remains fixed unless the owner explicitly changes it.
+
+Current UI styling remains intentionally provisional. B-013 requires the later whole-product UI/UX pass before the real-technician pilot; Dispatch adoption/integration does not make the current appearance the final visual baseline.
