@@ -27,14 +27,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,13 +43,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -75,6 +71,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -120,6 +118,12 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as OutlinedTextField
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
+import com.v16studio.serviceloop.ui.designsystem.serviceLoopAdaptiveScaffoldPadding
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -195,7 +199,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadEquipment(id) }
             DetailScaffold("Equipment", nav) { padding ->
-                ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav) } }
+                ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav, state.businessDate, state.home?.dueSoonHorizonDays ?: 14) } }
             }
         }
         composable("customer/new") { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } }
@@ -337,6 +341,8 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RootScaffold(nav: NavHostController, selected: RootDestination, content: @Composable (PaddingValues) -> Unit) {
+    val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+    val layoutDirection = LocalLayoutDirection.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -358,7 +364,7 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
         floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { Text("New visit") } },
-        content = content,
+        content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } },
     )
 }
 
@@ -366,7 +372,9 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
 @Composable
 internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@Composable RowScope.() -> Unit)? = null, content: @Composable (PaddingValues) -> Unit) {
     val interceptor=remember { mutableStateOf<(() -> Unit)?>(null) }
-    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Text(title, maxLines = 2) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { Text("Back") } },actions={topAction?.invoke(this)}) }, content = content) }
+    val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+    val layoutDirection = LocalLayoutDirection.current
+    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Text(title, maxLines = 2) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { Text("Back") } },actions={topAction?.invoke(this)}) }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -512,7 +520,7 @@ internal fun workRoute(tab: WorkTab, filter: String? = null): String =
     }
 
 @Composable
-private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
+private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text(detail.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -525,7 +533,8 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
             AccentCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); StatusChip(if (plan.isOverdue) "Overdue" else "Due soon", urgency = plan.isOverdue) }
+                val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); StatusChip(dueLabel, urgency = dueLabel == "Overdue") }
                 Text("${plan.reference} · ${plan.interval}")
                 Text("Due ${plan.dueDate}", fontWeight = FontWeight.Medium)
                 Text(if (plan.state == "ACTIVE") "Current service remains due until explicitly fulfilled" else "Plan ${plan.state.lowercase()}", style = MaterialTheme.typography.bodySmall)
@@ -567,6 +576,16 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
         }
         item { ServiceLoopSecondaryButton("Parts and photographs",{ nav.navigate("field/${draft.workItemId}") },modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")); ServiceLoopPrimaryButton("Review completion",{ nav.navigate("review/${draft.visitId}") },modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) }
     }
+    }
+}
+
+internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSoonHorizonDays: Int): String {
+    val due = runCatching { LocalDate.parse(dueDate) }.getOrNull() ?: return "State unavailable"
+    return when {
+        due.isBefore(businessDate) -> "Overdue"
+        due == businessDate -> "Due today"
+        !due.isAfter(businessDate.plusDays(dueSoonHorizonDays.toLong())) -> "Due soon"
+        else -> "Upcoming"
     }
 }
 

@@ -302,6 +302,7 @@ class ServiceLoopViewModel(
     }
 
     fun createCustomer(input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.createCustomer(input) }, onSuccess)
+    fun createCustomerWithFirstSite(customer: CustomerInput, site: SiteInput, onSuccess: (Pair<String, String>) -> Unit) = runOperation({ repository.createCustomerWithFirstSite(customer, site) }, onSuccess)
     fun updateCustomer(id: String, input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateCustomer(id, input); id }, onSuccess)
     fun createSite(customerId: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.createSite(customerId, input) }, onSuccess)
     fun updateSite(id: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateSite(id, input); id }, onSuccess)

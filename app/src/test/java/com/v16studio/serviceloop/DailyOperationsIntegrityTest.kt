@@ -7,6 +7,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.ui.validateHistoryDates
+import com.v16studio.serviceloop.ui.servicePlanDueLabel
 import com.v16studio.serviceloop.domain.*
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -46,6 +47,30 @@ class DailyOperationsIntegrityTest {
         val original = repo.customer(customer)!!; repo.updateCustomer(customer, CustomerInput("Acme Plant Updated", "Dana", "+40 700", "dana@example.invalid", "PRIVATE_CUSTOMER"))
         assertEquals(original.id, repo.customer(customer)!!.id); assertEquals("Acme Plant Updated", repo.customer(customer)!!.name)
         assertEquals(1, db.serviceLoopDao().obligationCount(plan)); assertEquals(db.serviceLoopDao().plan(plan)!!.currentDueDate, db.serviceLoopDao().obligation(db.serviceLoopDao().plan(plan)!!.currentObligationId!!)!!.dueDate)
+    }
+
+    @Test fun customerAndRequiredFirstSiteCommitAtomicallyWithInheritedContact() = runTest {
+        val (customerId, siteId) = repo.createCustomerWithFirstSite(
+            CustomerInput("Northside", "Mira", "+40 700", "mira@example.invalid"),
+            SiteInput("Main plant", "18 Mill Lane", isDefault = true),
+        )
+        val customer = db.serviceLoopDao().customer(customerId)!!
+        val site = db.serviceLoopDao().site(siteId)!!
+        assertEquals(customerId, site.customerId)
+        assertTrue(site.isDefault)
+        assertNull(site.contactName)
+        assertNull(site.phone)
+        assertNull(site.email)
+        assertEquals("Mira", customer.contactName)
+    }
+
+    @Test fun equipmentDueLabelsUseBusinessDateAndSharedHorizonTruthfully() {
+        val today = java.time.LocalDate.of(2026, 9, 10)
+        assertEquals("Overdue", servicePlanDueLabel("2026-09-09", today, 14))
+        assertEquals("Due today", servicePlanDueLabel("2026-09-10", today, 14))
+        assertEquals("Due soon", servicePlanDueLabel("2026-09-24", today, 14))
+        assertEquals("Upcoming", servicePlanDueLabel("2026-09-25", today, 14))
+        assertEquals("State unavailable", servicePlanDueLabel("bad-date", today, 14))
     }
 
     @Test fun dueDateEditUpdatesSameObligationWithoutConsumingIt() = runTest {

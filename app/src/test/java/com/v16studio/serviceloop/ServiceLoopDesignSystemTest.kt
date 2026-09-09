@@ -2,6 +2,8 @@ package com.v16studio.serviceloop
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.unit.LayoutDirection
 import com.v16studio.serviceloop.ui.designsystem.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -86,6 +88,16 @@ class ServiceLoopDesignSystemTest {
         assertEquals(24f, serviceLoopPageInset(600.dp).value, 0f)
         assertEquals(24f, serviceLoopPageInset(839.dp).value, 0f)
         assertEquals(32f, serviceLoopPageInset(840.dp).value, 0f)
+    }
+
+    @Test fun scaffoldPaddingAddsOnlyTheAdaptiveInsetDelta() {
+        val base = PaddingValues(top = 64.dp, bottom = 80.dp)
+        val medium = serviceLoopAdaptiveScaffoldPadding(base, 700.dp, LayoutDirection.Ltr)
+        val expanded = serviceLoopAdaptiveScaffoldPadding(base, 900.dp, LayoutDirection.Ltr)
+        assertEquals(8f, medium.calculateLeftPadding(LayoutDirection.Ltr).value, 0f)
+        assertEquals(16f, expanded.calculateLeftPadding(LayoutDirection.Ltr).value, 0f)
+        assertEquals(64f, expanded.calculateTopPadding().value, 0f)
+        assertEquals(80f, expanded.calculateBottomPadding().value, 0f)
     }
 
     @Test fun unknownStateIsUnavailableAndUsesErrorFamily() {

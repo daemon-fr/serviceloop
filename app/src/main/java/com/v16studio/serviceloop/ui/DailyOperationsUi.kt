@@ -1,5 +1,13 @@
 package com.v16studio.serviceloop.ui
 
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconButtonAdapter as IconButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as OutlinedTextField
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopElevatedCardAdapter as ElevatedCard
+
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
@@ -66,12 +74,14 @@ internal fun CustomerDetailScreen(detail: CustomerDetail?, padding: PaddingValue
 @Composable
 internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
-    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty(),nav)
+    var firstSiteName by rememberSaveable(existing?.id) { mutableStateOf("") }; var firstSiteAddress by rememberSaveable(existing?.id) { mutableStateOf("") }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty()||firstSiteName.isNotBlank()||firstSiteAddress.isNotBlank(),nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Add customer" else "Edit ${existing.reference}"); Text("A stable reference is assigned on Save.") }
         item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
+        if (existing == null) item { DailyHeading("First site"); Text("Every new customer starts with a default site. Blank contact fields inherit the customer contact."); DailyField(firstSiteName, { firstSiteName = it }, "Site name · Required"); DailyField(firstSiteAddress, { firstSiteAddress = it }, "Site address") }
         item { LongTextEditor(note, { note = it }, "Private customer note", true) }
-        item { Button({ val input = CustomerInput(name, contact, phone, email, note); if (existing == null) viewModel.createCustomer(input) { nav.navigate("customer/$it") { popUpTo("customer/new") { inclusive = true } } } else viewModel.updateCustomer(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Save customer") } }
+        item { Button({ val input = CustomerInput(name, contact, phone, email, note); if (existing == null) viewModel.createCustomerWithFirstSite(input, SiteInput(firstSiteName, firstSiteAddress, isDefault = true)) { (customerId, _) -> nav.navigate("customer/$customerId") { popUpTo("customer/new") { inclusive = true } } } else viewModel.updateCustomer(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && (existing != null || firstSiteName.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Save customer${if (existing == null) " and first site" else ""}") } }
     }
 }
 
@@ -92,12 +102,14 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
 @Composable
 internal fun SiteEditorScreen(customerId: String?, existing: SiteDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var address by rememberSaveable(existing?.id) { mutableStateOf(existing?.address.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateAccessNote.orEmpty()) }; var default by rememberSaveable(existing?.id) { mutableStateOf(existing?.isDefault ?: false) }
-    UnsavedChangesGuard(name!=existing?.name.orEmpty()||address!=existing?.address.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateAccessNote.orEmpty()||default!=(existing?.isDefault?:false),nav)
+    val originallyInherited = existing == null || (existing.contactName.isBlank() && existing.phone.isBlank() && existing.email.isBlank())
+    var useCustomerContact by rememberSaveable(existing?.id) { mutableStateOf(originallyInherited) }
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||address!=existing?.address.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateAccessNote.orEmpty()||default!=(existing?.isDefault?:false)||useCustomerContact!=originallyInherited,nav)
     EditorColumn(padding, state) {
         item { DailyHeading(if (existing == null) "Add site" else "Edit ${existing.reference}") }
-        item { DailyField(name, { name = it }, "Site name · Required"); DailyField(address, { address = it }, "Address"); DailyField(contact, { contact = it }, "Contact override"); DailyField(phone, { phone = it }, "Phone override"); DailyField(email, { email = it }, "Email override") }
+        item { DailyField(name, { name = it }, "Site name · Required"); DailyField(address, { address = it }, "Address"); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(useCustomerContact, { useCustomerContact = it }); Text("Use customer contact") }; if (!useCustomerContact) { DailyField(contact, { contact = it }, "Contact override"); DailyField(phone, { phone = it }, "Phone override"); DailyField(email, { email = it }, "Email override") } else Text("Customer contact is inherited; any staged overrides remain available if inheritance is turned off before Save.", style = MaterialTheme.typography.bodySmall) }
         item { LongTextEditor(note, { note = it }, "PRIVATE access note", true); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(default, { default = it }); Text("Default site for this customer") } }
-        item { Button({ val input = SiteInput(name, address, contact, phone, email, note, default); if (existing == null) viewModel.createSite(customerId!!, input) { nav.navigate("site/$it") { popUpTo("site/new/$customerId") { inclusive = true } } } else viewModel.updateSite(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Save site") } }
+        item { Button({ val input = SiteInput(name, address, contact.takeUnless { useCustomerContact }.orEmpty(), phone.takeUnless { useCustomerContact }.orEmpty(), email.takeUnless { useCustomerContact }.orEmpty(), note, default); if (existing == null) viewModel.createSite(customerId!!, input) { nav.navigate("site/$it") { popUpTo("site/new/$customerId") { inclusive = true } } } else viewModel.updateSite(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Save site") } }
     }
 }
 
@@ -166,6 +178,7 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
     val available = dueServices.filter { it.siteId == siteId && it.claimedVisitId == null }
     val valid = site != null && (selectedPlans.isNotEmpty() || (oneOffEquipmentId != null && oneOffName.isNotBlank())) && runCatching { LocalDate.parse(date) }.isSuccess && !state.operationInProgress
     val initialSite=dueServices.firstOrNull{it.planId==initialPlanId}?.siteId
+    val matchingSites = sites.filter { siteQuery.isBlank() || it.customerName.contains(siteQuery,true) || it.name.contains(siteQuery,true) }
     UnsavedChangesGuard(siteId!=initialSite||selectedPlans!=(initialPlanId?.let(::listOf)?:emptyList<String>())||date!=state.businessDate.plusDays(1).toString()||oneOffEquipmentId!=null||oneOffName.isNotBlank()||siteQuery.isNotBlank(),nav)
     fun save(targetState: String, serviceDate: String, scheduledAt: Long?) {
         viewModel.createVisitForSite(site!!.id, selectedPlans, oneOffEquipmentId, oneOffName.takeIf(String::isNotBlank), targetState, serviceDate, scheduledAt) { nav.navigate("visit/$it") { popUpTo(setupRoute) { inclusive = true } } }
@@ -179,15 +192,11 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
                     Text("${site.customerName} · ${site.name}", Modifier.weight(1f))
                     if (initialPlanId == null) TextButton({ siteId=null; selectedPlans=emptyList(); oneOffEquipmentId=null }) { Text("Change") }
                 }
-            } else {
-                DailyField(siteQuery,{siteQuery=it},"Find customer or site")
-                val matching = sites.filter { siteQuery.isBlank() || it.customerName.contains(siteQuery,true) || it.name.contains(siteQuery,true) }.take(20)
-                matching.forEach { option -> FilterChip(false,{siteId=option.id;selectedPlans=emptyList();oneOffEquipmentId=null},{Text("${option.customerName} · ${option.name}")}) }
-                if(sites.isEmpty()) Text("Add a customer site before creating a visit.")
-                else if(matching.isEmpty()) Text("No matching customer sites.")
-                else if(siteQuery.isBlank() && sites.size > matching.size) Text("Showing the first ${matching.size}; type to narrow the list.")
-            }
+            } else DailyField(siteQuery,{siteQuery=it},"Find customer or site")
         }
+        if (site == null) items(matchingSites, key = { "visit-site-${it.id}" }) { option -> FilterChip(false,{siteId=option.id;selectedPlans=emptyList();oneOffEquipmentId=null},{Text("${option.customerName} · ${option.name}")}, modifier = Modifier.fillMaxWidth()) }
+        if (site == null && sites.isEmpty()) item { Text("Add a customer site before creating a visit.") }
+        else if (site == null && matchingSites.isEmpty()) item { Text("No matching customer sites.") }
         if(site!=null) item { Text("Planned work",fontWeight=FontWeight.Bold); available.forEach { due -> Row(verticalAlignment=Alignment.CenterVertically){Checkbox(due.planId in selectedPlans,{checked->selectedPlans=if(checked) selectedPlans+due.planId else selectedPlans-due.planId});Text("${due.equipmentName} · ${due.planName} · Due ${due.dueDate}") } }; if(available.isEmpty()) Text("No unclaimed current plans at this site.") }
         if(site!=null) item { Text("Optional one-off work",fontWeight=FontWeight.Bold); site.equipment.forEach { equipment -> FilterChip(oneOffEquipmentId==equipment.id,{oneOffEquipmentId=equipment.id},{Text(equipment.name)}) }; DailyField(oneOffName,{oneOffName=it},"One-off service name") }
         item { DailyField(date,{date=it},"Appointment / service date · YYYY-MM-DD"); val parsed=runCatching{LocalDate.parse(date)}.getOrNull(); val primary=when { parsed==null || parsed.isAfter(state.businessDate) -> "BOOKED"; parsed==state.businessDate -> "WORKING"; else -> "HISTORICAL" }; @Composable fun action(kind:String,label:String){ val click={ when(kind){"BOOKED"->save("BOOKED",date,parsed!!.atStartOfDay(ZoneId.of(state.businessZoneId)).toInstant().toEpochMilli());"WORKING"->save("WORKING",state.businessDate.toString(),null);else->save("HISTORICAL",date,null) } }; val enabled=valid && (kind!="HISTORICAL" || parsed!=null&&!parsed.isAfter(state.businessDate)); if(primary==kind) Button(click,enabled=enabled,modifier=Modifier.fillMaxWidth().testTag("primary-visit-action-$kind")){Text(label)} else OutlinedButton(click,enabled=enabled,modifier=Modifier.fillMaxWidth()){Text(label)} }; action("BOOKED","Book visit"); action("WORKING","Start now"); action("HISTORICAL","Record past visit"); Text("Record past creates History-only recurring work; it never claims or advances today's obligation.") }
@@ -308,7 +317,7 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
     if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("Discard unsaved changes?")},text={Text("This form uses local unsaved input until Save succeeds.")},confirmButton={TextButton({confirm=false;nav.popBackStack()}){Text("Discard changes")}},dismissButton={TextButton({confirm=false}){Text("Keep editing")}})
 }
 
-@Composable private fun EditorColumn(padding: PaddingValues,state: UiState,tag:String?=null,content: androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
+@Composable private fun EditorColumn(padding: PaddingValues,state: UiState,tag:String?=null,content: androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).fillMaxWidth().widthIn(max=com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens.Size.formMaxWidth).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
 @Composable private fun DailyField(value:String,onChange:(String)->Unit,label:String){
     val tag = "field-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
     ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag))

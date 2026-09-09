@@ -53,6 +53,7 @@ interface ServiceLoopRepository {
     suspend fun photos(workItemId: String): List<PhotoEntry> = emptyList()
     suspend fun search(query: String): List<SearchTarget> = emptyList()
     suspend fun createCustomer(input: CustomerInput): String = error("Customer editor unavailable")
+    suspend fun createCustomerWithFirstSite(customer: CustomerInput, site: SiteInput): Pair<String, String> = error("Customer and first-site editor unavailable")
     suspend fun updateCustomer(id: String, input: CustomerInput): Long = error("Customer editor unavailable")
     suspend fun createSite(customerId: String, input: SiteInput): String = error("Site editor unavailable")
     suspend fun updateSite(id: String, input: SiteInput): Long = error("Site editor unavailable")
@@ -274,6 +275,19 @@ class RoomServiceLoopRepository(
         validateCustomer(input); writeGate.beforeWrite(); val id = UUID.randomUUID().toString()
         dao.insertCustomers(listOf(CustomerEntity(id, reference("CU", dao.customerCount() + 1), input.name.trim(), clean(input.contactName), clean(input.phone), clean(input.email), clean(input.privateNote))))
         return id
+    }
+
+    override suspend fun createCustomerWithFirstSite(customer: CustomerInput, site: SiteInput): Pair<String, String> {
+        validateCustomer(customer); validateSite(site); writeGate.beforeWrite()
+        val customerId = UUID.randomUUID().toString()
+        val siteId = UUID.randomUUID().toString()
+        val customerValue = CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customer.name.trim(), clean(customer.contactName), clean(customer.phone), clean(customer.email), clean(customer.privateNote))
+        val siteValue = SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), site.name.trim(), clean(site.address), clean(site.privateAccessNote), clean(site.contactName), clean(site.phone), clean(site.email), true)
+        database.withTransaction {
+            dao.insertCustomers(listOf(customerValue))
+            dao.insertSites(listOf(siteValue))
+        }
+        return customerId to siteId
     }
 
     override suspend fun updateCustomer(id: String, input: CustomerInput): Long {
