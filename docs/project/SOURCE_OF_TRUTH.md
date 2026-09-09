@@ -15,27 +15,45 @@ Do not silently merge competing policies from the conceptual and complete functi
 
 Matching HTML editions are reading formats and are intentionally not retained in the repository as independent requirements.
 
-## Experimental material
+## Dispatch adoption status
 
-`docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` describes the separately authorized asynchronous Dispatch experiment. Under B-012 it is intentionally **non-authoritative product material** until the owner explicitly adopts Dispatch into the product baseline. Prototype code/evidence establishes what the experiment currently does, but does not silently amend Map C or the adopted UI/UX maps.
+B-015 adopts the completed asynchronous file-based Dispatch design for ServiceLoop product integration after owner hands-on review through `prototype/dispatch-v2` commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`.
 
-## Current accepted implementation baseline
+`docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for the accepted Dispatch design until the integration milestone banks that work onto the authoritative development line. It does not override B-015 or silently expand Dispatch beyond the adopted asynchronous/local-first boundary.
+
+## Current accepted / verified implementation state
 
 - **SL-1:** owner accepted.
-- **SL-2:** owner accepted on 2026-09-06. The accepted user-facing implementation/review state is `d97a8c0013dcea924d91ace993a1325ac16cf5b3`; subsequent documentation-only commits bank that acceptance and deferred UX direction without changing product behavior.
-- **SL-3:** owner accepted on 2026-09-08. The accepted production implementation/review state is `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** implementation and bounded independent Phase-B verification are complete on `codex/sl-4-history-recovery` at `5fc7a7383d6b6ad15cd45dce9ea5926a6ef0ac84`. SL-4 is still **not owner accepted** and no broader system-handoff/lifecycle campaign is implied beyond the recorded verification evidence.
-- **Dispatch prototype v2:** technically implemented and source-reviewed through `prototype/dispatch-v2` commit `cdca7c460bb7271654c5ed3da4e9c95e11688eb3`, including batch package workflow and coordinator Draft/Dispatched/Concluded bookkeeping. This is accepted as an **experimental prototype checkpoint suitable for owner/rendered evaluation**, not as product-baseline adoption and not as merge approval.
+- **SL-2:** owner accepted on 2026-09-06. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
+- **SL-3:** owner accepted on 2026-09-08. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
+- **SL-4:** implementation and bounded independent Phase-B verification are complete on `codex/sl-4-history-recovery` at `5fc7a7383d6b6ad15cd45dce9ea5926a6ef0ac84`. SL-4 is technically verified but still awaits deliberate closure/banking onto the next authoritative development line.
+- **Dispatch:** owner approved for product integration under B-015 at `prototype/dispatch-v2` commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`. That branch currently carries Room v10 because B-014's durable Working inspection-response drafts were implemented there alongside Dispatch. This does not make the prototype branch itself the authoritative production line.
 - **B-008 pilot:** still outstanding. The product is not product-valid for release preparation until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
 
 ## Current forward sequence
 
-1. Owner/rendered evaluation of Dispatch and explicit product-adoption decision.
-2. Formal owner closure/banking of SL-4 and, if adopted, deliberate integration of Dispatch into the real development line.
-3. Stage 5 functional product completion/hardening: localization, reminders/notifications, remaining ordinary-workflow cleanup, regression/recovery hardening, and other explicitly adopted functional integrations.
-4. Dedicated whole-product UI/UX milestone under B-013.
-5. B-008 real-technician pilot on the coherent Romanian pilot-ready build.
-6. Pilot findings/final hardening.
-7. Release preparation and submission.
+1. **Integration / banking milestone**
+   - deliberately reconcile the verified SL-4 line with the owner-approved Dispatch/Room-v10 work;
+   - preserve all migration/recovery guarantees and B-014 Working-response draft semantics;
+   - establish one authoritative development HEAD;
+   - run full host, migration, recovery, build/lint/release and bounded device regression gates.
 
-Read `IMPLEMENTATION_STATE.md` for the current implementation summary, experimental status, verification boundaries, and planned functional work. Read milestone coverage files for detailed accepted/verified evidence.
+2. **Stage 5 — functional product completion/hardening**
+   - Romanian localization and report/UI copy;
+   - reminders/notifications;
+   - remaining ordinary-workflow cleanup and placeholder removal;
+   - time-aware Home/Work recomputation at relevant date/time boundaries and app resume rather than polling;
+   - design/implement Calendar integration if adopted in its final semantics;
+   - larger-data, recovery and platform hardening;
+   - production hardening of adopted Dispatch without expanding its no-backend boundary.
+
+3. **Dedicated whole-product UI/UX milestone — B-013**
+   - one coherent design system and interaction/presentation pass across ServiceLoop;
+   - reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
+   - the current prototype/semi-default visual treatment is not the final visual baseline.
+
+4. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
+5. **Pilot findings / final hardening.**
+6. **Release preparation and submission.**
+
+Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining known gaps. Read milestone coverage files and the Dispatch implementation reference for detailed verification evidence.
