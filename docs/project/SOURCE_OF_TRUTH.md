@@ -15,63 +15,82 @@ Do not silently merge competing policies from the conceptual and complete functi
 
 Matching HTML editions are reading formats and are intentionally not retained in the repository as independent requirements.
 
-## Dispatch adoption and integrated development line
+## Current authoritative technical development line
 
-B-015 adopts the completed asynchronous file-based Dispatch design for ServiceLoop product integration after owner hands-on review. The adopted design remains strictly local-first/file-based and does not authorize a backend, accounts/login, live/cloud synchronization, push dispatch, chat, presence, a shared central database, centralized report ingestion, server acknowledgement, or automatic cross-device conflict resolution.
+SL-4 and Dispatch were deliberately reconciled/banked, SL-5A added time-aware work state and local reminders, and SL-5B added the adopted device-local Android Calendar projection.
 
-SL-4 and Dispatch were deliberately reconciled and banked on `codex/integrate-sl4-dispatch`. SL-5A subsequently advanced the authoritative technical development line to:
+Current technical line:
 
-- branch: `codex/sl-5-time-reminders`
-- SL-5A implementation/verification checkpoint: `d133a97171d05d4110204e62c69e423c49ba3bd5`
+- branch: `codex/sl-5-calendar`
+- SL-5B implementation/correction checkpoint: `2f8faf466c7ffd960c362078abbc6de83cc9e722`
 - Room schema: v11
 
-This branch is now the authoritative technical starting point for subsequent Stage-5 work. `master` and the earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
+This branch is now the authoritative technical starting point for the remaining Stage-5 work. `master` and earlier milestone branches remain protected historical/reference heads rather than current implementation authority.
 
-`docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics, despite its historical filename.
+B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 
 ## Current accepted / verified implementation state
 
 - **SL-1:** owner accepted.
 - **SL-2:** owner accepted on 2026-09-06. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** owner accepted on 2026-09-08. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** the complete History/recovery implementation is independently Phase-B verified and **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE**. This does not retroactively claim a separate earlier standalone owner-acceptance event for SL-4.
-- **Dispatch:** owner approved under B-015 and deliberately integrated/banked into the authoritative technical line.
-- **B-014 durable Working inspection-response drafts:** adopted core behavior and retained through current Room v11.
-- **SL-5A — time-aware work state and local reminders:** implemented and independently reviewed at `d133a97171d05d4110204e62c69e423c49ba3bd5`. The milestone implements business-date invalidation without polling, adopted S32 reminder settings, approximate daily summaries/appointment reminders, Room-v11 preference persistence, recovery semantics and platform reconciliation. Actual system notification delivery was deliberately not exercised on the canonical dataset because local delivery and Android permission remained Off; no delivery claim is made.
-- **B-008 pilot:** still outstanding. The product is not product-valid for release preparation until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
+- **SL-4:** complete History/recovery implementation independently Phase-B verified and **VERIFIED AND BANKED**.
+- **Dispatch:** owner approved under B-015 and deliberately integrated/banked as product scope within the local-first/file-based boundary.
+- **B-014:** durable Working inspection-response drafts remain adopted core behavior through current Room v11.
+- **SL-5A — time-aware work state and local reminders:** implemented/reviewed at `d133a97171d05d4110204e62c69e423c49ba3bd5`; current line retains those semantics.
+- **SL-5B — optional Android Calendar integration:** implemented, corrected and independently source-reviewed through `2f8faf466c7ffd960c362078abbc6de83cc9e722`; B-016 now records the adopted semantics.
+- **B-008 pilot:** still outstanding. Release preparation is not product-valid until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
 
 ## SL-5A verification boundary
 
-The SL-5A checkpoint established:
+The current line retains:
 
-- an injectable business-time/date signal that recomputes date-derived Home/Work state at the next business-local midnight and on foreground/time/zone invalidation, without continuous polling or manufactured database writes;
-- one shared persisted due-soon horizon for Home, Due services and reminder calculations;
-- Room-v11 reminder preferences with adopted defaults and device-local reminder-delivery intent kept separate from portable backup state;
-- stable Work-summary and Appointment-reminder notification channels plus contextual Android notification permission handling;
-- one-shot approximate `AlarmManager.setWindow` scheduling without exact-alarm permission, foreground service or battery-exemption demands;
-- current-state revalidation, privacy-safe notification text, duplicate-summary suppression, stale-appointment suppression and dataset-scoped PendingIntent identity;
+- injectable business-time/date invalidation at the next business-local midnight and on foreground/time/zone changes, without polling;
+- one shared persisted Due-soon horizon for Home, Due services and reminders;
+- Room-v11 reminder preferences with device-local reminder-delivery intent separated from portable recovery;
+- approximate one-shot `AlarmManager.setWindow` scheduling, privacy-safe summaries/appointment alerts, duplicate/stale suppression and dataset-scoped PendingIntents;
 - reboot/package-replacement/time/timezone/process reconciliation;
 - restore semantics that preserve reminder preferences while resetting local delivery Off;
 - retained Room v1→v11 migration coverage and schema-9/10 backup compatibility.
 
-Recorded final evidence at the implementation checkpoint includes 184 host unit tests, 16 focused instrumentation tests, one preserved-canonical due-services regression, retained migration/FK and recovery coverage, debug/debug-Android-test/lint/release builds, `git diff --check`, explicit install-r on the canonical AVD and non-destructive rendered Home/Reminders inspection.
+Actual system notification delivery remains unclaimed on the preserved canonical dataset because notification permission/local delivery were deliberately left Off during validation.
+
+## SL-5B Calendar boundary
+
+B-016 is implemented as a one-way local projection using Android `CalendarContract`/Calendar Provider. Calendar selection and managed event identity live in `noBackupFilesDir`, are scoped to the current ServiceLoop dataset ID, are excluded from portable backup, and reset Off on dataset replacement/erase without deleting old external events.
+
+Implemented behavior includes:
+
+- integration Off by default;
+- deliberate `READ_CALENDAR` / `WRITE_CALENDAR` permission request;
+- writable Calendar enumeration and truthful unavailable-selection state;
+- automatic creation only for timed Booked local Visits;
+- fixed 60-minute Calendar display block using the stored appointment instant and ZoneId;
+- restrained event content with private ServiceLoop fields excluded;
+- exactly one managed link per Visit, same-event update after reschedule/public Site/Customer changes, external-delete → Missing, deliberate Recreate, per-Visit Remove/suppression/Add;
+- global Disable retaining existing events/links and changing preferred Calendar affecting only new/unlinked Visits;
+- future-event deletion for Cancelled / `DISPATCH_WITHDRAWN` Visits where provider access permits, with retryable `DELETE_PENDING` on failure;
+- historical event retention for Working / Finalized / `PARTICIPATION_COMPLETE` Visits;
+- Room-driven reconciliation observing only `working_visits`, `customers`, and `sites`, plus startup/resume/manual triggers; no polling/service;
+- automatic Dispatch import creation, generation update of the same event ID, and assignment-withdrawal deletion through persisted local Visit changes.
+
+Real provider mutation was **NOT RUN** because the canonical AVD had both Calendar permissions denied and no safely disposable writable Calendar was established. No Google/cloud synchronization or delivery claim is made. Deterministic fake-provider tests and bounded canonical state/UI validation establish the current technical checkpoint.
 
 ## Current forward sequence
 
-1. **Remaining Stage 5 — functional product completion/hardening**
-   - finalize and implement optional Calendar integration semantics;
-   - Romanian localization and report/UI copy;
-   - remaining ordinary-workflow cleanup and placeholder removal;
-   - larger-data, recovery and platform hardening;
-   - production hardening of adopted Dispatch without expanding its no-backend boundary.
+1. **SL-5C — final functional completion/hardening**
+   - Romanian localization for UI, reports, notifications and relevant user-visible system/share text;
+   - remove remaining ordinary-workflow placeholders, stale prototype/experimental copy and obvious functional rough edges;
+   - larger-data and bounded platform/recovery hardening where current implementation reveals concrete risk;
+   - full functional-completeness inventory/gate without initiating the whole-product visual redesign.
 
 2. **Dedicated whole-product UI/UX milestone — B-013**
-   - implement the forthcoming all-encompassing visual/UI design authority across ServiceLoop only after Stage-5 functional work is stable;
+   - implement the forthcoming all-encompassing visual/UI design authority after Stage-5 functional structure is frozen;
    - establish reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
-   - the current semi-default/incremental Compose presentation is not the final visual baseline.
+   - the current incremental/default Compose presentation is not the final visual baseline.
 
 3. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
 4. **Pilot findings / final hardening.**
 5. **Release preparation and submission.**
 
-Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining known gaps. Read milestone coverage files and the Dispatch implementation reference for detailed verification evidence.
+Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining known gaps. Read milestone coverage files and the Dispatch reference for detailed verification evidence.
