@@ -1,6 +1,7 @@
 package com.v16studio.serviceloop
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.v16studio.serviceloop.ui.designsystem.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -77,6 +78,14 @@ class ServiceLoopDesignSystemTest {
         assertEquals(52f,ServiceLoopButtonContract.primaryMinHeight.value,0f);assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusWidth.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusGap.value,0f)
         assertEquals(c.action,ServiceLoopButtonContract.primaryContainer(c,true,false));assertEquals(c.actionPressed,ServiceLoopButtonContract.primaryContainer(c,true,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.primaryContainer(c,false,false));assertEquals(c.onAction,ServiceLoopButtonContract.primaryInk(c,true));assertEquals(c.disabledText,ServiceLoopButtonContract.primaryInk(c,false))
         assertEquals(c.surface,ServiceLoopButtonContract.secondaryContainer(c,true));assertEquals(c.action,ServiceLoopButtonContract.secondaryInk(c,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.secondaryContainer(c,false));assertEquals(c.disabledText,ServiceLoopButtonContract.secondaryInk(c,false));assertEquals(ServiceLoopUiTokens.Type.button,ServiceLoopButtonContract.textStyle)
+    }
+
+    @Test fun responsivePageInsetsUseCanonicalThresholds() {
+        assertEquals(16f, serviceLoopPageInset(320.dp).value, 0f)
+        assertEquals(16f, serviceLoopPageInset(599.dp).value, 0f)
+        assertEquals(24f, serviceLoopPageInset(600.dp).value, 0f)
+        assertEquals(24f, serviceLoopPageInset(839.dp).value, 0f)
+        assertEquals(32f, serviceLoopPageInset(840.dp).value, 0f)
     }
 
     @Test fun unknownStateIsUnavailableAndUsesErrorFamily() {

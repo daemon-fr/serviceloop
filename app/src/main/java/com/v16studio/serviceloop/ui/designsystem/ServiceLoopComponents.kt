@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -19,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -35,6 +38,8 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
@@ -104,13 +109,16 @@ private fun ServiceLoopButton(
         modifier.heightIn(min=if(primary)ServiceLoopButtonContract.primaryMinHeight else ServiceLoopButtonContract.secondaryMinHeight)
             .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape).background(container)
             .then(if(primary)Modifier else Modifier.border(ServiceLoopUiTokens.Stroke.outline,c.outlineControl,shape))
-            .clickable(enabled=enabled&&!busy,role=Role.Button,interactionSource=interaction,indication=null,onClick=onClick)
+            .clickable(enabled=enabled&&!busy,role=Role.Button,interactionSource=interaction,indication=LocalIndication.current,onClick=onClick)
             .focusable(enabled=enabled).semantics { if(!enabled||busy) disabled() }
             .padding(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding),
         horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically,
     ) {
-        if(busy) CircularProgressIndicator(Modifier.size(ServiceLoopUiTokens.Size.iconSmall),strokeWidth=ServiceLoopUiTokens.Stroke.focus,color=ink)
-        else { leadingIcon?.let { it(); Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm)) }; Text(label,color=ink,style=ServiceLoopButtonContract.textStyle) }
+        if(busy) {
+            CircularProgressIndicator(Modifier.size(ServiceLoopUiTokens.Size.iconSmall),strokeWidth=ServiceLoopUiTokens.Stroke.focus,color=ink)
+            Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
+        } else leadingIcon?.let { it(); Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm)) }
+        Text(label,color=ink,style=ServiceLoopButtonContract.textStyle)
     }
 }
 
@@ -198,10 +206,16 @@ fun ServiceLoopTextField(
         shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = c.focus,
+            unfocusedBorderColor = c.outlineControl,
             cursorColor = c.action,
             errorBorderColor = c.errorInk,
             errorCursorColor = c.errorInk,
+            disabledTextColor = c.disabledText,
+            disabledBorderColor = c.disabledContainer,
+            disabledLabelColor = c.disabledText,
+            disabledSupportingTextColor = c.disabledText,
         ),
+        textStyle = ServiceLoopUiTokens.Type.body,
         modifier = modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.fieldMin),
     )
 }
@@ -218,27 +232,46 @@ fun ServiceLoopResponsivePair(first: @Composable () -> Unit, second: @Composable
 @Composable
 fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null) {
     var expanded by remember { mutableStateOf(false) }
+    var restoreCompactFocus by remember { mutableStateOf(false) }
+    val compactFocusRequester = remember { FocusRequester() }
+    var editorValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     val c = LocalServiceLoopTokens.current
     val tag = "long-text-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+    LaunchedEffect(value) {
+        if (value != editorValue.text) {
+            val cursor = editorValue.selection.end.coerceAtMost(value.length)
+            editorValue = TextFieldValue(value, TextRange(cursor))
+        }
+    }
+    val updateEditor: (TextFieldValue) -> Unit = { next -> editorValue = next; onValueChange(next.text) }
+    fun collapse() { expanded = false; restoreCompactFocus = true }
+    LaunchedEffect(expanded, restoreCompactFocus) {
+        if (!expanded && restoreCompactFocus) {
+            withFrameNanos { }
+            compactFocusRequester.requestFocus()
+            restoreCompactFocus = false
+        }
+    }
     Box(modifier.fillMaxWidth()) {
         OutlinedTextField(
-            value, onValueChange, label = { Text(label) }, minLines = 3, enabled = enabled, isError = isError,
+            editorValue, updateEditor, label = { Text(label) }, minLines = 3, enabled = enabled, isError = isError,
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk),
-            trailingIcon={ServiceLoopIconAction("Expand text editor",{expanded=true},enabled=enabled,modifier=Modifier.testTag("$tag-expand")){ExpandGlyph(Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)}},
-            modifier = Modifier.fillMaxWidth().testTag(fieldTestTag ?: tag),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, unfocusedBorderColor = c.outlineControl, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk, disabledTextColor = c.disabledText, disabledBorderColor = c.disabledContainer, disabledLabelColor = c.disabledText),
+            textStyle = ServiceLoopUiTokens.Type.body,
+            trailingIcon={ServiceLoopIconAction("Expand $label",{expanded=true},enabled=enabled,modifier=Modifier.testTag("$tag-expand")){ExpandGlyph(Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)}},
+            modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester).testTag(fieldTestTag ?: tag),
         )
     }
     if (private) Text("PRIVATE · Not included in the customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)
     if (expanded) {
-        BackHandler { expanded = false }
-        Dialog(onDismissRequest = { expanded = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        BackHandler { collapse() }
+        Dialog(onDismissRequest = { collapse() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize(), color = LocalServiceLoopTokens.current.canvas) {
                 Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(ServiceLoopUiTokens.Space.lg),horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
                     Text(label, style = MaterialTheme.typography.headlineSmall)
                     if (private) Text("PRIVATE · Not included in the customer report", color = LocalServiceLoopTokens.current.textSecondary)
-                    OutlinedTextField(value, onValueChange,textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
-                    ServiceLoopPrimaryButton("Done",{expanded=false},Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth))
+                    OutlinedTextField(editorValue, updateEditor,textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+                    ServiceLoopPrimaryButton("Done",{collapse()},Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth))
                 }
             }
         }
@@ -279,9 +312,17 @@ private fun ExpandGlyph(modifier: Modifier, color: Color) {
 fun ServiceLoopPinnedBar(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val c = LocalServiceLoopTokens.current
     Surface(modifier.fillMaxWidth(), color = c.surface, tonalElevation = ServiceLoopUiTokens.Elevation.bottomBar, shadowElevation = ServiceLoopUiTokens.Elevation.bottomBar) {
-        Column(
-            Modifier.fillMaxWidth().drawBehind{drawLine(c.outlineDecorative,Offset.Zero,Offset(size.width,0f),ServiceLoopUiTokens.Stroke.divider.toPx())}.navigationBarsPadding().padding(horizontal=ServiceLoopUiTokens.Layout.barPadding,vertical=ServiceLoopUiTokens.Space.md),
-            verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md), content = content,
-        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth().drawBehind{drawLine(c.outlineDecorative,Offset.Zero,Offset(size.width,0f),ServiceLoopUiTokens.Stroke.divider.toPx())}.navigationBarsPadding().padding(horizontal=serviceLoopPageInset(maxWidth),vertical=ServiceLoopUiTokens.Space.md),
+                verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md), content = content,
+            )
+        }
     }
+}
+
+fun serviceLoopPageInset(width: Dp): Dp = when {
+    width >= ServiceLoopUiTokens.Size.expandedThreshold -> ServiceLoopUiTokens.Layout.pageInsetExpanded
+    width >= ServiceLoopUiTokens.Size.mediumThreshold -> ServiceLoopUiTokens.Layout.pageInsetMedium
+    else -> ServiceLoopUiTokens.Layout.pageInsetCompact
 }

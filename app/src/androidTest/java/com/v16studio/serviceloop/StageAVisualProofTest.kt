@@ -6,15 +6,28 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -54,6 +67,8 @@ import com.v16studio.serviceloop.ui.DispatchVisitEditorScreen
 import com.v16studio.serviceloop.ui.InspectionScreen
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import java.io.File
 import java.time.Instant
@@ -263,5 +278,50 @@ class StageAVisualProofTest {
         File(directory, "dispatch-editor-320-light-fontscale-2.png").outputStream().use {
             assertTrue(compose.onNodeWithTag("stage-a-adaptation-proof").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
         }
+    }
+
+    @Test
+    fun foundationBusyAndExpandedEditorContractsRemainOperable() {
+        var activations = 0
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    var buffer by remember { mutableStateOf("Original") }
+                    Column(Modifier.padding(16.dp)) {
+                        ServiceLoopPrimaryButton(
+                            label = "Saving visit",
+                            onClick = { activations++ },
+                            busy = true,
+                            modifier = Modifier.fillMaxWidth().testTag("busy-contract"),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        ServiceLoopLongTextEditor(
+                            value = buffer,
+                            onValueChange = { buffer = it },
+                            label = "Issue details",
+                            private = false,
+                            fieldTestTag = "focus-contract-field",
+                        )
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("busy-contract").assertTextContains("Saving visit").assertIsNotEnabled()
+        compose.runOnIdle { assertTrue(activations == 0) }
+
+        compose.onNodeWithTag("long-text-issue-details-expand")
+            .assertContentDescriptionEquals("Expand Issue details")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        compose.onNodeWithTag("long-text-issue-details-expanded").performTextInput(" updated")
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("focus-contract-field").assertIsFocused().assertTextContains("Original updated")
+
+        compose.onNodeWithTag("long-text-issue-details-expand").performClick()
+        compose.onNodeWithTag("long-text-issue-details-expanded").performTextInput(" again")
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        compose.waitForIdle()
+        compose.onNodeWithTag("focus-contract-field").assertIsFocused().assertTextContains("Original updated again")
     }
 }
