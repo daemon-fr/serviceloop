@@ -224,7 +224,10 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel) {
         composable("dispatch/identity") { DetailScaffold("Technician identity",nav){TechnicianIdentityScreen(it)} }
         composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
         composable("dispatch/teams") { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} }
-        composable("dispatch/create") { DetailScaffold("Create work package",nav){CreateDispatchPackageScreen(it)} }
+        composable("dispatch/create") { DetailScaffold("Dispatch outbox",nav){DispatchOutboxScreen(it,nav)} }
+        composable("dispatch/visit/new") { DetailScaffold("New Dispatch Visit",nav){DispatchVisitEditorScreen(it,nav,null)} }
+        composable("dispatch/visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch Visit",nav){DispatchVisitEditorScreen(it,nav,id)} }
+        composable("dispatch/export-review") { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Export review",nav){DispatchExportReviewScreen(it,nav,ids)} }
         composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel)} }
         composable("business-profile") {
             LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
@@ -371,8 +374,9 @@ private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues
 @Composable
 private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, attention: List<com.v16studio.serviceloop.domain.AttentionItem>, nav: NavHostController, viewModel: ServiceLoopViewModel) {
     LaunchedEffect(Unit) { viewModel.loadAttention() }
-    if (home == null) return HonestPlaceholder(PaddingValues(), "Add a customer to create your first service obligation.")
+    if (home == null) { LazyColumn(contentPadding = PaddingValues(16.dp)) { item { CoordinatorHomeActions(nav) }; item { Text("Add a customer to create your first service obligation.") } }; return }
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { CoordinatorHomeActions(nav) }
         if (home.workingVisitId != null) item {
             SectionTitle("Unfinished visits · ${home.workingVisitCount}")
             AccentCard {
@@ -434,7 +438,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
             }
         }
         item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
-        item { Text("More",style=MaterialTheme.typography.titleLarge); SummaryRow("Import work package","Open"){nav.navigate("dispatch/import")}; val context=LocalContext.current; if(context.getSharedPreferences(DISPATCH_PREFS,0).getBoolean(COORDINATOR_ENABLED,false)) SummaryRow("Create work package","Open"){nav.navigate("dispatch/create")} }
+        item { Text("More",style=MaterialTheme.typography.titleLarge); SummaryRow("Import work package","Open"){nav.navigate("dispatch/import")} }
     }
 }
 
