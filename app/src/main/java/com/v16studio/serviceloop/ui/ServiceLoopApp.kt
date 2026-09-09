@@ -118,6 +118,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -551,7 +553,7 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
             var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
             Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             LongTextEditor(work, { work = it }, "Public work performed", false)
-            Button(onClick = { viewModel.savePublicWork(draft.workItemId, work) }, enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth()) { Text("Save work performed") }
+            ServiceLoopPrimaryButton("Save work performed",{ viewModel.savePublicWork(draft.workItemId, work) },enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth())
             LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
         }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
@@ -560,10 +562,10 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
             val required = draft.questions.count { it.required }; val complete = draft.questions.count { q -> q.required && when(q.responseType) { "STATUS" -> q.disposition != ResponseDisposition.NOT_CHECKED && !(q.disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) && q.reason.isNullOrBlank()); "NUMBER" -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) && !(q.disposition == ResponseDisposition.VALUE && !signedDecimal(q.numberValue.orEmpty())); else -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) } }
             val missingFinding = draft.questions.any { it.disposition == ResponseDisposition.ISSUE_FOUND && it.reason.isNullOrBlank() }
             StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Required complete $complete of $required")
-            Button(onClick = { viewModel.markChecklistReviewed(draft.workItemId) }, enabled = !draft.checklistReviewed && complete == required && !missingFinding && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" }) { Text("Mark checklist reviewed") }
+            ServiceLoopPrimaryButton("Mark checklist reviewed",{ viewModel.markChecklistReviewed(draft.workItemId) },enabled = !draft.checklistReviewed && complete == required && !missingFinding && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" })
             Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
         }
-        item { OutlinedButton(onClick = { nav.navigate("field/${draft.workItemId}") }, modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")) { Text("Parts and photographs") }; Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
+        item { ServiceLoopSecondaryButton("Parts and photographs",{ nav.navigate("field/${draft.workItemId}") },modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")); ServiceLoopPrimaryButton("Review completion",{ nav.navigate("review/${draft.visitId}") },modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) }
     }
     }
 }
@@ -597,11 +599,11 @@ private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTe
         Column(Modifier.padding(12.dp)) {
             Text("Finding details · Customer report", color = LocalServiceLoopTokens.current.warningInk, fontWeight = FontWeight.Medium)
             LongTextEditor(text,onTextChange,"Public finding description",false)
-            Button(
+            ServiceLoopPrimaryButton("Save finding",
                 onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
                 enabled = !saving && changed,
                 modifier = Modifier.fillMaxWidth().testTag("finding-save-${question.snapshotItemId}"),
-            ) { Text("Save finding") }
+            )
         }
     }
 }
@@ -609,7 +611,7 @@ private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTe
 @Composable
 private fun NotApplicableEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
     ServiceLoopLongTextEditor(text, onTextChange, "Not applicable reason", private = false, enabled = !saving, fieldTestTag = "not-applicable-reason-${question.snapshotItemId}")
-    Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}")) { Text("Save reason") }
+    ServiceLoopPrimaryButton("Save reason",{ viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}"))
 }
 
 @Composable

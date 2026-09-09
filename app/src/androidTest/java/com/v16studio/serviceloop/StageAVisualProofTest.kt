@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -181,11 +182,14 @@ class StageAVisualProofTest {
                     }
                 }
                 compose.waitUntil(5_000) { compose.onAllNodesWithText("JOB-2048", substring = true).fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithTag("dispatch-new-visit").assertHeightIsAtLeast(52.dp)
+                compose.onNodeWithTag("dispatch-status-filter").assertHeightIsAtLeast(48.dp)
                 capture("outbox-unselected-$suffix")
 
                 compose.onNodeWithTag("dispatch-select-${visitIds[0]}").performClick()
                 compose.onNodeWithTag("dispatch-select-${visitIds[1]}").performClick()
                 compose.onAllNodesWithText("2 selected").fetchSemanticsNodes()
+                compose.onNodeWithTag("dispatch-export-selected").assertHeightIsAtLeast(52.dp)
                 capture("outbox-selected-$suffix")
 
                 render(width, dark) {
@@ -195,6 +199,7 @@ class StageAVisualProofTest {
                     }
                 }
                 compose.waitUntil(5_000) { compose.onAllNodesWithText("Northside Foods").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithTag("dispatch-save-visit").assertHeightIsAtLeast(52.dp)
                 capture("dispatch-editor-$suffix")
 
                 render(width, dark) {
@@ -205,6 +210,7 @@ class StageAVisualProofTest {
                 }
                 compose.onNodeWithTag("dispatch-export-sender").performTextInput("ServiceLoop coordinator")
                 compose.waitUntil(5_000) { compose.onAllNodesWithText("First export", substring = true).fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithTag("dispatch-export-confirm").assertHeightIsAtLeast(52.dp)
                 capture("export-review-$suffix")
             }
         }
@@ -253,5 +259,9 @@ class StageAVisualProofTest {
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Northside Foods").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("dispatch-choose-site").assertIsDisplayed()
         compose.onNodeWithTag("dispatch-save-visit").assertIsDisplayed()
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "stage-a-proof")
+        File(directory, "dispatch-editor-320-light-fontscale-2.png").outputStream().use {
+            assertTrue(compose.onNodeWithTag("stage-a-adaptation-proof").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
     }
 }

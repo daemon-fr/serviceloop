@@ -117,8 +117,9 @@ class Stage3DailyOperationsUiTest {
 
     @Test fun expandedLongTextUsesSameBufferUntilExplicitSave()=runBlocking {
         compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
-        compose.onNodeWithTag("long-text-private-customer-note-expand").performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput("Unsaved long private note"); compose.onNodeWithText("Done").performClick()
-        compose.onNodeWithTag("long-text-private-customer-note").assertTextContains("Unsaved long private note"); compose.onNodeWithText("Save customer").performScrollTo().performClick(); compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; assertEquals("Unsaved long private note",repository.customer(database.serviceLoopDao().customerList().single().id)!!.privateNote); Unit
+        val longNote="Unsaved long private note that deliberately occupies enough compact-field space to exercise the reserved expand affordance region without creating a second editing buffer."
+        compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed().performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput(longNote); compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed(); compose.onNodeWithTag("long-text-private-customer-note").assertTextContains(longNote); assertEquals(0,database.serviceLoopDao().customerCount()); compose.onNodeWithText("Save customer").performScrollTo().performClick(); compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; assertEquals(longNote,repository.customer(database.serviceLoopDao().customerList().single().id)!!.privateNote); Unit
     }
 
     @Test fun globalAddEquipmentUsesSiteChooserAndRealEditor()=runBlocking {

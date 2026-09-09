@@ -52,13 +52,36 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun typographyAndGeometryMatchCanonicalTokens() {
-        assertEquals(22f,ServiceLoopUiTokens.Typography.headlineSmall.fontSize.value,0f)
-        assertEquals(28f,ServiceLoopUiTokens.Typography.headlineSmall.lineHeight.value,0f)
-        assertEquals(16f,ServiceLoopUiTokens.Typography.bodyLarge.fontSize.value,0f)
-        assertEquals(24f,ServiceLoopUiTokens.Typography.bodyLarge.lineHeight.value,0f)
-        assertEquals(48f,ServiceLoopUiTokens.Size.touchMin.value,0f)
-        assertEquals(16f,ServiceLoopUiTokens.Radius.card.value,0f)
-        assertEquals(24f,ServiceLoopUiTokens.Layout.sectionGap.value,0f)
+        fun dp(expected:Float,actual:androidx.compose.ui.unit.Dp)=assertEquals(expected,actual.value,0f)
+        listOf(0f,2f,4f,8f,12f,16f,20f,24f,32f,40f,48f).zip(listOf(ServiceLoopUiTokens.Space.none,ServiceLoopUiTokens.Space.hair,ServiceLoopUiTokens.Space.xs,ServiceLoopUiTokens.Space.sm,ServiceLoopUiTokens.Space.md,ServiceLoopUiTokens.Space.lg,ServiceLoopUiTokens.Space.xl,ServiceLoopUiTokens.Space.section,ServiceLoopUiTokens.Space.major,ServiceLoopUiTokens.Space.hero,ServiceLoopUiTokens.Space.large)).forEach{dp(it.first,it.second)}
+        listOf(8f,12f,16f,24f,999f).zip(listOf(ServiceLoopUiTokens.Radius.badge,ServiceLoopUiTokens.Radius.field,ServiceLoopUiTokens.Radius.card,ServiceLoopUiTokens.Radius.dialog,ServiceLoopUiTokens.Radius.pill)).forEach{dp(it.first,it.second)}
+        listOf(1f,1f,1.5f,2f).zip(listOf(ServiceLoopUiTokens.Stroke.divider,ServiceLoopUiTokens.Stroke.outline,ServiceLoopUiTokens.Stroke.selected,ServiceLoopUiTokens.Stroke.focus)).forEach{dp(it.first,it.second)}
+        val sizes=listOf(48f,20f,24f,32f,24f,48f,52f,64f,64f,64f,80f,64f,64f,88f,560f,560f,196f,320f,640f,840f,360f,600f,840f,480f,148f)
+        val actualSizes=listOf(ServiceLoopUiTokens.Size.touchMin,ServiceLoopUiTokens.Size.iconSmall,ServiceLoopUiTokens.Size.icon,ServiceLoopUiTokens.Size.iconLarge,ServiceLoopUiTokens.Size.checkboxGlyph,ServiceLoopUiTokens.Size.buttonMin,ServiceLoopUiTokens.Size.buttonPrimaryMin,ServiceLoopUiTokens.Size.fieldMin,ServiceLoopUiTokens.Size.pickerMin,ServiceLoopUiTokens.Size.topBarMin,ServiceLoopUiTokens.Size.bottomNavMin,ServiceLoopUiTokens.Size.listRowMin,ServiceLoopUiTokens.Size.photoThumb,ServiceLoopUiTokens.Size.photoGridMin,ServiceLoopUiTokens.Size.sheetMaxWidth,ServiceLoopUiTokens.Size.dialogMaxWidth,ServiceLoopUiTokens.Size.menuMinWidth,ServiceLoopUiTokens.Size.menuMaxWidth,ServiceLoopUiTokens.Size.formMaxWidth,ServiceLoopUiTokens.Size.contentMaxWidth,ServiceLoopUiTokens.Size.narrowThreshold,ServiceLoopUiTokens.Size.mediumThreshold,ServiceLoopUiTokens.Size.expandedThreshold,ServiceLoopUiTokens.Size.compactHeightThreshold,ServiceLoopUiTokens.Size.pairMinCellWidth)
+        sizes.zip(actualSizes).forEach{dp(it.first,it.second)}
+        val layouts=listOf(16f,24f,32f,12f,24f,8f,16f,16f,8f,160f)
+        val actualLayouts=listOf(ServiceLoopUiTokens.Layout.pageInsetCompact,ServiceLoopUiTokens.Layout.pageInsetMedium,ServiceLoopUiTokens.Layout.pageInsetExpanded,ServiceLoopUiTokens.Layout.bodyGap,ServiceLoopUiTokens.Layout.sectionGap,ServiceLoopUiTokens.Layout.buttonGap,ServiceLoopUiTokens.Layout.cardPadding,ServiceLoopUiTokens.Layout.barPadding,ServiceLoopUiTokens.Layout.pairGap,ServiceLoopUiTokens.Layout.bodyMinimumVisibleHeight)
+        layouts.zip(actualLayouts).forEach{dp(it.first,it.second)}
+        assertEquals(1.3f,ServiceLoopUiTokens.Layout.fontScaleStackThreshold,0f);assertEquals(1.5f,ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold,0f)
+        assertEquals(listOf(80,120,180,180,0,0),listOf(ServiceLoopUiTokens.Motion.pressMs,ServiceLoopUiTokens.Motion.smallMs,ServiceLoopUiTokens.Motion.containerMs,ServiceLoopUiTokens.Motion.dialogMs,ServiceLoopUiTokens.Motion.routeMs,ServiceLoopUiTokens.Motion.reducedMs))
+        assertEquals(androidx.compose.animation.core.CubicBezierEasing(.2f,0f,0f,1f).transform(.5f),ServiceLoopUiTokens.Motion.easing.transform(.5f),.0001f)
+        listOf(0f,3f,6f,0f).zip(listOf(ServiceLoopUiTokens.Elevation.rest,ServiceLoopUiTokens.Elevation.menu,ServiceLoopUiTokens.Elevation.dialog,ServiceLoopUiTokens.Elevation.bottomBar)).forEach{dp(it.first,it.second)}
+        assertEquals(listOf(.08f,.04f,.4f,.64f),listOf(ServiceLoopUiTokens.Alpha.pressed,ServiceLoopUiTokens.Alpha.hover,ServiceLoopUiTokens.Alpha.scrimLight,ServiceLoopUiTokens.Alpha.scrimDark))
+        fun type(style:androidx.compose.ui.text.TextStyle,size:Float,line:Float,weight:androidx.compose.ui.text.font.FontWeight,spacing:Float=0f){assertEquals(size,style.fontSize.value,0f);assertEquals(line,style.lineHeight.value,0f);assertEquals(weight,style.fontWeight);assertEquals(spacing,style.letterSpacing.value,0f)}
+        type(ServiceLoopUiTokens.Type.screenTitle,22f,28f,androidx.compose.ui.text.font.FontWeight.Bold);type(ServiceLoopUiTokens.Type.heroCount,32f,40f,androidx.compose.ui.text.font.FontWeight.Bold);type(ServiceLoopUiTokens.Type.sectionTitle,18f,24f,androidx.compose.ui.text.font.FontWeight.SemiBold);type(ServiceLoopUiTokens.Type.itemTitle,16f,22f,androidx.compose.ui.text.font.FontWeight.SemiBold);type(ServiceLoopUiTokens.Type.body,16f,24f,androidx.compose.ui.text.font.FontWeight.Normal);type(ServiceLoopUiTokens.Type.supporting,14f,20f,androidx.compose.ui.text.font.FontWeight.Normal);type(ServiceLoopUiTokens.Type.label,14f,20f,androidx.compose.ui.text.font.FontWeight.SemiBold);type(ServiceLoopUiTokens.Type.meta,12f,18f,androidx.compose.ui.text.font.FontWeight.Normal);type(ServiceLoopUiTokens.Type.dayHeading,12f,18f,androidx.compose.ui.text.font.FontWeight.Bold,.6f);type(ServiceLoopUiTokens.Type.button,16f,22f,androidx.compose.ui.text.font.FontWeight.SemiBold);type(ServiceLoopUiTokens.Type.identifier,14f,20f,androidx.compose.ui.text.font.FontWeight.Medium);type(ServiceLoopUiTokens.Type.badge,12f,16f,androidx.compose.ui.text.font.FontWeight.SemiBold)
+    }
+
+    @Test fun canonicalButtonContractUsesExactStateFamilies() {
+        val c=ServiceLoopUiTokens.LightColors
+        assertEquals(12f,ServiceLoopButtonContract.radius.value,0f);assertEquals(20f,ServiceLoopButtonContract.horizontalPadding.value,0f);assertEquals(12f,ServiceLoopButtonContract.verticalPadding.value,0f)
+        assertEquals(52f,ServiceLoopButtonContract.primaryMinHeight.value,0f);assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusWidth.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusGap.value,0f)
+        assertEquals(c.action,ServiceLoopButtonContract.primaryContainer(c,true,false));assertEquals(c.actionPressed,ServiceLoopButtonContract.primaryContainer(c,true,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.primaryContainer(c,false,false));assertEquals(c.onAction,ServiceLoopButtonContract.primaryInk(c,true));assertEquals(c.disabledText,ServiceLoopButtonContract.primaryInk(c,false))
+        assertEquals(c.surface,ServiceLoopButtonContract.secondaryContainer(c,true));assertEquals(c.action,ServiceLoopButtonContract.secondaryInk(c,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.secondaryContainer(c,false));assertEquals(c.disabledText,ServiceLoopButtonContract.secondaryInk(c,false));assertEquals(ServiceLoopUiTokens.Type.button,ServiceLoopButtonContract.textStyle)
+    }
+
+    @Test fun unknownStateIsUnavailableAndUsesErrorFamily() {
+        val c=ServiceLoopUiTokens.LightColors;val state=serviceLoopStateStyle("SOMETHING_NEW",c)
+        assertEquals("State unavailable",state.label);assertEquals(ServiceLoopVisualState.Error,state.state);assertEquals(c.errorContainer,state.container);assertEquals(c.errorInk,state.ink)
     }
 
     @Test fun selectionAndLifecycleStatusRemainIndependent() {
