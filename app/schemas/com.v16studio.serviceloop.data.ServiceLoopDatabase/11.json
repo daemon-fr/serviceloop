@@ -1,0 +1,4808 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 11,
+    "identityHash": "fbf8ad45a185f9822467de315d18170b",
+    "entities": [
+      {
+        "tableName": "customers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `contactName` TEXT, `phone` TEXT, `email` TEXT, `privateNote` TEXT, `state` TEXT NOT NULL DEFAULT 'ACTIVE', PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactName",
+            "columnName": "contactName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateNote",
+            "columnName": "privateNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_customers_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_customers_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sites",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `customerId` TEXT NOT NULL, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `address` TEXT, `privateAccessNotes` TEXT, `contactName` TEXT, `phone` TEXT, `email` TEXT, `isDefault` INTEGER NOT NULL DEFAULT 0, `state` TEXT NOT NULL DEFAULT 'ACTIVE', PRIMARY KEY(`id`), FOREIGN KEY(`customerId`) REFERENCES `customers`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerId",
+            "columnName": "customerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateAccessNotes",
+            "columnName": "privateAccessNotes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contactName",
+            "columnName": "contactName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "isDefault",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sites_customerId",
+            "unique": false,
+            "columnNames": [
+              "customerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sites_customerId` ON `${TABLE_NAME}` (`customerId`)"
+          },
+          {
+            "name": "index_sites_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sites_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "customers",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "customerId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "equipment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `siteId` TEXT NOT NULL, `reference` TEXT NOT NULL, `technicianIdentifier` TEXT, `name` TEXT NOT NULL, `make` TEXT, `model` TEXT, `serialNumber` TEXT, `privateNotes` TEXT, `state` TEXT NOT NULL DEFAULT 'ACTIVE', PRIMARY KEY(`id`), FOREIGN KEY(`siteId`) REFERENCES `sites`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianIdentifier",
+            "columnName": "technicianIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "make",
+            "columnName": "make",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serialNumber",
+            "columnName": "serialNumber",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateNotes",
+            "columnName": "privateNotes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_equipment_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_equipment_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          },
+          {
+            "name": "index_equipment_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_equipment_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sites",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "siteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "service_plans",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `equipmentId` TEXT NOT NULL, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `intervalCount` INTEGER NOT NULL, `intervalUnit` TEXT NOT NULL, `currentDueDate` TEXT NOT NULL, `state` TEXT NOT NULL, `currentObligationId` TEXT, `lastCountedCompletionDate` TEXT, `lastCountedRevisionId` TEXT, `reusableTemplateId` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intervalCount",
+            "columnName": "intervalCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intervalUnit",
+            "columnName": "intervalUnit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentDueDate",
+            "columnName": "currentDueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentObligationId",
+            "columnName": "currentObligationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastCountedCompletionDate",
+            "columnName": "lastCountedCompletionDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastCountedRevisionId",
+            "columnName": "lastCountedRevisionId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reusableTemplateId",
+            "columnName": "reusableTemplateId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_service_plans_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_service_plans_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_service_plans_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_service_plans_reference` ON `${TABLE_NAME}` (`reference`)"
+          },
+          {
+            "name": "index_service_plans_currentObligationId",
+            "unique": true,
+            "columnNames": [
+              "currentObligationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_service_plans_currentObligationId` ON `${TABLE_NAME}` (`currentObligationId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "equipment",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "equipmentId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "service_obligations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `planId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `dueDate` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `consumedAtEpochMillis` INTEGER, `consumedByRevisionId` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`planId`) REFERENCES `service_plans`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planId",
+            "columnName": "planId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDate",
+            "columnName": "dueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consumedAtEpochMillis",
+            "columnName": "consumedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "consumedByRevisionId",
+            "columnName": "consumedByRevisionId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_service_obligations_planId",
+            "unique": false,
+            "columnNames": [
+              "planId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_service_obligations_planId` ON `${TABLE_NAME}` (`planId`)"
+          },
+          {
+            "name": "index_service_obligations_planId_sequence",
+            "unique": true,
+            "columnNames": [
+              "planId",
+              "sequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_service_obligations_planId_sequence` ON `${TABLE_NAME}` (`planId`, `sequence`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "service_plans",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "planId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "template_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sourceTemplateId` TEXT, `templateName` TEXT NOT NULL, `revision` INTEGER NOT NULL, `capturedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceTemplateId",
+            "columnName": "sourceTemplateId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "templateName",
+            "columnName": "templateName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMillis",
+            "columnName": "capturedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "checklist_item_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `templateSnapshotId` TEXT NOT NULL, `position` INTEGER NOT NULL, `label` TEXT NOT NULL, `responseType` TEXT NOT NULL, `unit` TEXT, `required` INTEGER NOT NULL, `privateGuidance` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`templateSnapshotId`) REFERENCES `template_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "templateSnapshotId",
+            "columnName": "templateSnapshotId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "responseType",
+            "columnName": "responseType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "required",
+            "columnName": "required",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privateGuidance",
+            "columnName": "privateGuidance",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_checklist_item_snapshots_templateSnapshotId",
+            "unique": false,
+            "columnNames": [
+              "templateSnapshotId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_checklist_item_snapshots_templateSnapshotId` ON `${TABLE_NAME}` (`templateSnapshotId`)"
+          },
+          {
+            "name": "index_checklist_item_snapshots_templateSnapshotId_position",
+            "unique": true,
+            "columnNames": [
+              "templateSnapshotId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_checklist_item_snapshots_templateSnapshotId_position` ON `${TABLE_NAME}` (`templateSnapshotId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "template_snapshots",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "templateSnapshotId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "working_visits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `reference` TEXT NOT NULL, `customerId` TEXT NOT NULL, `siteId` TEXT NOT NULL, `actualServiceDate` TEXT NOT NULL, `customerNameSnapshot` TEXT NOT NULL, `siteNameSnapshot` TEXT NOT NULL, `siteAddressSnapshot` TEXT, `state` TEXT NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, `customerReferenceSnapshot` TEXT, `siteReferenceSnapshot` TEXT, `reportBusinessNameSnapshot` TEXT, `reportTechnicianNameSnapshot` TEXT, `reportPhoneSnapshot` TEXT, `reportEmailSnapshot` TEXT, `reportPostalAddressSnapshot` TEXT, `reportZoneIdSnapshot` TEXT, `scheduledAtEpochMillis` INTEGER, `appointmentZoneId` TEXT, `scheduleChangeReason` TEXT, `cancellationReason` TEXT, `cancelledAtEpochMillis` INTEGER, `appointmentReminderLeadMinutes` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`customerId`) REFERENCES `customers`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`siteId`) REFERENCES `sites`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerId",
+            "columnName": "customerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualServiceDate",
+            "columnName": "actualServiceDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerNameSnapshot",
+            "columnName": "customerNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteNameSnapshot",
+            "columnName": "siteNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteAddressSnapshot",
+            "columnName": "siteAddressSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerReferenceSnapshot",
+            "columnName": "customerReferenceSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "siteReferenceSnapshot",
+            "columnName": "siteReferenceSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportBusinessNameSnapshot",
+            "columnName": "reportBusinessNameSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportTechnicianNameSnapshot",
+            "columnName": "reportTechnicianNameSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportPhoneSnapshot",
+            "columnName": "reportPhoneSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportEmailSnapshot",
+            "columnName": "reportEmailSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportPostalAddressSnapshot",
+            "columnName": "reportPostalAddressSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reportZoneIdSnapshot",
+            "columnName": "reportZoneIdSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scheduledAtEpochMillis",
+            "columnName": "scheduledAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "appointmentZoneId",
+            "columnName": "appointmentZoneId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scheduleChangeReason",
+            "columnName": "scheduleChangeReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cancellationReason",
+            "columnName": "cancellationReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cancelledAtEpochMillis",
+            "columnName": "cancelledAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "appointmentReminderLeadMinutes",
+            "columnName": "appointmentReminderLeadMinutes",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_working_visits_customerId",
+            "unique": false,
+            "columnNames": [
+              "customerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_working_visits_customerId` ON `${TABLE_NAME}` (`customerId`)"
+          },
+          {
+            "name": "index_working_visits_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_working_visits_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          },
+          {
+            "name": "index_working_visits_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_working_visits_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "customers",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "customerId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "sites",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "siteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "work_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `visitId` TEXT NOT NULL, `equipmentId` TEXT NOT NULL, `servicePlanId` TEXT, `capturedObligationId` TEXT, `templateSnapshotId` TEXT, `equipmentNameSnapshot` TEXT NOT NULL, `equipmentReferenceSnapshot` TEXT NOT NULL, `serviceNameSnapshot` TEXT NOT NULL, `planReferenceSnapshot` TEXT, `dueDateSnapshot` TEXT, `intervalCountSnapshot` INTEGER, `intervalUnitSnapshot` TEXT, `checklistReviewed` INTEGER NOT NULL, `outcome` TEXT, `fulfillsCurrentObligation` INTEGER, `notPerformedReason` TEXT, `confirmedNextDueDate` TEXT, `nextDueDateCalculated` INTEGER, `nextDueOverrideReason` TEXT, `equipmentIdentifierSnapshot` TEXT, `equipmentMakeSnapshot` TEXT, `equipmentModelSnapshot` TEXT, `equipmentSerialSnapshot` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`visitId`) REFERENCES `working_visits`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`servicePlanId`) REFERENCES `service_plans`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`capturedObligationId`) REFERENCES `service_obligations`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`templateSnapshotId`) REFERENCES `template_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "servicePlanId",
+            "columnName": "servicePlanId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "capturedObligationId",
+            "columnName": "capturedObligationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "templateSnapshotId",
+            "columnName": "templateSnapshotId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentNameSnapshot",
+            "columnName": "equipmentNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentReferenceSnapshot",
+            "columnName": "equipmentReferenceSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serviceNameSnapshot",
+            "columnName": "serviceNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planReferenceSnapshot",
+            "columnName": "planReferenceSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueDateSnapshot",
+            "columnName": "dueDateSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "intervalCountSnapshot",
+            "columnName": "intervalCountSnapshot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "intervalUnitSnapshot",
+            "columnName": "intervalUnitSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "checklistReviewed",
+            "columnName": "checklistReviewed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fulfillsCurrentObligation",
+            "columnName": "fulfillsCurrentObligation",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "notPerformedReason",
+            "columnName": "notPerformedReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confirmedNextDueDate",
+            "columnName": "confirmedNextDueDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextDueDateCalculated",
+            "columnName": "nextDueDateCalculated",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextDueOverrideReason",
+            "columnName": "nextDueOverrideReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentIdentifierSnapshot",
+            "columnName": "equipmentIdentifierSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentMakeSnapshot",
+            "columnName": "equipmentMakeSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentModelSnapshot",
+            "columnName": "equipmentModelSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentSerialSnapshot",
+            "columnName": "equipmentSerialSnapshot",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_work_items_visitId",
+            "unique": false,
+            "columnNames": [
+              "visitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_work_items_visitId` ON `${TABLE_NAME}` (`visitId`)"
+          },
+          {
+            "name": "index_work_items_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_work_items_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_work_items_servicePlanId",
+            "unique": false,
+            "columnNames": [
+              "servicePlanId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_work_items_servicePlanId` ON `${TABLE_NAME}` (`servicePlanId`)"
+          },
+          {
+            "name": "index_work_items_capturedObligationId",
+            "unique": false,
+            "columnNames": [
+              "capturedObligationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_work_items_capturedObligationId` ON `${TABLE_NAME}` (`capturedObligationId`)"
+          },
+          {
+            "name": "index_work_items_templateSnapshotId",
+            "unique": false,
+            "columnNames": [
+              "templateSnapshotId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_work_items_templateSnapshotId` ON `${TABLE_NAME}` (`templateSnapshotId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "working_visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "equipment",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "equipmentId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "service_plans",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "servicePlanId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "service_obligations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "capturedObligationId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "template_snapshots",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "templateSnapshotId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "work_item_public_drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workItemId` TEXT NOT NULL, `workPerformed` TEXT NOT NULL, PRIMARY KEY(`workItemId`), FOREIGN KEY(`workItemId`) REFERENCES `work_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "workItemId",
+            "columnName": "workItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workPerformed",
+            "columnName": "workPerformed",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "workItemId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "work_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "work_item_private_drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workItemId` TEXT NOT NULL, `internalNote` TEXT NOT NULL, PRIMARY KEY(`workItemId`), FOREIGN KEY(`workItemId`) REFERENCES `work_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "workItemId",
+            "columnName": "workItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "internalNote",
+            "columnName": "internalNote",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "workItemId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "work_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "working_responses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `workItemId` TEXT NOT NULL, `checklistItemSnapshotId` TEXT NOT NULL, `disposition` TEXT NOT NULL, `textValue` TEXT, `numberValue` TEXT, `reason` TEXT, `modifiedAtEpochMillis` INTEGER NOT NULL, `issueFoundReasonDraft` TEXT, `notApplicableReasonDraft` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`workItemId`) REFERENCES `work_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`checklistItemSnapshotId`) REFERENCES `checklist_item_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workItemId",
+            "columnName": "workItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "checklistItemSnapshotId",
+            "columnName": "checklistItemSnapshotId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disposition",
+            "columnName": "disposition",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "textValue",
+            "columnName": "textValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "numberValue",
+            "columnName": "numberValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issueFoundReasonDraft",
+            "columnName": "issueFoundReasonDraft",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notApplicableReasonDraft",
+            "columnName": "notApplicableReasonDraft",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_working_responses_workItemId",
+            "unique": false,
+            "columnNames": [
+              "workItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_working_responses_workItemId` ON `${TABLE_NAME}` (`workItemId`)"
+          },
+          {
+            "name": "index_working_responses_checklistItemSnapshotId",
+            "unique": false,
+            "columnNames": [
+              "checklistItemSnapshotId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_working_responses_checklistItemSnapshotId` ON `${TABLE_NAME}` (`checklistItemSnapshotId`)"
+          },
+          {
+            "name": "index_working_responses_workItemId_checklistItemSnapshotId",
+            "unique": true,
+            "columnNames": [
+              "workItemId",
+              "checklistItemSnapshotId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_working_responses_workItemId_checklistItemSnapshotId` ON `${TABLE_NAME}` (`workItemId`, `checklistItemSnapshotId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "work_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "checklist_item_snapshots",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "checklistItemSnapshotId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "attachments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `ownerType` TEXT NOT NULL, `ownerId` TEXT NOT NULL, `storedRelativePath` TEXT NOT NULL, `sha256` TEXT NOT NULL, `originalDisplayName` TEXT, `mimeType` TEXT NOT NULL, `includedInCustomerReport` INTEGER NOT NULL, `availability` TEXT NOT NULL, `byteSize` INTEGER NOT NULL, `caption` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerType",
+            "columnName": "ownerType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerId",
+            "columnName": "ownerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedRelativePath",
+            "columnName": "storedRelativePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalDisplayName",
+            "columnName": "originalDisplayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includedInCustomerReport",
+            "columnName": "includedInCustomerReport",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "availability",
+            "columnName": "availability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byteSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caption",
+            "columnName": "caption",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_attachments_storedRelativePath",
+            "unique": true,
+            "columnNames": [
+              "storedRelativePath"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_attachments_storedRelativePath` ON `${TABLE_NAME}` (`storedRelativePath`)"
+          },
+          {
+            "name": "index_attachments_ownerType_ownerId",
+            "unique": false,
+            "columnNames": [
+              "ownerType",
+              "ownerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_attachments_ownerType_ownerId` ON `${TABLE_NAME}` (`ownerType`, `ownerId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "follow_ups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `reference` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `dueDate` TEXT NOT NULL, `state` TEXT NOT NULL, `customerId` TEXT NOT NULL, `siteId` TEXT, `equipmentId` TEXT, `privatePlanningNote` TEXT, `sourceVisitId` TEXT, `sourceWorkItemId` TEXT, `updatedAtEpochMillis` INTEGER NOT NULL, `closedAtEpochMillis` INTEGER, `closureReason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`customerId`) REFERENCES `customers`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`siteId`) REFERENCES `sites`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDate",
+            "columnName": "dueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerId",
+            "columnName": "customerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privatePlanningNote",
+            "columnName": "privatePlanningNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceVisitId",
+            "columnName": "sourceVisitId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceWorkItemId",
+            "columnName": "sourceWorkItemId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closedAtEpochMillis",
+            "columnName": "closedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "closureReason",
+            "columnName": "closureReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_follow_ups_customerId",
+            "unique": false,
+            "columnNames": [
+              "customerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_follow_ups_customerId` ON `${TABLE_NAME}` (`customerId`)"
+          },
+          {
+            "name": "index_follow_ups_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_follow_ups_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          },
+          {
+            "name": "index_follow_ups_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_follow_ups_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_follow_ups_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_follow_ups_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "customers",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "customerId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "sites",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "siteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "equipment",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "equipmentId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "business_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `businessName` TEXT NOT NULL, `technicianName` TEXT NOT NULL, `phone` TEXT, `email` TEXT, `postalAddress` TEXT, `zoneId` TEXT NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessName",
+            "columnName": "businessName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianName",
+            "columnName": "technicianName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "postalAddress",
+            "columnName": "postalAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "final_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `visitId` TEXT NOT NULL, `currentRevisionId` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `voided` INTEGER NOT NULL DEFAULT 0, `voidedAtEpochMillis` INTEGER, `publicVoidReason` TEXT, `privateVoidReason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`visitId`) REFERENCES `working_visits`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentRevisionId",
+            "columnName": "currentRevisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voided",
+            "columnName": "voided",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "voidedAtEpochMillis",
+            "columnName": "voidedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "publicVoidReason",
+            "columnName": "publicVoidReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateVoidReason",
+            "columnName": "privateVoidReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_records_visitId",
+            "unique": true,
+            "columnNames": [
+              "visitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_final_records_visitId` ON `${TABLE_NAME}` (`visitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "working_visits",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_record_revisions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `recordId` TEXT NOT NULL, `revisionNumber` INTEGER NOT NULL, `visitReference` TEXT NOT NULL, `actualServiceDate` TEXT NOT NULL, `recordedAtEpochMillis` INTEGER NOT NULL, `customerName` TEXT NOT NULL, `siteName` TEXT NOT NULL, `siteAddress` TEXT, `businessName` TEXT NOT NULL, `technicianName` TEXT NOT NULL, `businessPhone` TEXT, `businessEmail` TEXT, `businessAddress` TEXT, `businessZoneId` TEXT NOT NULL, `privateInternalNote` TEXT, `customerReference` TEXT, `siteReference` TEXT, `supersedesRevisionId` TEXT, `correctionReason` TEXT, `publicNote` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`recordId`) REFERENCES `final_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "recordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionNumber",
+            "columnName": "revisionNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitReference",
+            "columnName": "visitReference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualServiceDate",
+            "columnName": "actualServiceDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtEpochMillis",
+            "columnName": "recordedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerName",
+            "columnName": "customerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteName",
+            "columnName": "siteName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteAddress",
+            "columnName": "siteAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "businessName",
+            "columnName": "businessName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianName",
+            "columnName": "technicianName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessPhone",
+            "columnName": "businessPhone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "businessEmail",
+            "columnName": "businessEmail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "businessAddress",
+            "columnName": "businessAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "businessZoneId",
+            "columnName": "businessZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privateInternalNote",
+            "columnName": "privateInternalNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customerReference",
+            "columnName": "customerReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "siteReference",
+            "columnName": "siteReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supersedesRevisionId",
+            "columnName": "supersedesRevisionId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "correctionReason",
+            "columnName": "correctionReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "publicNote",
+            "columnName": "publicNote",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_record_revisions_recordId_revisionNumber",
+            "unique": true,
+            "columnNames": [
+              "recordId",
+              "revisionNumber"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_final_record_revisions_recordId_revisionNumber` ON `${TABLE_NAME}` (`recordId`, `revisionNumber`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_records",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recordId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_work_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revisionId` TEXT NOT NULL, `position` INTEGER NOT NULL, `sourceWorkItemId` TEXT NOT NULL, `equipmentId` TEXT NOT NULL, `equipmentName` TEXT NOT NULL, `equipmentReference` TEXT NOT NULL, `equipmentIdentifier` TEXT, `equipmentMake` TEXT, `equipmentModel` TEXT, `equipmentSerial` TEXT, `serviceName` TEXT NOT NULL, `planId` TEXT, `planReference` TEXT, `outcome` TEXT NOT NULL, `publicWorkNote` TEXT, `notPerformedReason` TEXT, `fulfilledObligation` INTEGER NOT NULL, `oldDueDate` TEXT, `nextDueDate` TEXT, `intervalCount` INTEGER, `intervalUnit` TEXT, `capturedObligationId` TEXT, `privateInternalNote` TEXT, `nextDueDateCalculated` INTEGER, `nextDueOverrideReason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`revisionId`) REFERENCES `final_record_revisions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionId",
+            "columnName": "revisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceWorkItemId",
+            "columnName": "sourceWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentName",
+            "columnName": "equipmentName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentReference",
+            "columnName": "equipmentReference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentIdentifier",
+            "columnName": "equipmentIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentMake",
+            "columnName": "equipmentMake",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentModel",
+            "columnName": "equipmentModel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentSerial",
+            "columnName": "equipmentSerial",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serviceName",
+            "columnName": "serviceName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planId",
+            "columnName": "planId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "planReference",
+            "columnName": "planReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicWorkNote",
+            "columnName": "publicWorkNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notPerformedReason",
+            "columnName": "notPerformedReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fulfilledObligation",
+            "columnName": "fulfilledObligation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldDueDate",
+            "columnName": "oldDueDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextDueDate",
+            "columnName": "nextDueDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "intervalCount",
+            "columnName": "intervalCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "intervalUnit",
+            "columnName": "intervalUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "capturedObligationId",
+            "columnName": "capturedObligationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateInternalNote",
+            "columnName": "privateInternalNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextDueDateCalculated",
+            "columnName": "nextDueDateCalculated",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextDueOverrideReason",
+            "columnName": "nextDueOverrideReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_work_items_revisionId",
+            "unique": false,
+            "columnNames": [
+              "revisionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_work_items_revisionId` ON `${TABLE_NAME}` (`revisionId`)"
+          },
+          {
+            "name": "index_final_work_items_revisionId_position",
+            "unique": true,
+            "columnNames": [
+              "revisionId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_final_work_items_revisionId_position` ON `${TABLE_NAME}` (`revisionId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_record_revisions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "revisionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_checklist_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `finalWorkItemId` TEXT NOT NULL, `position` INTEGER NOT NULL, `templateSnapshotId` TEXT, `templateRevision` INTEGER, `label` TEXT NOT NULL, `responseType` TEXT NOT NULL, `unit` TEXT, `required` INTEGER NOT NULL, `disposition` TEXT NOT NULL, `textValue` TEXT, `numberValue` TEXT, `reason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`finalWorkItemId`) REFERENCES `final_work_items`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalWorkItemId",
+            "columnName": "finalWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "templateSnapshotId",
+            "columnName": "templateSnapshotId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "templateRevision",
+            "columnName": "templateRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "responseType",
+            "columnName": "responseType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "required",
+            "columnName": "required",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disposition",
+            "columnName": "disposition",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "textValue",
+            "columnName": "textValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "numberValue",
+            "columnName": "numberValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_checklist_items_finalWorkItemId",
+            "unique": false,
+            "columnNames": [
+              "finalWorkItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_checklist_items_finalWorkItemId` ON `${TABLE_NAME}` (`finalWorkItemId`)"
+          },
+          {
+            "name": "index_final_checklist_items_finalWorkItemId_position",
+            "unique": true,
+            "columnNames": [
+              "finalWorkItemId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_final_checklist_items_finalWorkItemId_position` ON `${TABLE_NAME}` (`finalWorkItemId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_work_items",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "finalWorkItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "report_renditions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revisionId` TEXT NOT NULL, `versionNumber` INTEGER NOT NULL, `generatedAtEpochMillis` INTEGER, `relativePath` TEXT NOT NULL, `sha256` TEXT, `byteSize` INTEGER, `pageCount` INTEGER, `status` TEXT NOT NULL, `kind` TEXT NOT NULL, `failureMessage` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`revisionId`) REFERENCES `final_record_revisions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionId",
+            "columnName": "revisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "versionNumber",
+            "columnName": "versionNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatedAtEpochMillis",
+            "columnName": "generatedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "relativePath",
+            "columnName": "relativePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byteSize",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pageCount",
+            "columnName": "pageCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureMessage",
+            "columnName": "failureMessage",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_report_renditions_revisionId_versionNumber",
+            "unique": true,
+            "columnNames": [
+              "revisionId",
+              "versionNumber"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_report_renditions_revisionId_versionNumber` ON `${TABLE_NAME}` (`revisionId`, `versionNumber`)"
+          },
+          {
+            "name": "index_report_renditions_relativePath",
+            "unique": true,
+            "columnNames": [
+              "relativePath"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_report_renditions_relativePath` ON `${TABLE_NAME}` (`relativePath`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_record_revisions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "revisionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reusable_templates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `currentRevisionId` TEXT NOT NULL, `state` TEXT NOT NULL DEFAULT 'ACTIVE', `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentRevisionId",
+            "columnName": "currentRevisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reusable_templates_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reusable_templates_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ]
+      },
+      {
+        "tableName": "reusable_template_revisions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `templateId` TEXT NOT NULL, `revisionNumber` INTEGER NOT NULL, `nameSnapshot` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`templateId`) REFERENCES `reusable_templates`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "templateId",
+            "columnName": "templateId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionNumber",
+            "columnName": "revisionNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameSnapshot",
+            "columnName": "nameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reusable_template_revisions_templateId",
+            "unique": false,
+            "columnNames": [
+              "templateId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reusable_template_revisions_templateId` ON `${TABLE_NAME}` (`templateId`)"
+          },
+          {
+            "name": "index_reusable_template_revisions_templateId_revisionNumber",
+            "unique": true,
+            "columnNames": [
+              "templateId",
+              "revisionNumber"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reusable_template_revisions_templateId_revisionNumber` ON `${TABLE_NAME}` (`templateId`, `revisionNumber`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "reusable_templates",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "templateId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reusable_template_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revisionId` TEXT NOT NULL, `position` INTEGER NOT NULL, `label` TEXT NOT NULL, `responseType` TEXT NOT NULL, `unit` TEXT, `required` INTEGER NOT NULL, `privateGuidance` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`revisionId`) REFERENCES `reusable_template_revisions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionId",
+            "columnName": "revisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "responseType",
+            "columnName": "responseType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "required",
+            "columnName": "required",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privateGuidance",
+            "columnName": "privateGuidance",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reusable_template_items_revisionId",
+            "unique": false,
+            "columnNames": [
+              "revisionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reusable_template_items_revisionId` ON `${TABLE_NAME}` (`revisionId`)"
+          },
+          {
+            "name": "index_reusable_template_items_revisionId_position",
+            "unique": true,
+            "columnNames": [
+              "revisionId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reusable_template_items_revisionId_position` ON `${TABLE_NAME}` (`revisionId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "reusable_template_revisions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "revisionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "contact_notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `reference` TEXT NOT NULL, `customerId` TEXT NOT NULL, `siteId` TEXT, `equipmentId` TEXT, `channel` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `outcome` TEXT NOT NULL, `privateNote` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `editedAtEpochMillis` INTEGER, `enteredInError` INTEGER NOT NULL DEFAULT 0, `errorReason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`customerId`) REFERENCES `customers`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerId",
+            "columnName": "customerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "channel",
+            "columnName": "channel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privateNote",
+            "columnName": "privateNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "editedAtEpochMillis",
+            "columnName": "editedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "enteredInError",
+            "columnName": "enteredInError",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "errorReason",
+            "columnName": "errorReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_contact_notes_customerId",
+            "unique": false,
+            "columnNames": [
+              "customerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_notes_customerId` ON `${TABLE_NAME}` (`customerId`)"
+          },
+          {
+            "name": "index_contact_notes_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_notes_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          },
+          {
+            "name": "index_contact_notes_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_notes_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_contact_notes_reference",
+            "unique": true,
+            "columnNames": [
+              "reference"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_contact_notes_reference` ON `${TABLE_NAME}` (`reference`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "customers",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "customerId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "follow_up_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `followUpId` TEXT NOT NULL, `eventType` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `reason` TEXT NOT NULL, `dueDate` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`followUpId`) REFERENCES `follow_ups`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "followUpId",
+            "columnName": "followUpId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDate",
+            "columnName": "dueDate",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_follow_up_events_followUpId",
+            "unique": false,
+            "columnNames": [
+              "followUpId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_follow_up_events_followUpId` ON `${TABLE_NAME}` (`followUpId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "follow_ups",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "followUpId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "part_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `workItemId` TEXT NOT NULL, `description` TEXT NOT NULL, `quantity` TEXT NOT NULL, `unit` TEXT NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`workItemId`) REFERENCES `work_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workItemId",
+            "columnName": "workItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_part_entries_workItemId",
+            "unique": false,
+            "columnNames": [
+              "workItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_part_entries_workItemId` ON `${TABLE_NAME}` (`workItemId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "work_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "visit_claims",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`obligationId` TEXT NOT NULL, `visitId` TEXT NOT NULL, `claimedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`obligationId`), FOREIGN KEY(`obligationId`) REFERENCES `service_obligations`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`visitId`) REFERENCES `working_visits`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "obligationId",
+            "columnName": "obligationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimedAtEpochMillis",
+            "columnName": "claimedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "obligationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_visit_claims_visitId_obligationId",
+            "unique": true,
+            "columnNames": [
+              "visitId",
+              "obligationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_visit_claims_visitId_obligationId` ON `${TABLE_NAME}` (`visitId`, `obligationId`)"
+          },
+          {
+            "name": "index_visit_claims_visitId",
+            "unique": false,
+            "columnNames": [
+              "visitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_claims_visitId` ON `${TABLE_NAME}` (`visitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "service_obligations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "obligationId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "working_visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_part_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `finalWorkItemId` TEXT NOT NULL, `position` INTEGER NOT NULL, `description` TEXT NOT NULL, `quantity` TEXT NOT NULL, `unit` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`finalWorkItemId`) REFERENCES `final_work_items`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalWorkItemId",
+            "columnName": "finalWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_part_entries_finalWorkItemId",
+            "unique": false,
+            "columnNames": [
+              "finalWorkItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_part_entries_finalWorkItemId` ON `${TABLE_NAME}` (`finalWorkItemId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_work_items",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "finalWorkItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_photo_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `finalWorkItemId` TEXT NOT NULL, `position` INTEGER NOT NULL, `sourceAttachmentId` TEXT NOT NULL, `storedRelativePath` TEXT NOT NULL, `sha256` TEXT NOT NULL, `byteSize` INTEGER NOT NULL, `mimeType` TEXT NOT NULL, `caption` TEXT, `addedInCorrection` INTEGER NOT NULL, `addedAtEpochMillis` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`finalWorkItemId`) REFERENCES `final_work_items`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalWorkItemId",
+            "columnName": "finalWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceAttachmentId",
+            "columnName": "sourceAttachmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedRelativePath",
+            "columnName": "storedRelativePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byteSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caption",
+            "columnName": "caption",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "addedInCorrection",
+            "columnName": "addedInCorrection",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAtEpochMillis",
+            "columnName": "addedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_photo_entries_finalWorkItemId",
+            "unique": false,
+            "columnNames": [
+              "finalWorkItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_photo_entries_finalWorkItemId` ON `${TABLE_NAME}` (`finalWorkItemId`)"
+          },
+          {
+            "name": "index_final_photo_entries_sourceAttachmentId",
+            "unique": false,
+            "columnNames": [
+              "sourceAttachmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_photo_entries_sourceAttachmentId` ON `${TABLE_NAME}` (`sourceAttachmentId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_work_items",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "finalWorkItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "plan_schedule_changes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `planId` TEXT NOT NULL, `oldDueDate` TEXT NOT NULL, `newDueDate` TEXT NOT NULL, `reason` TEXT NOT NULL, `changedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`planId`) REFERENCES `service_plans`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planId",
+            "columnName": "planId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldDueDate",
+            "columnName": "oldDueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newDueDate",
+            "columnName": "newDueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changedAtEpochMillis",
+            "columnName": "changedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_plan_schedule_changes_planId",
+            "unique": false,
+            "columnNames": [
+              "planId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_plan_schedule_changes_planId` ON `${TABLE_NAME}` (`planId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "service_plans",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "planId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "visit_schedule_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `visitId` TEXT NOT NULL, `eventType` TEXT NOT NULL, `oldServiceDate` TEXT NOT NULL, `newServiceDate` TEXT, `oldScheduledAtEpochMillis` INTEGER, `newScheduledAtEpochMillis` INTEGER, `reason` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`visitId`) REFERENCES `working_visits`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldServiceDate",
+            "columnName": "oldServiceDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newServiceDate",
+            "columnName": "newServiceDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "oldScheduledAtEpochMillis",
+            "columnName": "oldScheduledAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "newScheduledAtEpochMillis",
+            "columnName": "newScheduledAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_visit_schedule_events_visitId",
+            "unique": false,
+            "columnNames": [
+              "visitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_schedule_events_visitId` ON `${TABLE_NAME}` (`visitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "working_visits",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "correction_drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `recordId` TEXT NOT NULL, `baseRevisionId` TEXT NOT NULL, `reason` TEXT NOT NULL, `actualServiceDate` TEXT NOT NULL, `customerName` TEXT NOT NULL, `siteName` TEXT NOT NULL, `siteAddress` TEXT, `businessName` TEXT NOT NULL, `technicianName` TEXT NOT NULL, `publicNote` TEXT, `privateNote` TEXT, `scheduleAcknowledged` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, `commitToken` TEXT NOT NULL, `followUpEffectsJson` TEXT NOT NULL, `newFollowUpsJson` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`recordId`) REFERENCES `final_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`baseRevisionId`) REFERENCES `final_record_revisions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "recordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseRevisionId",
+            "columnName": "baseRevisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualServiceDate",
+            "columnName": "actualServiceDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customerName",
+            "columnName": "customerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteName",
+            "columnName": "siteName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteAddress",
+            "columnName": "siteAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "businessName",
+            "columnName": "businessName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianName",
+            "columnName": "technicianName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicNote",
+            "columnName": "publicNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateNote",
+            "columnName": "privateNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scheduleAcknowledged",
+            "columnName": "scheduleAcknowledged",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commitToken",
+            "columnName": "commitToken",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "followUpEffectsJson",
+            "columnName": "followUpEffectsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newFollowUpsJson",
+            "columnName": "newFollowUpsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_correction_drafts_recordId",
+            "unique": true,
+            "columnNames": [
+              "recordId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_correction_drafts_recordId` ON `${TABLE_NAME}` (`recordId`)"
+          },
+          {
+            "name": "index_correction_drafts_baseRevisionId",
+            "unique": false,
+            "columnNames": [
+              "baseRevisionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_correction_drafts_baseRevisionId` ON `${TABLE_NAME}` (`baseRevisionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_records",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "recordId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "final_record_revisions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "baseRevisionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "correction_work_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `draftId` TEXT NOT NULL, `sourceFinalWorkItemId` TEXT NOT NULL, `position` INTEGER NOT NULL, `outcome` TEXT NOT NULL, `publicWorkNote` TEXT, `notPerformedReason` TEXT, `fulfilledObligation` INTEGER NOT NULL, `proposedNextDueDate` TEXT, `checklistJson` TEXT NOT NULL, `partsJson` TEXT NOT NULL, `photosJson` TEXT NOT NULL, `nextDueDateCalculated` INTEGER, `nextDueOverrideReason` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`draftId`) REFERENCES `correction_drafts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFinalWorkItemId",
+            "columnName": "sourceFinalWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicWorkNote",
+            "columnName": "publicWorkNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notPerformedReason",
+            "columnName": "notPerformedReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fulfilledObligation",
+            "columnName": "fulfilledObligation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposedNextDueDate",
+            "columnName": "proposedNextDueDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "checklistJson",
+            "columnName": "checklistJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partsJson",
+            "columnName": "partsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "photosJson",
+            "columnName": "photosJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextDueDateCalculated",
+            "columnName": "nextDueDateCalculated",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextDueOverrideReason",
+            "columnName": "nextDueOverrideReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_correction_work_items_draftId",
+            "unique": false,
+            "columnNames": [
+              "draftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_correction_work_items_draftId` ON `${TABLE_NAME}` (`draftId`)"
+          },
+          {
+            "name": "index_correction_work_items_draftId_position",
+            "unique": true,
+            "columnNames": [
+              "draftId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_correction_work_items_draftId_position` ON `${TABLE_NAME}` (`draftId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "correction_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "change_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `subjectType` TEXT NOT NULL, `subjectId` TEXT NOT NULL, `changeType` TEXT NOT NULL, `eventDate` TEXT NOT NULL, `recordedAtEpochMillis` INTEGER NOT NULL, `reason` TEXT NOT NULL, `oldValue` TEXT, `newValue` TEXT, `customerId` TEXT, `siteId` TEXT, `equipmentId` TEXT, `recordId` TEXT, `customerNameSnapshot` TEXT, `siteNameSnapshot` TEXT, `equipmentNameSnapshot` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectType",
+            "columnName": "subjectType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changeType",
+            "columnName": "changeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventDate",
+            "columnName": "eventDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtEpochMillis",
+            "columnName": "recordedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldValue",
+            "columnName": "oldValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "newValue",
+            "columnName": "newValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customerId",
+            "columnName": "customerId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "recordId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customerNameSnapshot",
+            "columnName": "customerNameSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "siteNameSnapshot",
+            "columnName": "siteNameSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentNameSnapshot",
+            "columnName": "equipmentNameSnapshot",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_change_entries_subjectType_subjectId",
+            "unique": false,
+            "columnNames": [
+              "subjectType",
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_change_entries_subjectType_subjectId` ON `${TABLE_NAME}` (`subjectType`, `subjectId`)"
+          },
+          {
+            "name": "index_change_entries_customerId",
+            "unique": false,
+            "columnNames": [
+              "customerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_change_entries_customerId` ON `${TABLE_NAME}` (`customerId`)"
+          },
+          {
+            "name": "index_change_entries_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_change_entries_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          },
+          {
+            "name": "index_change_entries_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_change_entries_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_change_entries_recordId",
+            "unique": false,
+            "columnNames": [
+              "recordId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_change_entries_recordId` ON `${TABLE_NAME}` (`recordId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "equipment_moves",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `equipmentId` TEXT NOT NULL, `oldSiteId` TEXT NOT NULL, `newSiteId` TEXT NOT NULL, `effectiveDate` TEXT NOT NULL, `reason` TEXT NOT NULL, `recordedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldSiteId",
+            "columnName": "oldSiteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newSiteId",
+            "columnName": "newSiteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "columnName": "effectiveDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtEpochMillis",
+            "columnName": "recordedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_equipment_moves_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_equipment_moves_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_equipment_moves_oldSiteId",
+            "unique": false,
+            "columnNames": [
+              "oldSiteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_equipment_moves_oldSiteId` ON `${TABLE_NAME}` (`oldSiteId`)"
+          },
+          {
+            "name": "index_equipment_moves_newSiteId",
+            "unique": false,
+            "columnNames": [
+              "newSiteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_equipment_moves_newSiteId` ON `${TABLE_NAME}` (`newSiteId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "equipment",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "equipmentId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "recovery_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `datasetId` TEXT NOT NULL, `firstBusinessWriteAtEpochMillis` INTEGER, `lastBusinessWriteAtEpochMillis` INTEGER, `lastBackupAttemptAtEpochMillis` INTEGER, `lastVerifiedFullBackupAtEpochMillis` INTEGER, `lastVerifiedSnapshotAtEpochMillis` INTEGER, `lastVerifiedDestination` TEXT, `lastVerifiedSize` INTEGER, `backupReminderDays` INTEGER NOT NULL, `restoredFromIncompleteCopy` INTEGER NOT NULL, `restrictedRecoveryState` INTEGER NOT NULL, `adoptionToken` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "datasetId",
+            "columnName": "datasetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstBusinessWriteAtEpochMillis",
+            "columnName": "firstBusinessWriteAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastBusinessWriteAtEpochMillis",
+            "columnName": "lastBusinessWriteAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastBackupAttemptAtEpochMillis",
+            "columnName": "lastBackupAttemptAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastVerifiedFullBackupAtEpochMillis",
+            "columnName": "lastVerifiedFullBackupAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastVerifiedSnapshotAtEpochMillis",
+            "columnName": "lastVerifiedSnapshotAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastVerifiedDestination",
+            "columnName": "lastVerifiedDestination",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastVerifiedSize",
+            "columnName": "lastVerifiedSize",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "backupReminderDays",
+            "columnName": "backupReminderDays",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restoredFromIncompleteCopy",
+            "columnName": "restoredFromIncompleteCopy",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restrictedRecoveryState",
+            "columnName": "restrictedRecoveryState",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "adoptionToken",
+            "columnName": "adoptionToken",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "technician_identity",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `technicianId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianId",
+            "columnName": "technicianId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_technician_identity_technicianId",
+            "unique": true,
+            "columnNames": [
+              "technicianId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_technician_identity_technicianId` ON `${TABLE_NAME}` (`technicianId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_technicians",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`technicianId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`technicianId`))",
+        "fields": [
+          {
+            "fieldPath": "technicianId",
+            "columnName": "technicianId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "technicianId"
+          ]
+        }
+      },
+      {
+        "tableName": "dispatch_teams",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_teams_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dispatch_teams_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_team_members",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`teamId` TEXT NOT NULL, `technicianId` TEXT NOT NULL, `isLeader` INTEGER NOT NULL, PRIMARY KEY(`teamId`, `technicianId`), FOREIGN KEY(`teamId`) REFERENCES `dispatch_teams`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`technicianId`) REFERENCES `dispatch_technicians`(`technicianId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "teamId",
+            "columnName": "teamId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianId",
+            "columnName": "technicianId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isLeader",
+            "columnName": "isLeader",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "teamId",
+            "technicianId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_team_members_teamId",
+            "unique": false,
+            "columnNames": [
+              "teamId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_team_members_teamId` ON `${TABLE_NAME}` (`teamId`)"
+          },
+          {
+            "name": "index_dispatch_team_members_technicianId",
+            "unique": false,
+            "columnNames": [
+              "technicianId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_team_members_technicianId` ON `${TABLE_NAME}` (`technicianId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dispatch_teams",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "teamId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dispatch_technicians",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "technicianId"
+            ],
+            "referencedColumns": [
+              "technicianId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_outbox_visits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchVisitId` TEXT NOT NULL, `managerReference` TEXT, `siteId` TEXT NOT NULL, `serviceDate` TEXT NOT NULL, `appointmentLocalTime` TEXT, `appointmentZoneId` TEXT NOT NULL, `instructions` TEXT, `lastExportedGeneration` INTEGER, `lastExportedMaterialHash` TEXT, `lastExportedAtEpochMillis` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `modifiedAtEpochMillis` INTEGER NOT NULL, `concludedAtEpochMillis` INTEGER, PRIMARY KEY(`dispatchVisitId`), FOREIGN KEY(`siteId`) REFERENCES `sites`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "managerReference",
+            "columnName": "managerReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "siteId",
+            "columnName": "siteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serviceDate",
+            "columnName": "serviceDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appointmentLocalTime",
+            "columnName": "appointmentLocalTime",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appointmentZoneId",
+            "columnName": "appointmentZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instructions",
+            "columnName": "instructions",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastExportedGeneration",
+            "columnName": "lastExportedGeneration",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastExportedMaterialHash",
+            "columnName": "lastExportedMaterialHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastExportedAtEpochMillis",
+            "columnName": "lastExportedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochMillis",
+            "columnName": "modifiedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "concludedAtEpochMillis",
+            "columnName": "concludedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchVisitId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_outbox_visits_siteId",
+            "unique": false,
+            "columnNames": [
+              "siteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_visits_siteId` ON `${TABLE_NAME}` (`siteId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sites",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "siteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_outbox_visit_teams",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchVisitId` TEXT NOT NULL, `teamId` TEXT NOT NULL, PRIMARY KEY(`dispatchVisitId`, `teamId`), FOREIGN KEY(`dispatchVisitId`) REFERENCES `dispatch_outbox_visits`(`dispatchVisitId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`teamId`) REFERENCES `dispatch_teams`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamId",
+            "columnName": "teamId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchVisitId",
+            "teamId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_outbox_visit_teams_dispatchVisitId",
+            "unique": false,
+            "columnNames": [
+              "dispatchVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_visit_teams_dispatchVisitId` ON `${TABLE_NAME}` (`dispatchVisitId`)"
+          },
+          {
+            "name": "index_dispatch_outbox_visit_teams_teamId",
+            "unique": false,
+            "columnNames": [
+              "teamId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_visit_teams_teamId` ON `${TABLE_NAME}` (`teamId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dispatch_outbox_visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dispatchVisitId"
+            ],
+            "referencedColumns": [
+              "dispatchVisitId"
+            ]
+          },
+          {
+            "table": "dispatch_teams",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "teamId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_outbox_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchItemId` TEXT NOT NULL, `dispatchVisitId` TEXT NOT NULL, `position` INTEGER NOT NULL, `equipmentId` TEXT NOT NULL, `taskName` TEXT NOT NULL, `servicePlanReference` TEXT, `dueDateSnapshot` TEXT, PRIMARY KEY(`dispatchItemId`), FOREIGN KEY(`dispatchVisitId`) REFERENCES `dispatch_outbox_visits`(`dispatchVisitId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "dispatchItemId",
+            "columnName": "dispatchItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "equipmentId",
+            "columnName": "equipmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskName",
+            "columnName": "taskName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "servicePlanReference",
+            "columnName": "servicePlanReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueDateSnapshot",
+            "columnName": "dueDateSnapshot",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchItemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_outbox_items_dispatchVisitId",
+            "unique": false,
+            "columnNames": [
+              "dispatchVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_items_dispatchVisitId` ON `${TABLE_NAME}` (`dispatchVisitId`)"
+          },
+          {
+            "name": "index_dispatch_outbox_items_equipmentId",
+            "unique": false,
+            "columnNames": [
+              "equipmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_items_equipmentId` ON `${TABLE_NAME}` (`equipmentId`)"
+          },
+          {
+            "name": "index_dispatch_outbox_items_dispatchVisitId_position",
+            "unique": true,
+            "columnNames": [
+              "dispatchVisitId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dispatch_outbox_items_dispatchVisitId_position` ON `${TABLE_NAME}` (`dispatchVisitId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dispatch_outbox_visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dispatchVisitId"
+            ],
+            "referencedColumns": [
+              "dispatchVisitId"
+            ]
+          },
+          {
+            "table": "equipment",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "equipmentId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_outbox_item_assignees",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchItemId` TEXT NOT NULL, `technicianId` TEXT NOT NULL, PRIMARY KEY(`dispatchItemId`, `technicianId`), FOREIGN KEY(`dispatchItemId`) REFERENCES `dispatch_outbox_items`(`dispatchItemId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`technicianId`) REFERENCES `dispatch_technicians`(`technicianId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "dispatchItemId",
+            "columnName": "dispatchItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "technicianId",
+            "columnName": "technicianId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchItemId",
+            "technicianId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_outbox_item_assignees_dispatchItemId",
+            "unique": false,
+            "columnNames": [
+              "dispatchItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_item_assignees_dispatchItemId` ON `${TABLE_NAME}` (`dispatchItemId`)"
+          },
+          {
+            "name": "index_dispatch_outbox_item_assignees_technicianId",
+            "unique": false,
+            "columnNames": [
+              "technicianId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_outbox_item_assignees_technicianId` ON `${TABLE_NAME}` (`technicianId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dispatch_outbox_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dispatchItemId"
+            ],
+            "referencedColumns": [
+              "dispatchItemId"
+            ]
+          },
+          {
+            "table": "dispatch_technicians",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "technicianId"
+            ],
+            "referencedColumns": [
+              "technicianId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_visit_bindings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchVisitId` TEXT NOT NULL, `localVisitId` TEXT NOT NULL, `appliedGeneration` INTEGER NOT NULL, `packageId` TEXT NOT NULL, `senderLabel` TEXT NOT NULL, `managerReference` TEXT, `instructionsSnapshot` TEXT, `participantSnapshotJson` TEXT NOT NULL, `leaderIdsJson` TEXT NOT NULL, `teamSnapshotJson` TEXT NOT NULL, `appliedMaterialHash` TEXT NOT NULL, `controlledFingerprint` TEXT NOT NULL, `importedAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`dispatchVisitId`), FOREIGN KEY(`localVisitId`) REFERENCES `working_visits`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localVisitId",
+            "columnName": "localVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appliedGeneration",
+            "columnName": "appliedGeneration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageId",
+            "columnName": "packageId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderLabel",
+            "columnName": "senderLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "managerReference",
+            "columnName": "managerReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "instructionsSnapshot",
+            "columnName": "instructionsSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "participantSnapshotJson",
+            "columnName": "participantSnapshotJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaderIdsJson",
+            "columnName": "leaderIdsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teamSnapshotJson",
+            "columnName": "teamSnapshotJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appliedMaterialHash",
+            "columnName": "appliedMaterialHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "controlledFingerprint",
+            "columnName": "controlledFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importedAtEpochMillis",
+            "columnName": "importedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchVisitId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_visit_bindings_localVisitId",
+            "unique": true,
+            "columnNames": [
+              "localVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dispatch_visit_bindings_localVisitId` ON `${TABLE_NAME}` (`localVisitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "working_visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "localVisitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dispatch_item_bindings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dispatchVisitId` TEXT NOT NULL, `dispatchItemId` TEXT NOT NULL, `localWorkItemId` TEXT, `equipmentReferenceSnapshot` TEXT NOT NULL, `taskNameSnapshot` TEXT NOT NULL, `servicePlanReferenceSnapshot` TEXT, `dueDateSnapshot` TEXT, `assignedTechniciansJson` TEXT NOT NULL, `assignmentMeaning` TEXT NOT NULL, `localRole` TEXT NOT NULL, `documentationDisposition` TEXT NOT NULL, `deferredToTechnicianId` TEXT, `deferredToName` TEXT, PRIMARY KEY(`dispatchVisitId`, `dispatchItemId`), FOREIGN KEY(`dispatchVisitId`) REFERENCES `dispatch_visit_bindings`(`dispatchVisitId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`localWorkItemId`) REFERENCES `work_items`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dispatchItemId",
+            "columnName": "dispatchItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localWorkItemId",
+            "columnName": "localWorkItemId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "equipmentReferenceSnapshot",
+            "columnName": "equipmentReferenceSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskNameSnapshot",
+            "columnName": "taskNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "servicePlanReferenceSnapshot",
+            "columnName": "servicePlanReferenceSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueDateSnapshot",
+            "columnName": "dueDateSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assignedTechniciansJson",
+            "columnName": "assignedTechniciansJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignmentMeaning",
+            "columnName": "assignmentMeaning",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localRole",
+            "columnName": "localRole",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentationDisposition",
+            "columnName": "documentationDisposition",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deferredToTechnicianId",
+            "columnName": "deferredToTechnicianId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deferredToName",
+            "columnName": "deferredToName",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dispatchVisitId",
+            "dispatchItemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dispatch_item_bindings_dispatchVisitId",
+            "unique": false,
+            "columnNames": [
+              "dispatchVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dispatch_item_bindings_dispatchVisitId` ON `${TABLE_NAME}` (`dispatchVisitId`)"
+          },
+          {
+            "name": "index_dispatch_item_bindings_localWorkItemId",
+            "unique": true,
+            "columnNames": [
+              "localWorkItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dispatch_item_bindings_localWorkItemId` ON `${TABLE_NAME}` (`localWorkItemId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dispatch_visit_bindings",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dispatchVisitId"
+            ],
+            "referencedColumns": [
+              "dispatchVisitId"
+            ]
+          },
+          {
+            "table": "work_items",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "localWorkItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_dispatch_visits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`revisionId` TEXT NOT NULL, `dispatchVisitId` TEXT NOT NULL, `generation` INTEGER NOT NULL, `managerReference` TEXT, `senderLabel` TEXT NOT NULL, `documentingTechnicianId` TEXT NOT NULL, `documentingTechnicianName` TEXT NOT NULL, PRIMARY KEY(`revisionId`), FOREIGN KEY(`revisionId`) REFERENCES `final_record_revisions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "revisionId",
+            "columnName": "revisionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dispatchVisitId",
+            "columnName": "dispatchVisitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "managerReference",
+            "columnName": "managerReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "senderLabel",
+            "columnName": "senderLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentingTechnicianId",
+            "columnName": "documentingTechnicianId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentingTechnicianName",
+            "columnName": "documentingTechnicianName",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "revisionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_dispatch_visits_dispatchVisitId",
+            "unique": false,
+            "columnNames": [
+              "dispatchVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_dispatch_visits_dispatchVisitId` ON `${TABLE_NAME}` (`dispatchVisitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_record_revisions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "revisionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "final_dispatch_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`finalWorkItemId` TEXT NOT NULL, `dispatchItemId` TEXT NOT NULL, `assignedTechniciansJson` TEXT NOT NULL, `assignmentMeaning` TEXT NOT NULL, `localDocumentationRole` TEXT NOT NULL, PRIMARY KEY(`finalWorkItemId`), FOREIGN KEY(`finalWorkItemId`) REFERENCES `final_work_items`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "finalWorkItemId",
+            "columnName": "finalWorkItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dispatchItemId",
+            "columnName": "dispatchItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedTechniciansJson",
+            "columnName": "assignedTechniciansJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignmentMeaning",
+            "columnName": "assignmentMeaning",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localDocumentationRole",
+            "columnName": "localDocumentationRole",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "finalWorkItemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_final_dispatch_items_dispatchItemId",
+            "unique": false,
+            "columnNames": [
+              "dispatchItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_final_dispatch_items_dispatchItemId` ON `${TABLE_NAME}` (`dispatchItemId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "final_work_items",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "finalWorkItemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reminder_preferences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `dailySummaryEnabled` INTEGER NOT NULL, `summaryHour` INTEGER NOT NULL, `summaryMinute` INTEGER NOT NULL, `summaryDaysMask` INTEGER NOT NULL, `dueSoonHorizonDays` INTEGER NOT NULL, `includeDueServices` INTEGER NOT NULL, `includeVisits` INTEGER NOT NULL, `includeFollowUps` INTEGER NOT NULL, `includeUnfinishedVisits` INTEGER NOT NULL, `includeBackupReminder` INTEGER NOT NULL, `appointmentAlertsEnabled` INTEGER NOT NULL, `defaultAppointmentLeadMinutes` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dailySummaryEnabled",
+            "columnName": "dailySummaryEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryHour",
+            "columnName": "summaryHour",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryMinute",
+            "columnName": "summaryMinute",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryDaysMask",
+            "columnName": "summaryDaysMask",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueSoonHorizonDays",
+            "columnName": "dueSoonHorizonDays",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeDueServices",
+            "columnName": "includeDueServices",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeVisits",
+            "columnName": "includeVisits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeFollowUps",
+            "columnName": "includeFollowUps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeUnfinishedVisits",
+            "columnName": "includeUnfinishedVisits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeBackupReminder",
+            "columnName": "includeBackupReminder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appointmentAlertsEnabled",
+            "columnName": "appointmentAlertsEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultAppointmentLeadMinutes",
+            "columnName": "defaultAppointmentLeadMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fbf8ad45a185f9822467de315d18170b')"
+    ]
+  }
+}

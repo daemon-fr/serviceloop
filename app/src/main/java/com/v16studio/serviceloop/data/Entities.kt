@@ -147,6 +147,8 @@ data class WorkingVisitEntity(
     val scheduleChangeReason: String? = null,
     val cancellationReason: String? = null,
     val cancelledAtEpochMillis: Long? = null,
+    /** null uses the saved default; 0 disables this Visit; otherwise 120 or 1440. */
+    val appointmentReminderLeadMinutes: Int? = null,
 )
 
 @Entity(
@@ -652,4 +654,21 @@ data class RecoveryMetadataEntity(
     val restrictedRecoveryState: Boolean = false,
     /** Unique identity of the last cross-resource restore/erase transaction that committed. */
     val adoptionToken: String? = null,
+)
+
+@Entity(tableName = "reminder_preferences")
+data class ReminderPreferencesEntity(
+    @PrimaryKey val id: String = "primary",
+    val dailySummaryEnabled: Boolean = true,
+    val summaryHour: Int = 8,
+    val summaryMinute: Int = 0,
+    val summaryDaysMask: Int = 127,
+    val dueSoonHorizonDays: Int = 14,
+    val includeDueServices: Boolean = true,
+    val includeVisits: Boolean = true,
+    val includeFollowUps: Boolean = true,
+    val includeUnfinishedVisits: Boolean = true,
+    val includeBackupReminder: Boolean = true,
+    val appointmentAlertsEnabled: Boolean = false,
+    val defaultAppointmentLeadMinutes: Int = 120,
 )

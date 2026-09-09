@@ -49,6 +49,7 @@ data class VisitDetail(
     val customerName: String, val siteId: String, val siteName: String, val siteAddress: String,
     val serviceDate: String, val scheduledAtEpochMillis: Long?, val appointmentZoneId: String?,
     val lines: List<VisitLine>, val cancellationReason: String?,
+    val appointmentReminderLeadMinutes: Int? = null,
 )
 data class VisitLine(val workItemId: String, val equipmentName: String, val equipmentReference: String, val serviceName: String, val dueDate: String?, val outcome: String?)
 

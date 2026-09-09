@@ -125,6 +125,7 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertChangeEntry(value: ChangeEntryEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertEquipmentMove(value: EquipmentMoveEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertRecoveryMetadata(value: RecoveryMetadataEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertReminderPreferences(value: ReminderPreferencesEntity)
     @Update suspend fun updateReportRendition(value: ReportRenditionEntity)
     @Update suspend fun updateCustomer(value: CustomerEntity)
     @Update suspend fun updateSite(value: SiteEntity)
@@ -203,6 +204,10 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM correction_drafts cd JOIN correction_work_items cw ON cw.draftId=cd.id JOIN final_work_items fw ON fw.id=cw.sourceFinalWorkItemId WHERE fw.equipmentId=:equipmentId") suspend fun correctionDraftCountForEquipment(equipmentId: String): Int
     @Query("SELECT cd.recordId FROM correction_drafts cd JOIN correction_work_items cw ON cw.draftId=cd.id JOIN final_work_items fw ON fw.id=cw.sourceFinalWorkItemId WHERE fw.equipmentId=:equipmentId LIMIT 1") suspend fun correctionRecordForEquipment(equipmentId: String): String?
     @Query("SELECT * FROM recovery_metadata WHERE id='primary'") suspend fun recoveryMetadata(): RecoveryMetadataEntity?
+    @Query("SELECT * FROM reminder_preferences WHERE id='primary'") suspend fun reminderPreferences(): ReminderPreferencesEntity?
+    @Query("SELECT * FROM reminder_preferences WHERE id='primary'") fun observeReminderPreferences(): Flow<ReminderPreferencesEntity?>
+    @Query("SELECT * FROM working_visits ORDER BY actualServiceDate, reference") suspend fun reminderVisits(): List<WorkingVisitEntity>
+    @Query("UPDATE working_visits SET appointmentReminderLeadMinutes=:minutes WHERE id=:id AND state='BOOKED'") suspend fun updateAppointmentReminderLead(id: String, minutes: Int?): Int
     @Query("SELECT * FROM customers ORDER BY reference") suspend fun allCustomers(): List<CustomerEntity>
     @Query("SELECT * FROM sites ORDER BY reference") suspend fun allSites(): List<SiteEntity>
     @Query("SELECT * FROM equipment ORDER BY reference") suspend fun allEquipment(): List<EquipmentEntity>

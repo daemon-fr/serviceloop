@@ -209,6 +209,7 @@ class RecoveryPackage(
     }
 
     private fun validateDatabase(root: JSONObject) {
+        normalizeLegacyReminderState(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -237,6 +238,16 @@ class RecoveryPackage(
         require(tableRows(root, "correction_drafts").all { draft -> revisions[draft.getString("baseRevisionId")]?.getString("recordId") == draft.getString("recordId") }) { "A correction base revision does not belong to its record" }
         val recovery = tableRows(root, "recovery_metadata")
         require(recovery.size == 1 && recovery.single().getString("id") == "primary") { "Recovery metadata singleton is invalid" }
+        val reminders = tableRows(root, "reminder_preferences")
+        require(reminders.size == 1 && reminders.single().getString("id") == "primary") { "Reminder preferences singleton is invalid" }
+        reminders.single().let { value ->
+            require(value.getInt("summaryHour") in 0..23 && value.getInt("summaryMinute") in 0..59)
+            require(value.getInt("summaryDaysMask") in 0..127 && value.getInt("dueSoonHorizonDays") in setOf(0, 7, 14, 30))
+            require(value.getInt("defaultAppointmentLeadMinutes") in setOf(120, 1440))
+            val booleanFields = listOf("dailySummaryEnabled", "includeDueServices", "includeVisits", "includeFollowUps", "includeUnfinishedVisits", "includeBackupReminder", "appointmentAlertsEnabled")
+            require(booleanFields.all { value.getInt(it) in 0..1 })
+            require(value.getInt("dailySummaryEnabled") == 0 || value.getInt("summaryDaysMask") != 0)
+        }
         val identity = tableRows(root, "technician_identity")
         require(identity.size == 1 && identity.single().getString("id") == "primary" && identity.single().getString("technicianId").isNotBlank()) { "Technician identity singleton is invalid" }
         val visitIds = ids("working_visits")
@@ -303,6 +314,33 @@ class RecoveryPackage(
         }
         error("Missing table $name")
     }
+
+    /** v9/v10 backups predate portable reminder preferences; adopt exact product defaults. */
+    private fun normalizeLegacyReminderState(root: JSONObject) {
+        val tables = root.getJSONArray("tables")
+        for (index in 0 until tables.length()) {
+            val table = tables.getJSONObject(index)
+            if (table.getString("name") == "reminder_preferences") {
+                if (table.getJSONArray("rows").length() == 0) table.put("rows", JSONArray().put(defaultReminderRow()))
+                return
+            }
+        }
+        val normalized = JSONArray()
+        for (index in 0 until tables.length()) {
+            val table = tables.getJSONObject(index)
+            if (table.getString("name") == "recovery_metadata") {
+                normalized.put(JSONObject().put("name", "reminder_preferences").put("rows", JSONArray().put(defaultReminderRow())))
+            }
+            normalized.put(table)
+        }
+        root.put("tables", normalized)
+    }
+
+    private fun defaultReminderRow() = JSONObject()
+        .put("id", "primary").put("dailySummaryEnabled", 1).put("summaryHour", 8).put("summaryMinute", 0)
+        .put("summaryDaysMask", 127).put("dueSoonHorizonDays", 14).put("includeDueServices", 1)
+        .put("includeVisits", 1).put("includeFollowUps", 1).put("includeUnfinishedVisits", 1)
+        .put("includeBackupReminder", 1).put("appointmentAlertsEnabled", 0).put("defaultAppointmentLeadMinutes", 120)
     private fun countRecords(root: JSONObject): Int = TABLE_ORDER.sumOf { tableRows(root, it).size }
 
     /** Recoverable erase: file adoption and the empty database share one durable commit identity. */
@@ -451,8 +489,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 10
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 11
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -473,7 +511,7 @@ class RecoveryPackage(
             "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members",
             "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees",
             "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items",
-            "recovery_metadata",
+            "reminder_preferences", "recovery_metadata",
         )
 
         /** Resolves a crashed cross-filesystem adoption using the token committed with the database transaction. */

@@ -3,6 +3,7 @@ package com.v16studio.serviceloop.data
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.*
 import java.time.LocalDate
+import java.time.ZoneId
 import java.math.BigDecimal
 import java.util.UUID
 import java.io.File
@@ -11,6 +12,9 @@ import java.security.MessageDigest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.sync.withLock
 
 interface ServiceLoopRepository {
@@ -37,6 +41,7 @@ interface ServiceLoopRepository {
     suspend fun site(id: String): SiteDetail? = null
     suspend fun dueServices(): List<DueService> = emptyList()
     fun observeDueServices(): Flow<List<DueService>> = flow { emit(dueServices()) }
+    fun observeRootInvalidations(): Flow<Unit> = emptyFlow()
     suspend fun visitSites(): List<VisitSiteOption> = emptyList()
     suspend fun plan(id: String): PlanDetail? = null
     suspend fun templates(): List<TemplateSummary> = emptyList()
@@ -97,10 +102,28 @@ interface ServiceLoopRepository {
     suspend fun validateDirectoryCsv(bytes: ByteArray): CsvImportPreview = error("Import unavailable")
     suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String> = emptySet(), skippedBranches: Set<String> = emptySet()): ImportResult = error("Import unavailable")
     suspend fun erase(acknowledged: Boolean, confirmation: String): Unit = error("Erase unavailable")
+    suspend fun reminderPreferences(): ReminderPreferences = ReminderPreferences()
+    suspend fun saveReminderPreferences(value: ReminderPreferences): Long = error("Reminder settings unavailable")
+    suspend fun setAppointmentReminderLead(visitId: String, minutes: Int?): Long = error("Appointment reminder unavailable")
 }
 
 fun interface DraftWriteGate { suspend fun beforeWrite() }
 fun interface FinalizationWriteGate { suspend fun beforeCommit() }
+
+internal fun ReminderPreferencesEntity.toDomain() = ReminderPreferences(
+    dailySummaryEnabled, summaryHour, summaryMinute, summaryDaysMask, dueSoonHorizonDays,
+    includeDueServices, includeVisits, includeFollowUps, includeUnfinishedVisits,
+    includeBackupReminder, appointmentAlertsEnabled, defaultAppointmentLeadMinutes,
+)
+
+internal fun ReminderPreferences.toEntity() = ReminderPreferencesEntity(
+    dailySummaryEnabled = dailySummaryEnabled, summaryHour = summaryHour, summaryMinute = summaryMinute,
+    summaryDaysMask = summaryDaysMask, dueSoonHorizonDays = dueSoonHorizonDays,
+    includeDueServices = includeDueServices, includeVisits = includeVisits,
+    includeFollowUps = includeFollowUps, includeUnfinishedVisits = includeUnfinishedVisits,
+    includeBackupReminder = includeBackupReminder, appointmentAlertsEnabled = appointmentAlertsEnabled,
+    defaultAppointmentLeadMinutes = defaultAppointmentLeadMinutes,
+)
 
 class RoomServiceLoopRepository(
     private val database: ServiceLoopDatabase,
@@ -108,6 +131,7 @@ class RoomServiceLoopRepository(
     private val writeGate: DraftWriteGate = DraftWriteGate {},
     private val finalizationWriteGate: FinalizationWriteGate = FinalizationWriteGate {},
     private val attachmentRoot: File? = null,
+    private val businessDateSignal: BusinessDateSignal? = null,
 ) : ServiceLoopRepository {
     private val dao = database.serviceLoopDao()
     private val dispatchDao = database.dispatchDao()
@@ -134,16 +158,25 @@ class RoomServiceLoopRepository(
     override suspend fun createBackup(passphrase: CharArray, incompleteAcknowledged: Boolean) = stage4.createBackup(passphrase, incompleteAcknowledged)
     override fun inspectBackup(bytes: ByteArray, passphrase: CharArray) = stage4.inspectBackup(bytes, passphrase)
     override suspend fun recordVerifiedBackup(result: BackupResult, destination: String) = stage4.recordVerifiedBackup(result, destination)
-    override suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean) = stage4.restoreBackup(inspection, confirmation, incompleteAcknowledged)
+    override suspend fun restoreBackup(inspection: BackupInspection, confirmation: String, incompleteAcknowledged: Boolean) {
+        stage4.restoreBackup(inspection, confirmation, incompleteAcknowledged)
+        val zone = dao.businessProfile()?.zoneId?.let(ZoneId::of) ?: ZoneId.systemDefault()
+        (businessTime as? MutableBusinessTime)?.updateZone(zone)
+        businessDateSignal?.invalidate()
+    }
     override suspend fun directoryCsv(includeInactive: Boolean, includePrivate: Boolean, customerId: String?) = stage4.directoryCsv(includeInactive, includePrivate, customerId)
     override suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean, customerId: String?) = stage4.recordsCsvPackage(includeInactive, includePrivate, includePreviousRevisions, customerId)
     override suspend fun validateDirectoryCsv(bytes: ByteArray) = stage4.validateDirectoryCsv(bytes)
     override suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String>, skippedBranches: Set<String>) = stage4.importDirectory(preview, createSeparate, skippedBranches)
-    override suspend fun erase(acknowledged: Boolean, confirmation: String) = stage4.erase(acknowledged, confirmation)
+    override suspend fun erase(acknowledged: Boolean, confirmation: String) {
+        stage4.erase(acknowledged, confirmation)
+        (businessTime as? MutableBusinessTime)?.updateZone(ZoneId.systemDefault())
+        businessDateSignal?.invalidate()
+    }
 
     override suspend fun home(): HomeSummary {
-        val today = businessTime.today(); val visit = dao.latestWorkingVisit(); val booked = dao.nextBookedVisit(); val followUp = dao.firstDueFollowUp(today.toString())
-        return HomeSummary(visit?.id, visit?.reference, visit?.siteNameSnapshot, visit?.modifiedAtEpochMillis, visit?.id?.let { dao.firstWorkItemId(it) }, booked?.reference, booked?.actualServiceDate, dao.dueFollowUpCount(today.toString()), followUp?.reference, followUp?.title, dao.overdueCount(today.toString()), dao.dueSoonCount(today.toString(), today.plusDays(14).toString()), dao.workingVisitCount(), dao.bookedVisitCount())
+        val today = businessTime.today(); val visit = dao.latestWorkingVisit(); val booked = dao.nextBookedVisit(); val followUp = dao.firstDueFollowUp(today.toString()); val horizon = reminderPreferences().dueSoonHorizonDays
+        return HomeSummary(visit?.id, visit?.reference, visit?.siteNameSnapshot, visit?.modifiedAtEpochMillis, visit?.id?.let { dao.firstWorkItemId(it) }, booked?.reference, booked?.actualServiceDate, dao.dueFollowUpCount(today.toString()), followUp?.reference, followUp?.title, dao.overdueCount(today.toString()), dao.dueSoonCount(today.toString(), today.plusDays(horizon.toLong()).toString()), dao.workingVisitCount(), dao.bookedVisitCount(), horizon)
     }
 
     override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, it.state, it.finalRecordId, it.resumeWorkItemId) }
@@ -171,17 +204,25 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun dueServices(): List<DueService> {
-        return mapDueServices(dao.dueServices())
+        return mapDueServices(dao.dueServices(), reminderPreferences().dueSoonHorizonDays)
     }
 
-    override fun observeDueServices(): Flow<List<DueService>> =
-        dao.observeDueServices().map(::mapDueServices)
+    override fun observeDueServices(): Flow<List<DueService>> = combine(
+        dao.observeDueServices(),
+        dao.observeReminderPreferences(),
+        businessDateSignal?.tokens ?: flowOf(null),
+    ) { rows, preferences, _ -> mapDueServices(rows, preferences?.dueSoonHorizonDays ?: 14) }
 
-    private fun mapDueServices(rows: List<DueServiceRow>): List<DueService> {
+    override fun observeRootInvalidations(): Flow<Unit> = database.invalidationTracker.createFlow(
+        "working_visits", "service_plans", "service_obligations", "follow_ups", "equipment",
+        "sites", "customers", "business_profiles", "reminder_preferences", emitInitialState = false,
+    ).map { Unit }
+
+    private fun mapDueServices(rows: List<DueServiceRow>, horizonDays: Int = 14): List<DueService> {
         val today = businessTime.today()
         return rows.map { row ->
             val due = LocalDate.parse(row.dueDate)
-            val bucket = when { due.isBefore(today) -> DueBucket.OVERDUE; due == today -> DueBucket.TODAY; !due.isAfter(today.plusDays(14)) -> DueBucket.DUE_SOON; else -> DueBucket.UPCOMING }
+            val bucket = DueClassifier.bucket(due, today, horizonDays)
             DueService(row.planId, row.planReference, row.planName, row.dueDate, row.obligationId, row.equipmentId, row.equipmentReference, row.equipmentName, row.siteId, row.siteName, row.customerId, row.customerName, row.claimedVisitId, bucket)
         }
     }
@@ -216,7 +257,7 @@ class RoomServiceLoopRepository(
 
     override suspend fun visit(id: String): VisitDetail? {
         val visit = dao.visit(id) ?: return null
-        return VisitDetail(visit.id, visit.reference, visit.state, visit.customerId, visit.customerNameSnapshot, visit.siteId, visit.siteNameSnapshot, visit.siteAddressSnapshot.orEmpty(), visit.actualServiceDate, visit.scheduledAtEpochMillis, visit.appointmentZoneId, dao.visitWorkItems(id).map { VisitLine(it.id, it.equipmentNameSnapshot, it.equipmentReferenceSnapshot, it.serviceNameSnapshot, it.dueDateSnapshot, it.outcome) }, visit.cancellationReason)
+        return VisitDetail(visit.id, visit.reference, visit.state, visit.customerId, visit.customerNameSnapshot, visit.siteId, visit.siteNameSnapshot, visit.siteAddressSnapshot.orEmpty(), visit.actualServiceDate, visit.scheduledAtEpochMillis, visit.appointmentZoneId, dao.visitWorkItems(id).map { VisitLine(it.id, it.equipmentNameSnapshot, it.equipmentReferenceSnapshot, it.serviceNameSnapshot, it.dueDateSnapshot, it.outcome) }, visit.cancellationReason, visit.appointmentReminderLeadMinutes)
     }
 
     override suspend fun followUps() = dao.followUps().map { followUpDetail(it) }
@@ -496,10 +537,31 @@ class RoomServiceLoopRepository(
 
     override suspend fun saveBusinessProfile(profile: BusinessProfile): Long {
         val businessName = profile.businessName.trim(); val technicianName = profile.technicianName.trim(); val phone = profile.phone.trim().ifBlank { null }; val email = profile.email.trim().ifBlank { null }; val address = profile.postalAddress.trim().ifBlank { null }; val zoneId = profile.zoneId.trim()
-        require(businessName.isNotBlank() && technicianName.isNotBlank()) { "Business and technician names are required" }; require(zoneId.isNotBlank()) { "Business time zone is required" }
+        require(businessName.isNotBlank() && technicianName.isNotBlank()) { "Business and technician names are required" }; require(zoneId.isNotBlank()) { "Business time zone is required" }; val parsedZone = ZoneId.of(zoneId)
         dao.businessProfile()?.let { existing -> if (existing.businessName == businessName && existing.technicianName == technicianName && existing.phone == phone && existing.email == email && existing.postalAddress == address && existing.zoneId == zoneId) return existing.modifiedAtEpochMillis }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
-        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = businessName, technicianName = technicianName, phone = phone, email = email, postalAddress = address, zoneId = zoneId, modifiedAtEpochMillis = now)); return now
+        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = businessName, technicianName = technicianName, phone = phone, email = email, postalAddress = address, zoneId = zoneId, modifiedAtEpochMillis = now))
+        (businessTime as? MutableBusinessTime)?.updateZone(parsedZone)
+        businessDateSignal?.invalidate()
+        return now
+    }
+
+    override suspend fun reminderPreferences(): ReminderPreferences = (dao.reminderPreferences() ?: ReminderPreferencesEntity()).toDomain()
+
+    override suspend fun saveReminderPreferences(value: ReminderPreferences): Long {
+        value.validate()
+        val current = reminderPreferences()
+        if (current == value) return businessTime.instant().toEpochMilli()
+        writeGate.beforeWrite()
+        dao.upsertReminderPreferences(value.toEntity())
+        return businessTime.instant().toEpochMilli()
+    }
+
+    override suspend fun setAppointmentReminderLead(visitId: String, minutes: Int?): Long {
+        require(minutes == null || minutes in setOf(0, 120, 1440)) { "Choose Off, default, 2 hours, or 1 day" }
+        writeGate.beforeWrite()
+        check(dao.updateAppointmentReminderLead(visitId, minutes) == 1) { "Only a booked Visit can change its appointment reminder" }
+        return businessTime.instant().toEpochMilli()
     }
 
     override suspend fun savePublicWork(workItemId: String, text: String): Long {

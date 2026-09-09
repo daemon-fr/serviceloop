@@ -15,6 +15,7 @@ data class HomeSummary(
     val dueSoonCount: Int,
     val workingVisitCount: Int = 0,
     val bookedVisitCount: Int = 0,
+    val dueSoonHorizonDays: Int = 14,
 )
 
 data class EquipmentSummary(
