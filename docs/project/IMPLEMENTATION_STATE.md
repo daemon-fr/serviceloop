@@ -8,11 +8,11 @@ This file is the concise current-state summary. Detailed milestone evidence rema
 
 Current development branch:
 
-- branch: `codex/sl-5-calendar`
-- SL-5B implementation/correction checkpoint: `2f8faf466c7ffd960c362078abbc6de83cc9e722`
+- branch: `codex/sl-5-functional-hardening`
+- SL-5C functional-freeze checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema: v11
 
-This branch is now the technical starting point for the remaining Stage-5 work. `master` and earlier milestone branches are protected historical/reference heads rather than current implementation authority.
+This branch is now the technical starting point for the B-013 whole-product UI/UX overhaul. `master` and earlier milestone branches are protected historical/reference heads rather than current implementation authority.
 
 ## Current accepted / verified state
 
@@ -23,8 +23,25 @@ This branch is now the technical starting point for the remaining Stage-5 work. 
 - **Dispatch:** OWNER APPROVED under B-015 and deliberately integrated/banked as real product scope within the local-first/file-based boundary.
 - **B-014 durable Working inspection-response drafts:** adopted and preserved through Room v11.
 - **SL-5A — time-aware work state + local reminders:** IMPLEMENTED and independently reviewed.
-- **SL-5B — optional Android Calendar integration:** IMPLEMENTED, corrected, source-reviewed and banked under B-016 through `2f8faf466c7ffd960c362078abbc6de83cc9e722`.
+- **SL-5B — optional Android Calendar integration:** IMPLEMENTED, corrected, source-reviewed and banked under B-016.
+- **SL-5C — final functional completion/hardening:** IMPLEMENTED and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`; no known ordinary-workflow functional placeholder remains before B-013.
 - **B-008 real-technician pilot:** outstanding and still a release-validity gate.
+
+## Functional freeze status
+
+The current product is functionally frozen for the purpose of beginning B-013.
+
+This means the adopted functional structure is considered coherent enough that the next milestone should redesign the complete interface rather than continue piecemeal feature work.
+
+It does **not** mean:
+
+- current wording is final;
+- localization is complete;
+- the present UI is the target design;
+- B-008 pilot evidence exists;
+- the product is release-ready.
+
+B-017 explicitly defers localization/final-copy work until after B-013 stabilizes the user-facing interface and wording.
 
 ## Integrated SL-4 / Dispatch baseline still in force
 
@@ -36,7 +53,7 @@ Working inspection response modes retain separate saved drafts for Issue-found d
 
 ## SL-5A — time-aware work state and reminders
 
-The midnight-staleness gap is fixed. Date-derived Home/Work state uses an injectable business clock/zone plus an observable business-date token and one suspended wait to the next business-local midnight. Foreground/resume and relevant clock/date/timezone/business-zone changes invalidate immediately; no polling/service/manufactured Room write is used.
+The midnight-staleness gap remains fixed. Date-derived Home/Work state uses an injectable business clock/zone plus an observable business-date token and one suspended wait to the next business-local midnight. Foreground/resume and relevant clock/date/timezone/business-zone changes invalidate immediately; no polling/service/manufactured Room write is used.
 
 Room v11 persists the adopted reminder preferences and bounded per-Visit appointment lead override. Defaults remain: daily summary 08:00, all days, 14-day shared Due-soon horizon, all summary categories enabled, appointment alerts Off, default lead 2 hours. Device-local reminder delivery is Off initially and excluded from portable recovery.
 
@@ -46,83 +63,65 @@ Reminder scheduling remains one-shot approximate `AlarmManager.setWindow` with s
 
 ## SL-5B — optional Android Calendar projection
 
-B-016 defines the adopted Calendar semantics. The implementation uses Android `CalendarContract`, Calendar Provider and `ContentResolver`; it does not use Google OAuth/API, backend or network account logic.
+B-016 remains implemented through Android `CalendarContract`, Calendar Provider and `ContentResolver`; it does not use Google OAuth/API, backend or network account logic.
 
-### Device-local ownership
+Calendar integration remains Off by default. Selected Calendar, event IDs, Visit-event links, fingerprints, suppression and pending deletion state are device-local under `noBackupFilesDir`, scoped to the current dataset and excluded from portable recovery.
 
-Calendar integration is Off by default. Selected Calendar, event IDs, Visit-event links, fingerprints, per-Visit suppression, pending deletion state and provider status are stored only in an atomic app-private file under `noBackupFilesDir`, scoped to the current `recovery_metadata.datasetId`.
+Automatic creation applies only to timed Booked local Visits. Normal reschedule/public Site/Customer changes update the same event ID. External Calendar edits never update ServiceLoop. External deletion becomes Missing until deliberate Recreate. Per-Visit Remove adds suppression; Add clears it. Global Disable retains existing external events/links. Cancelled and `DISPATCH_WITHDRAWN` future events are removed where possible; provider failure leaves retryable `DELETE_PENDING`; Working, Finalized and `PARTICIPATION_COMPLETE` events remain historical evidence.
 
-These values are excluded from the authoritative Room v11 dataset and portable ServiceLoop backup. Dataset replacement/restore/erase resets local Calendar integration Off and discards bindings without deleting external events.
+The Calendar coordinator observes `working_visits`, `customers`, and `sites`; this covers ordinary booking changes plus Dispatch import, generation update and withdrawal. SL-5C additionally hardened its device-state file replacement against transient/concurrent Windows contention using serialized access, unique temporary files, bounded retries and last-good-file preservation.
 
-### Provider permissions and selection
+**Provider-validation boundary:** REAL CALENDAR PROVIDER MUTATION remains **NOT RUN** because no safely disposable writable Calendar was established on the canonical AVD.
 
-`READ_CALENDAR` and `WRITE_CALENDAR` are requested only after deliberate user Calendar actions. The app enumerates visible calendars with contributor-or-better access, supports one preferred Calendar for new links, reports no-writable-calendar/permission/unavailable-selection states truthfully, and does not auto-select/move existing linked events when the preferred Calendar changes.
+## SL-5C — final functional hardening
 
-### Event lifecycle
+Concrete production fixes at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`:
 
-Automatic creation applies only to timed **BOOKED** local Visits. Date-only bookings do not become all-day events.
+- removed stale user-facing `Experimental` wording from adopted Coordinator tools;
+- removed an unreachable legacy foundation-placeholder route;
+- Home, Work and Customers now surface post-load root refresh failures while preserving the last durable result and provide a functioning Retry action;
+- Calendar device-state persistence hardened against concurrent/transient Windows replacement contention;
+- relevant Dispatch UI selectors/tests updated to match current production wording/state.
 
-Event content is restricted to:
+The milestone also added bounded larger-data coverage using 250 Customer/Site/Equipment/Plan/Obligation branches and 120 Booked Visits across principal registers, Due services, Home totals, Visits and search. No blocking scaling issue was found.
 
-- title `ServiceLoop · <Site name>`;
-- Site address when available;
-- description containing Visit reference and Customer name;
-- stored appointment instant/ZoneId;
-- fixed 60-minute Calendar display block.
+Release behavior remains intentionally clean: release `FixtureSeederFactory` continues to return `NoOpStartupSeeder`, so development sample data is not auto-created in release builds.
 
-Private notes, contacts, findings, checklists, Dispatch instructions, report content, passphrases and opaque Technician IDs are excluded. No Calendar reminder rows are created.
+## SL-5C verification checkpoint
 
-One local Visit has at most one managed event link. Normal reschedule/public Site/Customer changes update the same event ID. External Calendar edits never update ServiceLoop. External deletion changes the link to Missing and requires deliberate Recreate. Per-Visit Remove deletes the exact bound event and adds local suppression; Add clears suppression and creates a new link. Global Disable leaves existing external events/links in place and stops active synchronization.
+Final production checkpoint:
 
-Future linked events are deleted for **CANCELLED** and **DISPATCH_WITHDRAWN** Visits when possible. Provider deletion failure leaves the ServiceLoop state committed and retains retryable `DELETE_PENDING`. **WORKING**, **FINALIZED** and **PARTICIPATION_COMPLETE** events remain as historical appointment evidence.
-
-### Room-driven reconciliation
-
-The Calendar coordinator installs one idempotent application-lifetime Room invalidation observer over exactly:
-
-- `working_visits`;
-- `customers`;
-- `sites`.
-
-Initial emission performs startup reconciliation. Subsequent persisted changes automatically drive Calendar create/update/delete without every caller needing to remember a manual hook. Existing explicit/resume reconciliation remains safe because the coordinator serializes through its mutex/link ownership model. Provider failures on one invalidation do not terminate the long-lived observer; `CancellationException` is propagated.
-
-This wiring covers ordinary booking/reschedule/cancel plus Dispatch import, newer generation appointment updates, and assignment withdrawal. Dispatch creation produces one Calendar event; generation update changes the same event ID; `DISPATCH_WITHDRAWN` deletes the managed future event/link or retains retryable deletion state on provider failure.
-
-## SL-5B verification checkpoint
-
-Final corrected checkpoint:
-
-`2f8faf466c7ffd960c362078abbc6de83cc9e722`
+`bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 
 Reported evidence:
 
-- full unit suite: **198 PASS**;
-- focused Calendar tests: **14 PASS**;
-- automatic Room-driven ordinary Visit update/cancel tests: PASS;
-- automatic Dispatch create/generation-update/withdrawal projection tests: PASS;
-- withdrawal deletion-failure retry test: PASS;
-- Calendar idempotency/update/external-delete/suppression/global-disable/lifecycle/privacy/dataset-replacement/corruption tests: PASS;
-- Dispatch and SL-5A regressions: PASS;
+- full unit suite: **201 PASS**;
+- focused Calendar contention / Dispatch observation / larger-data suites: PASS;
+- instrumentation: **19 PASS**;
+- retained Room v1→v11 migration/FK coverage: PASS;
+- Dispatch import/generation regression: PASS;
+- completion/history/report semantics: PASS;
+- reminder regression: PASS;
+- Calendar settings/regression: PASS;
+- Due-services projection: PASS;
+- canonical persistence/PDF rendering: PASS;
 - `:app:assembleDebug`: PASS;
 - `:app:assembleDebugAndroidTest`: PASS;
 - `:app:lintDebug`: PASS;
 - `:app:assembleRelease`: PASS;
 - `git diff --check`: PASS;
+- Room remains v11;
+- release fixture seeder remains no-op;
 - final debug APK installed explicitly with `adb -s <resolved> install -r` on canonical `Pixel_10a_ServiceLoop`;
-- canonical Calendar permissions/provider state remained unchanged.
+- canonical business dataset preserved and representative Home/Work/Customers/Settings/Reminders/Calendar/report surfaces inspected non-destructively;
+- no security-command block encountered.
 
-**Provider-validation boundary:** REAL CALENDAR PROVIDER MUTATION — **NOT RUN**. No safely disposable writable Calendar was established and both Calendar permissions remained denied on the canonical AVD. No owner Calendar event was created, changed or deleted; no Google/cloud synchronization claim is made.
+Execution-environment recovery evidence: one exact-match managed patch helper failure used the approved shell/file-edit fallback, and Gradle sandbox cache access recovered through the approved runner path without turning the task into a false project blocker.
 
 ## Current forward sequence
 
-1. **SL-5C — final functional completion/hardening**
-   - Romanian localization of UI, reports, notifications and relevant user-visible share/system copy;
-   - inventory and remove remaining ordinary-workflow placeholders, obsolete prototype/experimental wording and obvious functional rough edges;
-   - bounded larger-data/recovery/platform hardening where current code reveals concrete risk;
-   - full functional-completeness gate while avoiding the later visual redesign.
-
-2. **Dedicated whole-product UI/UX milestone — B-013**
-   - apply the comprehensive visual/UI authority only after functional structure is stable;
+1. **B-013 — dedicated whole-product UI/UX overhaul**
+   - implement the comprehensive visual/UI authority against the functionally frozen product;
    - coherent hierarchy/task clarity;
    - reusable components/primitives and action/navigation patterns;
    - typography, spacing/density and semantic colors;
@@ -131,8 +130,12 @@ Reported evidence:
    - accessibility, contrast and touch-target review;
    - remove the current semi-default/semi-incremental Compose appearance.
 
+2. **Localization / final copy freeze — B-017 sequencing**
+   - after B-013 settles labels, dialogs, helper text and interaction wording;
+   - implement Android localization infrastructure and Romanian UI/report/notification/Calendar/system-handoff copy.
+
 3. **B-008 real-technician pilot**
-   - pilot-ready Romanian-localized build;
+   - coherent finished-looking Romanian-localized build;
    - no known ordinary-workflow placeholders;
    - representative customer/site/equipment/dispatch-or-local-visit/documentation/report flow evaluated by at least one real technician/trade user.
 
@@ -160,6 +163,7 @@ Reported evidence:
 - SL-4 is technically verified and banked; do not claim an earlier standalone owner-acceptance event that did not occur.
 - Dispatch is owner-approved product scope and integrated.
 - SL-5A is implemented/reviewed; actual canonical notification delivery remains unclaimed.
-- SL-5B is implemented/reviewed; real Calendar provider mutation remains unclaimed because no safe disposable writable Calendar was used.
+- SL-5B is implemented/reviewed; real Calendar provider mutation remains unclaimed.
+- SL-5C establishes the functional freeze for B-013; it does not claim current copy/UI is final.
+- Localization is intentionally deferred under B-017.
 - B-008 cannot be satisfied by emulator/AI/owner-only review.
-- B-013 occurs after Stage-5 functional completion and before B-008 so the pilot evaluates a coherent finished-looking product rather than known presentation debt.
