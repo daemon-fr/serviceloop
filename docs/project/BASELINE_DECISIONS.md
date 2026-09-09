@@ -116,3 +116,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Future linked events are deleted when a Visit becomes **Cancelled** or **DISPATCH_WITHDRAWN** where provider access permits; deletion failure is retained as provider work needing retry and never changes the committed ServiceLoop state. **Working**, **Finalized**, and **PARTICIPATION_COMPLETE** events remain as historical appointment evidence.
 - Calendar reconciliation observes relevant Room changes (`working_visits`, `customers`, `sites`) plus startup/resume/manual triggers; it uses no polling service. Dispatch import, generation update, and assignment withdrawal therefore reconcile automatically through persisted local Visit changes.
 - This is not Google Calendar API integration: no Google OAuth, backend, network account logic, push/calendar sync engine, two-way scheduling, attendees, or cloud-delivery claim is authorized.
+
+## B-017 — Localization follows the whole-product UI overhaul
+
+- Romanian localization is deliberately deferred until **after** the B-013 whole-product UI/UX overhaul because user-visible wording, component structure, labels, hierarchy, and interaction copy are not considered fully settled before that pass.
+- The final pre-pilot sequence is therefore: **functional completion/hardening → B-013 whole-product UI/UX overhaul → Romanian localization/final copy freeze → B-008 real-technician pilot**.
+- The functional-completion milestone immediately preceding B-013 must remove known ordinary-workflow functional placeholders and harden the implemented product, but it must **not** perform broad string-resource migration, Romanian translation, report localization, notification localization, or Calendar-copy localization.
+- B-008 still requires a Romanian-localized pilot-ready build. Deferring localization changes sequencing only; it does not remove the localization requirement or lower the pilot gate.
