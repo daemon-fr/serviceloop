@@ -6,174 +6,179 @@ This file is the concise current-state summary. Detailed milestone evidence rema
 
 ## Authoritative technical development line
 
-Current integrated development branch:
+Current development branch:
 
-- branch: `codex/integrate-sl4-dispatch`
-- integrated implementation checkpoint: `132a0586969dfe7e7fbe88501ba6f413ce6ef724`
-- Room schema: v10
+- branch: `codex/sl-5-time-reminders`
+- SL-5A implementation/verification checkpoint: `d133a97171d05d4110204e62c69e423c49ba3bd5`
+- Room schema: v11
 
-This branch is now the authoritative technical starting point for Stage 5. `master` remains an older protected reference and is not the current implementation authority.
+The previous integrated SL-4/Dispatch branch remains banked history. The SL-5A branch is now the technical starting point for subsequent Stage-5 work. `master` remains an older protected reference and is not current implementation authority.
 
 ## Current accepted / verified state
 
 - **SL-1:** OWNER ACCEPTED.
 - **SL-2:** OWNER ACCEPTED. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** OWNER ACCEPTED. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** IMPLEMENTED, independently Phase-B verified, and now **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE**. The banking/integration checkpoint is `132a0586969dfe7e7fbe88501ba6f413ce6ef724`. This does not retroactively claim a separate standalone owner-acceptance event for SL-4.
-- **Dispatch:** OWNER APPROVED FOR PRODUCT INTEGRATION under B-015 and now deliberately integrated/banked into the authoritative technical line at the same checkpoint.
-- **B-014 durable Working inspection-response drafts:** adopted core behavior and integrated in Room v10.
-- **B-008 real-technician pilot:** still outstanding and remains a release-validity gate.
+- **SL-4:** IMPLEMENTED, independently Phase-B verified, and **VERIFIED AND BANKED** into the integrated development line.
+- **Dispatch:** OWNER APPROVED under B-015 and deliberately integrated/banked as real product scope within the local-first/file-based boundary.
+- **B-014 durable Working inspection-response drafts:** adopted and preserved through Room v11.
+- **SL-5A — time-aware work state + local reminders:** IMPLEMENTED and independently reviewed at `d133a97171d05d4110204e62c69e423c49ba3bd5`.
+- **B-008 real-technician pilot:** outstanding and still a release-validity gate.
 
-## Integrated SL-4 capability
+## Integrated SL-4 / Dispatch baseline still in force
 
-The integrated line contains the complete verified History/recovery milestone:
+The current line preserves the complete verified History/recovery milestone and adopted Dispatch module, including:
 
-- correction and void workflows;
-- immutable revision/rendition history;
-- correction evidence ownership/integrity;
-- conservative lifecycle/move dependency handling including FC-03;
-- global/scoped History;
-- complete authenticated backup;
-- staged replacement restore;
-- incomplete-copy truthfulness;
-- CSV export / create-only directory import;
-- erase / restricted-recovery handling;
-- historical report recreation / void notices;
-- recovery structural validation against the actual current Room schema.
-
-The final unique SL-4 verification commit was not blindly merged. Its populated migration/FK intent was carried forward in current v10 form, while obsolete v6-specific test naming/documentation was superseded by stronger retained v1→v10 coverage.
-
-## Adopted asynchronous Dispatch capability
-
-Dispatch is now real product scope under B-015 and is present on the integrated line.
-
-Adopted behavior includes:
-
-- stable local Technician identity;
-- canonical new Technician IDs in `SLT-XXXX-XXXX-XXXX-CC` form with checksum validation and legacy UUID/32-hex compatibility;
-- `.sltech` identity sharing and manual canonical-ID validation;
-- coordinator Technician directory and many-to-many Teams with explicit leaders;
-- Home coordinator entry points with Settings remaining configuration-only;
-- list-first Outbox with searchable/filterable Visits and separate new/edit Visit workflow;
-- searchable Site picker, on-demand Team selection, named work-item assignees and Everyone semantics;
-- stable `dispatchVisitId` / `dispatchItemId` identities;
-- item-level none/one/many assignments, with none meaning Everyone;
-- leader visibility without mandatory local documentation;
-- readable unsigned `.slwork` format v2 with explicit appointment ZoneId and independent per-Visit generations;
-- batch selection/export of up to 100 Visits into one package;
-- Draft → Dispatched → Concluded coordinator bookkeeping with individual and atomic bulk conclude/reopen;
-- truthful export review/prepare → verified file → transactionally revalidated metadata commit → Android chooser;
-- recipient-scoped import, safe generation updates, older/same-generation conflict handling, assignment withdrawal and started/history rewrite protection;
-- zero-applicability warning when a package contains no work routed to the local Technician identity;
-- consolidated many-Visit preview and **Apply N safe Visits**, leaving unrelated conflicts/review items unapplied;
-- recurrence claim only after a technician explicitly chooses to document locally;
-- non-exclusive documentation handoff to eligible colleagues/leaders with claim release and rollback-safe evidence cleanup;
-- `PARTICIPATION_COMPLETE` without fake cancellation/report/recurrence effects;
-- parallel independent technician reports retaining immutable Dispatch provenance;
-- office/customer PDF sharing through Android system handoff without delivery/receipt overclaim;
-- complete backup/restore participation in the local authoritative dataset.
-
-The hard boundary remains unchanged: no backend, accounts/login, live/cloud synchronization, push dispatch, chat, presence, centralized report ingestion, shared central database, server acknowledgement, or automatic cross-device conflict merging.
+- correction/void workflows and immutable report/history revisions;
+- lifecycle/move blockers and FC-03;
+- complete authenticated backup, staged replacement restore, incomplete-copy truthfulness, CSV export/import and erase/restricted recovery;
+- canonical Technician identity plus legacy compatibility;
+- Teams/leaders, list-first coordinator Outbox, batch `.slwork` export/import, independent Visit generations and Draft/Dispatched/Concluded bookkeeping;
+- recipient-scoped import, assignment withdrawal, handoff/participation-complete semantics and immutable Dispatch provenance;
+- no backend/accounts/live sync/push/chat/presence/shared central database.
 
 ## B-014 — durable inspection response drafts
 
-Room v10 retains Working-state draft detail independently for:
+Working inspection response modes retain separate saved drafts for:
 
 - Issue-found description;
 - Not-applicable reason;
 - text/number Value.
 
-Switching disposition is non-destructive. Only the current disposition and its applicable detail participate in checklist validity, finalization and customer-facing final snapshots. Inactive drafts remain Working-state convenience data only. The canned Not-applicable reason and ordinary destructive-switch warning were removed; N/A reason is technician-editable. Migration 9→10 truthfully backfills the active v9 reason into the matching draft field.
+Switching disposition is non-destructive. Only the current selected disposition and its applicable detail participate in checklist validity, finalization and customer-facing final snapshots. Inactive drafts remain Working-state convenience data only.
 
-## Integrated migration/recovery evidence
+## SL-5A — time-aware work-state architecture
 
-The integration milestone established one coherent Room v10 lineage:
+The previous midnight-staleness gap is now IMPLEMENTED/FIXED.
 
-- retained schemas v1–v9 open at v10;
-- populated v5→v10 recovery-era preservation;
-- representative populated v6→v10 preservation of SL-4-era directory, plan/obligation, Working/finalized Visit, record/report, correction, History, recovery metadata and Working-response state;
-- `PRAGMA foreign_key_check` zero violations;
-- new Dispatch tables begin truthfully empty/compatible after v6 migration;
-- canonical Technician identity initializes safely/idempotently;
-- v9→v10 backfills only the active Issue-found/N/A reason draft;
-- malformed Dispatch foreign-key structure is rejected by recovery inspection;
-- combined SL-4 + Dispatch + B-014 replacement backup/restore preserves integrated business state;
-- erase removes integrated authoritative state in isolated fixtures;
-- dirty tracking detects Dispatch/Working-response changes while retaining metadata-only backup bookkeeping semantics.
+The app uses:
 
-Two focused production corrections were made during integration in `RecoveryPackage.kt`:
+- an injectable business clock/time source;
+- a mutable stored-business-zone authority;
+- an observable business-date token;
+- one suspended wait targeting the next business-local midnight;
+- immediate invalidation on foreground/resume and relevant clock/date/timezone/business-zone changes.
 
-1. newly created backups now identify schema v10 while retaining compatibility with existing schema-v9 backups;
-2. backup-triggered Technician identity initialization now uses canonical `SLT-XXXX-XXXX-XXXX-CC` IDs rather than generating new legacy 32-hex IDs.
+Date-derived Home/Work state combines Room observation with the business-date token, so Overdue/Due today/Due soon can change when time passes without any Room write.
 
-No other production behavior changed during the integration milestone.
+There is no second/minute polling loop, permanent background service, foreground service or manufactured business-data write used to refresh the UI.
 
-## Integration verification checkpoint
+## SL-5A — reminder settings and persistence
 
-Reported final evidence at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`:
+Room v11 adds durable Reminder preferences and the bounded per-Visit appointment lead override.
 
-- host unit tests: **175 passed, 0 failed, 0 skipped**;
-- retained migration instrumentation: **8/8 passed**;
-- focused Dispatch/coordinator/B-014 instrumentation: **6/6 passed**;
-- canonical non-destructive instrumentation: **2/2 passed**;
+Adopted defaults are implemented:
+
+- daily summary enabled;
+- summary time 08:00 in the business zone;
+- all seven days selected;
+- Due-soon horizon 14 days, with choices 0/7/14/30;
+- Due services / Visits / Follow-ups / Unfinished visits / Backup content enabled;
+- approximate appointment alerts disabled;
+- default appointment lead 2 hours, with 1 day as the other supported default.
+
+The Due-soon horizon is shared by Home, Work/Due services and reminder summary calculations; it does not mutate business due dates.
+
+Portable saved Reminder preferences are distinct from this installation's local delivery intent. Local delivery is Off initially and is excluded from backup/restore portability.
+
+## SL-5A — Android reminder delivery
+
+Reminder delivery uses stable channels:
+
+- `serviceloop_work_summaries`
+- `serviceloop_appointment_reminders`
+
+Android 13+ notification permission is requested only after deliberate enablement. UI/runtime state distinguishes local delivery intent, actual Android permission/app state, channel availability and scheduling errors.
+
+Scheduling uses one-shot `AlarmManager.setWindow` requests with a 15-minute window. There is:
+
+- no exact-alarm permission;
+- no `setExact*` use;
+- no persistent foreground service;
+- no battery-exemption request;
+- no high-frequency polling.
+
+Daily summaries read current saved state at execution time, use aggregate/privacy-safe content, omit empty categories, post at most once per dataset/business date, and do not replay a storm of missed summaries after downtime.
+
+Appointment reminders use the stored appointment instant plus Visit/default lead. Before posting, current Visit state is re-read; alerts are suppressed for passed/ineligible/started/finalized/cancelled/withdrawn/participation-complete work and for explicit override Off. Dispatch appointment generation updates reconcile the same local Visit; withdrawal removes eligibility.
+
+Notification content never completes/reschedules work and does not expose customer/Site/address/access/finding/private-note content.
+
+## SL-5A — reboot/time/recovery semantics
+
+Reminder reconciliation occurs after relevant business changes and on startup/process reconstruction, reboot, package replacement and clock/date/timezone changes.
+
+Pending reminder identity is dataset-scoped so old-dataset work cannot operate on a replaced dataset.
+
+Room/recovery behavior:
+
+- schema v11 is the current database schema;
+- retained v1→v11 migrations are covered with foreign-key validation;
+- older supported schema-9/schema-10 backups remain compatible;
+- older backups without Reminder preferences receive the adopted defaults;
+- saved Reminder preferences survive complete backup/restore;
+- dataset replacement resets local delivery Off and invalidates old notification/alarm ownership;
+- Reminder preference changes participate in changed-since-backup tracking, while runtime scheduling/permission state does not.
+
+## SL-5A verification checkpoint
+
+Reported final evidence at `d133a97171d05d4110204e62c69e423c49ba3bd5`:
+
+- host unit tests: **184 passed, 0 failed, 0 skipped**;
+- focused instrumentation: **16/16 passed**;
+- canonical preserved-data Due-services regression: **1/1 passed**;
+- deterministic business-midnight/resume/zone tests: PASS;
+- Due-soon horizon 0/7/14/30 tests: PASS;
+- summary category/privacy/empty/identity/downtime tests: PASS;
+- appointment lead/reschedule/state/delay tests: PASS;
+- retained Room migrations/FK and recovery compatibility: PASS;
+- `:app:testDebugUnitTest`: PASS;
 - `:app:assembleDebug`: PASS;
 - `:app:assembleDebugAndroidTest`: PASS;
 - `:app:lintDebug`: PASS;
 - `:app:assembleRelease`: PASS;
 - `git diff --check`: PASS;
 - final APK installed explicitly with `adb -s <resolved> install -r` on canonical `Pixel_10a_ServiceLoop`;
-- Home/Work/Customers switching and existing final History/report navigation: PASS;
-- no canonical uninstall, clear-data, reset, erase or restore was performed;
+- canonical dataset preserved; Home/Reminders rendered inspection performed without changing settings;
 - no security-command block encountered.
 
-## Known current time-refresh gap
-
-Due-services observe Room changes correctly, but due/overdue bucketing depends on the current business date. Passage of time alone does not invalidate Room, so an app left open across midnight can retain stale date-derived Home/Work classification until another refresh/re-entry occurs.
-
-Planned Stage-5 hardening:
-
-- no one-second polling service;
-- recompute at the next relevant business-date/time boundary;
-- refresh on foreground/resume and relevant date/timezone changes;
-- continue using Room observation for actual persisted-data changes.
-
-This is not yet implemented.
+**Verification boundary:** actual Android notification delivery was NOT RUN on the preserved canonical dataset because local reminder delivery and `POST_NOTIFICATIONS` remained Off/denied. Scheduling, eligibility, privacy and platform-state behavior were verified through deterministic/unit/instrumentation coverage; no delivery claim is made.
 
 ## Planned Calendar integration direction
 
-A future Stage-5 functional item is optional Android Calendar integration for booked ServiceLoop Visits using the Android Calendar Provider rather than a ServiceLoop backend.
+The next functional Stage-5 item is optional Android Calendar integration for booked ServiceLoop Visits using the Android Calendar Provider rather than a ServiceLoop backend.
 
-Current intended direction, still requiring final semantics before implementation:
+Current intended direction still needs one final semantic freeze before implementation:
 
-- off by default;
-- choose a writable device calendar;
-- create an event for a Booked appointment;
-- store calendar/event identity locally;
+- integration Off by default;
+- choose one writable device calendar;
+- create an event for an eligible Booked appointment;
+- store the calendar/event identity locally;
 - reschedule/update the same event where safe;
 - remove a future appointment on cancellation/dispatch withdrawal where appropriate;
 - keep started/finalized appointments as historical calendar evidence;
 - exclude private checklist/findings/internal-note content;
-- no Google OAuth/backend requirement merely to use a Google-synchronized device calendar.
+- no Google OAuth/backend requirement merely to use a Google-synchronized device calendar;
+- define behavior for external event deletion/edit, calendar disappearance, permission loss and restore/device replacement before coding.
 
 ## Current forward sequence
 
-1. **Stage 5 — functional product completion/hardening**
+1. **Remaining Stage 5 — functional completion/hardening**
+   - finalize and implement Calendar integration semantics;
    - Romanian localization/UI/report copy;
-   - reminders/notifications;
    - remaining ordinary-workflow placeholder/prototype cleanup;
-   - time-aware Home/Work invalidation at date/time boundaries and resume;
-   - Calendar integration after final semantics are designed/adopted;
    - larger-data, recovery and platform hardening;
    - production hardening of Dispatch without expanding its no-backend boundary.
 
 2. **Dedicated whole-product UI/UX milestone — B-013**
+   - implement the forthcoming comprehensive UI/visual authority only after functional structure is stable;
    - coherent hierarchy/task clarity;
-   - reusable components and action/navigation patterns;
+   - reusable components/primitives and action/navigation patterns;
    - typography, spacing/density and semantic colors;
    - complete light/dark themes;
    - loading/empty/error states;
    - accessibility, contrast and touch-target review;
-   - removal of the current semi-default/semi-incremental Compose appearance.
+   - remove the current semi-default/semi-incremental Compose appearance.
 
 3. **B-008 real-technician pilot**
    - pilot-ready Romanian-localized build;
@@ -182,18 +187,6 @@ Current intended direction, still requiring final semantics before implementatio
 
 4. **Pilot fixes / final hardening**
 5. **Release preparation and submission**
-
-## Accepted SL-3 architecture still in force
-
-- Customer → Site → Equipment → Service Plan local domain with stable references.
-- One current obligation per active plan and exactly-once fulfillment semantics.
-- One-site Visits containing multiple service lines.
-- Room-observed authoritative Due-services projection.
-- Reusable immutable inspection template snapshots.
-- Explicit Performed / Partly performed / Not performed separate from Fulfills current obligation.
-- App-owned normalized photographs and immutable final evidence snapshots.
-- Fixed local PDF/report flow with B-003 historical-share safety.
-- Global search, filters, contact/follow-up workflow, cancellation restoration safeguards and reusable expanded multiline editor pattern.
 
 ## Toolchain / environment baseline
 
@@ -211,8 +204,9 @@ Current intended direction, still requiring final semantics before implementatio
 
 ## Verification / acceptance boundaries
 
-- Automated or AI review is not equivalent to B-008 external pilot evidence.
+- Automated/AI review is not equivalent to B-008 external pilot evidence.
 - SL-4 is technically verified and banked; do not claim an earlier standalone owner-acceptance event that did not occur.
-- Dispatch is owner-approved product scope and integrated on the authoritative technical line.
+- Dispatch is owner-approved product scope and integrated.
+- SL-5A is technically implemented/reviewed; actual canonical notification delivery remains unclaimed because notification permission/local delivery were deliberately left Off.
 - B-008 cannot be satisfied by emulator/AI/owner-only review.
-- B-013 must occur before B-008 so the pilot evaluates a coherent finished-looking product rather than known presentation debt.
+- B-013 must occur after Stage-5 functional completion and before B-008 so the pilot evaluates a coherent finished-looking product rather than known presentation debt.
