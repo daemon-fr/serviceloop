@@ -193,7 +193,7 @@ class StageAVisualProofTest {
                 render(width, dark) {
                     val nav = rememberNavController()
                     DetailScaffold("Outbox", nav) {
-                        DispatchOutboxScreen(it, nav, dispatch, database, businessDate = businessDate)
+                        DispatchOutboxScreen(it, nav, businessDate, dispatch, database)
                     }
                 }
                 compose.waitUntil(5_000) { compose.onAllNodesWithText("JOB-2048", substring = true).fetchSemanticsNodes().isNotEmpty() }
@@ -210,7 +210,7 @@ class StageAVisualProofTest {
                 render(width, dark) {
                     val nav = rememberNavController()
                     DetailScaffold("New dispatch visit", nav) {
-                        DispatchVisitEditorScreen(it, nav, visitIds.first(), dispatch, database, businessDate)
+                        DispatchVisitEditorScreen(it, nav, visitIds.first(), businessDate, dispatch, database)
                     }
                 }
                 compose.waitUntil(5_000) { compose.onAllNodesWithText("Northside Foods").fetchSemanticsNodes().isNotEmpty() }
@@ -264,7 +264,7 @@ class StageAVisualProofTest {
                         ) {
                             val nav = rememberNavController()
                             DetailScaffold("New dispatch visit", nav) {
-                                DispatchVisitEditorScreen(it, nav, visitIds.first(), dispatch, database, businessDate)
+                                DispatchVisitEditorScreen(it, nav, visitIds.first(), businessDate, dispatch, database)
                             }
                         }
                     }
