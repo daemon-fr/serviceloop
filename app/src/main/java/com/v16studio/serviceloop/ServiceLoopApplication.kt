@@ -43,7 +43,7 @@ class ServiceLoopApplication : Application() {
         container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup, restrictedRecoveryState, applicationScope, businessDateSignal, reminders, calendar)
         businessDateSignal.start()
         reminders.start()
-        calendar.reconcileAsync()
+        calendar.start()
     }
 }
 
