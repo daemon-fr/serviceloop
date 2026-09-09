@@ -4,10 +4,13 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.v16studio.serviceloop.data.DispatchPackageService
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
+import com.v16studio.serviceloop.data.TechnicianIdCodec
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -15,7 +18,7 @@ import org.junit.runner.RunWith
 class Migration1To2Test {
     private val dbName = "sl3-migration-test.db"
 
-    @Test fun migrationOneToSevenPreservesRowsThroughTheRegisteredChain() {
+    @Test fun migrationOneToTenPreservesRowsThroughTheRegisteredChain() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
@@ -47,7 +50,7 @@ class Migration1To2Test {
         } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationTwoToSevenBackfillsWorkingSnapshotsAndPreservesFinalReportAndObligation() {
+    @Test fun migrationTwoToTenBackfillsWorkingSnapshotsAndPreservesFinalReportAndObligation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/2.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -84,7 +87,7 @@ class Migration1To2Test {
         } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationThreeToSevenPreservesDailyWorkAndBackfillsActiveClaim() {
+    @Test fun migrationThreeToTenPreservesDailyWorkAndBackfillsActiveClaim() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/3.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -105,7 +108,7 @@ class Migration1To2Test {
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("2026-12-05",dao.plan("p")!!.currentDueDate); assertEquals("v",dao.dueServices().single().claimedVisitId); assertEquals("ACTIVE",dao.customer("c")!!.state); assertEquals("PRIVATE_ACCESS",dao.site("s")!!.privateAccessNotes) } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationFourToSevenPreservesDirectoryAndCreatesRecoveryFoundation() {
+    @Test fun migrationFourToTenPreservesDirectoryAndCreatesRecoveryFoundation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/4.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -118,6 +121,73 @@ class Migration1To2Test {
         }
         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10).build()
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("Version four customer",dao.customer("c4")!!.name); assertEquals(0,dao.correctionDrafts().size); assertEquals(32,dao.recoveryMetadata()!!.datasetId.length) } } finally { migrated.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun migrationFiveToTenPreservesRecoveryEraRowsAndForeignKeys() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        context.deleteDatabase(dbName)
+        val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/5.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) { val entity=entities.getJSONObject(i); val table=entity.getString("tableName"); old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table)); entity.optJSONArray("indices")?.let { indices -> for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table)) } }
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers(id,reference,name,state) VALUES('c5','CU-5','Version five customer','ACTIVE')")
+            old.execSQL("INSERT INTO recovery_metadata(id,datasetId,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary','dataset-five',7,0,0)")
+            old.version=5
+        }
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_5_6,ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                assertEquals("Version five customer",migrated.serviceLoopDao().customer("c5")!!.name)
+                assertEquals("dataset-five",migrated.serviceLoopDao().recoveryMetadata()!!.datasetId)
+            }
+            migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use { assertEquals(0,it.count) }
+        } finally { migrated.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun migrationSixToTenPreservesRepresentativeSl4StateAndInitializesDispatchSafely() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+        context.deleteDatabase(dbName)
+        val schema=JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/6.json").bufferedReader().use{it.readText()}).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName),null).use{old->
+            val entities=schema.getJSONArray("entities")
+            for(i in 0 until entities.length()){val entity=entities.getJSONObject(i);val table=entity.getString("tableName");old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table));entity.optJSONArray("indices")?.let{indices->for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table))}}
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers(id,reference,name,state) VALUES('c6','CU-6','SL-4 customer','ACTIVE')")
+            old.execSQL("INSERT INTO sites(id,customerId,reference,name,state) VALUES('s6','c6','ST-6','SL-4 site','ACTIVE')")
+            old.execSQL("INSERT INTO equipment(id,siteId,reference,name,state) VALUES('e6','s6','EQ-6','SL-4 pump','ACTIVE')")
+            old.execSQL("INSERT INTO service_plans(id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId,lastCountedCompletionDate,lastCountedRevisionId) VALUES('p6','e6','P-6','Annual',1,'YEARS','2027-09-05','ACTIVE','o-current','2026-09-05','rev6')")
+            old.execSQL("INSERT INTO service_obligations(id,planId,sequence,dueDate,createdAtEpochMillis,consumedAtEpochMillis,consumedByRevisionId) VALUES('o-used','p6',1,'2026-09-05',1,2,'rev6'),('o-current','p6',2,'2027-09-05',2,NULL,NULL)")
+            old.execSQL("INSERT INTO template_snapshots(id,templateName,revision,capturedAtEpochMillis) VALUES('ts6','Safety',1,1)")
+            old.execSQL("INSERT INTO checklist_item_snapshots(id,templateSnapshotId,position,label,responseType,required) VALUES('q6','ts6',0,'Inspect guard','STATUS',1)")
+            old.execSQL("INSERT INTO working_visits(id,reference,customerId,siteId,actualServiceDate,customerNameSnapshot,siteNameSnapshot,state,modifiedAtEpochMillis,customerReferenceSnapshot,siteReferenceSnapshot) VALUES('v-final','V-FINAL','c6','s6','2026-09-05','SL-4 customer','SL-4 site','FINALIZED',2,'CU-6','ST-6'),('v-work','V-WORK','c6','s6','2026-09-06','SL-4 customer','SL-4 site','WORKING',3,'CU-6','ST-6')")
+            old.execSQL("INSERT INTO work_items(id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation) VALUES('w-final','v-final','e6','p6','o-used','ts6','SL-4 pump','EQ-6','Annual','P-6','2026-09-05',1,'YEARS',1,'PERFORMED',1),('w-work','v-work','e6','p6','o-current','ts6','SL-4 pump','EQ-6','Annual','P-6','2027-09-05',1,'YEARS',0,NULL,0)")
+            old.execSQL("INSERT INTO working_responses(id,workItemId,checklistItemSnapshotId,disposition,reason,modifiedAtEpochMillis) VALUES('response6','w-work','q6','ISSUE_FOUND','Guard cracked',3)")
+            old.execSQL("INSERT INTO final_records(id,visitId,currentRevisionId,createdAtEpochMillis) VALUES('record6','v-final','rev6',2)")
+            old.execSQL("INSERT INTO final_record_revisions(id,recordId,revisionNumber,visitReference,actualServiceDate,recordedAtEpochMillis,customerName,siteName,businessName,technicianName,businessZoneId,customerReference,siteReference,publicNote) VALUES('rev6','record6',1,'V-FINAL','2026-09-05',2,'SL-4 customer','SL-4 site','Service Co','Alex','Europe/Bucharest','CU-6','ST-6','Issued record')")
+            old.execSQL("INSERT INTO final_work_items(id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,serviceName,planId,planReference,outcome,publicWorkNote,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId) VALUES('fw6','rev6',0,'w-final','e6','SL-4 pump','EQ-6','Annual','p6','P-6','PERFORMED','Completed',1,'2026-09-05','2027-09-05',1,'YEARS','o-used')")
+            old.execSQL("INSERT INTO final_checklist_items(id,finalWorkItemId,position,templateSnapshotId,templateRevision,label,responseType,required,disposition,reason) VALUES('fc6','fw6',0,'ts6',1,'Inspect guard','STATUS',1,'OK',NULL)")
+            old.execSQL("INSERT INTO report_renditions(id,revisionId,versionNumber,relativePath,status,kind) VALUES('rr6','rev6',1,'reports/record6/report.pdf','PENDING','ORIGINAL')")
+            old.execSQL("INSERT INTO correction_drafts(id,recordId,baseRevisionId,reason,actualServiceDate,customerName,siteName,businessName,technicianName,scheduleAcknowledged,createdAtEpochMillis,modifiedAtEpochMillis,commitToken,followUpEffectsJson,newFollowUpsJson) VALUES('cd6','record6','rev6','Correct wording','2026-09-05','SL-4 customer','SL-4 site','Service Co','Alex',0,3,3,'token6','[]','[]')")
+            old.execSQL("INSERT INTO correction_work_items(id,draftId,sourceFinalWorkItemId,position,outcome,fulfilledObligation,checklistJson,partsJson,photosJson) VALUES('cw6','cd6','fw6',0,'PERFORMED',1,'[]','[]','[]')")
+            old.execSQL("INSERT INTO change_entries(id,subjectType,subjectId,changeType,eventDate,recordedAtEpochMillis,reason,customerId,siteId,equipmentId,recordId) VALUES('change6','RECORD','record6','CORRECTION_OPENED','2026-09-06',3,'Correct wording','c6','s6','e6','record6')")
+            old.execSQL("INSERT INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary','dataset-six',1,3,7,0,0)")
+            old.version=6
+        }
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val dao=migrated.serviceLoopDao();val dispatch=migrated.dispatchDao();val identity=dispatch.technicianIdentity()!!
+                assertEquals("SL-4 customer",dao.customer("c6")!!.name);assertEquals("rev6",dao.finalRecord("record6")!!.currentRevisionId)
+                assertEquals("cd6",dao.correctionDraftForRecord("record6")!!.id);assertEquals("dataset-six",dao.recoveryMetadata()!!.datasetId)
+                assertTrue(TechnicianIdCodec.isValidCanonical(identity.technicianId));assertEquals(identity.technicianId,DispatchPackageService(migrated).identity().technicianId)
+                assertTrue(dispatch.technicians().isEmpty());assertTrue(dispatch.outboxVisits().isEmpty());assertNull(dispatch.visitBinding("missing"))
+            }
+            migrated.openHelper.readableDatabase.query("SELECT reason,issueFoundReasonDraft,notApplicableReasonDraft FROM working_responses WHERE id='response6'").use{assertTrue(it.moveToFirst());assertEquals("Guard cracked",it.getString(0));assertEquals("Guard cracked",it.getString(1));assertTrue(it.isNull(2))}
+            migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}
+        } finally { migrated.close();context.deleteDatabase(dbName) }
     }
 
     @Test fun everyRetainedSchemaMigratesToTenWithIdentityAndForeignKeysIntact() {

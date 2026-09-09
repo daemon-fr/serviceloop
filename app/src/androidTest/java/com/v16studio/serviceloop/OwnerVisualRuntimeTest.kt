@@ -67,6 +67,9 @@ class OwnerVisualRuntimeTest {
 
         composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))
         composeRule.onNodeWithText("View report").performClick()
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onNodeWithText("PDF view").fetchSemanticsNode() }.isSuccess
+        }
         composeRule.onNodeWithText("PDF view").assertIsDisplayed()
         composeRule.waitUntil(5_000) {
             runCatching { composeRule.onNodeWithContentDescription("Rendered customer report page 1").fetchSemanticsNode() }.isSuccess

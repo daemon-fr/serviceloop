@@ -43,7 +43,10 @@ class RecoveryPackage(
         require(passphrase.size >= 12) { "Passphrase must contain at least 12 characters" }
         val snapshotAt = System.currentTimeMillis()
         val databaseObject = database.withTransaction {
-            database.openHelper.writableDatabase.execSQL("INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', lower(hex(randomblob(16))), COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)")
+            database.openHelper.writableDatabase.execSQL(
+                "INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', ?, COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)",
+                arrayOf(TechnicianIdCodec.generate()),
+            )
             JSONObject(exportDatabase().toString(Charsets.UTF_8))
         }
         val files = requiredFiles(databaseObject)
@@ -86,7 +89,7 @@ class RecoveryPackage(
         val manifest = JSONObject(manifestBytes.toString(Charsets.UTF_8))
         val version = manifest.getInt("formatVersion")
         require(version <= FORMAT_VERSION) { "This backup needs a newer ServiceLoop version" }
-        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") == SCHEMA_VERSION) { "Unsupported backup format" }
+        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS) { "Unsupported backup format" }
         require(sha256(databaseBytes) == manifest.getString("databaseSha256")) { "Database snapshot integrity check failed" }
         val declaredFiles = manifest.getJSONArray("files")
         val paths = mutableSetOf<String>()
@@ -206,7 +209,7 @@ class RecoveryPackage(
     }
 
     private fun validateDatabase(root: JSONObject) {
-        require(root.getInt("schemaVersion") == SCHEMA_VERSION)
+        require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
         val names = mutableSetOf<String>()
@@ -241,7 +244,7 @@ class RecoveryPackage(
         validateAgainstRoomSchema(root)
     }
 
-    /** Replays the generated Room v8 schema into an isolated throwaway database. */
+    /** Replays the current generated Room schema into an isolated throwaway database. */
     private fun validateAgainstRoomSchema(root: JSONObject) {
         // The platform temp directory avoids path-length failures while remaining app-private on Android.
         val stagingFile = File.createTempFile("slrv-", ".db")
@@ -448,7 +451,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        private const val SCHEMA_VERSION = 9
+        internal const val SCHEMA_VERSION = 10
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000

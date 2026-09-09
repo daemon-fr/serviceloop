@@ -5,10 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.v16studio.serviceloop.data.RoomServiceLoopRepository
-import com.v16studio.serviceloop.data.DraftWriteGate
-import com.v16studio.serviceloop.data.ServiceLoopDatabase
-import com.v16studio.serviceloop.data.RecoveryPackage
+import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.ui.validateHistoryDates
 import com.v16studio.serviceloop.domain.*
 import java.io.File
@@ -409,6 +406,36 @@ class DailyOperationsIntegrityTest {
         repo.setBackupReminder(30); assertFalse(repo.datasetSummary().changedSinceBackup)
         repo.updateCustomer(ids.customer,CustomerInput("Changed business name","Dana")); assertTrue(repo.datasetSummary().changedSinceBackup)
         val second=repo.createBackup(password); repo.recordVerifiedBackup(second,"test destination"); assertFalse(repo.datasetSummary().changedSinceBackup)
+    }
+
+    @Test fun completeBackupRoundTripsCombinedSl4DispatchAndWorkingResponseDraftState() = runTest {
+        val ids=foundation();val recordId=finalizedRecord(ids);val correction=repo.openCorrection(recordId)
+        val template=repo.createTemplate("Integrated inspection",listOf(TemplateItemDraft("Guard condition","STATUS",required=true)))
+        val due=db.serviceLoopDao().plan(ids.plan)!!.currentDueDate;repo.updatePlan(ids.plan,PlanInput("Annual service",1,"YEARS",due,template))
+        val workingVisit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-06");val work=db.serviceLoopDao().firstWorkItemId(workingVisit)!!;val question=repo.inspection(work)!!.questions.single()
+        repo.saveResponse(work,question.snapshotItemId,ResponseDisposition.ISSUE_FOUND,null,"Guard cracked")
+        repo.saveResponse(work,question.snapshotItemId,ResponseDisposition.NOT_APPLICABLE,null,"Machine isolated")
+
+        val dispatch=DispatchPackageService(db,root);val identity=dispatch.identity();dispatch.importTechnician(identity)
+        val teamId=dispatch.createTeam("Integrated team").also{dispatch.setTeamMember(it,identity.technicianId,true,true)}
+        val outbox=dispatch.createOutboxVisit("INTEGRATED-OUTBOX",ids.site,"2026-09-10","09:00","Europe/Bucharest","Bring guard",listOf(teamId))
+        dispatch.addOutboxItem(outbox,ids.equipment,"Inspect guard",null,null,listOf(identity.technicianId));dispatch.createExportFile(listOf(outbox),"Service office",root)
+        val technician=DispatchTechnicianSnapshot(identity.technicianId,identity.name);val team=DispatchTeamSnapshot("REMOTE-TEAM","Remote team",listOf(identity.technicianId),emptyList())
+        val packageValue=DispatchPackage("INTEGRATED-PACKAGE",Instant.parse("2026-09-05T12:00:00Z").toString(),"Service office",listOf(DispatchCustomer("CU-REMOTE","Remote customer")),listOf(DispatchSite("ST-REMOTE","CU-REMOTE","Remote site",null)),listOf(DispatchEquipment("EQ-REMOTE","ST-REMOTE","Remote pump",null,null,null,null)),listOf(DispatchVisit("DV-INTEGRATED",1,"REMOTE-JOB","2026-09-11",null,"Europe/Bucharest","ST-REMOTE","Remote instructions",listOf(team),listOf(technician),emptyList(),listOf(DispatchWork("ITEM-INTEGRATED","EQ-REMOTE","Inspect",assignedTechnicians=listOf(technician))))))
+        val importedVisit=dispatch.import(dispatch.preview(packageValue)).createdVisitIds.single()
+
+        val password="integrated recovery state".toCharArray();val inspection=repo.inspectBackup(repo.createBackup(password).bytes,password)
+        repo.erase(true,"ERASE");assertNull(db.serviceLoopDao().finalRecord(recordId));assertNull(db.dispatchDao().visitBinding("DV-INTEGRATED"));assertNull(db.dispatchDao().technicianIdentity());assertTrue(db.dispatchDao().teams().isEmpty());assertTrue(db.dispatchDao().outboxVisits().isEmpty())
+        repo.restoreBackup(inspection,"REPLACE",false)
+
+        assertEquals(correction.id,db.serviceLoopDao().correctionDraftForRecord(recordId)!!.id);assertEquals(recordId,repo.finalRecord(recordId)!!.public.recordId)
+        val restoredResponse=repo.inspection(work)!!.questions.single();assertEquals(ResponseDisposition.NOT_APPLICABLE,restoredResponse.disposition);assertEquals("Machine isolated",restoredResponse.reason);assertEquals("Guard cracked",restoredResponse.issueFoundReasonDraft);assertEquals("Machine isolated",restoredResponse.notApplicableReasonDraft)
+        assertEquals(identity.technicianId,dispatch.identity().technicianId);assertTrue(dispatch.teams().single{it.team.id==teamId}.members.single().second);assertEquals(DispatchOutboxStatus.DISPATCHED,dispatch.outboxVisits().single{it.dispatchVisitId==outbox}.outboxStatus)
+        assertEquals(importedVisit,db.dispatchDao().visitBinding("DV-INTEGRATED")!!.localVisitId);db.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}
+        val restoredCheckpoint=repo.createBackup(password);repo.recordVerifiedBackup(restoredCheckpoint,"integrated test");assertFalse(repo.datasetSummary().changedSinceBackup)
+        repo.saveResponse(work,question.snapshotItemId,ResponseDisposition.OK,null,null);assertTrue(repo.datasetSummary().changedSinceBackup)
+        val responseCheckpoint=repo.createBackup(password);repo.recordVerifiedBackup(responseCheckpoint,"integrated test");assertFalse(repo.datasetSummary().changedSinceBackup)
+        dispatch.concludeOutboxVisits(listOf(outbox));assertTrue(repo.datasetSummary().changedSinceBackup)
     }
 
     @Test fun directoryCsvEscapesSpreadsheetFormulasAndImportIsIdempotent() = runTest {
