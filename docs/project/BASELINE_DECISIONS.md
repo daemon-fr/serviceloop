@@ -79,10 +79,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 
 ## B-012 — Experimental asynchronous Dispatch scope
 
-- The owner separately authorized an **isolated experimental Dispatch prototype** as the narrow exception contemplated by B-004. This does not by itself amend the adopted product baseline or authorize merge into the main development line.
+- The owner separately authorized an **isolated experimental Dispatch prototype** as the narrow exception contemplated by B-004. This did not by itself amend the adopted product baseline or authorize merge into the main development line.
 - The experiment is strictly asynchronous and file-based: local coordinator definitions → portable `.slwork` package → Android sharing → technician import/local work → customer PDF sharing back. It may include local Technician identities, Teams/leaders, item-level assignments, generations, documentation handoff, batch packages, and coordinator bookkeeping where implemented on the prototype branch.
 - The experiment does **not** authorize a backend, accounts/login, cloud/live synchronization, push dispatch, chat, presence, centralized report ingestion, automatic cross-device conflict resolution, or a shared central database.
-- `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` documents the implemented experiment but remains explicitly **EXPERIMENTAL — NOT PRODUCT BASELINE — NOT APPROVED FOR MERGE** until a later owner product-adoption decision.
+- B-012 remains the historical scope boundary for the prototype phase; B-015 records the later owner decision to adopt the completed asynchronous Dispatch design for product integration.
 
 ## B-013 — Dedicated pre-pilot UI/UX milestone
 
@@ -95,3 +95,12 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Working inspection response modes retain their own saved detail drafts. Switching disposition is non-destructive: Issue-found descriptions, Not-applicable reasons, and text/number Values survive switching and ordinary switching requires no destructive confirmation.
 - Only the currently selected disposition and its applicable detail determine checklist validity, finalization, and customer-facing history/report content. Inactive drafts remain Working-state convenience data and do not satisfy or leak into the active answer.
 - Selecting Not applicable does not inject a canned reason; its reason is technician-editable and remains subject to the existing active-answer validity rules.
+
+## B-015 — Asynchronous Dispatch adopted for product integration
+
+- After implementation, technical verification, rendered review, system-chooser validation, and owner hands-on review through `prototype/dispatch-v2` commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`, the owner approved the asynchronous file-based Dispatch module for **ServiceLoop product integration**.
+- This adoption supersedes only B-012's temporary "experimental/not product baseline" status. The hard architectural boundary remains unchanged: no backend, login/accounts, cloud/live synchronization, push dispatch, chat/presence, centralized report ingestion, automatic cross-device conflict resolution, or shared central database.
+- Adopted Dispatch semantics include stable local Technician identity; checksum-valid human-friendly IDs for new installations with legacy-ID compatibility; `.sltech` identity sharing; coordinator Technician/Team/leader directory; list-first Outbox; stable Visit/item dispatch identities; item-level assignments and Everyone semantics; leader visibility; per-Visit generations; batch `.slwork` export/import; Draft/Dispatched/Concluded coordinator bookkeeping; safe recipient-scoped import/update/withdrawal; documentation handoff; participation completion; parallel independent technician reports; office/customer PDF sharing through Android system handoff; and complete local backup/recovery coverage.
+- Dispatch remains asynchronous and local-first. "Dispatched" means a usable package artifact was created, not delivered or received; documentation handoff does not prove acceptance; coordinator conclusion does not alter technician devices.
+- Product adoption authorizes a **deliberate integration/banking milestone**, not a blind merge of the prototype branch. Integration must reconcile the verified SL-4 branch and the Dispatch/Room-v10 lineage, preserve migration/recovery integrity, run the full regression gate, and establish one authoritative development HEAD.
+- The current Dispatch interaction structure is adopted functionally, but its prototype visual styling is **not** a new whole-app visual baseline. B-013 remains mandatory before the real-technician pilot.
