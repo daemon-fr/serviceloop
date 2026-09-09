@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DispatchVisitBindingEntity::class, DispatchItemBindingEntity::class,
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -46,7 +46,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -253,6 +253,13 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE dispatch_visit_bindings ADD COLUMN instructionsSnapshot TEXT")
                 db.execSQL("UPDATE dispatch_visit_bindings SET instructionsSnapshot=(SELECT NULLIF(p.internalNote,'') FROM dispatch_item_bindings i JOIN work_item_private_drafts p ON p.workItemId=i.localWorkItemId WHERE i.dispatchVisitId=dispatch_visit_bindings.dispatchVisitId ORDER BY i.dispatchItemId LIMIT 1)")
                 db.execSQL("UPDATE work_item_private_drafts SET internalNote='' WHERE workItemId IN (SELECT i.localWorkItemId FROM dispatch_item_bindings i JOIN dispatch_visit_bindings v ON v.dispatchVisitId=i.dispatchVisitId JOIN working_visits w ON w.id=v.localVisitId WHERE w.state='BOOKED' AND work_item_private_drafts.internalNote=COALESCE(v.instructionsSnapshot,''))")
+                configureStage4Tracking(db)
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE dispatch_outbox_visits ADD COLUMN concludedAtEpochMillis INTEGER")
                 configureStage4Tracking(db)
             }
         }

@@ -8,9 +8,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.test.espresso.Espresso.pressBack
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -23,6 +26,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import android.graphics.Bitmap
 
 @RunWith(AndroidJUnit4::class)
 class DispatchCoordinatorUiTest {
@@ -35,7 +41,7 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithTag("root-nav-home").assertIsDisplayed();compose.onNodeWithTag("root-nav-work").assertIsDisplayed();compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
         compose.onNodeWithTag("root-nav-work").performClick();compose.onNodeWithText("Visits",useUnmergedTree=true).performClick();compose.onNodeWithTag("work-visits-list").performScrollToNode(hasText("Import work package"));compose.onNodeWithText("Import work package").assertIsDisplayed();compose.onNodeWithText("Create work package").assertDoesNotExist()
         compose.onNodeWithTag("root-nav-home").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Coordinator tools · Experimental").performClick();compose.onNodeWithText("Open Technician identity").performClick();compose.onNodeWithTag("technician-identity").assertIsDisplayed();compose.onNodeWithText("Copy ID").assertIsDisplayed();compose.onNodeWithText("Share identity").assertIsDisplayed();pressBack();compose.onNodeWithTag("coordinator-tools-switch").performClick();pressBack();pressBack()
-        compose.onNodeWithTag("root-nav-work").performClick();compose.onNodeWithText("Visits",useUnmergedTree=true).performClick();compose.onNodeWithTag("work-visits-list").performScrollToNode(hasText("Create work package"));compose.onNodeWithText("Create work package").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();listOf("Service date · YYYY-MM-DD","ZoneId","Dispatch instructions","Teams · select one or more").forEach{label->compose.onNodeWithTag("dispatch-outbox").performScrollToNode(hasText(label));compose.onNodeWithText(label).assertIsDisplayed()}
+        compose.onNodeWithTag("root-nav-work").performClick();compose.onNodeWithText("Visits",useUnmergedTree=true).performClick();compose.onNodeWithTag("work-visits-list").performScrollToNode(hasText("Create work package"));compose.onNodeWithText("Create work package").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();listOf("Service date · YYYY-MM-DD","ZoneId","Dispatch instructions","Teams · select one or more","Active","Concluded","Today","This week","Next 7 days","Custom range","All dates","Select all shown","Clear","Export selected (0)","Mark concluded (0)","Reopen (0)").forEach{label->compose.onNodeWithTag("dispatch-outbox").performScrollToNode(hasText(label));compose.onNodeWithText(label).assertIsDisplayed()};compose.waitForIdle();val instrumentation=InstrumentationRegistry.getInstrumentation();val screenshot=File(instrumentation.targetContext.getExternalFilesDir(null),"dispatch-batch-status-rendered.png");screenshot.outputStream().use{assertTrue(compose.onNodeWithTag("dispatch-outbox").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it))}
     }
 
     @Test fun packageCompositionDoesNotCreateLocalPlannerVisit(){
