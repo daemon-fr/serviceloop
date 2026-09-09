@@ -15,45 +15,64 @@ Do not silently merge competing policies from the conceptual and complete functi
 
 Matching HTML editions are reading formats and are intentionally not retained in the repository as independent requirements.
 
-## Dispatch adoption status
+## Dispatch adoption and integrated development line
 
-B-015 adopts the completed asynchronous file-based Dispatch design for ServiceLoop product integration after owner hands-on review through `prototype/dispatch-v2` commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`.
+B-015 adopts the completed asynchronous file-based Dispatch design for ServiceLoop product integration after owner hands-on review. The adopted design remains strictly local-first/file-based and does not authorize a backend, accounts/login, live/cloud synchronization, push dispatch, chat, presence, a shared central database, centralized report ingestion, server acknowledgement, or automatic cross-device conflict resolution.
 
-`docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for the accepted Dispatch design until the integration milestone banks that work onto the authoritative development line. It does not override B-015 or silently expand Dispatch beyond the adopted asynchronous/local-first boundary.
+The integration/banking milestone is complete on:
+
+- branch: `codex/integrate-sl4-dispatch`
+- integrated technical checkpoint: `132a0586969dfe7e7fbe88501ba6f413ce6ef724`
+- Room schema: v10
+
+This integrated branch is now the authoritative technical development starting point for Stage 5. `master` remains an older protected reference and is not the current implementation authority.
+
+`docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics, despite its historical filename.
 
 ## Current accepted / verified implementation state
 
 - **SL-1:** owner accepted.
 - **SL-2:** owner accepted on 2026-09-06. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** owner accepted on 2026-09-08. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** implementation and bounded independent Phase-B verification are complete on `codex/sl-4-history-recovery` at `5fc7a7383d6b6ad15cd45dce9ea5926a6ef0ac84`. SL-4 is technically verified but still awaits deliberate closure/banking onto the next authoritative development line.
-- **Dispatch:** owner approved for product integration under B-015 at `prototype/dispatch-v2` commit `813fed417330fc7d3e5e7bce68ced29edd6dfb23`. That branch currently carries Room v10 because B-014's durable Working inspection-response drafts were implemented there alongside Dispatch. This does not make the prototype branch itself the authoritative production line.
+- **SL-4:** the complete History/recovery implementation is independently Phase-B verified and is now **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE** at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`. This does not retroactively claim a separate earlier standalone owner-acceptance event for SL-4.
+- **Dispatch:** owner approved under B-015 and deliberately integrated/banked into the same authoritative technical line at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`.
+- **B-014 durable Working inspection-response drafts:** adopted core behavior and integrated in Room v10.
 - **B-008 pilot:** still outstanding. The product is not product-valid for release preparation until a pilot-ready Romanian-localized build with no known ordinary-workflow placeholders is evaluated by at least one real technician/trade user.
+
+## Integration verification boundary
+
+The integration milestone deliberately reconciled the Dispatch/Room-v10 line with the final unique SL-4 verification intent rather than blindly merging/cherry-picking old milestone history. The shared merge base was `8052cdca8a1a87806d371347a99aeabae250a1b4`; no missing SL-4 production implementation was found.
+
+The integrated checkpoint verified, among other evidence:
+
+- coherent retained Room v1→v10 migration coverage;
+- representative populated v5→v10 and v6→v10 preservation with zero `PRAGMA foreign_key_check` violations;
+- integrated SL-4 + Dispatch + B-014 replacement backup/restore;
+- Dispatch/Working-response dirty tracking and erase semantics in isolated fixtures;
+- active-response-only final record/report content;
+- ordinary non-Dispatch and adopted Dispatch regression;
+- canonical non-destructive AVD smoke/history/report navigation.
+
+Two focused integration production corrections were made in `RecoveryPackage.kt`: new backups now identify schema v10 while retaining schema-v9 compatibility, and backup-triggered Technician identity initialization uses the canonical `SLT-XXXX-XXXX-XXXX-CC` format rather than creating new legacy 32-hex IDs.
 
 ## Current forward sequence
 
-1. **Integration / banking milestone**
-   - deliberately reconcile the verified SL-4 line with the owner-approved Dispatch/Room-v10 work;
-   - preserve all migration/recovery guarantees and B-014 Working-response draft semantics;
-   - establish one authoritative development HEAD;
-   - run full host, migration, recovery, build/lint/release and bounded device regression gates.
-
-2. **Stage 5 — functional product completion/hardening**
+1. **Stage 5 — functional product completion/hardening**
    - Romanian localization and report/UI copy;
    - reminders/notifications;
    - remaining ordinary-workflow cleanup and placeholder removal;
    - time-aware Home/Work recomputation at relevant date/time boundaries and app resume rather than polling;
-   - design/implement Calendar integration if adopted in its final semantics;
+   - design/implement Calendar integration after final semantics are adopted;
    - larger-data, recovery and platform hardening;
    - production hardening of adopted Dispatch without expanding its no-backend boundary.
 
-3. **Dedicated whole-product UI/UX milestone — B-013**
+2. **Dedicated whole-product UI/UX milestone — B-013**
    - one coherent design system and interaction/presentation pass across ServiceLoop;
    - reusable components/primitives, hierarchy, typography, spacing/density, semantic colors, light/dark themes, loading/empty/error states, accessibility, contrast and touch targets;
-   - the current prototype/semi-default visual treatment is not the final visual baseline.
+   - the current semi-default/incremental Compose presentation is not the final visual baseline.
 
-4. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
-5. **Pilot findings / final hardening.**
-6. **Release preparation and submission.**
+3. **B-008 real-technician pilot** on the coherent Romanian pilot-ready build.
+4. **Pilot findings / final hardening.**
+5. **Release preparation and submission.**
 
 Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining known gaps. Read milestone coverage files and the Dispatch implementation reference for detailed verification evidence.
