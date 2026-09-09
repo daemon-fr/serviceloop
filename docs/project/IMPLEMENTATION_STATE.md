@@ -2,36 +2,52 @@
 
 **Updated:** 2026-09-09
 
-This file is the concise current-state summary. Detailed milestone evidence remains in milestone coverage documents and Git history; Dispatch implementation details remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` until the integration milestone banks them onto the authoritative development line.
+This file is the concise current-state summary. Detailed milestone evidence remains in milestone coverage documents and Git history; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
+
+## Authoritative technical development line
+
+Current integrated development branch:
+
+- branch: `codex/integrate-sl4-dispatch`
+- integrated implementation checkpoint: `132a0586969dfe7e7fbe88501ba6f413ce6ef724`
+- Room schema: v10
+
+This branch is now the authoritative technical starting point for Stage 5. `master` remains an older protected reference and is not the current implementation authority.
 
 ## Current accepted / verified state
 
 - **SL-1:** OWNER ACCEPTED.
 - **SL-2:** OWNER ACCEPTED. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** OWNER ACCEPTED. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
-- **SL-4:** IMPLEMENTED and independently Phase-B verified on `codex/sl-4-history-recovery` at `5fc7a7383d6b6ad15cd45dce9ea5926a6ef0ac84`. The verification checkpoint includes retained migration/FK coverage, host/build/lint/release gates and bounded canonical rendered validation. SL-4 still requires deliberate banking/integration onto the next authoritative development line.
-- **Dispatch:** OWNER APPROVED FOR PRODUCT INTEGRATION under B-015 after hands-on review through `prototype/dispatch-v2` at `813fed417330fc7d3e5e7bce68ced29edd6dfb23`.
-- **B-014 durable Working inspection response drafts:** adopted and implemented on the Dispatch branch with Room v10; this behavior must survive integration independent of Dispatch.
+- **SL-4:** IMPLEMENTED, independently Phase-B verified, and now **VERIFIED AND BANKED INTO THE INTEGRATED DEVELOPMENT LINE**. The banking/integration checkpoint is `132a0586969dfe7e7fbe88501ba6f413ce6ef724`. This does not retroactively claim a separate standalone owner-acceptance event for SL-4.
+- **Dispatch:** OWNER APPROVED FOR PRODUCT INTEGRATION under B-015 and now deliberately integrated/banked into the authoritative technical line at the same checkpoint.
+- **B-014 durable Working inspection-response drafts:** adopted core behavior and integrated in Room v10.
 - **B-008 real-technician pilot:** still outstanding and remains a release-validity gate.
 
-## SL-4 capability awaiting banking
+## Integrated SL-4 capability
 
-The verified SL-4 line contains the complete History/recovery milestone: correction and void workflows; immutable revision/rendition history; correction evidence ownership/integrity; conservative lifecycle/move dependency handling; global/scoped History; complete authenticated backup; staged replacement restore; incomplete-copy truthfulness; CSV export/directory import; erase/restricted-recovery handling; historical report recreation/void notices; and structural recovery validation against the actual Room schema.
+The integrated line contains the complete verified History/recovery milestone:
 
-No later work should weaken these semantics during integration.
+- correction and void workflows;
+- immutable revision/rendition history;
+- correction evidence ownership/integrity;
+- conservative lifecycle/move dependency handling including FC-03;
+- global/scoped History;
+- complete authenticated backup;
+- staged replacement restore;
+- incomplete-copy truthfulness;
+- CSV export / create-only directory import;
+- erase / restricted-recovery handling;
+- historical report recreation / void notices;
+- recovery structural validation against the actual current Room schema.
+
+The final unique SL-4 verification commit was not blindly merged. Its populated migration/FK intent was carried forward in current v10 form, while obsolete v6-specific test naming/documentation was superseded by stronger retained v1→v10 coverage.
 
 ## Adopted asynchronous Dispatch capability
 
-Dispatch is now adopted product scope, but the prototype branch is **not** itself the authoritative production line. The next milestone must integrate it deliberately with SL-4.
+Dispatch is now real product scope under B-015 and is present on the integrated line.
 
-Current accepted Dispatch checkpoint:
-
-- branch: `prototype/dispatch-v2`
-- owner-reviewed checkpoint: `813fed417330fc7d3e5e7bce68ced29edd6dfb23`
-- parent v1 prototype remains: `e58e0345c78548ec899c5e9456c8d9c15ec85aaf`
-- current branch schema: Room v10
-
-Adopted Dispatch behavior includes:
+Adopted behavior includes:
 
 - stable local Technician identity;
 - canonical new Technician IDs in `SLT-XXXX-XXXX-XXXX-CC` form with checksum validation and legacy UUID/32-hex compatibility;
@@ -57,31 +73,62 @@ Adopted Dispatch behavior includes:
 - office/customer PDF sharing through Android system handoff without delivery/receipt overclaim;
 - complete backup/restore participation in the local authoritative dataset.
 
-Latest final verification reported for the combined checkpoint:
-
-- 172 unit tests PASS;
-- retained migration chains through Room v10 PASS with foreign-key checks;
-- debug, debug-Android-test, lint and release builds PASS;
-- `git diff --check` PASS;
-- 13 focused device tests PASS on the canonical AVD;
-- Android chooser handoff was separately validated to the system Share surface without claiming delivery;
-- final owner hands-on review found the module working well enough to move on.
+The hard boundary remains unchanged: no backend, accounts/login, live/cloud synchronization, push dispatch, chat, presence, centralized report ingestion, shared central database, server acknowledgement, or automatic cross-device conflict merging.
 
 ## B-014 — durable inspection response drafts
 
-Room v10 adds Working-state draft retention for inspection response modes:
+Room v10 retains Working-state draft detail independently for:
 
-- Issue-found description draft;
-- Not-applicable reason draft;
-- existing text/number Value draft.
+- Issue-found description;
+- Not-applicable reason;
+- text/number Value.
 
 Switching disposition is non-destructive. Only the current disposition and its applicable detail participate in checklist validity, finalization and customer-facing final snapshots. Inactive drafts remain Working-state convenience data only. The canned Not-applicable reason and ordinary destructive-switch warning were removed; N/A reason is technician-editable. Migration 9→10 truthfully backfills the active v9 reason into the matching draft field.
 
-This is adopted core ServiceLoop behavior and must not be treated as merely Dispatch-specific during integration.
+## Integrated migration/recovery evidence
+
+The integration milestone established one coherent Room v10 lineage:
+
+- retained schemas v1–v9 open at v10;
+- populated v5→v10 recovery-era preservation;
+- representative populated v6→v10 preservation of SL-4-era directory, plan/obligation, Working/finalized Visit, record/report, correction, History, recovery metadata and Working-response state;
+- `PRAGMA foreign_key_check` zero violations;
+- new Dispatch tables begin truthfully empty/compatible after v6 migration;
+- canonical Technician identity initializes safely/idempotently;
+- v9→v10 backfills only the active Issue-found/N/A reason draft;
+- malformed Dispatch foreign-key structure is rejected by recovery inspection;
+- combined SL-4 + Dispatch + B-014 replacement backup/restore preserves integrated business state;
+- erase removes integrated authoritative state in isolated fixtures;
+- dirty tracking detects Dispatch/Working-response changes while retaining metadata-only backup bookkeeping semantics.
+
+Two focused production corrections were made during integration in `RecoveryPackage.kt`:
+
+1. newly created backups now identify schema v10 while retaining compatibility with existing schema-v9 backups;
+2. backup-triggered Technician identity initialization now uses canonical `SLT-XXXX-XXXX-XXXX-CC` IDs rather than generating new legacy 32-hex IDs.
+
+No other production behavior changed during the integration milestone.
+
+## Integration verification checkpoint
+
+Reported final evidence at `132a0586969dfe7e7fbe88501ba6f413ce6ef724`:
+
+- host unit tests: **175 passed, 0 failed, 0 skipped**;
+- retained migration instrumentation: **8/8 passed**;
+- focused Dispatch/coordinator/B-014 instrumentation: **6/6 passed**;
+- canonical non-destructive instrumentation: **2/2 passed**;
+- `:app:assembleDebug`: PASS;
+- `:app:assembleDebugAndroidTest`: PASS;
+- `:app:lintDebug`: PASS;
+- `:app:assembleRelease`: PASS;
+- `git diff --check`: PASS;
+- final APK installed explicitly with `adb -s <resolved> install -r` on canonical `Pixel_10a_ServiceLoop`;
+- Home/Work/Customers switching and existing final History/report navigation: PASS;
+- no canonical uninstall, clear-data, reset, erase or restore was performed;
+- no security-command block encountered.
 
 ## Known current time-refresh gap
 
-The accepted Due-services architecture observes Room changes correctly, but due/overdue bucketing depends on the current business date. Passage of time alone does not invalidate Room, so an app left open across midnight can retain stale date-derived Home/Work classification until another refresh/re-entry occurs.
+Due-services observe Room changes correctly, but due/overdue bucketing depends on the current business date. Passage of time alone does not invalidate Room, so an app left open across midnight can retain stale date-derived Home/Work classification until another refresh/re-entry occurs.
 
 Planned Stage-5 hardening:
 
@@ -110,14 +157,7 @@ Current intended direction, still requiring final semantics before implementatio
 
 ## Current forward sequence
 
-1. **Integration / banking milestone**
-   - reconcile verified SL-4 with adopted Dispatch/Room-v10 work;
-   - preserve B-014 response-draft semantics;
-   - establish one authoritative development HEAD;
-   - run complete host, migration, recovery, build/lint/release and bounded device regression gates;
-   - update implementation/coverage docs at the resulting authoritative checkpoint.
-
-2. **Stage 5 — functional product completion/hardening**
+1. **Stage 5 — functional product completion/hardening**
    - Romanian localization/UI/report copy;
    - reminders/notifications;
    - remaining ordinary-workflow placeholder/prototype cleanup;
@@ -126,7 +166,7 @@ Current intended direction, still requiring final semantics before implementatio
    - larger-data, recovery and platform hardening;
    - production hardening of Dispatch without expanding its no-backend boundary.
 
-3. **Dedicated whole-product UI/UX milestone — B-013**
+2. **Dedicated whole-product UI/UX milestone — B-013**
    - coherent hierarchy/task clarity;
    - reusable components and action/navigation patterns;
    - typography, spacing/density and semantic colors;
@@ -135,13 +175,13 @@ Current intended direction, still requiring final semantics before implementatio
    - accessibility, contrast and touch-target review;
    - removal of the current semi-default/semi-incremental Compose appearance.
 
-4. **B-008 real-technician pilot**
+3. **B-008 real-technician pilot**
    - pilot-ready Romanian-localized build;
    - no known ordinary-workflow placeholders;
    - representative customer/site/equipment/dispatch-or-local-visit/documentation/report flow evaluated by at least one real technician/trade user.
 
-5. **Pilot fixes / final hardening**
-6. **Release preparation and submission**
+4. **Pilot fixes / final hardening**
+5. **Release preparation and submission**
 
 ## Accepted SL-3 architecture still in force
 
@@ -169,10 +209,10 @@ Current intended direction, still requiring final semantics before implementatio
 - Room 2.8.4
 - canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
 
-## Verification/acceptance boundaries
+## Verification / acceptance boundaries
 
-- Automated or AI review is not owner acceptance unless explicitly recorded.
-- Dispatch is owner-approved product scope under B-015 but still awaits integration onto the authoritative development line.
-- SL-4 is independently verified and awaits deliberate banking/integration.
+- Automated or AI review is not equivalent to B-008 external pilot evidence.
+- SL-4 is technically verified and banked; do not claim an earlier standalone owner-acceptance event that did not occur.
+- Dispatch is owner-approved product scope and integrated on the authoritative technical line.
 - B-008 cannot be satisfied by emulator/AI/owner-only review.
 - B-013 must occur before B-008 so the pilot evaluates a coherent finished-looking product rather than known presentation debt.
