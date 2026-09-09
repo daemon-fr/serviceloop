@@ -14,14 +14,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
@@ -108,6 +112,12 @@ import com.v16studio.serviceloop.domain.VisitFilter
 import com.v16studio.serviceloop.domain.VisitDateWindow
 import com.v16studio.serviceloop.domain.FollowUpFilter
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
+import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -243,10 +253,10 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("dispatch/identity") { DetailScaffold("Technician identity",nav){TechnicianIdentityScreen(it)} }
         composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
         composable("dispatch/teams") { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} }
-        composable("dispatch/create") { DetailScaffold("Dispatch outbox",nav){DispatchOutboxScreen(it,nav)} }
-        composable("dispatch/visit/new") { DetailScaffold("New Dispatch Visit",nav){DispatchVisitEditorScreen(it,nav,null)} }
-        composable("dispatch/visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch Visit",nav){DispatchVisitEditorScreen(it,nav,id)} }
-        composable("dispatch/export-review") { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Export review",nav){DispatchExportReviewScreen(it,nav,ids)} }
+        composable("dispatch/create") { DetailScaffold("Outbox",nav,topAction={ Button({nav.navigate("dispatch/visit/new")},Modifier.heightIn(min=52.dp).testTag("dispatch-new-visit")){Text("+  New visit")} }){DispatchOutboxScreen(it,nav,showEmbeddedTopAction=false,businessDate=state.businessDate)} }
+        composable("dispatch/visit/new") { DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,businessDate=state.businessDate)} }
+        composable("dispatch/visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch visit",nav){DispatchVisitEditorScreen(it,nav,id,businessDate=state.businessDate)} }
+        composable("dispatch/export-review") { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Review export",nav){DispatchExportReviewScreen(it,nav,ids)} }
         composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel)} }
         composable("business-profile") {
             LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
@@ -352,9 +362,9 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DetailScaffold(title: String, nav: NavHostController, content: @Composable (PaddingValues) -> Unit) {
+internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@Composable RowScope.() -> Unit)? = null, content: @Composable (PaddingValues) -> Unit) {
     val interceptor=remember { mutableStateOf<(() -> Unit)?>(null) }
-    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(topBar = { TopAppBar(title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() }) { Text("Back") } }) }, content = content) }
+    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Text(title, maxLines = 2) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { Text("Back") } },actions={topAction?.invoke(this)}) }, content = content) }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -525,14 +535,16 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController) {
 }
 
 @Composable
-private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     val listState = rememberLazyListState()
     LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_REVIEW -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
-    LazyColumn(Modifier.testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+    if (saveStatus is SaveStatus.Failed) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { SaveStateBanner(saveStatus) }
+    LazyColumn(Modifier.weight(1f).testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
-            SaveStateBanner(saveStatus)
+            if (saveStatus !is SaveStatus.Failed) SaveStateBanner(saveStatus)
             Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
         }
         item {
@@ -552,6 +564,7 @@ private fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, foc
             Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
         }
         item { OutlinedButton(onClick = { nav.navigate("field/${draft.workItemId}") }, modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")) { Text("Parts and photographs") }; Button(onClick = { nav.navigate("review/${draft.visitId}") }, modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) { Text("Review completion") } }
+    }
     }
 }
 
@@ -580,9 +593,9 @@ private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewMod
 @Composable
 private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
     val changed = text.trim() != question.reason.orEmpty()
-    Surface(color = LocalServiceLoopColors.current.errorTint, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
+    Surface(color = LocalServiceLoopTokens.current.warningContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Finding details · Customer report", color = LocalServiceLoopColors.current.errorInk, fontWeight = FontWeight.Medium)
+            Text("Finding details · Customer report", color = LocalServiceLoopTokens.current.warningInk, fontWeight = FontWeight.Medium)
             LongTextEditor(text,onTextChange,"Public finding description",false)
             Button(
                 onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
@@ -595,7 +608,7 @@ private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTe
 
 @Composable
 private fun NotApplicableEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    OutlinedTextField(text, onTextChange, label = { Text("Not applicable reason") }, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("not-applicable-reason-${question.snapshotItemId}"))
+    ServiceLoopLongTextEditor(text, onTextChange, "Not applicable reason", private = false, enabled = !saving, fieldTestTag = "not-applicable-reason-${question.snapshotItemId}")
     Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}")) { Text("Save reason") }
 }
 
@@ -606,7 +619,7 @@ private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewMod
     OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
-        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Not applicable") }
+        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f).testTag("not-applicable-${question.snapshotItemId}")) { Text("Not applicable") }
     }
     if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
 }
@@ -793,23 +806,21 @@ private fun StructuredReportText(detail: FinalRecordDetail) {
 
 @Composable
 private fun SaveStateBanner(status: SaveStatus) {
-    val colors = LocalServiceLoopColors.current
-    val (text, background, foreground) = when (status) {
-        SaveStatus.Idle -> Triple("Not saved", colors.errorTint, colors.errorInk)
-        SaveStatus.Saving -> Triple("Saving…", colors.workflowTint, colors.workflowInk)
-        is SaveStatus.Saved -> Triple("Saved on this device · ${formatTime(status.atEpochMillis)}", colors.confirmedTint, colors.confirmedInk)
-        is SaveStatus.Failed -> Triple("Not saved — ${status.message}. Last saved ${formatTime(status.lastSavedAtEpochMillis)}", colors.errorTint, colors.errorInk)
+    when (status) {
+        SaveStatus.Idle -> ServiceLoopNotice("Not saved", "Changes are saved only after the named Save action succeeds.", ServiceLoopNoticeKind.Warning)
+        SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The last durable checkpoint remains in place until this finishes.", ServiceLoopNoticeKind.Working)
+        is SaveStatus.Saved -> ServiceLoopNotice("Saved on this device", formatTime(status.atEpochMillis), ServiceLoopNoticeKind.Success)
+        is SaveStatus.Failed -> ServiceLoopNotice("Not saved — action needed", "${status.message}. Your input is still here. Last saved ${formatTime(status.lastSavedAtEpochMillis)}", ServiceLoopNoticeKind.Error)
     }
-    Text(text, color = foreground, modifier = Modifier.fillMaxWidth().background(background, MaterialTheme.shapes.small).padding(12.dp), style = MaterialTheme.typography.labelLarge)
 }
 
 @Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
 
-@Composable private fun AccentCard(content: @Composable ColumnScope.() -> Unit) = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp), modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content) }
+@Composable private fun AccentCard(content: @Composable ColumnScope.() -> Unit) = ServiceLoopSurfaceCard(content = content)
 
 @Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) { Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(text, Modifier.weight(1f)); Spacer(Modifier.width(8.dp)); Text(action, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) } } }
 
-@Composable private fun StatusChip(text: String, urgency: Boolean) { val colors = LocalServiceLoopColors.current; Text(text, color = if (urgency) colors.urgencyInk else colors.workflowInk, modifier = Modifier.background(if (urgency) colors.urgencyTint else colors.workflowTint, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
+@Composable private fun StatusChip(text: String, urgency: Boolean) { val colors = LocalServiceLoopTokens.current; Text(text, color = if (urgency) colors.warningInk else colors.infoInk, modifier = Modifier.background(if (urgency) colors.warningContainer else colors.infoContainer, MaterialTheme.shapes.extraSmall).padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 
 @Composable private fun LabelledValue(label: String, value: String, public: Boolean) { Text(label, style = MaterialTheme.typography.labelLarge, color = if (public) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant); Text(value); Spacer(Modifier.height(8.dp)); HorizontalDivider() }
 

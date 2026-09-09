@@ -30,6 +30,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import androidx.core.content.FileProvider
 import com.v16studio.serviceloop.domain.*
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
 import java.io.File
 import java.io.InputStream
 import java.io.ByteArrayOutputStream
@@ -292,30 +295,7 @@ internal fun EquipmentSiteSelectorScreen(sites: List<VisitSiteOption>, padding: 
 
 @Composable
 internal fun LongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean) {
-    var expanded by remember { mutableStateOf(false) }
-    val tag = "long-text-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    val expandIconColor = MaterialTheme.colorScheme.primary
-    Column {
-        Box(Modifier.fillMaxWidth()) {
-            OutlinedTextField(value,onValueChange,label={Text(label)},minLines=3,maxLines=3,modifier=Modifier.fillMaxWidth().testTag(tag))
-            IconButton(
-                onClick = { expanded = true },
-                modifier = Modifier.align(Alignment.BottomEnd).size(48.dp).semantics { contentDescription = "Expand text editor" }.testTag("$tag-expand"),
-            ) {
-                Canvas(Modifier.size(24.dp)) {
-                    val stroke = 2.dp.toPx()
-                    val inset = 3.dp.toPx()
-                    val arm = 7.dp.toPx()
-                    drawLine(expandIconColor, Offset(inset, arm + inset), Offset(inset, inset), stroke)
-                    drawLine(expandIconColor, Offset(inset, inset), Offset(arm + inset, inset), stroke)
-                    drawLine(expandIconColor, Offset(size.width - inset, size.height - arm - inset), Offset(size.width - inset, size.height - inset), stroke)
-                    drawLine(expandIconColor, Offset(size.width - arm - inset, size.height - inset), Offset(size.width - inset, size.height - inset), stroke)
-                }
-            }
-        }
-        if(private) Text("PRIVATE · Not included in the customer report",style=MaterialTheme.typography.bodySmall)
-    }
-    if(expanded) Dialog(onDismissRequest={expanded=false},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) { Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) { Text(label,style=MaterialTheme.typography.headlineSmall); OutlinedTextField(value,onValueChange,modifier=Modifier.fillMaxWidth().weight(1f).testTag("$tag-expanded")); Button({expanded=false},Modifier.fillMaxWidth()){Text("Done")} } } }
+    ServiceLoopLongTextEditor(value, onValueChange, label, private)
 }
 
 @Composable
@@ -331,10 +311,10 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
 @Composable private fun EditorColumn(padding: PaddingValues,state: UiState,tag:String?=null,content: androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
 @Composable private fun DailyField(value:String,onChange:(String)->Unit,label:String){
     val tag = "field-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    OutlinedTextField(value,onChange,label={Text(label)},modifier=Modifier.fillMaxWidth().testTag(tag))
+    ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag))
 }
 @Composable private fun DailyHeading(value:String){Text(value,style=MaterialTheme.typography.titleLarge)}
-@Composable private fun DailyRow(value:String,tag:String?=null,onClick:()->Unit){Card(Modifier.fillMaxWidth().then(if(tag==null) Modifier else Modifier.testTag(tag)).clickable(onClick=onClick)){Text(value,Modifier.padding(14.dp))}}
+@Composable private fun DailyRow(value:String,tag:String?=null,onClick:()->Unit){ServiceLoopSurfaceCard(Modifier.then(if(tag==null) Modifier else Modifier.testTag(tag)).clickable(onClick=onClick)){Text(value)}}
 @Composable private fun DailyEmpty(padding:PaddingValues,value:String){Box(Modifier.fillMaxSize().padding(padding),contentAlignment=Alignment.Center){Text(value)}}
 @Composable private fun PrivateBlock(label:String,value:String){Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(12.dp)){Text(label,fontWeight=FontWeight.Bold);Text(value)}}}
 private fun handoff(context:Context,intent:Intent,label:String)=if(runCatching{context.startActivity(intent);true}.getOrDefault(false)) "Opened $label · no contact outcome was recorded" else "No compatible $label app is available · copy the saved details manually"

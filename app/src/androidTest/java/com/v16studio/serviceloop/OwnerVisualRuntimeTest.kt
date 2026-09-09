@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityService
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -23,6 +24,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.activity.compose.setContent
 import androidx.room.Room
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
@@ -119,7 +121,7 @@ class OwnerVisualRuntimeTest {
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
-        composeRule.onNodeWithTag("field-search-due-services").assertIsDisplayed()
+        composeRule.onNodeWithTag("field-search-due-services").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithTag("work-visits-list").assertCountEquals(0)
 
         composeRule.onNodeWithText("Visits").performClick()
@@ -128,10 +130,44 @@ class OwnerVisualRuntimeTest {
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
-        composeRule.onNodeWithTag("field-search-due-services").assertIsDisplayed()
+        composeRule.onNodeWithTag("field-search-due-services").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithTag("work-visits-list").assertCountEquals(0)
         composeRule.onNodeWithText("Home").performClick()
         assertOnlyRoot("root-home")
+    }
+
+    @Test
+    fun canonicalStageASmokeReachesExistingSurfacesWithoutBusinessWrites() {
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onNodeWithTag("root-home").assertIsDisplayed() }.isSuccess
+        }
+        composeRule.onNodeWithText("Work").performClick()
+        composeRule.onNodeWithText("Visits").performClick()
+        composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("History"))
+        composeRule.onNodeWithText("History").performClick()
+        composeRule.onNodeWithTag("history-list").assertIsDisplayed()
+        pressBack()
+        composeRule.onNodeWithText("Customers").performClick()
+        composeRule.onNodeWithTag("root-customers").assertIsDisplayed()
+        composeRule.onNodeWithText("Home").performClick()
+        composeRule.onNodeWithTag("root-home").assertIsDisplayed()
+
+        composeRule.onNodeWithText("Settings").performClick()
+        composeRule.onNodeWithText("Reminders", substring = true).performClick()
+        composeRule.onNodeWithTag("reminder-settings").assertIsDisplayed()
+        pressBack()
+        composeRule.onNodeWithText("Calendar", substring = true).performClick()
+        composeRule.onNodeWithTag("calendar-settings").assertIsDisplayed()
+        pressBack()
+        composeRule.onNodeWithText("Coordinator tools").performClick()
+        composeRule.onNodeWithTag("coordinator-tools-switch").assertIsDisplayed()
+        pressBack()
+        pressBack()
+
+        if (composeRule.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithText("Outbox").performClick()
+            composeRule.onNodeWithTag("dispatch-outbox").assertIsDisplayed()
+        }
     }
 
     @Test
@@ -143,11 +179,11 @@ class OwnerVisualRuntimeTest {
             dao.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", null, null)))
             dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-1", null, "Equipment", null, null, null, null)))
             dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("t", null, "Inspection", 1, 1)))
-            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-belt", "t", 1, "Belt condition", "STATUS", null, true, null)))
+            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-belt", "t", 1, "Belt condition", "STATUS", null, true, null), ChecklistItemSnapshotEntity("check-note", "t", 2, "Record cabinet observations", "TEXT", null, true, null)))
             dao.insertVisits(listOf(WorkingVisitEntity("v", "V-TEST", "c", "s", "2026-09-05", "Customer", "Site", null, "WORKING", 1)))
             dao.insertWorkItems(listOf(WorkItemEntity("w", "v", "e", null, null, "t", "Equipment", "EQ-1", "Inspection", null, null, null, null, false, null, false)))
             dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("w", ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("w", "")))
-            dao.upsertResponses(listOf(WorkingResponseEntity("response", "w", "check-belt", "ISSUE_FOUND", null, null, "Initial finding", 1, issueFoundReasonDraft = "Initial finding")))
+            dao.upsertResponses(listOf(WorkingResponseEntity("response", "w", "check-belt", "ISSUE_FOUND", null, null, "Initial finding", 1, issueFoundReasonDraft = "Initial finding"), WorkingResponseEntity("response-note", "w", "check-note", "VALUE", "Initial cabinet note", null, null, 1)))
         }
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
@@ -195,6 +231,20 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("local unsaved note", substring = true)
         composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE").performClick()
         composeRule.onNodeWithTag("not-applicable-reason-check-belt").assertTextContains("Guard unavailable")
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
+        val valueField=composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
+        composeRule.onNodeWithTag("not-applicable-check-note").performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-note").performTextInput("Cabinet isolated")
+        composeRule.onNodeWithTag("not-applicable-save-check-note").performClick()
+        valueField.assertTextContains("Initial cabinet note")
+        composeRule.onNodeWithTag("value-save-check-note").performClick()
+        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("value-save-check-note").assertIsEnabled() }.isSuccess }
+        composeRule.onNodeWithText("Back").performClick()
+        composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
+        composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
+        composeRule.onNodeWithTag("not-applicable-check-note").performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-note").assertTextContains("Cabinet isolated")
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
         composeRule.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Parts and photographs").assertIsDisplayed()
