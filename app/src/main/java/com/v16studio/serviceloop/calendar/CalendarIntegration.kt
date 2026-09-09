@@ -104,19 +104,36 @@ class CalendarDeviceStore(context: Context) {
     private val baseFile=File(context.noBackupFilesDir,"calendar-integration.json")
     @Volatile private var corrupt=false
     @Volatile private var cached:CalendarDeviceState?=null
-    fun read(datasetId: String): CalendarDeviceState {
+    fun read(datasetId: String): CalendarDeviceState = synchronized(FILE_LOCK) {
         cached?.takeIf{it.datasetId==datasetId}?.let{return it}
         val parsed=try { if(!baseFile.isFile) null else JSONObject(baseFile.bufferedReader().use{it.readText()}) } catch (_:Exception) { corrupt=true; null }
         if(parsed==null) return CalendarDeviceState(datasetId,storeProblem=corrupt).also{cached=it}
         if(parsed.optString("datasetId")!=datasetId) return CalendarDeviceState(datasetId).also(::write)
         return try { val links=mutableMapOf<String,CalendarLink>();val array=parsed.optJSONArray("links")?:JSONArray();for(i in 0 until array.length()){val o=array.getJSONObject(i);val l=CalendarLink(o.getString("visitId"),o.getLong("calendarId"),o.getLong("eventId"),CalendarLinkState.valueOf(o.getString("state")),o.optString("fingerprint",""),o.optLong("lastConfirmedAt",0));links[l.visitId]=l};val suppressed=mutableSetOf<String>();val s=parsed.optJSONArray("suppressed")?:JSONArray();for(i in 0 until s.length())suppressed+=s.getString(i);val selectedId=if(parsed.has("selectedCalendarId")&&!parsed.isNull("selectedCalendarId"))parsed.getLong("selectedCalendarId")else null;val selectedLabel=if(parsed.has("selectedCalendarLabel")&&!parsed.isNull("selectedCalendarLabel"))parsed.getString("selectedCalendarLabel").takeIf{it.isNotBlank()}else null;CalendarDeviceState(datasetId,parsed.optBoolean("enabled",false),selectedId,selectedLabel,links,suppressed).also{cached=it} } catch (_:Exception){ corrupt=true; CalendarDeviceState(datasetId,storeProblem=true).also{cached=it} }
     }
-    fun write(state: CalendarDeviceState) {
+    fun write(state: CalendarDeviceState) = synchronized(FILE_LOCK) {
         val json=JSONObject().put("version",1).put("datasetId",state.datasetId).put("enabled",state.enabled).put("links",JSONArray(state.links.values.map{JSONObject().put("visitId",it.visitId).put("calendarId",it.calendarId).put("eventId",it.eventId).put("state",it.state.name).put("fingerprint",it.fingerprint).put("lastConfirmedAt",it.lastConfirmedAt)})).put("suppressed",JSONArray(state.suppressedVisitIds.toList()))
         state.selectedCalendarId?.let{json.put("selectedCalendarId",it)};state.selectedCalendarLabel?.let{json.put("selectedCalendarLabel",it)}
-        val temporary=File(baseFile.parentFile,"${baseFile.name}.new");try{FileOutputStream(temporary).use{stream->stream.write(json.toString().toByteArray());stream.fd.sync()};Files.move(temporary.toPath(),baseFile.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);corrupt=false;cached=state}catch(e:Exception){temporary.delete();throw e}
+        val temporary=File(baseFile.parentFile,"${baseFile.name}.${java.util.UUID.randomUUID()}.new")
+        try {
+            FileOutputStream(temporary).use{stream->stream.write(json.toString().toByteArray());stream.fd.sync()}
+            var failure:Exception?=null
+            for(attempt in 0 until 3) {
+                try {
+                    Files.move(temporary.toPath(),baseFile.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE)
+                    failure=null
+                    break
+                } catch (value:Exception) {
+                    failure=value
+                    if(attempt<2) Thread.sleep(10)
+                }
+            }
+            failure?.let{throw it}
+            corrupt=false;cached=state
+        }catch(e:Exception){temporary.delete();throw e}
     }
-    fun resetForDatasetReplacement() { baseFile.delete();File(baseFile.parentFile,"${baseFile.name}.new").delete();corrupt=false;cached=null }
+    fun resetForDatasetReplacement() = synchronized(FILE_LOCK) { baseFile.delete();baseFile.parentFile?.listFiles()?.filter{it.name.startsWith("${baseFile.name}.")&&it.name.endsWith(".new")}?.forEach(File::delete);corrupt=false;cached=null }
+    private companion object { val FILE_LOCK=Any() }
 }
 
 class CalendarCoordinator(private val context:Context, private val database:ServiceLoopDatabase, private val gateway:CalendarGateway, private val store:CalendarDeviceStore, private val scope:CoroutineScope) {

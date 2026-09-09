@@ -6,7 +6,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.calendar.*
 import com.v16studio.serviceloop.data.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -100,6 +103,13 @@ class CalendarIntegrationTest {
     @Test fun unavailableSelectedCalendarIsReportedTruthfully()=runBlocking{
         coordinator.setEnabled(true);coordinator.select(gateway.calendar);gateway.available=false
         assertEquals("Selected calendar unavailable",coordinator.runtimeState().label)
+    }
+
+    @Test fun concurrentStoreInstancesLeaveOneCompleteReadableStateFile()=runBlocking{
+        val stores=listOf(CalendarDeviceStore(context),CalendarDeviceStore(context))
+        (1..40).map{index->async(Dispatchers.IO){stores[index%stores.size].write(CalendarDeviceState("dataset-a",enabled=index%2==0,selectedCalendarId=index.toLong(),selectedCalendarLabel="Calendar $index"))}}.awaitAll()
+        val persisted=CalendarDeviceStore(context).read("dataset-a")
+        assertTrue(persisted.selectedCalendarId in 1L..40L);assertEquals("Calendar ${persisted.selectedCalendarId}",persisted.selectedCalendarLabel);assertFalse(persisted.storeProblem)
     }
 
     @Test fun eventContentIsMinimalAndPrivateFieldsCannotLeak(){

@@ -152,7 +152,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home") { HomeScreen(state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
+                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { HomeScreen(state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
             }
         }
         composable(
@@ -167,7 +167,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             var workTab by rememberSaveable(requested, contextualFilter) { mutableStateOf(requested) }
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadFollowUps() }
             RootScaffold(nav, RootDestination.WORK) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work") {
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) {
                     WorkScreen(state, nav, workTab, viewModel, contextualFilter) { workTab = it }
                 }
             }
@@ -176,7 +176,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             var equipmentMode by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers") { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav) }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav) }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -319,11 +319,6 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
                 }
             }
         }
-        composable("scope/{title}") { entry ->
-            DetailScaffold(entry.arguments?.getString("title") ?: "ServiceLoop", nav) { padding ->
-                HonestPlaceholder(padding, "This foundation exposes the entry point without claiming the later workflow is complete.")
-            }
-        }
     }
 }
 
@@ -382,11 +377,19 @@ private fun NavHostController.navigateToRoot(destination: RootDestination) {
 }
 
 @Composable
-private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues, contentTag: String? = null, content: @Composable () -> Unit) {
+private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues, contentTag: String? = null, refreshError: String? = null, onRetry: (() -> Unit)? = null, content: @Composable () -> Unit) {
     when {
         loading -> Column(Modifier.fillMaxSize().padding(padding), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("Reading saved service book", Modifier.padding(16.dp)) }
         error != null -> HonestPlaceholder(padding, "Cannot read saved data. $error")
-        else -> Surface(Modifier.fillMaxSize().padding(padding).then(if (contentTag == null) Modifier else Modifier.testTag(contentTag)), color = MaterialTheme.colorScheme.background) { content() }
+        else -> Column(Modifier.fillMaxSize().padding(padding).then(if (contentTag == null) Modifier else Modifier.testTag(contentTag))) {
+            refreshError?.let { message ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Saved data could not be refreshed — $message", color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
+                }
+            }
+            Surface(Modifier.fillMaxWidth().weight(1f), color = MaterialTheme.colorScheme.background) { content() }
+        }
     }
 }
 
@@ -675,7 +678,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools · Experimental", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Calendar · ${state.calendarRuntimeState.label}", "Open") { nav.navigate("calendar") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
+        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Calendar · ${state.calendarRuntimeState.label}", "Open") { nav.navigate("calendar") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
     }
 }
 
