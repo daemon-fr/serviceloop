@@ -1,5 +1,8 @@
 {
   "style": "fill",
+  "style_exceptions": {
+    "Back": "bold"
+  },
   "icons": {
     "Add": "plus",
     "Backup": "floppy-disk",
@@ -18,7 +21,7 @@
     "Home": "house",
     "History": "clock-counter-clockwise",
     "Info": "info",
-    "LocalSaved": "check",
+    "LocalSaved": "check-fat",
     "Lock": "lock-key",
     "Mail": "envelope",
     "More": "dots-three",

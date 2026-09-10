@@ -10,6 +10,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,15 +28,19 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +48,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
@@ -52,6 +59,146 @@ fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)?
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
         trailing?.invoke()
+    }
+}
+
+@Composable
+fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.brandMin)
+            .background(LocalServiceLoopTokens.current.brand)
+            .padding(horizontal = ServiceLoopUiTokens.Space.lg, vertical = ServiceLoopUiTokens.Space.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("ServiceLoop", color = Color.White, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun <T> ServiceLoopContentTabs(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = LocalServiceLoopTokens.current
+    val gap = ServiceLoopUiTokens.Space.xs
+    Layout(
+        content = {
+            options.forEach { (value, label) ->
+                val active = value == selected
+                Box(
+                    Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                        .clip(RoundedCornerShape(topStart = ServiceLoopUiTokens.Radius.field, topEnd = ServiceLoopUiTokens.Radius.field))
+                        .background(if (active) c.surface else Color.Transparent)
+                        .drawBehind {
+                            if (active) {
+                                val stroke = ServiceLoopUiTokens.Stroke.outline.toPx()
+                                val radius = ServiceLoopUiTokens.Radius.field.toPx()
+                                drawLine(c.outlineControl, Offset(0f, size.height), Offset(0f, radius), stroke)
+                                drawArc(c.outlineControl, 180f, 90f, false, Offset.Zero, Size(radius * 2, radius * 2), style = Stroke(stroke))
+                                drawLine(c.outlineControl, Offset(radius, 0f), Offset(size.width - radius, 0f), stroke)
+                                drawArc(c.outlineControl, 270f, 90f, false, Offset(size.width - radius * 2, 0f), Size(radius * 2, radius * 2), style = Stroke(stroke))
+                                drawLine(c.outlineControl, Offset(size.width, radius), Offset(size.width, size.height), stroke)
+                            }
+                        }
+                        .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+                        .clickable(role = Role.Tab) { onSelected(value) }.focusable()
+                        .semantics { this.role = Role.Tab; this.selected = active }
+                        .padding(horizontal = ServiceLoopUiTokens.Space.sm, vertical = ServiceLoopUiTokens.Space.md),
+                    contentAlignment = Alignment.Center,
+                ) { Text(label, style = ServiceLoopUiTokens.Type.label, color = if (active) c.action else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, softWrap = false) }
+            }
+        },
+        modifier = modifier.fillMaxWidth()
+            .drawBehind { drawLine(c.outlineControl, Offset(0f, size.height - ServiceLoopUiTokens.Stroke.outline.toPx()), Offset(size.width, size.height - ServiceLoopUiTokens.Stroke.outline.toPx()), ServiceLoopUiTokens.Stroke.outline.toPx()) },
+    ) { measurables, constraints ->
+        if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
+        val gapPx = gap.roundToPx()
+        val available = (constraints.maxWidth - gapPx * (measurables.size - 1)).coerceAtLeast(0)
+        val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val naturalTotal = natural.sum()
+        val spare = (available - naturalTotal).coerceAtLeast(0)
+        val baseShare = spare / measurables.size
+        val widths = natural.mapIndexed { index, width ->
+            if (naturalTotal > available) available / measurables.size + if (index < available % measurables.size) 1 else 0
+            else width + baseShare + if (index < spare % measurables.size) 1 else 0
+        }
+        val height = (measurables.mapIndexed { index, measurable -> measurable.maxIntrinsicHeight(widths[index]) }
+            .maxOrNull() ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
+        val placeables = measurables.mapIndexed { index, measurable -> measurable.measure(Constraints.fixed(widths[index], height)) }
+        layout(constraints.maxWidth, height) {
+            var x = 0
+            placeables.forEach { placeable -> placeable.placeRelative(x, 0); x += placeable.width + gapPx }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun <T> ServiceLoopChoiceGroup(options: List<Pair<T, String>>, selected: T, onSelected: (T) -> Unit, modifier: Modifier = Modifier, testTagPrefix: String? = null) {
+    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+        options.forEach { (value, label) ->
+            FilterChip(
+                selected = value == selected,
+                onClick = { onSelected(value) },
+                label = { Text(label, softWrap = false) },
+                modifier = Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
+            )
+        }
+    }
+}
+
+@Composable
+fun ServiceLoopSavedStatus(atEpochMillis: Long, modifier: Modifier = Modifier) {
+    val time = remember(atEpochMillis) { java.time.Instant.ofEpochMilli(atEpochMillis).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0).toString() }
+    val c = LocalServiceLoopTokens.current
+    Row(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+        ServiceLoopIcon(ServiceLoopIcons.LocalSaved, null, Modifier.size(ServiceLoopUiTokens.Size.icon), c.successInk)
+        Text("Saved on this device · $time", color = c.successInk, style = ServiceLoopUiTokens.Type.supporting)
+    }
+}
+
+@Composable
+fun ServiceLoopSectionDivider(modifier: Modifier = Modifier) = HorizontalDivider(modifier.padding(vertical = ServiceLoopUiTokens.Space.md), color = LocalServiceLoopTokens.current.outlineDecorative)
+
+@Composable
+fun ServiceLoopEntityRecord(
+    title: String,
+    context: String? = null,
+    metadata: String? = null,
+    status: String? = null,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val c = LocalServiceLoopTokens.current
+    val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
+    Row(
+        modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
+            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape)
+            .background(if (selected) c.selection else c.surface)
+            .drawWithContent {
+                drawContent()
+                drawRoundRect(
+                    color = if (selected) c.selectionOutline else c.recordBorder,
+                    cornerRadius = CornerRadius(ServiceLoopUiTokens.Radius.field.toPx()),
+                    style = Stroke(width = if (selected) ServiceLoopUiTokens.Stroke.selected.toPx() else ServiceLoopUiTokens.Stroke.record.toPx(), pathEffect = if (selected) null else PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
+                )
+            }
+            .clickable(role = Role.Button, onClick = onClick).focusable()
+            .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(title, context, metadata, status, "Open").joinToString(". ") }
+            .padding(ServiceLoopUiTokens.Space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+            Text(title, style = ServiceLoopUiTokens.Type.itemTitle)
+            context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary) }
+            metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted) }
+            status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
+        }
+        Text("Open", style = ServiceLoopUiTokens.Type.label, color = c.action)
     }
 }
 
@@ -116,7 +263,6 @@ internal fun ServiceLoopButtonContent(
     Row(
         modifier.heightIn(min=if(primary)ServiceLoopButtonContract.primaryMinHeight else ServiceLoopButtonContract.secondaryMinHeight)
             .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape).background(container)
-            .then(if(primary)Modifier else Modifier.border(ServiceLoopUiTokens.Stroke.outline,c.outlineControl,shape))
             .clickable(enabled=enabled&&!busy,role=Role.Button,interactionSource=interactionSource,indication=LocalIndication.current,onClick=onClick)
             .focusable(enabled=enabled).semantics(mergeDescendants=true) { if(!enabled||busy) disabled() }
             .padding(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding),
@@ -291,17 +437,25 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             restoreCompactFocus = false
         }
     }
-    Box(modifier.fillMaxWidth()) {
+    Column(modifier.fillMaxWidth().padding(bottom = ServiceLoopUiTokens.Space.lg), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+    Box(Modifier.fillMaxWidth()) {
         OutlinedTextField(
             editorValue, updateEditor, label = { Text(label) }, minLines = 3, enabled = enabled, isError = isError,
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, unfocusedBorderColor = c.outlineControl, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk, disabledTextColor = c.disabledText, disabledBorderColor = c.disabledContainer, disabledLabelColor = c.disabledText),
             textStyle = ServiceLoopUiTokens.Type.body,
-            trailingIcon={ServiceLoopIconAction("Expand $label",{expanded=true},enabled=enabled,modifier=Modifier.testTag("$tag-expand")){ServiceLoopIcon(ServiceLoopIcons.Expand,null,Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)}},
+            suffix = { Spacer(Modifier.width(ServiceLoopUiTokens.Size.editorActionReserve)) },
             modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester).testTag(fieldTestTag ?: tag),
         )
+        ServiceLoopIconAction(
+            "Expand $label",
+            { expanded = true },
+            enabled = enabled,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = ServiceLoopUiTokens.Space.sm, bottom = ServiceLoopUiTokens.Space.sm).testTag("$tag-expand"),
+        ) { ServiceLoopIcon(ServiceLoopIcons.Expand, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) }
     }
     if (private) Text("PRIVATE · Not included in the customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)
+    }
     if (expanded) {
         BackHandler { collapse() }
         Dialog(onDismissRequest = { collapse() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,8 +25,12 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -43,6 +48,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.RadioButton
@@ -75,8 +81,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
@@ -122,6 +131,12 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSavedStatus
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -237,7 +252,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("inspection/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }
-            DetailScaffold(state.inspection?.serviceName ?: "Inspection", nav) { padding ->
+            DetailScaffold("Service", nav) { padding ->
                 ScreenState(state.loading, state.error, padding) { state.inspection?.let { InspectionScreen(it, state.saveStatus, state.inspectionFocus, viewModel, nav) } }
             }
         }
@@ -351,22 +366,19 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
     val layoutDirection = LocalLayoutDirection.current
     Scaffold(
         topBar = {
+            Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            ServiceLoopBrandStrip()
             TopAppBar(
+                windowInsets = WindowInsets(0),
                 title = {
-                    if (selected == RootDestination.HOME) {
-                        Column {
-                            Text("ServiceLoop", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            Text("Home", style = MaterialTheme.typography.titleLarge)
-                        }
-                    } else {
-                        Text(selected.label, style = MaterialTheme.typography.titleLarge)
-                    }
+                    Text(selected.label, style = MaterialTheme.typography.titleLarge)
                 },
                 actions = {
                     TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
                     TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
                 },
             )
+            }
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
         floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("New visit") } },
@@ -380,8 +392,49 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
     val interceptor=remember { mutableStateOf<(() -> Unit)?>(null) }
     val windowWidth = LocalConfiguration.current.screenWidthDp.dp
     val layoutDirection = LocalLayoutDirection.current
-    val titleIcon=when{title.contains("report",true)||title.contains("record",true)->ServiceLoopIcons.Report;title.contains("customer",true)->ServiceLoopIcons.Customers;title.contains("site",true)->ServiceLoopIcons.Site;title.contains("equipment",true)->ServiceLoopIcons.Equipment;title.contains("history",true)->ServiceLoopIcons.History;title.contains("calendar",true)->ServiceLoopIcons.Calendar;title.contains("backup",true)->ServiceLoopIcons.Backup;title.contains("restore",true)||title.contains("recovery",true)->ServiceLoopIcons.Restore;else->null}
-    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Row(verticalAlignment=Alignment.CenterVertically){titleIcon?.let{ServiceLoopIcon(it,null,Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.icon);Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(title,maxLines=2)} }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { ServiceLoopIcon(ServiceLoopIcons.Back,null,Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Back") } },actions={topAction?.invoke(this)}) }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
+    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = {
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            ServiceLoopBrandStrip()
+            Surface(color=LocalServiceLoopTokens.current.surface) {
+                ServiceLoopDetailToolbar(title, { interceptor.value?.invoke() ?: nav.popBackStack() }, topAction)
+            }
+        }
+    }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
+}
+
+@Composable
+private fun ServiceLoopDetailToolbar(title: String, onBack: () -> Unit, topAction: (@Composable RowScope.() -> Unit)?) {
+    var leftWidthPx by remember { mutableStateOf(0) }
+    var rightWidthPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
+        val sideReserve = with(density) { maxOf(leftWidthPx, rightWidthPx).toDp() }
+        val stackTitle = maxWidth - sideReserve * 2 < 160.dp
+        if (stackTitle) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    ServiceLoopBackAction(onBack, Modifier.onSizeChanged { leftWidthPx = it.width })
+                    topAction?.let { action -> Row(Modifier.onSizeChanged { rightWidthPx = it.width }, content = action) }
+                }
+                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.lg, vertical = ServiceLoopUiTokens.Space.sm))
+            }
+        } else {
+            Box(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
+                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = sideReserve + ServiceLoopUiTokens.Space.sm))
+                ServiceLoopBackAction(onBack, Modifier.align(Alignment.CenterStart).onSizeChanged { leftWidthPx = it.width })
+                topAction?.let { action -> Row(Modifier.align(Alignment.CenterEnd).onSizeChanged { rightWidthPx = it.width }, content = action) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServiceLoopBackAction(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(onClick = onBack, modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin)) {
+        ServiceLoopIcon(ServiceLoopIcons.Back, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current)
+        Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
+        Text("Back")
+    }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -436,7 +489,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
             AccentCard {
                 Text(home.workingSite.orEmpty(), style = MaterialTheme.typography.titleMedium)
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
-                Text("Saved on this device · ${formatTime(home.savedAtEpochMillis)}", style = MaterialTheme.typography.bodyMedium)
+                home.savedAtEpochMillis?.let { ServiceLoopSavedStatus(it) }
                 Button(onClick = { home.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } }, modifier = Modifier.fillMaxWidth()) { Text("Resume visit") }
                 TextButton(onClick = { nav.navigate(workRoute(WorkTab.VISITS, "WORKING")) }) { Text("View all unfinished") }
             }
@@ -451,7 +504,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
             SummaryRow(bookedSummary, "Open") { nav.navigate(workRoute(WorkTab.VISITS, "BOOKED")) }
         }
         item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
-        items(equipment.take(3)) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\nDue ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
+        items(equipment.take(3)) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",metadata="Due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
         item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next ${home.dueSoonHorizonDays} business-local days", "View all") { nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON")) } }
         item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS, "DUE_OR_OVERDUE")) } }
         item { SectionTitle("Records needing attention · ${attention.size}"); if(attention.isEmpty()) Text("No correction or report-file attention needed.") }
@@ -465,7 +518,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
     if (tab == WorkTab.DUE_SERVICES) {
         val contextualDueBucket=runCatching{com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty())}.getOrNull()
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } }
+            ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected, Modifier.padding(16.dp, 12.dp, 16.dp, 0.dp))
             DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket)
         }
         return
@@ -475,20 +528,20 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
     var followFilter by rememberSaveable(tab,contextualFilter){mutableStateOf(runCatching{FollowUpFilter.valueOf(contextualFilter.orEmpty())}.getOrDefault(FollowUpFilter.ALL_OPEN))}
     val today=state.businessDate
     LazyColumn(Modifier.testTag("work-${tab.name.lowercase()}-list"), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) { WorkTab.entries.forEach { option -> if (tab == option) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.label) } else OutlinedButton(onClick = { onTabSelected(option) }, modifier = Modifier.weight(1f)) { Text(option.label) } } } }
+        item { ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected) }
         when (tab) {
             WorkTab.DUE_SERVICES -> Unit
             WorkTab.VISITS -> {
                 val filtered=state.visits.filter { visit -> (visitFilter==VisitFilter.ALL||visit.state==visitFilter.name) && when(visitWindow){VisitDateWindow.ALL_DATES->true;VisitDateWindow.PAST_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today.minusDays(30)..today}.getOrDefault(false);VisitDateWindow.NEXT_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today..today.plusDays(30)}.getOrDefault(false)} }
-                item { SectionTitle("Visits"); Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){VisitFilter.entries.forEach{option->FilterChip(visitFilter==option,{visitFilter=option},{Text(option.name.lowercase().replaceFirstChar(Char::uppercase))},modifier=Modifier.testTag("visit-filter-${option.name}"))}}; Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){VisitDateWindow.entries.forEach{option->FilterChip(visitWindow==option,{visitWindow=option},{Text(option.name.lowercase().replace('_',' '))},modifier=Modifier.testTag("visit-window-${option.name}"))}} }
+                item { SectionTitle("Visits"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(VisitFilter.entries.map{it to it.name.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)},visitFilter,{visitFilter=it},testTagPrefix="visit-filter"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopChoiceGroup(VisitDateWindow.entries.map{it to it.name.lowercase().replace('_',' ')},visitWindow,{visitWindow=it},testTagPrefix="visit-window") }
                 if (filtered.isEmpty()) item { Text("No visits match these filters") }
-                items(filtered) { visit -> SummaryRow("${visit.reference} · ${visit.state.lowercase().replace('_',' ').replaceFirstChar { it.uppercase() }} · ${visit.actualServiceDate}\n${visit.siteName}", "Open") { if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}") } }
+                items(filtered) { visit -> ServiceLoopEntityRecord(visit.reference,visit.siteName,visit.actualServiceDate,visit.state){if(visit.finalRecordId!=null)nav.navigate("record/${visit.finalRecordId}")else nav.navigate("visit/${visit.id}")} }
             }
             WorkTab.FOLLOW_UPS -> {
                 val filtered=state.followUps.filter{follow->val due=LocalDate.parse(follow.dueDate);when(followFilter){FollowUpFilter.DUE_OR_OVERDUE->follow.state=="OPEN"&&!due.isAfter(today);FollowUpFilter.UPCOMING->follow.state=="OPEN"&&due.isAfter(today);FollowUpFilter.ALL_OPEN->follow.state=="OPEN";FollowUpFilter.CLOSED->follow.state!="OPEN"}}
-                item { SectionTitle("Follow-ups · ${filtered.size}"); Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){FollowUpFilter.entries.forEach{option->FilterChip(followFilter==option,{followFilter=option},{Text(option.name.lowercase().replace('_',' '))},modifier=Modifier.testTag("follow-filter-${option.name}"))}} }
+                item { SectionTitle("Follow-ups · ${filtered.size}"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(FollowUpFilter.entries.map{it to it.name.lowercase().replace('_',' ')},followFilter,{followFilter=it},testTagPrefix="follow-filter") }
                 if(filtered.isEmpty()) item{Text("No follow-ups match this filter")}
-                items(filtered) { follow -> SummaryRow("${follow.reference} · ${follow.title}\n${follow.state} · Due ${follow.dueDate}\n${listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · ")}", "Open") { nav.navigate("follow-up/${follow.id}") } }
+                items(filtered) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · "),"Due ${follow.dueDate}",follow.state){nav.navigate("follow-up/${follow.id}")} }
             }
         }
         item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
@@ -500,22 +553,22 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
 private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment").forEach { (value, label) -> if (tab == value) Button(onClick = {}, modifier = Modifier.testTag("customers-tab-$value")) { Text(label) } else OutlinedButton(onClick = { tab = value }, modifier = Modifier.testTag("customers-tab-$value")) { Text(label) } } }; Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        item { ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}); Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = ServiceLoopUiTokens.Space.section)) }
         item {
             when (tab) { "CUSTOMERS" -> OutlinedButton(onClick = { nav.navigate("customer/new") }, modifier = Modifier.fillMaxWidth().testTag("add-customer")) { Text("Add customer") }; "EQUIPMENT" -> OutlinedButton(onClick = { nav.navigate("equipment/select-site") }, modifier = Modifier.fillMaxWidth().testTag("add-equipment-from-register")) { Text("Add equipment") }; else -> Unit }
         }
         when (tab) {
             "CUSTOMERS" -> {
             if (customers.isEmpty()) item { Text("Add a customer to begin.") }
-            items(customers) { item -> SummaryRow("${item.name}\n${item.reference} · ${item.siteCount} site · ${item.equipmentCount} equipment", "Open") { nav.navigate("customer/${item.id}") } }
+            items(customers) { item -> ServiceLoopEntityRecord(item.name,item.reference,"${item.siteCount} site · ${item.equipmentCount} equipment"){nav.navigate("customer/${item.id}")} }
             }
             "SITES" -> {
                 if (sites.isEmpty()) item { Text("No sites yet.") }
-                items(sites) { item -> SummaryRow("${item.reference} · ${item.name}\n${item.customerName}\n${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment", "Open") { nav.navigate("site/${item.id}") } }
+                items(sites) { item -> ServiceLoopEntityRecord("${item.reference} · ${item.name}",item.customerName,"${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment"){nav.navigate("site/${item.id}")} }
             }
             else -> {
             if (equipment.isEmpty()) item { Text("Add an equipment item to begin.") }
-            items(equipment) { item -> SummaryRow("${item.technicianIdentifier ?: item.reference} · ${item.name}\n${item.customerName} · ${item.siteName}\nNext due ${item.nearestDueDate ?: "not scheduled"}", "Open") { nav.navigate("equipment/${item.id}") } }
+            items(equipment) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}","${item.customerName} · ${item.siteName}","Next due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
             }
         }
     }
@@ -541,7 +594,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
         }
-        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { nav.navigate("equipment/edit/${detail.id}") }, Modifier.weight(1f)) { Text("Edit") }; Button(onClick = { detail.workingItemId?.let { nav.navigate("inspection/$it") } }, Modifier.weight(1f), enabled = detail.workingItemId != null) { Text("Start / resume") } } }
+        item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
             AccentCard {
@@ -553,7 +606,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
                 TextButton(onClick = { nav.navigate("plan/${plan.id}") }) { Text("Open plan") }
             }
         }
-        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; SummaryRow("Equipment history", "Open") { nav.navigate("history/EQUIPMENT/${detail.id}") }; SummaryRow("Move equipment", "Open") { nav.navigate("equipment/move/${detail.id}") }; SummaryRow(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service", "Review") { nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}") }; Text("Private equipment notes", style = MaterialTheme.typography.labelLarge) }
+        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()); Text("Private equipment notes", style = MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=ServiceLoopUiTokens.Space.section)) }
     }
 }
 
@@ -722,7 +775,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 
 @Composable
 private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
         item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Calendar · ${state.calendarRuntimeState.label}", "Open") { nav.navigate("calendar") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
     }
@@ -733,7 +786,7 @@ private fun CalendarSettingsScreen(state:UiState,padding:PaddingValues,viewModel
     val context=LocalContext.current
     val runtime=state.calendarRuntimeState
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->if(result[Manifest.permission.READ_CALENDAR]==true&&result[Manifest.permission.WRITE_CALENDAR]==true)viewModel.setCalendarEnabled(true)else viewModel.loadCalendarSettings()}
-    LazyColumn(Modifier.padding(padding).testTag("calendar-settings"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    LazyColumn(Modifier.padding(padding).testTag("calendar-settings"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)){
         item{Text("One-way Calendar integration",style=MaterialTheme.typography.titleLarge);Text("ServiceLoop remains the source of truth. Calendar changes do not change ServiceLoop. Only Booked Visits with an appointment time are automatically synchronized.");Text("Status: ${runtime.label}",modifier=Modifier.testTag("calendar-status"));Row(verticalAlignment=Alignment.CenterVertically){Checkbox(runtime.enabled,{enabled->if(enabled&&!runtime.hasPermissions)permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))else viewModel.setCalendarEnabled(enabled)},Modifier.testTag("calendar-enabled"));Text("Enable Calendar integration")};if(!runtime.hasPermissions)OutlinedButton({permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))},Modifier.fillMaxWidth().testTag("calendar-request-permission")){Text("Allow Calendar access")}}
         if(runtime.hasPermissions)item{Text("Preferred calendar",fontWeight=FontWeight.Bold);if(runtime.writableCalendars.isEmpty())Text("No writable calendar is available on this device.");runtime.writableCalendars.forEach{calendar->FilterChip(runtime.selectedCalendarLabel==calendar.label,{viewModel.selectCalendar(calendar)},{Text(listOfNotNull(calendar.label,calendar.accountLabel).joinToString(" · "))},Modifier.testTag("calendar-${calendar.id}"))};if(runtime.linkedFutureCount>0)Text("Changing this choice affects new events only; existing linked events stay in their original calendar.")}
         item{Text("${runtime.linkedFutureCount} linked future Visits · ${runtime.problemCount} need attention");if(!runtime.hasPermissions)OutlinedButton({context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}")))},Modifier.fillMaxWidth()){Text("Open Android app permission settings")};state.operationMessage?.let{Text(it)};state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}}
@@ -756,7 +809,7 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
         requested = value
         if (value && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Local reminders", style = MaterialTheme.typography.titleLarge); Text("${state.reminderRuntimeState.label}. Reminders may be delayed. Work lists remain the source of truth."); Text("Work summaries channel: ${if(state.reminderRuntimeState.summariesChannelEnabled) "available" else "blocked"}"); Text("Appointment reminders channel: ${if(state.reminderRuntimeState.appointmentsChannelEnabled) "available" else "blocked"}"); state.reminderRuntimeState.schedulingError?.let { Text("Scheduling error: $it", color = MaterialTheme.colorScheme.error) }; Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(requested, ::toggleDelivery, modifier = Modifier.testTag("reminder-delivery")); Text("Request local reminders") }; if (changed && requested) Text("Android permission changes are external and are not undone by Cancel.", style = MaterialTheme.typography.bodySmall) }
         item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { java.time.DayOfWeek.entries.forEach { day -> FilterChip(draft.includes(day), { draft = draft.copy(summaryDaysMask = draft.summaryDaysMask xor (1 shl (day.value - 1))) }, { Text(day.name.take(2)) }, modifier = Modifier.testTag("summary-day-${day.name.lowercase()}")) } }; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
         item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(0,7,14,30).forEach { days -> FilterChip(draft.dueSoonHorizonDays == days, { draft = draft.copy(dueSoonHorizonDays = days) }, { Text("$days days") }, modifier = Modifier.testTag("due-horizon-$days")) } }; Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
@@ -775,7 +828,7 @@ private fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveSta
     val zone = profile?.zoneId ?: ZoneId.systemDefault().id
     var business by rememberSaveable(profile) { mutableStateOf(profile?.businessName.orEmpty()) }; var technician by rememberSaveable(profile) { mutableStateOf(profile?.technicianName.orEmpty()) }
     var phone by rememberSaveable(profile) { mutableStateOf(profile?.phone.orEmpty()) }; var email by rememberSaveable(profile) { mutableStateOf(profile?.email.orEmpty()) }; var address by rememberSaveable(profile) { mutableStateOf(profile?.postalAddress.orEmpty()) }
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("These details are frozen into each finalized record."); SaveStateBanner(saveStatus) }
         item { OutlinedTextField(business, { business = it }, label = { Text("Business/display name · Required") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(technician, { technician = it }, label = { Text("Technician name · Required") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(phone, { phone = it }, label = { Text("Phone") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(address, { address = it }, label = { Text("Postal address") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
@@ -790,7 +843,7 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<R
     val context = LocalContext.current
     val reportPresent = detail.report?.let { File(context.filesDir, it.relativePath).isFile } == true
     var voidReason by rememberSaveable(report.recordId) { mutableStateOf("") }
-    LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}"); report.publicNote?.let { Text("Record note: $it") } }
         items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> ReportPhotoThumbnail(photo, index, context) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
@@ -842,7 +895,7 @@ private fun SaveStateBanner(status: SaveStatus) {
     when (status) {
         SaveStatus.Idle -> ServiceLoopNotice("Not saved", "Changes are saved only after the named Save action succeeds.", ServiceLoopNoticeKind.Warning)
         SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The last durable checkpoint remains in place until this finishes.", ServiceLoopNoticeKind.Working)
-        is SaveStatus.Saved -> ServiceLoopNotice("Saved on this device", formatTime(status.atEpochMillis), ServiceLoopNoticeKind.Success)
+        is SaveStatus.Saved -> ServiceLoopSavedStatus(status.atEpochMillis)
         is SaveStatus.Failed -> ServiceLoopNotice("Not saved — action needed", "${status.message}. Your input is still here. Last saved ${formatTime(status.lastSavedAtEpochMillis)}", ServiceLoopNoticeKind.Error)
     }
 }

@@ -49,11 +49,11 @@ def drawable_name(alias: str) -> str:
     return f"ic_sl_{snake}"
 
 
-def svg_paths(path: Path) -> list[str]:
+def svg_paths(path: Path) -> list[dict[str, str]]:
     root = ET.fromstring(path.read_bytes())
     if root.attrib.get("viewBox") != "0 0 256 256":
         raise ValueError(f"{path}: unsupported viewBox {root.attrib.get('viewBox')!r}")
-    paths: list[str] = []
+    paths: list[dict[str, str]] = []
     for node in root.iter():
         tag = node.tag.rsplit("}", 1)[-1]
         if tag in {"svg", "g"}:
@@ -63,6 +63,22 @@ def svg_paths(path: Path) -> list[str]:
         if tag == "line" and node.attrib.get("x1") == node.attrib.get("x2") and node.attrib.get("y1") == node.attrib.get("y2"):
             # Some upstream Fill SVGs retain an explicitly zero-length, non-rendering line.
             continue
+        if tag in {"line", "polyline"}:
+            required = {"fill", "stroke", "stroke-linecap", "stroke-linejoin", "stroke-width"}
+            if node.attrib.get("fill") != "none" or node.attrib.get("stroke") != "currentColor" or set(node.attrib) - (required | {"x1", "y1", "x2", "y2", "points"}):
+                raise ValueError(f"{path}: unsupported stroked <{tag}> attributes")
+            if node.attrib.get("stroke-linecap") != "round" or node.attrib.get("stroke-linejoin") != "round":
+                raise ValueError(f"{path}: unsupported stroke caps/joins")
+            if tag == "line":
+                data = f"M{node.attrib['x1']},{node.attrib['y1']} L{node.attrib['x2']},{node.attrib['y2']}"
+            else:
+                coordinates = re.findall(r"-?(?:\d+(?:\.\d*)?|\.\d+)", node.attrib.get("points", ""))
+                if len(coordinates) < 4 or len(coordinates) % 2:
+                    raise ValueError(f"{path}: unsupported polyline points")
+                points = [f"{coordinates[index]},{coordinates[index + 1]}" for index in range(0, len(coordinates), 2)]
+                data = "M" + " L".join(points)
+            paths.append({"d": data, "strokeWidth": node.attrib["stroke-width"]})
+            continue
         if tag != "path" or not node.attrib.get("d"):
             raise ValueError(f"{path}: unsupported visible <{tag}> element")
         unsupported = set(node.attrib) - {"d", "fill", "fill-rule", "clip-rule", "opacity"}
@@ -70,13 +86,13 @@ def svg_paths(path: Path) -> list[str]:
             raise ValueError(f"{path}: unsupported path attributes {sorted(unsupported)}")
         if node.attrib.get("fill") == "none":
             continue
-        paths.append(node.attrib["d"])
+        paths.append({"d": node.attrib["d"]})
     if not paths:
         raise ValueError(f"{path}: no renderable paths")
     return paths
 
 
-def vector_xml(paths: list[str]) -> str:
+def vector_xml(paths: list[dict[str, str]]) -> str:
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<vector xmlns:android="http://schemas.android.com/apk/res/android"',
@@ -85,32 +101,43 @@ def vector_xml(paths: list[str]) -> str:
         '    android:viewportWidth="256"',
         '    android:viewportHeight="256">',
     ]
-    for data in paths:
-        escaped = data.replace("&", "&amp;").replace('"', "&quot;")
-        lines.append(f'    <path android:fillColor="#FF000000" android:pathData="{escaped}" />')
+    for path in paths:
+        escaped = path["d"].replace("&", "&amp;").replace('"', "&quot;")
+        if "strokeWidth" in path:
+            lines.append(f'    <path android:fillColor="#00000000" android:strokeColor="#FF000000" android:strokeWidth="{path["strokeWidth"]}" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="{escaped}" />')
+        else:
+            lines.append(f'    <path android:fillColor="#FF000000" android:pathData="{escaped}" />')
     lines.append("</vector>")
     return "\n".join(lines) + "\n"
 
 
-def load_manifest(path: Path = MANIFEST) -> dict[str, str]:
+def load_manifest(path: Path = MANIFEST) -> dict[str, tuple[str, str]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if payload.get("style") != "fill":
         raise ValueError("manifest style must be exactly 'fill'")
     icons = payload.get("icons")
     if not isinstance(icons, dict) or not icons:
         raise ValueError("manifest icons must be a non-empty object")
+    exceptions = payload.get("style_exceptions", {})
+    if exceptions != {"Back": "bold"}:
+        raise ValueError("the only permitted style exception is Back: bold")
+    resolved = {}
     for alias, source_name in icons.items():
-        source = SOURCE / "fill" / f"{source_name}-fill.svg"
+        style = exceptions.get(alias, "fill")
+        suffix = "-fill" if style == "fill" else f"-{style}"
+        source = SOURCE / style / f"{source_name}{suffix}.svg"
         if not source.is_file():
-            raise ValueError(f"missing Fill icon for {alias}: {source}")
-    return icons
+            raise ValueError(f"missing {style} icon for {alias}: {source}")
+        resolved[alias] = (source_name, style)
+    return resolved
 
 
 def generate() -> None:
     icons = load_manifest()
     expected = set()
-    for alias, source_name in sorted(icons.items()):
-        source = SOURCE / "fill" / f"{source_name}-fill.svg"
+    for alias, (source_name, style) in sorted(icons.items()):
+        suffix = "-fill" if style == "fill" else f"-{style}"
+        source = SOURCE / style / f"{source_name}{suffix}.svg"
         name = drawable_name(alias)
         expected.add(f"{name}.xml")
         (OUTPUT / f"{name}.xml").write_text(vector_xml(svg_paths(source)), encoding="utf-8", newline="\n")
@@ -126,6 +153,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import com.v16studio.serviceloop.R
@@ -142,12 +170,12 @@ fun ServiceLoopIcon(
     @DrawableRes icon: Int,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    tint: Color = Color.Unspecified,
+    tint: Color = LocalContentColor.current,
 ) = Icon(serviceLoopIconPainter(icon), contentDescription, modifier, tint)
 """
     API.parent.mkdir(parents=True, exist_ok=True)
     API.write_text(api, encoding="utf-8", newline="\n")
-    print(f"generated {len(icons)} Fill icons and {API.relative_to(ROOT.parent.parent)}")
+    print(f"generated {len(icons)} icons (Fill default; Back Bold exception) and {API.relative_to(ROOT.parent.parent)}")
 
 
 if __name__ == "__main__":

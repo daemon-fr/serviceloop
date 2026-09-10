@@ -6,6 +6,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import com.v16studio.serviceloop.R
@@ -53,5 +54,5 @@ fun ServiceLoopIcon(
     @DrawableRes icon: Int,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    tint: Color = Color.Unspecified,
+    tint: Color = LocalContentColor.current,
 ) = Icon(serviceLoopIconPainter(icon), contentDescription, modifier, tint)

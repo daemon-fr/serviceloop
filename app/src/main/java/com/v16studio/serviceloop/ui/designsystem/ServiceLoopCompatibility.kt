@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.material3.ButtonColors
@@ -164,7 +165,7 @@ fun ServiceLoopTextFieldAdapter(
 ) = androidx.compose.material3.OutlinedTextField(
     value = value,
     onValueChange = onValueChange,
-    modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.fieldMin),
+    modifier = modifier.padding(bottom = ServiceLoopUiTokens.Space.lg).heightIn(min = ServiceLoopUiTokens.Size.fieldMin),
     enabled = enabled,
     readOnly = readOnly,
     textStyle = textStyle,

@@ -16,11 +16,14 @@ class PhosphorToolTest(unittest.TestCase):
         self.assertEqual(set(counts.values()), {1512})
         self.assertEqual(phosphor_tool.tree_identity()[0], 9072)
 
-    def test_every_manifest_entry_resolves_to_fill(self):
+    def test_every_manifest_entry_resolves_to_declared_strict_style(self):
         manifest = json.loads(phosphor_tool.MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(manifest["style"], "fill")
+        self.assertEqual(manifest["style_exceptions"], {"Back": "bold"})
         for source_name in manifest["icons"].values():
-            source = phosphor_tool.SOURCE / "fill" / f"{source_name}-fill.svg"
+            alias = next(alias for alias, value in manifest["icons"].items() if value == source_name)
+            style = manifest["style_exceptions"].get(alias, "fill")
+            source = phosphor_tool.SOURCE / style / f"{source_name}-{style}.svg"
             self.assertTrue(source.is_file(), source)
             self.assertTrue(phosphor_tool.svg_paths(source), source)
 
@@ -48,16 +51,31 @@ class PhosphorToolTest(unittest.TestCase):
     def test_wrong_style_is_rejected_by_generate(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manifest.json"
-            path.write_text(json.dumps({"style": "regular", "icons": {"Home": "house"}}))
+            path.write_text(json.dumps({"style": "regular", "style_exceptions": {"Back": "bold"}, "icons": {"Home": "house"}}))
             with self.assertRaisesRegex(ValueError, "exactly 'fill'"):
                 phosphor_tool.load_manifest(path)
 
     def test_unknown_fill_icon_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manifest.json"
-            path.write_text(json.dumps({"style": "fill", "icons": {"Unknown": "not-a-real-icon"}}))
-            with self.assertRaisesRegex(ValueError, "missing Fill icon"):
+            path.write_text(json.dumps({"style": "fill", "style_exceptions": {"Back": "bold"}, "icons": {"Unknown": "not-a-real-icon"}}))
+            with self.assertRaisesRegex(ValueError, "missing fill icon"):
                 phosphor_tool.load_manifest(path)
+
+    def test_only_named_back_bold_exception_is_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps({"style": "fill", "style_exceptions": {"Home": "bold"}, "icons": {"Home": "house"}}))
+            with self.assertRaisesRegex(ValueError, "only permitted style exception"):
+                phosphor_tool.load_manifest(path)
+
+    def test_bold_back_preserves_upstream_stroke_geometry(self):
+        paths = phosphor_tool.svg_paths(phosphor_tool.SOURCE / "bold" / "arrow-left-bold.svg")
+        self.assertEqual(["24", "24"], [path["strokeWidth"] for path in paths])
+        xml = phosphor_tool.vector_xml(paths)
+        self.assertIn('android:strokeLineCap="round"', xml)
+        self.assertIn('android:strokeLineJoin="round"', xml)
+        self.assertIn('android:viewportWidth="256"', xml)
 
     def test_second_generation_is_byte_identical(self):
         phosphor_tool.generate()
