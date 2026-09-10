@@ -23,7 +23,13 @@ data class SiteDetail(
     val name: String, val address: String, val contactName: String, val phone: String,
     val email: String, val privateAccessNote: String, val isDefault: Boolean,
     val equipment: List<EquipmentSummary>, val state: String = "ACTIVE",
-)
+    val customerContactName: String = "", val customerPhone: String = "", val customerEmail: String = "",
+) {
+    val usesCustomerContact: Boolean get() = contactName.isBlank() && phone.isBlank() && email.isBlank()
+    val effectiveContactName: String get() = if (usesCustomerContact) customerContactName else contactName
+    val effectivePhone: String get() = if (usesCustomerContact) customerPhone else phone
+    val effectiveEmail: String get() = if (usesCustomerContact) customerEmail else email
+}
 
 data class CustomerInput(val name: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateNote: String = "")
 data class SiteInput(val name: String, val address: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateAccessNote: String = "", val isDefault: Boolean = false)

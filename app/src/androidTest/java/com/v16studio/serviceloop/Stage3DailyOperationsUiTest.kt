@@ -74,11 +74,13 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Address").performTextInput("1 Development Street")
         compose.onNodeWithText("Save site").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().siteCount()==2}}
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("add-equipment").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("add-equipment").performScrollTo().performClick()
         compose.onNodeWithText("Equipment name · Required").performTextInput("Test compressor")
         compose.onNodeWithText("Technician identifier").performTextInput("TC-01")
         compose.onNodeWithText("Save equipment").performScrollTo().performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().equipmentCount()==1}}
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("add-service-plan", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("add-service-plan", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Plan name · Required").performTextInput("Quarterly inspection")
         compose.onNodeWithText("Save plan").performScrollTo().performClick()

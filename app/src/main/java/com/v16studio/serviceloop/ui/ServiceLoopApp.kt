@@ -363,13 +363,13 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
                     }
                 },
                 actions = {
-                    TextButton(onClick = { nav.navigate("search") }) { Text("Search") }
-                    TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
+                    TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
+                    TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
                 },
             )
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
-        floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { Text("New visit") } },
+        floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("New visit") } },
         content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } },
     )
 }
@@ -380,7 +380,7 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
     val interceptor=remember { mutableStateOf<(() -> Unit)?>(null) }
     val windowWidth = LocalConfiguration.current.screenWidthDp.dp
     val layoutDirection = LocalLayoutDirection.current
-    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Text(title, maxLines = 2) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { Text("Back") } },actions={topAction?.invoke(this)}) }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
+    CompositionLocalProvider(LocalDetailBackInterceptor provides interceptor) { Scaffold(containerColor=LocalServiceLoopTokens.current.canvas,topBar = { TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=LocalServiceLoopTokens.current.surface),title = { Text(title, maxLines = 2) }, navigationIcon = { TextButton(onClick = { interceptor.value?.invoke() ?: nav.popBackStack() },modifier=Modifier.heightIn(min=48.dp)) { ServiceLoopIcon(ServiceLoopIcons.Back,null,Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Back") } },actions={topAction?.invoke(this)}) }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -869,7 +869,18 @@ private fun ReportPhotoThumbnail(photo: PublicPhoto, index: Int, context: androi
 
 @Composable private fun AccentCard(content: @Composable ColumnScope.() -> Unit) = ServiceLoopSurfaceCard(content = content)
 
-@Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) { Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(text, Modifier.weight(1f)); Spacer(Modifier.width(8.dp)); Text(action, color = LocalServiceLoopTokens.current.action, fontWeight = FontWeight.Medium) } } }
+@Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = LocalServiceLoopTokens.current.surface, modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Row(Modifier.padding(horizontal = ServiceLoopUiTokens.Space.sm, vertical = ServiceLoopUiTokens.Space.md).heightIn(min = ServiceLoopUiTokens.Size.listRowMin).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(text, Modifier.weight(1f))
+                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
+                Text(action, color = LocalServiceLoopTokens.current.action, fontWeight = FontWeight.Medium)
+            }
+            HorizontalDivider(color = LocalServiceLoopTokens.current.outlineDecorative)
+        }
+    }
+}
 
 @Composable private fun StatusChip(text: String, urgency: Boolean) { val colors = LocalServiceLoopTokens.current; Text(text, color = if (urgency) colors.warningInk else colors.infoInk, modifier = Modifier.background(if (urgency) colors.warningContainer else colors.infoContainer, MaterialTheme.shapes.extraSmall).padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 

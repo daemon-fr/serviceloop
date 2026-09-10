@@ -176,12 +176,24 @@ class StageAVisualProofTest {
         compose.waitForIdle()
     }
 
-    private fun capture(name: String) {
+    private fun capture(name: String, tag: String = "stage-a-proof") {
         val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "stage-a-proof")
         assertTrue(directory.exists() || directory.mkdirs())
-        File(directory, name).outputStream().use {
-            assertTrue(compose.onNodeWithTag("stage-a-proof").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
+        var lastFailure: Throwable? = null
+        repeat(3) {
+            try {
+                compose.waitForIdle()
+                File(directory, name).outputStream().use {
+                    assertTrue(compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
+                }
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                compose.runOnUiThread { compose.activity.window.decorView.invalidate() }
+                Thread.sleep(250)
+            }
         }
+        throw AssertionError("Unable to capture Stage-A proof after redraw retries", lastFailure)
     }
 
     @Test
@@ -274,10 +286,7 @@ class StageAVisualProofTest {
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Northside Foods").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("dispatch-choose-site").assertIsDisplayed()
         compose.onNodeWithTag("dispatch-save-visit").assertIsDisplayed()
-        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "stage-a-proof")
-        File(directory, "dispatch-editor-320-light-fontscale-2.png").outputStream().use {
-            assertTrue(compose.onNodeWithTag("stage-a-adaptation-proof").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
-        }
+        capture("dispatch-editor-320-light-fontscale-2.png", "stage-a-adaptation-proof")
     }
 
     @Test

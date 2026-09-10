@@ -201,7 +201,7 @@ class RoomServiceLoopRepository(
         val equipment = dao.equipmentForSite(id).map { item ->
             EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate })
         }
-        return SiteDetail(site.id, customer.id, customer.name, site.reference, site.name, site.address.orEmpty(), site.contactName.orEmpty(), site.phone.orEmpty(), site.email.orEmpty(), site.privateAccessNotes.orEmpty(), site.isDefault, equipment, site.state)
+        return SiteDetail(site.id, customer.id, customer.name, site.reference, site.name, site.address.orEmpty(), site.contactName.orEmpty(), site.phone.orEmpty(), site.email.orEmpty(), site.privateAccessNotes.orEmpty(), site.isDefault, equipment, site.state, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty())
     }
 
     override suspend fun dueServices(): List<DueService> {

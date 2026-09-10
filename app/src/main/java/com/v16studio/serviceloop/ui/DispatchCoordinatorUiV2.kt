@@ -52,7 +52,7 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 private fun dispatchService(context:Context)=DispatchPackageService((context.applicationContext as ServiceLoopApplication).container.database,context.filesDir)
 
 @Composable private fun DispatchChoiceDialog(title:String,options:List<String>,selected:String,onDismiss:()->Unit,onSelect:(String)->Unit){
-    AlertDialog(onDismissRequest=onDismiss,title={Text(title)},text={Column{options.forEach{option->ServiceLoopTextAction((if(option==selected)"✓ " else "")+option,{onSelect(option)},Modifier.fillMaxWidth().testTag("dispatch-choice-${option.lowercase().replace(' ','-')}"))}}},confirmButton={ServiceLoopTextAction("Cancel",onDismiss)})
+    AlertDialog(onDismissRequest=onDismiss,title={Text(title)},text={Column{options.forEach{option->ServiceLoopTextAction(option + if(option==selected) " · Selected" else "",{onSelect(option)},Modifier.fillMaxWidth().testTag("dispatch-choice-${option.lowercase().replace(' ','-')}"))}}},confirmButton={ServiceLoopTextAction("Cancel",onDismiss)})
 }
 
 @Composable private fun DispatchValueDialog(title:String,label:String,value:String,optional:Boolean=false,onDismiss:()->Unit,onApply:(String)->Unit){

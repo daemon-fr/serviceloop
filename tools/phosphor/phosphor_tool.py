@@ -92,18 +92,25 @@ def vector_xml(paths: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generate() -> None:
-    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+def load_manifest(path: Path = MANIFEST) -> dict[str, str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
     if payload.get("style") != "fill":
-        raise SystemExit("manifest style must be exactly 'fill'")
+        raise ValueError("manifest style must be exactly 'fill'")
     icons = payload.get("icons")
     if not isinstance(icons, dict) or not icons:
-        raise SystemExit("manifest icons must be a non-empty object")
+        raise ValueError("manifest icons must be a non-empty object")
+    for alias, source_name in icons.items():
+        source = SOURCE / "fill" / f"{source_name}-fill.svg"
+        if not source.is_file():
+            raise ValueError(f"missing Fill icon for {alias}: {source}")
+    return icons
+
+
+def generate() -> None:
+    icons = load_manifest()
     expected = set()
     for alias, source_name in sorted(icons.items()):
         source = SOURCE / "fill" / f"{source_name}-fill.svg"
-        if not source.is_file():
-            raise SystemExit(f"missing Fill icon for {alias}: {source}")
         name = drawable_name(alias)
         expected.add(f"{name}.xml")
         (OUTPUT / f"{name}.xml").write_text(vector_xml(svg_paths(source)), encoding="utf-8", newline="\n")

@@ -43,7 +43,22 @@ class DispatchCoordinatorUiTest {
     private var coordinatorWasEnabled=false
     @Before fun off(){coordinatorWasEnabled=prefs.getBoolean(COORDINATOR_ENABLED,false);prefs.edit().putBoolean(COORDINATOR_ENABLED,false).commit()}
     @After fun restorePreference(){prefs.edit().putBoolean(COORDINATOR_ENABLED,coordinatorWasEnabled).commit()}
-    private fun capture(tag:String,name:String){val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),name);file.outputStream().use{assertTrue(compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it))}}
+    private fun capture(tag:String,name:String){
+        val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),name)
+        var lastFailure:Throwable?=null
+        repeat(3){
+            try{
+                compose.waitForIdle()
+                file.outputStream().use{assertTrue(compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it))}
+                return
+            }catch(failure:Throwable){
+                lastFailure=failure
+                compose.runOnUiThread{compose.activity.window.decorView.invalidate()}
+                Thread.sleep(250)
+            }
+        }
+        throw AssertionError("Unable to capture $tag after redraw retries",lastFailure)
+    }
 
     @Test fun coordinatorWorkspaceMovesFromSettingsToReactiveHomeActions(){
         compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
