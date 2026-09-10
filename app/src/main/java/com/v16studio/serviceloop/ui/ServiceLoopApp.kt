@@ -128,6 +128,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as OutlinedTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.serviceLoopAdaptiveScaffoldPadding
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -387,7 +389,12 @@ internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() ->
 private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestination) -> Unit) {
     NavigationBar {
         RootDestination.entries.forEach { destination ->
-            NavigationBarItem(selected = selected == destination, onClick = { onNavigate(destination) }, icon = { Text(if (destination == RootDestination.HOME) "⌂" else if (destination == RootDestination.WORK) "✓" else "◎") }, label = { Text(destination.label) }, modifier = Modifier.testTag("root-nav-${destination.name.lowercase()}"))
+            val icon = when (destination) {
+                RootDestination.HOME -> ServiceLoopIcons.Home
+                RootDestination.WORK -> ServiceLoopIcons.Work
+                RootDestination.CUSTOMERS -> ServiceLoopIcons.Customers
+            }
+            NavigationBarItem(selected = selected == destination, onClick = { onNavigate(destination) }, icon = { ServiceLoopIcon(icon, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) }, label = { Text(destination.label) }, modifier = Modifier.testTag("root-nav-${destination.name.lowercase()}"))
         }
     }
 }

@@ -46,6 +46,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.v16studio.serviceloop.ui.designsystem.*
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 
 private fun dispatchService(context:Context)=DispatchPackageService((context.applicationContext as ServiceLoopApplication).container.database,context.filesDir)
 
@@ -118,7 +120,7 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${selectedRows.size} selected",Modifier.weight(1f).testTag("dispatch-selected-count"),style=MaterialTheme.typography.titleMedium);ServiceLoopTextAction("Clear",{checked=emptySet()},Modifier.testTag("dispatch-clear-selection"))}
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Layout.buttonGap)){
                 ServiceLoopPrimaryButton("Export (${selectedRows.size})",{when{selectedRows.size>DispatchPackageCodec.MAX_VISITS->error="A work package can contain at most ${DispatchPackageCodec.MAX_VISITS} Visits. Reduce the selection.";selectedRows.any{it.outboxStatus==DispatchOutboxStatus.CONCLUDED}->error="Concluded Visits must be reopened before export.";selectedRows.any{(itemCounts[it.dispatchVisitId]?:0)==0}->error="Every selected Visit needs at least one work item before export.";else->{nav.currentBackStackEntry?.savedStateHandle?.set("dispatch-export-ids",ArrayList(selectedRows.map{it.dispatchVisitId}));nav.navigate("dispatch/export-review")}}},Modifier.weight(1f).testTag("dispatch-export-selected"))
-                Box { ServiceLoopIconAction("More selected visit actions",{moreOpen=true},Modifier.testTag("dispatch-more-selection")){Text("…",style=ServiceLoopUiTokens.Type.button)};DropdownMenu(moreOpen,{moreOpen=false}){
+                Box { ServiceLoopIconAction("More selected visit actions",{moreOpen=true},Modifier.testTag("dispatch-more-selection")){ServiceLoopIcon(ServiceLoopIcons.More,null,Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)};DropdownMenu(moreOpen,{moreOpen=false}){
                     if(selectedRows.all{it.outboxStatus==DispatchOutboxStatus.DISPATCHED})DropdownMenuItem({Text("Mark concluded")},{moreOpen=false;pendingStatusAction="conclude"},Modifier.testTag("dispatch-conclude-selected"))
                     else if(selectedRows.all{it.outboxStatus==DispatchOutboxStatus.CONCLUDED})DropdownMenuItem({Text("Reopen")},{moreOpen=false;pendingStatusAction="reopen"},Modifier.testTag("dispatch-reopen-selected"))
                     else DropdownMenuItem({Text("No status action for mixed selection")},{moreOpen=false},enabled=false)

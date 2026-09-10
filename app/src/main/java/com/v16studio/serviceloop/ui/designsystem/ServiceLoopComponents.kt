@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 
 @Composable
 fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)? = null, modifier: Modifier = Modifier) {
@@ -83,7 +85,15 @@ fun ServiceLoopNotice(title: String, body: String? = null, kind: ServiceLoopNoti
         modifier.fillMaxWidth().semantics { if(kind==ServiceLoopNoticeKind.Error || kind==ServiceLoopNoticeKind.Success) liveRegion=LiveRegionMode.Polite }.background(pair.first, RoundedCornerShape(ServiceLoopUiTokens.Radius.field)).padding(ServiceLoopUiTokens.Space.lg),
         horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),verticalAlignment=Alignment.Top,
     ) {
-        NoticeGlyph(Modifier.size(ServiceLoopUiTokens.Size.icon),pair.second)
+        ServiceLoopIcon(
+            when(kind){
+                ServiceLoopNoticeKind.Error -> ServiceLoopIcons.Error
+                ServiceLoopNoticeKind.Success -> ServiceLoopIcons.LocalSaved
+                ServiceLoopNoticeKind.Warning -> ServiceLoopIcons.Warning
+                ServiceLoopNoticeKind.Info -> ServiceLoopIcons.Info
+                ServiceLoopNoticeKind.Working -> ServiceLoopIcons.Time
+            }, null, Modifier.size(ServiceLoopUiTokens.Size.icon), pair.second,
+        )
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)){
             Text(title, color = pair.second, style = MaterialTheme.typography.titleMedium)
             body?.let { Text(it, color = pair.second, style = MaterialTheme.typography.bodyLarge) }
@@ -91,8 +101,6 @@ fun ServiceLoopNotice(title: String, body: String? = null, kind: ServiceLoopNoti
         }
     }
 }
-
-@Composable private fun NoticeGlyph(modifier:Modifier,color:Color)=Canvas(modifier){val stroke=ServiceLoopUiTokens.Stroke.focus.toPx();drawCircle(color,style=Stroke(stroke));drawLine(color,Offset(size.width/2,size.height*.28f),Offset(size.width/2,size.height*.58f),stroke);drawCircle(color,stroke/2,Offset(size.width/2,size.height*.76f))}
 
 @Composable
 private fun ServiceLoopButton(
@@ -173,16 +181,7 @@ fun ServiceLoopPickerSummary(
             Text(value, style = MaterialTheme.typography.titleMedium)
             supporting?.takeIf { it.isNotBlank() }?.let { Text(it, color = c.textSecondary, style = MaterialTheme.typography.bodyMedium) }
         }
-        if (enabled) Chevron(Modifier.size(ServiceLoopUiTokens.Size.icon), c.icon)
-    }
-}
-
-@Composable
-private fun Chevron(modifier: Modifier, color: Color) {
-    Canvas(modifier) {
-        val stroke = 2.dp.toPx()
-        drawLine(color, Offset(size.width * .38f, size.height * .22f), Offset(size.width * .65f, size.height * .5f), stroke)
-        drawLine(color, Offset(size.width * .65f, size.height * .5f), Offset(size.width * .38f, size.height * .78f), stroke)
+        if (enabled) ServiceLoopIcon(ServiceLoopIcons.Disclosure, null, Modifier.size(ServiceLoopUiTokens.Size.icon), c.icon)
     }
 }
 
@@ -258,7 +257,7 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, unfocusedBorderColor = c.outlineControl, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk, disabledTextColor = c.disabledText, disabledBorderColor = c.disabledContainer, disabledLabelColor = c.disabledText),
             textStyle = ServiceLoopUiTokens.Type.body,
-            trailingIcon={ServiceLoopIconAction("Expand $label",{expanded=true},enabled=enabled,modifier=Modifier.testTag("$tag-expand")){ExpandGlyph(Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)}},
+            trailingIcon={ServiceLoopIconAction("Expand $label",{expanded=true},enabled=enabled,modifier=Modifier.testTag("$tag-expand")){ServiceLoopIcon(ServiceLoopIcons.Expand,null,Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action)}},
             modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester).testTag(fieldTestTag ?: tag),
         )
     }
@@ -295,16 +294,6 @@ fun Modifier.serviceLoopFocusRing(radius: Dp): Modifier = composed {
                 style = Stroke(stroke),
             )
         }
-    }
-}
-
-@Composable
-private fun ExpandGlyph(modifier: Modifier, color: Color) {
-    Canvas(modifier) {
-        val s = 2.dp.toPx(); val i = 3.dp.toPx(); val a = 7.dp.toPx()
-        drawLine(color, Offset(i, a+i), Offset(i, i), s); drawLine(color, Offset(i, i), Offset(a+i, i), s)
-        drawLine(color, Offset(size.width-i, size.height-a-i), Offset(size.width-i, size.height-i), s)
-        drawLine(color, Offset(size.width-a-i, size.height-i), Offset(size.width-i, size.height-i), s)
     }
 }
 
