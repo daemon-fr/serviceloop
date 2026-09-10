@@ -41,16 +41,6 @@ fun ServiceLoopButtonAdapter(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = ServiceLoopUiTokens.Shapes.small,
-    colors: ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = LocalServiceLoopTokens.current.action,
-        contentColor = LocalServiceLoopTokens.current.onAction,
-        disabledContainerColor = LocalServiceLoopTokens.current.disabledContainer,
-        disabledContentColor = LocalServiceLoopTokens.current.disabledText,
-    ),
-    elevation: ButtonElevation? = null,
-    border: BorderStroke? = null,
-    contentPadding: PaddingValues = PaddingValues(horizontal = ServiceLoopUiTokens.Space.xl, vertical = ServiceLoopUiTokens.Space.md),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
 ) = ServiceLoopButtonContent(onClick,modifier,enabled,primary=true,interactionSource=interactionSource ?: androidx.compose.runtime.remember { MutableInteractionSource() },content=content)
@@ -60,16 +50,6 @@ fun ServiceLoopOutlinedButtonAdapter(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = ServiceLoopUiTokens.Shapes.small,
-    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(
-        containerColor = LocalServiceLoopTokens.current.surface,
-        contentColor = LocalServiceLoopTokens.current.action,
-        disabledContainerColor = LocalServiceLoopTokens.current.disabledContainer,
-        disabledContentColor = LocalServiceLoopTokens.current.disabledText,
-    ),
-    elevation: ButtonElevation? = null,
-    border: BorderStroke? = BorderStroke(ServiceLoopUiTokens.Stroke.outline, LocalServiceLoopTokens.current.outlineControl),
-    contentPadding: PaddingValues = PaddingValues(horizontal = ServiceLoopUiTokens.Space.xl, vertical = ServiceLoopUiTokens.Space.md),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
 ) = ServiceLoopButtonContent(onClick,modifier,enabled,primary=false,interactionSource=interactionSource ?: androidx.compose.runtime.remember { MutableInteractionSource() },content=content)

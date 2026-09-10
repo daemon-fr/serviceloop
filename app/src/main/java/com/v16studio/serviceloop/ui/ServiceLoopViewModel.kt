@@ -57,6 +57,7 @@ data class UiState(
     val siteList: List<SiteRegisterSummary> = emptyList(),
     val inspection: InspectionDraft? = null,
     val completionLines: List<CompletionLine> = emptyList(),
+    val completionVisitId: String? = null,
     val visits: List<VisitSummary> = emptyList(),
     val businessProfile: BusinessProfile? = null,
     val visitReportIdentity: BusinessProfile? = null,
@@ -135,6 +136,7 @@ class ServiceLoopViewModel(
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var rootRefreshJob: Job? = null
     private var searchJob: Job? = null
+    private var dueServicesJob: Job? = null
     private val activeLoads = AtomicInteger(0)
     private val requestLock = Any()
     private val requestVersions = mutableMapOf<String, Long>()
@@ -162,25 +164,32 @@ class ServiceLoopViewModel(
         businessDateSignal?.let { signal -> viewModelScope.launch { signal.tokens.collect { token -> _state.update { it.copy(businessDate = token.date, businessZoneId = token.zoneId.id) }; refreshRootDataNonBlocking() } } }
     }
 
-    private fun loadInitialRootData() = launchLoad {
+    private fun loadInitialRootData() {
+        val request = issueRequest("root")
+        val visitsRequest = issueRequest("visits")
+        launchLoad {
         val home = repository.home()
         val equipmentList = repository.equipmentList()
         val customerList = repository.customerList()
         val siteList = repository.siteList()
         val visits = repository.visits()
-        _state.update { current -> current.copy(
+        val publishVisits = isCurrent(visitsRequest)
+        if (isCurrent(request)) _state.update { current -> current.copy(
             home = home,
             equipmentList = equipmentList,
             customerList = customerList,
             siteList = siteList,
-            visits = visits,
+            visits = if (publishVisits) visits else current.visits,
             rootDataReady = true,
             recoveryCheckComplete = true,
         ) }
+        }
     }
 
     internal fun refreshRootDataNonBlocking() {
         if (!_state.value.rootDataReady) return
+        val request = issueRequest("root")
+        val visitsRequest = issueRequest("visits")
         rootRefreshJob?.cancel()
         rootRefreshJob = viewModelScope.launch {
             try {
@@ -190,18 +199,19 @@ class ServiceLoopViewModel(
                 val siteList = repository.siteList()
                 val visits = repository.visits()
                 ensureActive()
-                _state.update { current -> current.copy(
+                val publishVisits = isCurrent(visitsRequest)
+                if (isCurrent(request)) _state.update { current -> current.copy(
                     home = home,
                     equipmentList = equipmentList,
                     customerList = customerList,
                     siteList = siteList,
-                    visits = visits,
+                    visits = if (publishVisits) visits else current.visits,
                     rootRefreshError = null,
                 ) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _state.update { it.copy(rootRefreshError = failure.message ?: "Unable to refresh saved data") }
+                if (isCurrent(request)) _state.update { it.copy(rootRefreshError = failure.message ?: "Unable to refresh saved data") }
             }
         }
     }
@@ -213,6 +223,7 @@ class ServiceLoopViewModel(
 
     fun loadInspection(id: String) {
         val request = issueRequest("inspection")
+        issueRequest("draftSaveContext")
         launchLoad {
             val draft = repository.inspection(id)
             if (!isCurrent(request)) return@launchLoad
@@ -225,14 +236,26 @@ class ServiceLoopViewModel(
     fun focusInspection(kind: CompletionBlockerKind, questionId: String?) { _state.update { it.copy(inspectionFocus = InspectionFocus(kind, questionId)) } }
     fun clearInspectionFocus() { _state.update { it.copy(inspectionFocus = null) } }
 
-    fun loadCompletion(visitId: String) = launchLoad {
-        val lines = repository.completionLines(visitId)
-        val profile = repository.businessProfile()
-        val identity = repository.visitReportIdentity(visitId)
-        _state.update { it.copy(completionLines = lines, businessProfile = profile, visitReportIdentity = identity) }
+    fun loadCompletion(visitId: String) {
+        val request = issueRequest("completion")
+        issueRequest("draftSaveContext")
+        launchLoad {
+            val lines = repository.completionLines(visitId)
+            val profile = repository.businessProfile()
+            val identity = repository.visitReportIdentity(visitId)
+            if (isCurrent(request)) _state.update { current -> current.copy(completionLines = lines, completionVisitId = visitId, businessProfile = profile, visitReportIdentity = identity, saveStatus = if(current.completionVisitId == visitId) current.saveStatus else SaveStatus.Idle) }
+        }
+    }
+    fun clearCompletionContext(visitId: String) {
+        issueRequest("completion")
+        issueRequest("draftSaveContext")
+        _state.update { current -> if(current.completionVisitId == visitId) current.copy(completionVisitId=null,finalizing=false,finalizedRecordId=null) else current }
     }
 
-    fun loadVisits() = launchLoad { val values = repository.visits(); _state.update { it.copy(visits = values) } }
+    fun loadVisits() {
+        val request = issueRequest("visits")
+        launchLoad { val values = repository.visits(); if (isCurrent(request)) _state.update { it.copy(visits = values) } }
+    }
     fun loadCustomer(id: String) {
         val request = issueRequest("customer")
         launchLoad { val value = repository.customer(id); if (isCurrent(request)) _state.update { it.copy(customer = value) } }
@@ -251,7 +274,7 @@ class ServiceLoopViewModel(
     }
 
     private fun observeDueServices() {
-        viewModelScope.launch {
+        dueServicesJob = viewModelScope.launch {
             try {
                 startup()
                 repository.observeDueServices().collect { loaded ->
@@ -266,6 +289,17 @@ class ServiceLoopViewModel(
                 settleDueServicesFailure(failure)
             }
         }
+    }
+
+    fun retryDueServices() {
+        if (dueServicesJob?.isActive == true) return
+        _state.update { current -> current.copy(
+            dueServicesProjection = when (val projection = current.dueServicesProjection) {
+                is DueServicesProjection.Available -> projection.copy(updateError = null)
+                is DueServicesProjection.Unavailable, DueServicesProjection.Unresolved -> DueServicesProjection.Unresolved
+            },
+        ) }
+        observeDueServices()
     }
 
     private fun observeRootInvalidations() {
@@ -285,7 +319,7 @@ class ServiceLoopViewModel(
             },
         ) }
     }
-    fun loadTemplates() = launchLoad { val values = repository.templates(); _state.update { it.copy(templates = values) } }
+    fun loadTemplates() { val request=issueRequest("templates"); launchLoad { val values = repository.templates(); if(isCurrent(request)) _state.update { it.copy(templates = values) } } }
     fun loadTemplate(id: String) {
         val request = issueRequest("template")
         launchLoad { val value = repository.template(id); if (isCurrent(request)) _state.update { it.copy(template = value) } }
@@ -299,7 +333,7 @@ class ServiceLoopViewModel(
             if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, visitCalendarState = calendarState) }
         }
     }
-    fun loadFollowUps() = launchLoad { val values = repository.followUps(); _state.update { it.copy(followUps = values) } }
+    fun loadFollowUps() { val request=issueRequest("followUps"); launchLoad { val values = repository.followUps(); if(isCurrent(request)) _state.update { it.copy(followUps = values) } } }
     fun loadFollowUp(id: String) {
         val request = issueRequest("followUp")
         launchLoad { val value = repository.followUp(id); if (isCurrent(request)) _state.update { it.copy(followUp = value) } }
@@ -313,13 +347,17 @@ class ServiceLoopViewModel(
         loadCalendarSettings()
     }
 
-    fun loadReminderSettings() = launchLoad {
-        val preferences = repository.reminderPreferences()
-        val runtime = reminderCoordinator?.runtimeState() ?: ReminderRuntimeState()
-        _state.update { it.copy(reminderPreferences = preferences, reminderRuntimeState = runtime) }
+    fun loadReminderSettings() {
+        val request = issueRequest("reminderSettings")
+        launchLoad {
+            val preferences = repository.reminderPreferences()
+            val runtime = reminderCoordinator?.runtimeState() ?: ReminderRuntimeState()
+            if (isCurrent(request)) _state.update { it.copy(reminderPreferences = preferences, reminderRuntimeState = runtime) }
+        }
     }
 
     fun saveReminderSettings(value: ReminderPreferences, deliveryRequested: Boolean) {
+        val request = issueRequest("reminderSettings")
         val lastSaved = _state.value.reminderSaveStatus.lastSavedCheckpoint()
         _state.update { it.copy(reminderSaveStatus = SaveStatus.Saving, error = null) }
         viewModelScope.launch {
@@ -329,10 +367,10 @@ class ServiceLoopViewModel(
                 reminderCoordinator?.setDeliveryRequested(deliveryRequested)
                 val preferences = repository.reminderPreferences()
                 val runtime = reminderCoordinator?.runtimeState() ?: ReminderRuntimeState()
-                _state.update { it.copy(reminderPreferences = preferences, reminderRuntimeState = runtime, reminderSaveStatus = SaveStatus.Saved(savedAt)) }
+                if (isCurrent(request)) _state.update { it.copy(reminderPreferences = preferences, reminderRuntimeState = runtime, reminderSaveStatus = SaveStatus.Saved(savedAt)) }
                 refreshRootDataNonBlocking()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(reminderSaveStatus = SaveStatus.Failed(failure.message ?: "Reminder settings not saved", lastSaved)) } }
+            catch (failure: Exception) { if (isCurrent(request)) _state.update { it.copy(reminderSaveStatus = SaveStatus.Failed(failure.message ?: "Reminder settings not saved", lastSaved)) } }
         }
     }
 
@@ -342,7 +380,10 @@ class ServiceLoopViewModel(
         _state.update { it.copy(operationMessage = if (requested) "Test notification requested — Android controls delivery" else "Test notification unavailable — review Android permission and channels", reminderRuntimeState = runtime) }
     }
 
-    fun loadCalendarSettings() = launchLoad { val runtime=calendarCoordinator?.runtimeState()?:CalendarRuntimeState(); _state.update { it.copy(calendarRuntimeState=runtime) } }
+    fun loadCalendarSettings() {
+        val request = issueRequest("calendarSettings")
+        launchLoad { val runtime=calendarCoordinator?.runtimeState()?:CalendarRuntimeState(); if(isCurrent(request)) _state.update { it.copy(calendarRuntimeState=runtime) } }
+    }
     fun setCalendarEnabled(enabled:Boolean)=runOperation({calendarCoordinator?.setEnabled(enabled);enabled}){loadCalendarSettings()}
     fun selectCalendar(value:WritableCalendar)=runOperation({calendarCoordinator?.select(value);value.id}){loadCalendarSettings()}
     fun loadVisitCalendar(visitId:String) {
@@ -384,16 +425,17 @@ class ServiceLoopViewModel(
     fun startVisit(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.startVisit(id); id }, onSuccess)
     fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) {
         if (_state.value.operationInProgress) return
+        val request = issueRequest("visit")
         _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
         viewModelScope.launch {
             try {
                 repository.rescheduleVisit(id, date, scheduledAt, reason)
                 val refreshed = repository.visit(id) ?: error("Visit was saved but could not be reloaded")
                 val site = repository.site(refreshed.siteId)
-                _state.update { it.copy(visit = refreshed, site = site, operationInProgress = false, operationMessage = "Saved on this device") }
+                if (isCurrent(request)) _state.update { it.copy(visit = refreshed, site = site, operationInProgress = false, operationMessage = "Saved on this device") }
                 refreshRootDataNonBlocking(); onSuccess(id)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Not saved") } }
+            catch (failure: Exception) { if(isCurrent(request)) _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Not saved") } }
         }
     }
     fun cancelVisit(id: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.cancelVisit(id, reason); id }, onSuccess)
@@ -412,23 +454,26 @@ class ServiceLoopViewModel(
     fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCorrectiveFollowUp(workItemId, title, dueDate, privateNote) }, onSuccess)
     fun updateFollowUp(id:String,title:String,dueDate:String,note:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.updateFollowUp(id,title,dueDate,note,reason);id},onSuccess)
     fun changeFollowUpState(id: String, target: String, reason: String, newDue: String?, onSuccess: (String) -> Unit = {}) = runOperation({ repository.changeFollowUpState(id, target, reason, newDue); id }, onSuccess)
-    fun loadBusinessProfile() = launchLoad {
-        val profile = repository.businessProfile()
-        _state.update { it.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { timestamp -> SaveStatus.Saved(timestamp) } ?: SaveStatus.Idle) }
+    fun loadBusinessProfile() {
+        val request=issueRequest("businessProfile")
+        launchLoad {
+            val profile = repository.businessProfile()
+            if(isCurrent(request)) _state.update { it.copy(businessProfile = profile, businessProfileSaveStatus = profile?.modifiedAtEpochMillis?.let { timestamp -> SaveStatus.Saved(timestamp) } ?: SaveStatus.Idle) }
+        }
     }
     fun loadFinalRecord(id: String) {
-        val request=issueRequest("finalRecord"); _state.update { it.copy(finalRecord = null) }
+        val request=issueRequest("finalRecord"); _state.update { it.copy(finalRecord = null, generatingReport = false) }
         launchLoad { val value=repository.finalRecord(id); if(isCurrent(request)) _state.update { it.copy(finalRecord=value) } }
     }
     fun loadFinalRecordRevision(recordId: String, revisionId: String, renditionId: String? = null) {
-        val request=issueRequest("finalRecord"); _state.update { it.copy(finalRecord = null) }
+        val request=issueRequest("finalRecord"); _state.update { it.copy(finalRecord = null, generatingReport = false) }
         launchLoad { val value=repository.finalRecordRevision(recordId,revisionId,renditionId); if(isCurrent(request)) _state.update { it.copy(finalRecord=value) } }
     }
     fun loadHistory(query: HistoryQuery) {
         val request=issueRequest("history")
         launchLoad { val value=repository.history(query); if(isCurrent(request)) _state.update { it.copy(history=value) } }
     }
-    fun loadAttention() = launchLoad { val value=repository.attention(); _state.update { it.copy(attention=value) } }
+    fun loadAttention() { val request=issueRequest("attention"); launchLoad { val value=repository.attention(); if(isCurrent(request)) _state.update { it.copy(attention=value) } } }
     fun loadRecordVersions(id: String) {
         val request=issueRequest("recordVersions")
         launchLoad { val versions=repository.recordVersions(id); if(isCurrent(request)) _state.update { it.copy(recordVersions=versions.first,reportVersions=versions.second) } }
@@ -452,7 +497,7 @@ class ServiceLoopViewModel(
         launchLoad { val value=repository.moveReview(equipmentId); if(isCurrent(request)) _state.update { it.copy(moveReview=value) } }
     }
     fun moveEquipment(equipmentId: String, destination: String, date: String, reason: String, acknowledged: Boolean, onSuccess: (String) -> Unit) = runOperation({ repository.moveEquipment(equipmentId, destination, date, reason, acknowledged); equipmentId }, onSuccess)
-    fun loadDatasetSummary() = launchLoad { val summary=repository.datasetSummary(); val attention=repository.attention(); _state.update { it.copy(datasetSummary=summary,attention=attention) } }
+    fun loadDatasetSummary() { val request=issueRequest("datasetSummary"); launchLoad { val summary=repository.datasetSummary(); val attention=repository.attention(); if(isCurrent(request)) _state.update { it.copy(datasetSummary=summary,attention=attention) } } }
     fun setBackupReminder(days: Int) = runOperation({ repository.setBackupReminder(days); days }) { loadDatasetSummary() }
     fun createBackup(passphrase: CharArray, incomplete: Boolean) = runOperation({ repository.createBackup(passphrase, incomplete) }) { result -> _state.update { it.copy(backupResult = result) } }
     fun verifyWrittenBackup(bytes: ByteArray, passphrase: CharArray, destination: String) = runOperation({ val inspection = repository.inspectBackup(bytes, passphrase); val result = _state.value.backupResult ?: error("Prepared backup is unavailable"); require(inspection.snapshotAtEpochMillis == result.snapshotAtEpochMillis); if (result.complete) repository.recordVerifiedBackup(result, destination); inspection }) { inspection -> _state.update { it.copy(backupInspection = inspection) }; loadDatasetSummary() }
@@ -465,8 +510,8 @@ class ServiceLoopViewModel(
     fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) { advanceDatasetGeneration(); runOperation({ reminderCoordinator?.resetForDatasetReplacement(); calendarCoordinator?.resetForDatasetReplacement(); repository.erase(acknowledged, confirmation); true }) { onSuccess() } }
     fun consumeFinalizedNavigation() { _state.update { it.copy(finalizedRecordId = null) } }
 
-    fun savePublicWork(workItemId: String, text: String) = persistDraft({ repository.savePublicWork(workItemId, text) }) { val value=repository.inspection(workItemId); _state.update { it.copy(inspection=value) } }
-    fun markChecklistReviewed(workItemId: String) = persistDraft({ repository.markChecklistReviewed(workItemId) }) { val value=repository.inspection(workItemId); _state.update { it.copy(inspection=value) } }
+    fun savePublicWork(workItemId: String, text: String) = persistInspectionDraft(workItemId) { repository.savePublicWork(workItemId, text) }
+    fun markChecklistReviewed(workItemId: String) = persistInspectionDraft(workItemId) { repository.markChecklistReviewed(workItemId) }
     fun saveBusinessProfile(profile: BusinessProfile) {
         val lastSaved = _state.value.businessProfileSaveStatus.lastSavedCheckpoint() ?: _state.value.businessProfile?.modifiedAtEpochMillis
         _state.update { it.copy(businessProfileSaveStatus = SaveStatus.Saving, error = null) }
@@ -481,57 +526,92 @@ class ServiceLoopViewModel(
             catch (failure: Exception) { _state.update { it.copy(businessProfileSaveStatus = SaveStatus.Failed(failure.message ?: "Profile not saved", lastSaved)) } }
         }
     }
-    fun refreshVisitReportIdentity(visitId: String) = persistDraft({ repository.refreshVisitReportIdentity(visitId) }) { val value=repository.visitReportIdentity(visitId); _state.update { it.copy(visitReportIdentity=value) } }
-    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistDraft({
+    fun refreshVisitReportIdentity(visitId: String) = persistCompletionDraft(visitId,{ repository.refreshVisitReportIdentity(visitId) }) { val value=repository.visitReportIdentity(visitId); { current -> current.copy(visitReportIdentity=value) } }
+    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistCompletionDraft(visitId,{
         repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason)
-    }) { val values=repository.completionLines(visitId); _state.update { it.copy(completionLines=values) } }
+    }) { val values=repository.completionLines(visitId); { current -> current.copy(completionLines=values) } }
 
     fun finalizeVisit(visitId: String) {
         if (_state.value.finalizing) return
-        _state.update { it.copy(finalizing = true, error = null) }
+        if (_state.value.completionVisitId != visitId) return
+        val request = issueRequest("completion")
+        val saveContext = issueRequest("draftSaveContext")
+        _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = true, error = null) else current }
         viewModelScope.launch {
             try {
                 when (val result = repository.finalizeVisit(visitId)) {
                     is FinalizeResult.Success -> {
-                        _state.update { it.copy(finalizing = false, finalizedRecordId = result.recordId) }
+                        if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, finalizedRecordId = result.recordId) else current }
                         refreshRootDataNonBlocking()
                     }
-                    is FinalizeResult.Blocked -> _state.update { it.copy(finalizing = false, error = result.message) }
+                    is FinalizeResult.Blocked -> if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, error = result.message) else current }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(finalizing = false, error = failure.message ?: "Finalization failed") } }
+            catch (failure: Exception) { if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, error = failure.message ?: "Finalization failed") else current } }
         }
     }
 
     fun generateReport(recordId: String, revisionId: String? = null) {
         val service = reportService ?: return
         if (_state.value.generatingReport) return
+        val currentRecord = _state.value.finalRecord ?: return
+        if (currentRecord.public.recordId != recordId || (revisionId != null && currentRecord.public.revisionId != revisionId)) return
+        val targetRevisionId = revisionId ?: currentRecord.public.revisionId
+        val request = issueRequest("finalRecord")
         _state.update { it.copy(generatingReport = true, error = null) }
         viewModelScope.launch {
             try {
                 val rendition = if (revisionId == null) service.generate(recordId) else service.generateRevision(recordId, revisionId)
-                _state.update { it.copy(generatingReport = false, finalRecord = it.finalRecord?.copy(report = rendition)) }
-                try { val refreshed=if(revisionId==null) repository.finalRecord(recordId) else repository.finalRecordRevision(recordId,revisionId,rendition.id); _state.update { it.copy(finalRecord=refreshed,contentRefreshError=null) } }
+                if (isCurrent(request)) _state.update { current -> if(current.matchesReportTarget(recordId,targetRevisionId)) current.copy(generatingReport = false, finalRecord = current.finalRecord?.copy(report = rendition)) else current }
+                try { val refreshed=if(revisionId==null) repository.finalRecord(recordId) else repository.finalRecordRevision(recordId,revisionId,rendition.id); if(isCurrent(request)) _state.update { current -> if(current.matchesReportTarget(recordId,targetRevisionId)) current.copy(finalRecord=refreshed,contentRefreshError=null,generatingReport=false) else current } }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { _state.update { it.copy(contentRefreshError = failure.message ?: "Report was generated, but the screen could not refresh") } }
+                catch (failure: Exception) { if(isCurrent(request)) _state.update { current -> if(current.matchesReportTarget(recordId,targetRevisionId)) current.copy(contentRefreshError = failure.message ?: "Report was generated, but the screen could not refresh",generatingReport=false) else current } }
             }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(generatingReport = false, error = failure.message ?: "PDF generation failed") } }
+            catch (failure: Exception) { if(isCurrent(request)) _state.update { current -> if(current.matchesReportTarget(recordId,targetRevisionId)) current.copy(generatingReport = false, error = failure.message ?: "PDF generation failed") else current } }
         }
     }
 
-    private fun persistDraft(write: suspend () -> Long, refresh: suspend () -> Unit = {}) {
+    private fun UiState.matchesReportTarget(recordId:String,revisionId:String) = finalRecord?.public?.let { it.recordId == recordId && it.revisionId == revisionId } == true
+
+    private fun persistCompletionDraft(visitId: String, write: suspend () -> Long, refresh: suspend () -> (UiState) -> UiState) {
+        val request = issueRequest("completion")
+        val saveContext = issueRequest("draftSaveContext")
         val lastSaved = _state.value.saveStatus.lastSavedCheckpoint()
-        _state.update { it.copy(saveStatus = SaveStatus.Saving, error = null) }
+        _state.update { current -> if(current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
         viewModelScope.launch {
             try {
                 val savedAt = write()
-                _state.update { it.copy(saveStatus = SaveStatus.Saved(savedAt)) }
-                try { refresh(); _state.update { it.copy(contentRefreshError = null) } }
+                try {
+                    val reducer = refresh()
+                    if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) reducer(current).copy(saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = null) else current }
+                }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { _state.update { it.copy(contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") } }
+                catch (failure: Exception) { if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current } }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) } }
+            catch (failure: Exception) { if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) else current } }
+        }
+    }
+
+    private fun persistInspectionDraft(workItemId: String, write: suspend () -> Long) {
+        val request = issueRequest("inspection")
+        val saveContext = issueRequest("draftSaveContext")
+        val lastSaved = _state.value.saveStatus.lastSavedCheckpoint() ?: _state.value.inspection?.takeIf { it.workItemId == workItemId }?.modifiedAtEpochMillis
+        _state.update { current -> if (current.inspection?.workItemId == workItemId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
+        viewModelScope.launch {
+            try {
+                val savedAt = write()
+                val refreshed = try { repository.inspection(workItemId) } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) {
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == workItemId) current.copy(saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current }
+                    return@launch
+                }
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                    if (current.inspection?.workItemId == workItemId) current.copy(inspection = refreshed, saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = null) else current
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == workItemId) current.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Not saved", lastSaved)) else current }
+            }
         }
     }
 
@@ -566,21 +646,22 @@ class ServiceLoopViewModel(
     }
 
     private fun persistResponse(draft: InspectionDraft, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) {
+        val request = issueRequest("inspection")
+        val saveContext = issueRequest("draftSaveContext")
         val lastSaved = state.value.saveStatus.lastSavedCheckpoint() ?: draft.modifiedAtEpochMillis
-        _state.update { it.copy(saveStatus = SaveStatus.Saving, error = null) }
+        _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
         viewModelScope.launch {
             try {
                 val savedAt = repository.saveResponse(draft.workItemId, questionId, disposition, value, reason)
-                _state.update { it.copy(saveStatus = SaveStatus.Saved(savedAt)) }
-                try { val refreshed=repository.inspection(draft.workItemId); _state.update { it.copy(inspection=refreshed,contentRefreshError=null) } }
+                try { val refreshed=repository.inspection(draft.workItemId); if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(inspection=refreshed,saveStatus=SaveStatus.Saved(savedAt),contentRefreshError=null) else current } }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { _state.update { it.copy(contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") } }
+                catch (failure: Exception) { if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus=SaveStatus.Saved(savedAt),contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current } }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _state.update { current -> current.copy(
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(
                     saveStatus = SaveStatus.Failed(failure.message ?: "Draft write failed", lastSaved),
-                ) }
+                ) else current }
             }
         }
     }

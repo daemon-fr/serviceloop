@@ -149,6 +149,14 @@ fun serviceLoopStateStyle(code: String, colors: ServiceLoopColorRoles): ServiceL
         "CONCLUDED" -> "Concluded" to ServiceLoopVisualState.Neutral
         "BOOKED" -> "Booked" to ServiceLoopVisualState.Info
         "WORKING" -> "Working" to ServiceLoopVisualState.Working
+        "OPEN" -> "Open" to ServiceLoopVisualState.Info
+        "CLOSED" -> "Closed" to ServiceLoopVisualState.Neutral
+        "ACTIVE" -> "Active" to ServiceLoopVisualState.Success
+        "PAUSED" -> "Paused" to ServiceLoopVisualState.Warning
+        "ENDED" -> "Ended" to ServiceLoopVisualState.History
+        "CANCELLED" -> "Cancelled" to ServiceLoopVisualState.History
+        "ARCHIVED" -> "Archived" to ServiceLoopVisualState.History
+        "RETIRED" -> "Retired" to ServiceLoopVisualState.History
         "SAVED" -> "Saved on this device" to ServiceLoopVisualState.Success
         "FAILED" -> "Not saved — action needed" to ServiceLoopVisualState.Error
         "ISSUE_FOUND" -> "Issue found" to ServiceLoopVisualState.Warning

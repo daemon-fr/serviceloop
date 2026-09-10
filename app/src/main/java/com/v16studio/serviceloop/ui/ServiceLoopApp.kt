@@ -16,7 +16,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -81,11 +82,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
@@ -132,6 +130,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSavedStatus
@@ -260,7 +259,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             val visitId = entry.arguments?.getString("visitId").orEmpty()
             LaunchedEffect(visitId) { viewModel.loadCompletion(visitId) }
             val lifecycleOwner = LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner, visitId) { val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.loadCompletion(visitId) }; lifecycleOwner.lifecycle.addObserver(observer); onDispose { lifecycleOwner.lifecycle.removeObserver(observer) } }
+            DisposableEffect(lifecycleOwner, visitId) { val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.loadCompletion(visitId) }; lifecycleOwner.lifecycle.addObserver(observer); onDispose { lifecycleOwner.lifecycle.removeObserver(observer); viewModel.clearCompletionContext(visitId) } }
             LaunchedEffect(state.finalizedRecordId) { state.finalizedRecordId?.let { recordId -> viewModel.consumeFinalizedNavigation(); nav.navigate("record/$recordId") { popUpTo("review/{visitId}") { inclusive = true } } } }
             DetailScaffold("Review completion", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
         }
@@ -402,41 +401,6 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
     }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
 }
 
-@Composable
-private fun ServiceLoopDetailToolbar(title: String, onBack: () -> Unit, topAction: (@Composable RowScope.() -> Unit)?) {
-    var leftWidthPx by remember { mutableStateOf(0) }
-    var rightWidthPx by remember { mutableStateOf(0) }
-    val density = LocalDensity.current
-    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
-        val sideReserve = with(density) { maxOf(leftWidthPx, rightWidthPx).toDp() }
-        val stackTitle = maxWidth - sideReserve * 2 < 160.dp
-        if (stackTitle) {
-            Column(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    ServiceLoopBackAction(onBack, Modifier.onSizeChanged { leftWidthPx = it.width })
-                    topAction?.let { action -> Row(Modifier.onSizeChanged { rightWidthPx = it.width }, content = action) }
-                }
-                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.lg, vertical = ServiceLoopUiTokens.Space.sm))
-            }
-        } else {
-            Box(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
-                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = sideReserve + ServiceLoopUiTokens.Space.sm))
-                ServiceLoopBackAction(onBack, Modifier.align(Alignment.CenterStart).onSizeChanged { leftWidthPx = it.width })
-                topAction?.let { action -> Row(Modifier.align(Alignment.CenterEnd).onSizeChanged { rightWidthPx = it.width }, content = action) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ServiceLoopBackAction(onBack: () -> Unit, modifier: Modifier = Modifier) {
-    TextButton(onClick = onBack, modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin)) {
-        ServiceLoopIcon(ServiceLoopIcons.Back, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current)
-        Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
-        Text("Back")
-    }
-}
-
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
 
 @Composable
@@ -496,12 +460,9 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
         }
         item {
             SectionTitle("Booked visits · ${home.bookedVisitCount}")
-            val bookedSite = visits.firstOrNull { it.state == "BOOKED" && it.reference == home.bookedVisitReference }?.siteName
-            val bookedSummary = listOfNotNull(
-                home.bookedVisitReference?.let { "$it · ${home.bookedVisitDate}" },
-                bookedSite,
-            ).joinToString("\n").ifBlank { "No booked visits" }
-            SummaryRow(bookedSummary, "Open") { nav.navigate(workRoute(WorkTab.VISITS, "BOOKED")) }
+            val bookedVisit = visits.firstOrNull { it.state == "BOOKED" && it.reference == home.bookedVisitReference }
+            if (bookedVisit == null) Text("No booked visits")
+            else ServiceLoopEntityRecord(bookedVisit.reference, bookedVisit.siteName, bookedVisit.actualServiceDate, bookedVisit.state) { nav.navigate("visit/${bookedVisit.id}") }
         }
         item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
         items(equipment.take(3)) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",metadata="Due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
@@ -539,7 +500,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
             }
             WorkTab.FOLLOW_UPS -> {
                 val filtered=state.followUps.filter{follow->val due=LocalDate.parse(follow.dueDate);when(followFilter){FollowUpFilter.DUE_OR_OVERDUE->follow.state=="OPEN"&&!due.isAfter(today);FollowUpFilter.UPCOMING->follow.state=="OPEN"&&due.isAfter(today);FollowUpFilter.ALL_OPEN->follow.state=="OPEN";FollowUpFilter.CLOSED->follow.state!="OPEN"}}
-                item { SectionTitle("Follow-ups · ${filtered.size}"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(FollowUpFilter.entries.map{it to it.name.lowercase().replace('_',' ')},followFilter,{followFilter=it},testTagPrefix="follow-filter") }
+                item { SectionTitle("Follow-ups · ${filtered.size}"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(FollowUpFilter.entries.map{it to it.name.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)},followFilter,{followFilter=it},testTagPrefix="follow-filter") }
                 if(filtered.isEmpty()) item{Text("No follow-ups match this filter")}
                 items(filtered) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · "),"Due ${follow.dueDate}",follow.state){nav.navigate("follow-up/${follow.id}")} }
             }
@@ -555,7 +516,7 @@ private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRe
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}); Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = ServiceLoopUiTokens.Space.section)) }
         item {
-            when (tab) { "CUSTOMERS" -> OutlinedButton(onClick = { nav.navigate("customer/new") }, modifier = Modifier.fillMaxWidth().testTag("add-customer")) { Text("Add customer") }; "EQUIPMENT" -> OutlinedButton(onClick = { nav.navigate("equipment/select-site") }, modifier = Modifier.fillMaxWidth().testTag("add-equipment-from-register")) { Text("Add equipment") }; else -> Unit }
+            when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().testTag("add-equipment-from-register")); else -> Unit }
         }
         when (tab) {
             "CUSTOMERS" -> {
@@ -597,14 +558,8 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
         item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
-            AccentCard {
-                val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); StatusChip(dueLabel, urgency = dueLabel == "Overdue") }
-                Text("${plan.reference} · ${plan.interval}")
-                Text("Due ${plan.dueDate}", fontWeight = FontWeight.Medium)
-                Text(if (plan.state == "ACTIVE") "Current service remains due until explicitly fulfilled" else "Plan ${plan.state.lowercase()}", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { nav.navigate("plan/${plan.id}") }) { Text("Open plan") }
-            }
+            val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
+            ServiceLoopEntityRecord("${plan.reference} · ${plan.name}",plan.interval,"Due ${plan.dueDate} · $dueLabel",plan.state){nav.navigate("plan/${plan.id}")}
         }
         item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()); Text("Private equipment notes", style = MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=ServiceLoopUiTokens.Space.section)) }
     }
@@ -703,9 +658,9 @@ private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewMod
     var value by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
     val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
     OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
-        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f).testTag("not-applicable-${question.snapshotItemId}")) { Text("Not applicable") }
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).fillMaxHeight().testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
+        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight().testTag("not-applicable-${question.snapshotItemId}")) { Text("Not applicable") }
     }
     if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
 }
@@ -793,6 +748,7 @@ private fun CalendarSettingsScreen(state:UiState,padding:PaddingValues,viewModel
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     val saved = state.reminderPreferences ?: return HonestPlaceholder(padding, "Reading reminder settings")
@@ -811,10 +767,10 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
     }
     LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Local reminders", style = MaterialTheme.typography.titleLarge); Text("${state.reminderRuntimeState.label}. Reminders may be delayed. Work lists remain the source of truth."); Text("Work summaries channel: ${if(state.reminderRuntimeState.summariesChannelEnabled) "available" else "blocked"}"); Text("Appointment reminders channel: ${if(state.reminderRuntimeState.appointmentsChannelEnabled) "available" else "blocked"}"); state.reminderRuntimeState.schedulingError?.let { Text("Scheduling error: $it", color = MaterialTheme.colorScheme.error) }; Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(requested, ::toggleDelivery, modifier = Modifier.testTag("reminder-delivery")); Text("Request local reminders") }; if (changed && requested) Text("Android permission changes are external and are not undone by Cancel.", style = MaterialTheme.typography.bodySmall) }
-        item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { java.time.DayOfWeek.entries.forEach { day -> FilterChip(draft.includes(day), { draft = draft.copy(summaryDaysMask = draft.summaryDaysMask xor (1 shl (day.value - 1))) }, { Text(day.name.take(2)) }, modifier = Modifier.testTag("summary-day-${day.name.lowercase()}")) } }; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
-        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(0,7,14,30).forEach { days -> FilterChip(draft.dueSoonHorizonDays == days, { draft = draft.copy(dueSoonHorizonDays = days) }, { Text("$days days") }, modifier = Modifier.testTag("due-horizon-$days")) } }; Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
+        item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); FlowRow(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) { java.time.DayOfWeek.entries.forEach { day -> FilterChip(draft.includes(day), { draft = draft.copy(summaryDaysMask = draft.summaryDaysMask xor (1 shl (day.value - 1))) }, { Text(day.name.take(2),softWrap=false) }, modifier = Modifier.width(IntrinsicSize.Max).testTag("summary-day-${day.name.lowercase()}")) } }; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
+        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(0,7,14,30).map{it to "$it days"},draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
         item { Text("Summary content", fontWeight = FontWeight.Bold); ReminderToggle("Due services", draft.includeDueServices) { draft = draft.copy(includeDueServices = it) }; ReminderToggle("Visits", draft.includeVisits) { draft = draft.copy(includeVisits = it) }; ReminderToggle("Follow-ups", draft.includeFollowUps) { draft = draft.copy(includeFollowUps = it) }; ReminderToggle("Unfinished visits", draft.includeUnfinishedVisits) { draft = draft.copy(includeUnfinishedVisits = it) }; ReminderToggle("Backup reminder", draft.includeBackupReminder) { draft = draft.copy(includeBackupReminder = it) } }
-        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(120 to "2 hours", 1440 to "1 day").forEach { (minutes,label) -> FilterChip(draft.defaultAppointmentLeadMinutes == minutes, { draft = draft.copy(defaultAppointmentLeadMinutes = minutes) }, { Text(label) }) } } }
+        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(120 to "2 hours",1440 to "1 day"),draft.defaultAppointmentLeadMinutes,{draft=draft.copy(defaultAppointmentLeadMinutes=it)}) }
         item { OutlinedButton({ context.startActivity((context.applicationContext as com.v16studio.serviceloop.ServiceLoopApplication).container.reminderCoordinator.openAndroidSettingsIntent()) }, Modifier.fillMaxWidth()) { Text("Open Android notification settings") }; OutlinedButton(viewModel::sendTestNotification, Modifier.fillMaxWidth().testTag("send-test-notification")) { Text("Send test notification") }; state.operationMessage?.let { Text(it) } }
         item { SaveStateBanner(state.reminderSaveStatus); ServiceLoopPrimaryButton(if (state.reminderSaveStatus is SaveStatus.Saving) "Saving reminder settings" else "Save reminder settings", { if (parsedTime != null) viewModel.saveReminderSettings(normalized, requested) }, enabled = parsedTime != null && (!draft.dailySummaryEnabled || draft.summaryDaysMask and ReminderPreferences.ALL_DAYS != 0), busy = state.reminderSaveStatus is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().testTag("save-reminders")); TextButton({ nav.popBackStack() }, Modifier.fillMaxWidth()) { Text("Cancel / Back") } }
     }
@@ -874,7 +830,7 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
     Text(if (missing) "File missing · Structured report remains available" else "PDF file ready", modifier = Modifier.fillMaxWidth().background(if(missing) LocalServiceLoopColors.current.errorTint else LocalServiceLoopColors.current.confirmedTint).padding(10.dp))
     LazyColumn(Modifier.weight(1f).testTag("report-preview-list"), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!textView) Button(onClick = {}, modifier = Modifier.testTag("report-pdf-view").semantics { selected = true }) { Text("PDF view") } else OutlinedButton(onClick = { textView = false }, modifier = Modifier.testTag("report-pdf-view").semantics { selected = false }) { Text("PDF view") }; if (textView) Button(onClick = {}, modifier = Modifier.testTag("report-text-view").semantics { selected = true }) { Text("Text view") } else OutlinedButton(onClick = { textView = true }, modifier = Modifier.testTag("report-text-view").semantics { selected = false }) { Text("Text view") } } }
+        item { ServiceLoopContentTabs(listOf(false to "PDF view",true to "Text view"),textView,{textView=it},Modifier.testTag("report-view-tabs")) }
         if (textView) item { StructuredReportText(detail) }
         else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }

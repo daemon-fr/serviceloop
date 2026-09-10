@@ -99,6 +99,16 @@ class DueServicesStateTest {
         assertEquals("initial failure", viewModel.state.value.dueServicesError)
     }
 
+    @Test fun initialCollectionFailureCanRetryIntoAuthoritativeRows() = runTest {
+        val repository = RetryDueRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        assertEquals("initial failure", viewModel.state.value.dueServicesError)
+        viewModel.retryDueServices()
+        assertEquals(listOf("P-RETRY"), viewModel.state.value.dueServices.map { it.planReference })
+        assertNull(viewModel.state.value.dueServicesError)
+        assertEquals(2, repository.subscriptions)
+    }
+
     @Test fun upstreamCancellationSettlesAsUnavailableInsteadOfLoadingForever() = runTest {
         val repository = FixedFlowDueRepository(flow { throw CancellationException("upstream cancelled") })
         val viewModel = ServiceLoopViewModel(repository) {}
@@ -171,6 +181,73 @@ class DueServicesStateTest {
         assertEquals("B", viewModel.state.value.customer?.id)
     }
 
+    @Test fun lateInspectionSaveCannotReplaceNewerInspectionOrItsCheckpoint() = runTest {
+        val repository = StaleInspectionSaveRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("A")
+        viewModel.savePublicWork("A", "changed")
+        repository.saveEntered.await()
+        viewModel.loadInspection("B")
+        assertEquals("B", viewModel.state.value.inspection?.workItemId)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+        repository.saveRelease.complete(Unit)
+        assertEquals("B", viewModel.state.value.inspection?.workItemId)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun lateCompletionSaveCannotReplaceNewerInspectionCheckpoint() = runTest {
+        val repository = StaleCompletionSaveRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadCompletion("visit-A")
+        viewModel.saveCompletion("work-A", "PERFORMED", false, null, null, null, null, "visit-A")
+        repository.saveEntered.await()
+        viewModel.loadInspection("B")
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+        repository.saveRelease.complete(Unit)
+        assertEquals("B", viewModel.state.value.inspection?.workItemId)
+        assertEquals(SaveStatus.Saved(200), viewModel.state.value.saveStatus)
+    }
+
+    @Test fun newerReminderSettingsWinWhenOlderResumeReadFinishesLate() = runTest {
+        val repository = StaleReminderRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadReminderSettings()
+        repository.firstEntered.await()
+        viewModel.loadReminderSettings()
+        assertEquals(30, viewModel.state.value.reminderPreferences?.dueSoonHorizonDays)
+        repository.firstRelease.complete(Unit)
+        assertEquals(30, viewModel.state.value.reminderPreferences?.dueSoonHorizonDays)
+    }
+
+    @Test fun datasetGenerationInvalidatesDelayedVisitSetupPublication() = runTest {
+        val repository = DelayedVisitSetupRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadVisitSetup()
+        repository.entered.await()
+        viewModel.erase(true, "ERASE") {}
+        repository.release.complete(Unit)
+        assertTrue(viewModel.state.value.visitSites.isEmpty())
+    }
+
+    @Test fun lateFinalizationCannotPublishIntoAReplacementCompletionRoute() = runTest {
+        val repository = StaleFinalizationRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadCompletion("visit-A")
+        assertEquals("visit-A", viewModel.state.value.completionVisitId)
+
+        viewModel.finalizeVisit("visit-A")
+        repository.finalizeEntered.await()
+        viewModel.clearCompletionContext("visit-A")
+        viewModel.loadCompletion("visit-B")
+        assertEquals("visit-B", viewModel.state.value.completionVisitId)
+
+        repository.finalizeRelease.complete(Unit)
+        assertEquals("visit-B", viewModel.state.value.completionVisitId)
+        assertNull(viewModel.state.value.finalizedRecordId)
+        assertFalse(viewModel.state.value.finalizing)
+        assertNull(viewModel.state.value.error)
+    }
+
     private fun due(reference: String, claimedVisitId: String? = null) = DueService(
         planId = reference, planReference = reference, planName = "Maintenance", dueDate = "2026-09-01",
         obligationId = "obligation-$reference", equipmentId = "equipment-$reference", equipmentReference = "EQ-$reference",
@@ -196,6 +273,15 @@ class DueServicesStateTest {
 
     private class FixedFlowDueRepository(private val values: Flow<List<DueService>>) : BaseRepository() {
         override fun observeDueServices(): Flow<List<DueService>> = values
+    }
+
+    private class RetryDueRepository : BaseRepository() {
+        var subscriptions = 0
+        override fun observeDueServices(): Flow<List<DueService>> = flow {
+            subscriptions++
+            if (subscriptions == 1) error("initial failure")
+            emit(listOf(DueService("P-RETRY","P-RETRY","Maintenance","2026-09-01","obligation-P-RETRY","equipment-P-RETRY","EQ-P-RETRY","Machine","site","Site","customer","Customer",null,DueBucket.OVERDUE)))
+        }
     }
 
     private class DeferredVisitsDueRepository : BaseRepository() {
@@ -246,6 +332,57 @@ class DueServicesStateTest {
         override suspend fun customer(id: String): CustomerDetail {
             if (id == "A") { customerAEntered.complete(Unit); customerARelease.await() }
             return CustomerDetail(id,id,"Customer $id","","","","",emptyList(),emptyList(),emptyList(),emptyList())
+        }
+    }
+
+    private class StaleInspectionSaveRepository : BaseRepository() {
+        val saveEntered = CompletableDeferred<Unit>()
+        val saveRelease = CompletableDeferred<Unit>()
+        override suspend fun inspection(workItemId: String) = inspection(workItemId, if (workItemId == "A") 100 else 200)
+        override suspend fun savePublicWork(workItemId: String, text: String): Long {
+            saveEntered.complete(Unit)
+            saveRelease.await()
+            return 300
+        }
+        private fun inspection(id: String, modified: Long) = InspectionDraft(id,"visit-$id","V-$id","Site","Machine","EQ-$id","Service",null,null,null,"","",false,null,null,modified,emptyList())
+    }
+
+    private class StaleReminderRepository : BaseRepository() {
+        val firstEntered = CompletableDeferred<Unit>()
+        val firstRelease = CompletableDeferred<Unit>()
+        private var calls = 0
+        override suspend fun reminderPreferences(): ReminderPreferences {
+            calls++
+            if (calls == 1) { firstEntered.complete(Unit); firstRelease.await(); return ReminderPreferences(dueSoonHorizonDays = 7) }
+            return ReminderPreferences(dueSoonHorizonDays = 30)
+        }
+    }
+
+    private class StaleCompletionSaveRepository : BaseRepository() {
+        val saveEntered = CompletableDeferred<Unit>()
+        val saveRelease = CompletableDeferred<Unit>()
+        override suspend fun inspection(workItemId: String) = InspectionDraft(workItemId,"visit-$workItemId","V-$workItemId","Site","Machine","EQ-$workItemId","Service",null,null,null,"","",false,null,null,200,emptyList())
+        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
+            saveEntered.complete(Unit); saveRelease.await(); return 300
+        }
+    }
+
+    private class DelayedVisitSetupRepository : BaseRepository() {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        override suspend fun visitSites(): List<VisitSiteOption> {
+            entered.complete(Unit); release.await()
+            return listOf(VisitSiteOption("stale","S-1","Stale site","Customer",emptyList()))
+        }
+    }
+
+    private class StaleFinalizationRepository : BaseRepository() {
+        val finalizeEntered = CompletableDeferred<Unit>()
+        val finalizeRelease = CompletableDeferred<Unit>()
+        override suspend fun finalizeVisit(visitId: String): FinalizeResult {
+            finalizeEntered.complete(Unit)
+            finalizeRelease.await()
+            return FinalizeResult.Success("record-$visitId")
         }
     }
 }

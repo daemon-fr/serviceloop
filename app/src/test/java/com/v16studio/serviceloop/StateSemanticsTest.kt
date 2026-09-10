@@ -220,6 +220,35 @@ class StateSemanticsTest {
         assertFalse(viewModel.state.value.generatingReport)
     }
 
+    @Test fun lateReportGenerationCannotReplaceNewerRecordTarget() = runTest {
+        fun report(id:String) = PublicReportModel(id,"revision-$id",1,"V-$id","2026-09-05",1,"Business","Technician","","Customer","Site",null,emptyList())
+        val repository = object : ServiceLoopRepository {
+            override suspend fun home() = HomeSummary(null,null,null,null,null,null,null,0,null,null,0,0)
+            override suspend fun equipment(id:String):EquipmentDetail?=null
+            override suspend fun equipmentList():List<EquipmentSummary> = emptyList()
+            override suspend fun customerList():List<CustomerSummary> = emptyList()
+            override suspend fun inspection(workItemId:String):InspectionDraft?=null
+            override suspend fun completionLines(visitId:String):List<CompletionLine> = emptyList()
+            override suspend fun saveResponse(workItemId:String,questionId:String,disposition:ResponseDisposition,value:String?,reason:String?)=0L
+            override suspend fun finalRecord(recordId:String)=FinalRecordDetail(report(recordId),emptyList(),null)
+        }
+        val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>()
+        val service=object:ReportService{
+            override suspend fun generate(recordId:String):ReportRendition{entered.complete(Unit);release.await();return ReportRendition("rendition-A","revision-A",1,2,"reports/a.pdf","hash",10,1,"READY",null)}
+            override suspend fun pageCount(relativePath:String)=1
+            override fun file(relativePath:String)=File(relativePath)
+        }
+        val viewModel=ServiceLoopViewModel(repository,service){}
+        viewModel.loadFinalRecord("A")
+        viewModel.generateReport("A")
+        entered.await()
+        viewModel.loadFinalRecord("B")
+        assertEquals("B",viewModel.state.value.finalRecord?.public?.recordId)
+        release.complete(Unit)
+        assertEquals("B",viewModel.state.value.finalRecord?.public?.recordId)
+        assertFalse(viewModel.state.value.generatingReport)
+    }
+
     @Test fun switchingFromIssuePersistsImmediatelyWithoutDestructiveConfirmation() = runTest {
         val repository = MutableInspectionRepository(issueDraft())
         val viewModel = ServiceLoopViewModel(repository) {}

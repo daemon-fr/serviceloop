@@ -61,7 +61,7 @@ class DueServicesProjectionUiTest {
         val visit = repository.createVisit(listOf(plan), "BOOKED", "2026-09-12")
         compose.onNodeWithText("Work").performClick()
         compose.waitUntil(10_000) { viewModel.state.value.dueServices.singleOrNull()?.claimedVisitId == visit }
-        compose.onNodeWithText("Already in visit · Open existing").assertIsDisplayed()
+        compose.onNodeWithText("Booked").assertIsDisplayed()
         assertEquals(plan, viewModel.state.value.dueServices.single().planId)
 
         repository.cancelVisit(visit, "Projection regression")

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.ui.ServiceLoopApp
@@ -51,6 +52,10 @@ class CanonicalDueServicesProjectionTest {
             assertNull(dao.claimForObligation(obligation.id))
         }
 
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Home").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Work").performClick()
+        compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
+
         val viewModel = ServiceLoopViewModel(app.container.repository) { app.container.startup.await() }
         compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
         compose.waitUntil(10_000) { viewModel.state.value.rootDataReady && viewModel.state.value.dueServicesReady }
@@ -74,6 +79,16 @@ class CanonicalDueServicesProjectionTest {
         compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Home").performClick()
         compose.onAllNodesWithText("View all")[0].performClick()
+        compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitUntil(10_000) { viewModel.state.value.dueServicesReady }
+        compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Home").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onAllNodesWithText("Settings")[0].assertIsDisplayed()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Refreshing due services").assertDoesNotExist()
         assertEquals(expected.map { it.planReference }, viewModel.state.value.dueServices.map { it.planReference })

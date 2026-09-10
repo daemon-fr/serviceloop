@@ -114,7 +114,7 @@ class ServiceLoopDesignSystemTest {
         assertEquals(true,components.contains("softWrap = false"))
         assertEquals(false,app.contains("title.contains("))
         assertEquals(true,app.contains("DetailScaffold(\"Service\", nav)"))
-        assertEquals(true,app.contains("maxOf(leftWidthPx, rightWidthPx)"))
+        assertEquals(true,components.contains("maxOf(leftWidthPx, rightWidthPx)"))
         assertEquals(true,app.contains("ServiceLoopBrandStrip()"))
         assertEquals(true,app.contains("ServiceLoopContentTabs"))
         assertEquals(true,daily.contains("ServiceLoopEntityRecord"))
@@ -160,5 +160,8 @@ class ServiceLoopDesignSystemTest {
         assertNotEquals(c.selection,draft.container);assertNotEquals(c.selection,dispatched.container)
         assertEquals("Read-only",serviceLoopStateStyle("READ_ONLY",c).label)
         assertEquals("Unavailable",serviceLoopStateStyle("DISABLED",c).label)
+        assertEquals("Open",serviceLoopStateStyle("OPEN",c).label)
+        assertEquals("Closed",serviceLoopStateStyle("CLOSED",c).label)
+        assertEquals(ServiceLoopVisualState.History,serviceLoopStateStyle("CANCELLED",c).state)
     }
 }

@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -45,6 +46,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -75,6 +77,41 @@ fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun ServiceLoopBackAction(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(onClick = onBack, modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin)) {
+        ServiceLoopIcon(ServiceLoopIcons.Back, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current)
+        Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
+        Text("Back")
+    }
+}
+
+@Composable
+fun ServiceLoopDetailToolbar(title: String, onBack: () -> Unit, topAction: (@Composable RowScope.() -> Unit)? = null) {
+    var leftWidthPx by remember { mutableStateOf(0) }
+    var rightWidthPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
+        val sideReserve = with(density) { maxOf(leftWidthPx, rightWidthPx).toDp() }
+        val stackTitle = maxWidth - sideReserve * 2 < 160.dp
+        if (stackTitle) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    ServiceLoopBackAction(onBack, Modifier.onSizeChanged { leftWidthPx = it.width })
+                    topAction?.let { action -> Row(Modifier.onSizeChanged { rightWidthPx = it.width }, content = action) }
+                }
+                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.lg, vertical = ServiceLoopUiTokens.Space.sm))
+            }
+        } else {
+            Box(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.topBarMin)) {
+                Text(title, style = ServiceLoopUiTokens.Type.screenTitle, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = sideReserve + ServiceLoopUiTokens.Space.sm))
+                ServiceLoopBackAction(onBack, Modifier.align(Alignment.CenterStart).onSizeChanged { leftWidthPx = it.width })
+                topAction?.let { action -> Row(Modifier.align(Alignment.CenterEnd).onSizeChanged { rightWidthPx = it.width }, content = action) }
+            }
+        }
+    }
+}
+
+@Composable
 fun <T> ServiceLoopContentTabs(
     options: List<Pair<T, String>>,
     selected: T,
@@ -88,7 +125,7 @@ fun <T> ServiceLoopContentTabs(
             options.forEach { (value, label) ->
                 val active = value == selected
                 Box(
-                    Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                    Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("content-tab-$label")
                         .clip(RoundedCornerShape(topStart = ServiceLoopUiTokens.Radius.field, topEnd = ServiceLoopUiTokens.Radius.field))
                         .background(if (active) c.surface else Color.Transparent)
                         .drawBehind {
@@ -105,9 +142,9 @@ fun <T> ServiceLoopContentTabs(
                         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
                         .clickable(role = Role.Tab) { onSelected(value) }.focusable()
                         .semantics { this.role = Role.Tab; this.selected = active }
-                        .padding(horizontal = ServiceLoopUiTokens.Space.sm, vertical = ServiceLoopUiTokens.Space.md),
+                        .padding(horizontal = ServiceLoopUiTokens.Space.xs, vertical = ServiceLoopUiTokens.Space.md),
                     contentAlignment = Alignment.Center,
-                ) { Text(label, style = ServiceLoopUiTokens.Type.label, color = if (active) c.action else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, softWrap = false) }
+                ) { Text(label, style = ServiceLoopUiTokens.Type.label, color = if (active) c.action else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, softWrap = true, maxLines = 2) }
             }
         },
         modifier = modifier.fillMaxWidth()
@@ -116,13 +153,26 @@ fun <T> ServiceLoopContentTabs(
         if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
         val gapPx = gap.roundToPx()
         val available = (constraints.maxWidth - gapPx * (measurables.size - 1)).coerceAtLeast(0)
-        val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
-        val naturalTotal = natural.sum()
-        val spare = (available - naturalTotal).coerceAtLeast(0)
-        val baseShare = spare / measurables.size
-        val widths = natural.mapIndexed { index, width ->
-            if (naturalTotal > available) available / measurables.size + if (index < available % measurables.size) 1 else 0
-            else width + baseShare + if (index < spare % measurables.size) 1 else 0
+        val minimum = measurables.map { it.minIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
+        val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
+        val minimumTotal = minimum.sum()
+        val widths = if (minimumTotal >= available) {
+            minimum.map { (available.toLong() * it / minimumTotal).toInt().coerceAtLeast(1) }.toMutableList()
+        } else {
+            val allocated = minimum.toMutableList()
+            var remaining = available - minimumTotal
+            val desiredExtras = natural.mapIndexed { index, width -> (width - minimum[index]).coerceAtLeast(0) }
+            val desiredTotal = desiredExtras.sum()
+            val towardNatural = minOf(remaining, desiredTotal)
+            if (towardNatural > 0 && desiredTotal > 0) {
+                desiredExtras.forEachIndexed { index, extra -> allocated[index] += (towardNatural.toLong() * extra / desiredTotal).toInt() }
+                remaining -= allocated.sum() - minimumTotal
+            }
+            if (remaining > 0) allocated.indices.forEach { index -> allocated[index] += remaining / allocated.size + if (index < remaining % allocated.size) 1 else 0 }
+            allocated
+        }.also { allocated ->
+            val difference = available - allocated.sum()
+            if (allocated.isNotEmpty()) allocated[allocated.lastIndex] = (allocated.last() + difference).coerceAtLeast(1)
         }
         val height = (measurables.mapIndexed { index, measurable -> measurable.maxIntrinsicHeight(widths[index]) }
             .maxOrNull() ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
@@ -143,7 +193,7 @@ fun <T> ServiceLoopChoiceGroup(options: List<Pair<T, String>>, selected: T, onSe
                 selected = value == selected,
                 onClick = { onSelected(value) },
                 label = { Text(label, softWrap = false) },
-                modifier = Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
+                modifier = Modifier.width(IntrinsicSize.Max).heightIn(min = ServiceLoopUiTokens.Size.touchMin).then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
             )
         }
     }
@@ -460,11 +510,14 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
         BackHandler { collapse() }
         Dialog(onDismissRequest = { collapse() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize(), color = LocalServiceLoopTokens.current.canvas) {
-                Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(ServiceLoopUiTokens.Space.lg),horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
-                    Text(label, style = MaterialTheme.typography.headlineSmall)
-                    if (private) Text("PRIVATE · Not included in the customer report", color = LocalServiceLoopTokens.current.textSecondary)
-                    OutlinedTextField(editorValue, updateEditor,textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
-                    ServiceLoopPrimaryButton("Done",{collapse()},Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth))
+                Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+                    ServiceLoopBrandStrip()
+                    ServiceLoopDetailToolbar(label, { collapse() })
+                    Column(Modifier.fillMaxSize().padding(ServiceLoopUiTokens.Space.lg),horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+                        if (private) Text("PRIVATE · Not included in the customer report", color = LocalServiceLoopTokens.current.textSecondary)
+                        OutlinedTextField(editorValue, updateEditor,textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+                        ServiceLoopPrimaryButton("Done",{collapse()},Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth))
+                    }
                 }
             }
         }
