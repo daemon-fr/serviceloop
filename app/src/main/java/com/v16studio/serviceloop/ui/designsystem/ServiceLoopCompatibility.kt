@@ -52,18 +52,7 @@ fun ServiceLoopButtonAdapter(
     contentPadding: PaddingValues = PaddingValues(horizontal = ServiceLoopUiTokens.Space.xl, vertical = ServiceLoopUiTokens.Space.md),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) = androidx.compose.material3.Button(
-    onClick = onClick,
-    modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.buttonPrimaryMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field),
-    enabled = enabled,
-    shape = shape,
-    colors = colors,
-    elevation = elevation,
-    border = border,
-    contentPadding = contentPadding,
-    interactionSource = interactionSource,
-    content = content,
-)
+) = ServiceLoopButtonContent(onClick,modifier,enabled,primary=true,interactionSource=interactionSource ?: androidx.compose.runtime.remember { MutableInteractionSource() },content=content)
 
 @Composable
 fun ServiceLoopOutlinedButtonAdapter(
@@ -82,18 +71,7 @@ fun ServiceLoopOutlinedButtonAdapter(
     contentPadding: PaddingValues = PaddingValues(horizontal = ServiceLoopUiTokens.Space.xl, vertical = ServiceLoopUiTokens.Space.md),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) = androidx.compose.material3.OutlinedButton(
-    onClick = onClick,
-    modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.buttonMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field),
-    enabled = enabled,
-    shape = shape,
-    colors = colors,
-    elevation = elevation,
-    border = border,
-    contentPadding = contentPadding,
-    interactionSource = interactionSource,
-    content = content,
-)
+) = ServiceLoopButtonContent(onClick,modifier,enabled,primary=false,interactionSource=interactionSource ?: androidx.compose.runtime.remember { MutableInteractionSource() },content=content)
 
 @Composable
 fun ServiceLoopTextButtonAdapter(
@@ -125,6 +103,7 @@ fun ServiceLoopTextButtonAdapter(
 
 @Composable
 fun ServiceLoopIconButtonAdapter(
+    accessibleName: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -134,14 +113,7 @@ fun ServiceLoopIconButtonAdapter(
     ),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable () -> Unit,
-) = androidx.compose.material3.IconButton(
-    onClick = onClick,
-    modifier = modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field),
-    enabled = enabled,
-    colors = colors,
-    interactionSource = interactionSource,
-    content = content,
-)
+) = ServiceLoopIconAction(accessibleName,onClick,modifier,enabled,content)
 
 @Composable
 fun ServiceLoopTextFieldAdapter(

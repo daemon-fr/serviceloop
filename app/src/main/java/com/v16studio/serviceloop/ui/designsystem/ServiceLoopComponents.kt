@@ -103,13 +103,13 @@ fun ServiceLoopNotice(title: String, body: String? = null, kind: ServiceLoopNoti
 }
 
 @Composable
-private fun ServiceLoopButton(
-    label:String,onClick:()->Unit,modifier:Modifier,enabled:Boolean,primary:Boolean,
-    leadingIcon:(@Composable (() -> Unit))?,busy:Boolean,
+internal fun ServiceLoopButtonContent(
+    onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,primary:Boolean,
+    busy:Boolean=false,interactionSource:MutableInteractionSource=remember{MutableInteractionSource()},
+    content:@Composable RowScope.()->Unit,
 ) {
     val c=LocalServiceLoopTokens.current
-    val interaction=remember{MutableInteractionSource()}
-    val pressed by interaction.collectIsPressedAsState()
+    val pressed by interactionSource.collectIsPressedAsState()
     val container=if(primary)ServiceLoopButtonContract.primaryContainer(c,enabled,pressed) else ServiceLoopButtonContract.secondaryContainer(c,enabled)
     val ink=if(primary)ServiceLoopButtonContract.primaryInk(c,enabled) else ServiceLoopButtonContract.secondaryInk(c,enabled)
     val shape=RoundedCornerShape(ServiceLoopButtonContract.radius)
@@ -117,21 +117,32 @@ private fun ServiceLoopButton(
         modifier.heightIn(min=if(primary)ServiceLoopButtonContract.primaryMinHeight else ServiceLoopButtonContract.secondaryMinHeight)
             .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape).background(container)
             .then(if(primary)Modifier else Modifier.border(ServiceLoopUiTokens.Stroke.outline,c.outlineControl,shape))
-            .clickable(enabled=enabled&&!busy,role=Role.Button,interactionSource=interaction,indication=LocalIndication.current,onClick=onClick)
-            .focusable(enabled=enabled).semantics { if(!enabled||busy) disabled() }
+            .clickable(enabled=enabled&&!busy,role=Role.Button,interactionSource=interactionSource,indication=LocalIndication.current,onClick=onClick)
+            .focusable(enabled=enabled).semantics(mergeDescendants=true) { if(!enabled||busy) disabled() }
             .padding(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding),
         horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically,
     ) {
         if(busy) {
             CircularProgressIndicator(Modifier.size(ServiceLoopUiTokens.Size.iconSmall),strokeWidth=ServiceLoopUiTokens.Stroke.focus,color=ink)
             Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
-        } else leadingIcon?.let { it(); Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm)) }
-        Text(label,color=ink,style=ServiceLoopButtonContract.textStyle)
+        }
+        CompositionLocalProvider(LocalContentColor provides ink) {
+            ProvideTextStyle(ServiceLoopButtonContract.textStyle) { content() }
+        }
     }
 }
 
-@Composable fun ServiceLoopPrimaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButton(label,onClick,modifier,enabled,true,leadingIcon,busy)
-@Composable fun ServiceLoopSecondaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButton(label,onClick,modifier,enabled,false,leadingIcon,busy)
+@Composable fun ServiceLoopPrimaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,true,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+@Composable fun ServiceLoopSecondaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,false,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+
+@Composable fun ServiceLoopDestructiveButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
+    val c=LocalServiceLoopTokens.current
+    Button(onClick,modifier.heightIn(min=ServiceLoopButtonContract.primaryMinHeight).serviceLoopFocusRing(ServiceLoopButtonContract.radius),enabled,
+        shape=RoundedCornerShape(ServiceLoopButtonContract.radius),colors=ButtonDefaults.buttonColors(containerColor=c.destructive,contentColor=c.onDestructive,disabledContainerColor=c.disabledContainer,disabledContentColor=c.disabledText),
+        contentPadding=PaddingValues(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding)) {
+        ProvideTextStyle(ServiceLoopButtonContract.textStyle){ServiceLoopIcon(ServiceLoopIcons.Delete,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(label)}
+    }
+}
 
 @Composable fun ServiceLoopTextAction(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
     val c=LocalServiceLoopTokens.current
@@ -139,7 +150,7 @@ private fun ServiceLoopButton(
 }
 
 @Composable fun ServiceLoopIconAction(accessibleName:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,content:@Composable ()->Unit) {
-    Box(modifier.size(ServiceLoopUiTokens.Size.touchMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field)).clickable(enabled=enabled,role=Role.Button,onClick=onClick).focusable(enabled).semantics{contentDescription=accessibleName},contentAlignment=Alignment.Center){content()}
+    Box(modifier.size(ServiceLoopUiTokens.Size.touchMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field)).clickable(enabled=enabled,role=Role.Button,onClick=onClick).focusable(enabled).semantics{contentDescription=accessibleName},contentAlignment=Alignment.Center){Box(Modifier.size(ServiceLoopUiTokens.Size.icon),contentAlignment=Alignment.Center){content()}}
 }
 
 @Composable
@@ -155,6 +166,35 @@ fun ServiceLoopSurfaceCard(modifier: Modifier = Modifier, selected: Boolean = fa
         shadowElevation = ServiceLoopUiTokens.Elevation.rest,
         border = androidx.compose.foundation.BorderStroke(borderWidth, borderColor),
     ) { Column(Modifier.padding(ServiceLoopUiTokens.Layout.cardPadding), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm), content = content) }
+}
+
+@Composable
+fun ServiceLoopDenseNavigableRow(
+    title:String,context:String?=null,metadata:String?=null,status:String?=null,actionLabel:String?=null,
+    modifier:Modifier=Modifier,leadingIcon:Int?=null,
+    leadingContent:(@Composable RowScope.()->Unit)?=null,
+    showDisclosure:Boolean=true,onClick:()->Unit,
+) {
+    val c=LocalServiceLoopTokens.current
+    Row(
+        modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.listRowMin)
+            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+            .clickable(role=Role.Button,onClick=onClick).focusable()
+            .drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())}
+            .padding(vertical=ServiceLoopUiTokens.Space.md),
+        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
+    ) {
+        leadingIcon?.let{ServiceLoopIcon(it,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)}
+        leadingContent?.invoke(this)
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+            Text(title,style=ServiceLoopUiTokens.Type.itemTitle)
+            context?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.supporting,color=c.textSecondary)}
+            metadata?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.textMuted)}
+            status?.takeIf{it.isNotBlank()}?.let{ServiceLoopStatusBadge(it)}
+            actionLabel?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.action)}
+        }
+        if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)
+    }
 }
 
 @Composable

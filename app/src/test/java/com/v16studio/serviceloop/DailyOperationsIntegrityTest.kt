@@ -62,6 +62,18 @@ class DailyOperationsIntegrityTest {
         assertNull(site.phone)
         assertNull(site.email)
         assertEquals("Mira", customer.contactName)
+        assertEquals("Mira",repo.site(siteId)!!.effectiveContactName)
+        assertEquals("+40 700",repo.site(siteId)!!.effectivePhone)
+        assertEquals("mira@example.invalid",repo.site(siteId)!!.effectiveEmail)
+        repo.updateCustomer(customerId,CustomerInput("Northside","Updated customer","+40 711","updated@example.invalid"))
+        assertEquals("Updated customer",repo.site(siteId)!!.effectiveContactName)
+        assertEquals("+40 711",repo.site(siteId)!!.effectivePhone)
+        assertEquals("updated@example.invalid",repo.site(siteId)!!.effectiveEmail)
+        repo.updateSite(siteId,SiteInput("Main plant","18 Mill Lane","Site contact","+40 722","site@example.invalid",isDefault=true))
+        assertFalse(repo.site(siteId)!!.usesCustomerContact)
+        assertEquals("Site contact",repo.site(siteId)!!.effectiveContactName)
+        assertEquals("+40 722",repo.site(siteId)!!.effectivePhone)
+        assertEquals("site@example.invalid",repo.site(siteId)!!.effectiveEmail)
     }
 
     @Test fun equipmentDueLabelsUseBusinessDateAndSharedHorizonTruthfully() {

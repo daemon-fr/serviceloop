@@ -47,6 +47,8 @@ class OwnerVisualRuntimeTest {
     private fun captureRenderedEvidence(name: String) {
         composeRule.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        Thread.sleep(500)
         val screenshot = instrumentation.uiAutomation.takeScreenshot()
         val evidenceDirectory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
         FileOutputStream(File(evidenceDirectory, "closure-$name.png")).use {

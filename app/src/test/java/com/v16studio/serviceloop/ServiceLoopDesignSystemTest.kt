@@ -8,6 +8,7 @@ import com.v16studio.serviceloop.ui.designsystem.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
+import java.io.File
 
 class ServiceLoopDesignSystemTest {
     @Test fun canonicalLightAndDarkRolesAreExact() {
@@ -80,6 +81,24 @@ class ServiceLoopDesignSystemTest {
         assertEquals(52f,ServiceLoopButtonContract.primaryMinHeight.value,0f);assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusWidth.value,0f);assertEquals(2f,ServiceLoopButtonContract.focusGap.value,0f)
         assertEquals(c.action,ServiceLoopButtonContract.primaryContainer(c,true,false));assertEquals(c.actionPressed,ServiceLoopButtonContract.primaryContainer(c,true,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.primaryContainer(c,false,false));assertEquals(c.onAction,ServiceLoopButtonContract.primaryInk(c,true));assertEquals(c.disabledText,ServiceLoopButtonContract.primaryInk(c,false))
         assertEquals(c.surface,ServiceLoopButtonContract.secondaryContainer(c,true));assertEquals(c.action,ServiceLoopButtonContract.secondaryInk(c,true));assertEquals(c.disabledContainer,ServiceLoopButtonContract.secondaryContainer(c,false));assertEquals(c.disabledText,ServiceLoopButtonContract.secondaryInk(c,false));assertEquals(ServiceLoopUiTokens.Type.button,ServiceLoopButtonContract.textStyle)
+    }
+
+    @Test fun richButtonAdaptersDelegateToTheCanonicalContentPrimitive() {
+        val source=File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopCompatibility.kt").readText()
+        assertEquals(2,Regex("= ServiceLoopButtonContent\\(").findAll(source).count())
+        assertEquals(false,source.contains("= androidx.compose.material3.Button("))
+        assertEquals(false,source.contains("= androidx.compose.material3.OutlinedButton("))
+        assertEquals(ServiceLoopUiTokens.Type.button,ServiceLoopButtonContract.textStyle)
+        assertEquals(52f,ServiceLoopButtonContract.primaryMinHeight.value,0f)
+        assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f)
+    }
+
+    @Test fun c07AdapterContractsAreCanonical() {
+        assertEquals(14f,ServiceLoopUiTokens.Type.label.fontSize.value,0f)
+        assertEquals(20f,ServiceLoopUiTokens.Type.label.lineHeight.value,0f)
+        assertEquals(androidx.compose.ui.text.font.FontWeight.SemiBold,ServiceLoopUiTokens.Type.label.fontWeight)
+        assertEquals(24f,ServiceLoopUiTokens.Size.icon.value,0f)
+        assertEquals(48f,ServiceLoopUiTokens.Size.touchMin.value,0f)
     }
 
     @Test fun responsivePageInsetsUseCanonicalThresholds() {

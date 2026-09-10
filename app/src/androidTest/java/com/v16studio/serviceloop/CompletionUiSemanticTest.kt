@@ -68,6 +68,7 @@ class CompletionUiSemanticTest {
         compose.waitUntil(5_000){compose.onAllNodesWithTag("inspection-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("inspection-list", useUnmergedTree = true).performScrollToNode(hasTestTag("open-completion-review"))
         compose.onNodeWithTag("open-completion-review").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
         compose.onNodeWithTag("outcome-w-PERFORMED").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
         compose.onNodeWithTag("fulfills-w").performScrollTo().performClick()
