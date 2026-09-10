@@ -3,13 +3,17 @@ package com.v16studio.serviceloop
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
+import com.v16studio.serviceloop.ui.DueServicesProjection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -113,6 +117,60 @@ class DueServicesStateTest {
         assertEquals(1, repository.subscriptions)
     }
 
+    @Test fun suspendedUnrelatedVisitLoadCannotRestoreAnOldUnresolvedDueProjection() = runTest {
+        val repository = DeferredVisitsDueRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        repository.initialVisitsRelease.complete(Unit)
+        repository.initialRootComplete.await()
+
+        viewModel.loadVisits()
+        repository.manualVisitsEntered.await()
+        val expected = listOf(due("P-RACE"))
+        repository.updates.emit(expected)
+        assertEquals(DueServicesProjection.Available(expected), viewModel.state.value.dueServicesProjection)
+
+        repository.manualVisitsRelease.complete(Unit)
+        assertEquals(
+            "an unrelated late repository result must merge into current state",
+            DueServicesProjection.Available(expected),
+            viewModel.state.value.dueServicesProjection,
+        )
+    }
+
+    @Test fun suspendedUnrelatedVisitLoadPreservesAuthoritativeEmptyAndLastGoodError() = runTest {
+        val emptyRepository = DeferredChannelRepository()
+        val emptyViewModel = ServiceLoopViewModel(emptyRepository) {}
+        emptyRepository.releaseInitialRoot()
+        emptyViewModel.loadVisits()
+        emptyRepository.manualVisitsEntered.await()
+        emptyRepository.dueUpdates.send(emptyList())
+        emptyRepository.manualVisitsRelease.complete(Unit)
+        assertEquals(DueServicesProjection.Available(emptyList()), emptyViewModel.state.value.dueServicesProjection)
+
+        val errorRepository = DeferredChannelRepository()
+        val errorViewModel = ServiceLoopViewModel(errorRepository) {}
+        errorRepository.releaseInitialRoot()
+        errorViewModel.loadVisits()
+        errorRepository.manualVisitsEntered.await()
+        val rows = listOf(due("P-LAST-GOOD"))
+        errorRepository.dueUpdates.send(rows)
+        errorRepository.dueUpdates.close(IllegalStateException("fresh observer failure"))
+        assertEquals(DueServicesProjection.Available(rows, "fresh observer failure"), errorViewModel.state.value.dueServicesProjection)
+        errorRepository.manualVisitsRelease.complete(Unit)
+        assertEquals(DueServicesProjection.Available(rows, "fresh observer failure"), errorViewModel.state.value.dueServicesProjection)
+    }
+
+    @Test fun lateCustomerAResultCannotReplaceNewerCustomerBTarget() = runTest {
+        val repository = StaleCustomerRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadCustomer("A")
+        repository.customerAEntered.await()
+        viewModel.loadCustomer("B")
+        assertEquals("B", viewModel.state.value.customer?.id)
+        repository.customerARelease.complete(Unit)
+        assertEquals("B", viewModel.state.value.customer?.id)
+    }
+
     private fun due(reference: String, claimedVisitId: String? = null) = DueService(
         planId = reference, planReference = reference, planName = "Maintenance", dueDate = "2026-09-01",
         obligationId = "obligation-$reference", equipmentId = "equipment-$reference", equipmentReference = "EQ-$reference",
@@ -138,5 +196,56 @@ class DueServicesStateTest {
 
     private class FixedFlowDueRepository(private val values: Flow<List<DueService>>) : BaseRepository() {
         override fun observeDueServices(): Flow<List<DueService>> = values
+    }
+
+    private class DeferredVisitsDueRepository : BaseRepository() {
+        val updates = MutableSharedFlow<List<DueService>>(extraBufferCapacity = 1)
+        val initialVisitsRelease = CompletableDeferred<Unit>()
+        val initialRootComplete = CompletableDeferred<Unit>()
+        val manualVisitsEntered = CompletableDeferred<Unit>()
+        val manualVisitsRelease = CompletableDeferred<Unit>()
+        private var visitCalls = 0
+
+        override fun observeDueServices(): Flow<List<DueService>> = updates
+        override suspend fun visits(): List<VisitSummary> {
+            visitCalls++
+            return if (visitCalls == 1) {
+                initialVisitsRelease.await()
+                initialRootComplete.complete(Unit)
+                emptyList()
+            } else {
+                manualVisitsEntered.complete(Unit)
+                manualVisitsRelease.await()
+                emptyList()
+            }
+        }
+    }
+
+    private class DeferredChannelRepository : BaseRepository() {
+        val dueUpdates = Channel<List<DueService>>(Channel.UNLIMITED)
+        val initialVisitsRelease = CompletableDeferred<Unit>()
+        val initialRootComplete = CompletableDeferred<Unit>()
+        val manualVisitsEntered = CompletableDeferred<Unit>()
+        val manualVisitsRelease = CompletableDeferred<Unit>()
+        private var visitCalls = 0
+        override fun observeDueServices(): Flow<List<DueService>> = dueUpdates.receiveAsFlow()
+        override suspend fun visits(): List<VisitSummary> {
+            visitCalls++
+            return if (visitCalls == 1) {
+                initialVisitsRelease.await(); initialRootComplete.complete(Unit); emptyList()
+            } else {
+                manualVisitsEntered.complete(Unit); manualVisitsRelease.await(); emptyList()
+            }
+        }
+        suspend fun releaseInitialRoot() { initialVisitsRelease.complete(Unit); initialRootComplete.await() }
+    }
+
+    private class StaleCustomerRepository : BaseRepository() {
+        val customerAEntered = CompletableDeferred<Unit>()
+        val customerARelease = CompletableDeferred<Unit>()
+        override suspend fun customer(id: String): CustomerDetail {
+            if (id == "A") { customerAEntered.complete(Unit); customerARelease.await() }
+            return CustomerDetail(id,id,"Customer $id","","","","",emptyList(),emptyList(),emptyList(),emptyList())
+        }
     }
 }
