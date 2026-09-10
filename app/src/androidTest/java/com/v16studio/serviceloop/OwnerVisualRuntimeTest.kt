@@ -121,6 +121,7 @@ class OwnerVisualRuntimeTest {
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("field-search-due-services").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("field-search-due-services").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithTag("work-visits-list").assertCountEquals(0)
 
@@ -190,21 +191,23 @@ class OwnerVisualRuntimeTest {
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume visit").fetchSemanticsNode() }.isSuccess }
         composeRule.onNodeWithText("Resume visit").performClick()
-        composeRule.onNodeWithTag("long-text-public-work-performed", useUnmergedTree = true).performScrollTo()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
         captureRenderedEvidence("public-work-expand-icon")
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         val field = composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true)
-        field.performScrollTo()
         captureRenderedEvidence("issue-found-expand-icon")
 
         composeRule.onNodeWithTag("long-text-public-finding-description-expand", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Done").performClick()
         composeRule.onAllNodesWithText("Expand").assertCountEquals(0)
         composeRule.onNodeWithTag("long-text-public-finding-description-expand", useUnmergedTree = true)
-            .assertContentDescriptionEquals("Expand text editor")
+            .assertContentDescriptionEquals("Expand Public finding description")
 
         field.performTextClearance()
         field.performTextInput("Belt edge wear observed during inspection")
-        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performScrollTo().performClick()
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("finding-save-check-belt"))
+        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performClick()
         composeRule.waitUntil(5_000) {
             runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
         }
@@ -213,7 +216,9 @@ class OwnerVisualRuntimeTest {
         composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         composeRule.onNodeWithText("Resume visit").performClick()
-        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
+        composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onAllNodesWithTag("long-text-public-finding-description", useUnmergedTree = true).assertCountEquals(0)
@@ -224,7 +229,8 @@ class OwnerVisualRuntimeTest {
         naField.performTextInput("Guard unavailable")
         composeRule.onNodeWithTag("not-applicable-save-check-belt").performClick()
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
-        val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).performScrollTo().assertTextContains("Belt edge wear observed during inspection")
+        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
+        val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
         restored.performTextInput("; local unsaved note")
         composeRule.onNodeWithTag("response-check-belt-OK").performClick()
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
@@ -241,6 +247,7 @@ class OwnerVisualRuntimeTest {
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("value-save-check-note").assertIsEnabled() }.isSuccess }
         composeRule.onNodeWithText("Back").performClick()
         composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
         composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
         composeRule.onNodeWithTag("not-applicable-check-note").performClick()

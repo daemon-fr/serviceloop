@@ -65,7 +65,8 @@ class CompletionUiSemanticTest {
 
         compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Resume visit").performClick()
-        compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-completion-review"))
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("inspection-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("inspection-list", useUnmergedTree = true).performScrollToNode(hasTestTag("open-completion-review"))
         compose.onNodeWithTag("open-completion-review").performClick()
         compose.onNodeWithTag("outcome-w-PERFORMED").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
@@ -95,6 +96,7 @@ class CompletionUiSemanticTest {
         compose.onNodeWithText("Visits").performClick()
         compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI · Finalized",substring=true))
         compose.onNodeWithText("V-UI · Finalized · 2026-09-05\nSite").performClick()
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Recorded on", substring = true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
         compose.onNodeWithText("View report text").performScrollTo().performClick()
         compose.waitUntil(5_000){compose.onAllNodesWithTag("report-text-view").fetchSemanticsNodes().isNotEmpty()}
@@ -117,6 +119,7 @@ class CompletionUiSemanticTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Unfinished visits · 2").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Unfinished visits · 2").assertIsDisplayed()
         compose.onNodeWithText("Booked visits · 3").assertIsDisplayed()
     }
