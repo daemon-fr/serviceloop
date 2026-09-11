@@ -34,14 +34,17 @@ jobs:
           distribution: temurin
           java-version: '20'
 
-      - name: Set up Android SDK
+      - name: Set up current Android command-line tools
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
 
-      - name: Install Android SDK packages
+      - name: Install Android 17 compile SDK
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;36.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -105,14 +108,17 @@ jobs:
           distribution: temurin
           java-version: '20'
 
-      - name: Set up Android SDK
+      - name: Set up current Android command-line tools
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
 
-      - name: Install compile SDK
+      - name: Install Android 17 compile SDK
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;36.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
