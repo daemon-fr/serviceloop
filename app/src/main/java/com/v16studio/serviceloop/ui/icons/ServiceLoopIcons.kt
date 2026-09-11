@@ -39,6 +39,8 @@ object ServiceLoopIcons {
     @DrawableRes val Restore = R.drawable.ic_sl_restore
     @DrawableRes val Search = R.drawable.ic_sl_search
     @DrawableRes val SelectionCheck = R.drawable.ic_sl_selection_check
+    @DrawableRes val SelectionChecked = R.drawable.ic_sl_selection_checked
+    @DrawableRes val SelectionEmpty = R.drawable.ic_sl_selection_empty
     @DrawableRes val Settings = R.drawable.ic_sl_settings
     @DrawableRes val Share = R.drawable.ic_sl_share
     @DrawableRes val Site = R.drawable.ic_sl_site

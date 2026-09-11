@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.LocalIndication
@@ -127,6 +128,7 @@ fun <T> ServiceLoopContentTabs(
         content = {
             options.forEach { (value, label) ->
                 val active = value == selected
+                val interactionSource = remember { MutableInteractionSource() }
                 Box(
                     Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("content-tab-$label")
                         .clip(RoundedCornerShape(topStart = ServiceLoopUiTokens.Radius.field, topEnd = ServiceLoopUiTokens.Radius.field))
@@ -143,7 +145,7 @@ fun <T> ServiceLoopContentTabs(
                             }
                         }
                         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
-                        .clickable(role = Role.Tab) { onSelected(value) }.focusable()
+                        .clickable(role = Role.Tab, interactionSource = interactionSource, indication = null) { onSelected(value) }.focusable()
                         .semantics { this.role = Role.Tab; this.selected = active }
                         .padding(horizontal = ServiceLoopUiTokens.Space.xs, vertical = ServiceLoopUiTokens.Space.md),
                     contentAlignment = Alignment.Center,
@@ -347,7 +349,7 @@ fun ServiceLoopEntityRecord(
 ) {
     val c = LocalServiceLoopTokens.current
     val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
-    Row(
+    Box(
         modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
             .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape)
             .background(if (selected) c.selection else c.surface)
@@ -362,17 +364,35 @@ fun ServiceLoopEntityRecord(
             .clickable(role = Role.Button, onClick = onClick).focusable()
             .semantics { contentDescription = actionDescription ?: "Open $title" }
             .padding(ServiceLoopUiTokens.Space.lg),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+        val selectable = selectionChecked != null && onSelectionChange != null
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                if (selectionChecked != null && onSelectionChange != null) Checkbox(selectionChecked, onSelectionChange, modifier = Modifier.semantics { contentDescription = "Select $title" })
-                Text(title, style = ServiceLoopUiTokens.Type.itemTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(title, style = ServiceLoopUiTokens.Type.itemTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).then(if (selectable) Modifier.padding(start = 28.dp) else Modifier))
                 status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
             }
             context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth()) }
             metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted, modifier = Modifier.fillMaxWidth()) }
+        }
+        if (selectable) {
+            Box(
+                Modifier.align(Alignment.TopStart).size(ServiceLoopUiTokens.Size.touchMin)
+                    .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+                    .toggleable(
+                        value = selectionChecked!!,
+                        onValueChange = onSelectionChange,
+                        role = Role.Checkbox,
+                    )
+                    .semantics { contentDescription = "Select $title" },
+                contentAlignment = Alignment.Center,
+            ) {
+                ServiceLoopIcon(
+                    if (selectionChecked) ServiceLoopIcons.SelectionChecked else ServiceLoopIcons.SelectionEmpty,
+                    null,
+                    Modifier.size(ServiceLoopUiTokens.Size.iconSmall),
+                    if (selectionChecked) c.action else c.recordBorder,
+                )
+            }
         }
     }
 }
@@ -455,6 +475,23 @@ internal fun ServiceLoopButtonContent(
 
 @Composable fun ServiceLoopPrimaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,true,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
 @Composable fun ServiceLoopSecondaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,false,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+
+/** Full-width operational commands belong in this explicit, consistently spaced vertical group. */
+@Composable fun ServiceLoopActionStack(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.buttonGap), content = content)
+
+@Composable fun ServiceLoopDangerTonalButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
+    val c=LocalServiceLoopTokens.current
+    val shape=RoundedCornerShape(ServiceLoopButtonContract.radius)
+    Row(
+        modifier.heightIn(min=ServiceLoopButtonContract.secondaryMinHeight).serviceLoopFocusRing(ServiceLoopButtonContract.radius).clip(shape)
+            .background(if(enabled)c.errorContainer else c.disabledContainer)
+            .clickable(enabled=enabled,role=Role.Button,onClick=onClick).focusable(enabled)
+            .semantics(mergeDescendants=true) { if(!enabled) disabled() }
+            .padding(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding),
+        horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically,
+    ) { ProvideTextStyle(ServiceLoopButtonContract.textStyle) { Text(label,color=if(enabled)c.errorInk else c.disabledText) } }
+}
 
 @Composable fun ServiceLoopDestructiveButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
     val c=LocalServiceLoopTokens.current

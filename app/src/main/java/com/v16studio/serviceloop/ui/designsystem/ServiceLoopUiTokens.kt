@@ -122,14 +122,15 @@ object ServiceLoopUiTokens {
     )
 }
 
-/** Fixed-ink treatment for the deliberately white Work filter controls in either appearance. */
+/** Fixed-ink treatment for deliberately white filter controls in either appearance. */
 object ServiceLoopFilterSelectorContract {
     val surface = Color.White
     val primaryInk = Color(0xFF182A30)
     val secondaryInk = Color(0xFF566870)
     val accentInk = Color(0xFF075C62)
     val selectedContainer = Color(0xFFE7F3F1)
-    val outline = Color(0xFF6A828C)
+    /** Keep the white control recognizably ServiceLoop without tinting its surface. */
+    val outline = Color(0xFF67B9B8)
     val menuCheckSize = ServiceLoopUiTokens.Size.filterMenuCheck
 }
 

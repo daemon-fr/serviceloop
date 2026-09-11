@@ -230,3 +230,13 @@ The third root destination is labelled **Register**. Its route and `CUSTOMERS` i
 `working_visits.actualServiceDate` remains the actual service date and continues to be replaced with the business date when a Booked Visit starts. To preserve the final booked date without a new lifecycle or schema column, the Booked → Working transition atomically appends a `visit_schedule_events` row with event type `STARTED`; its `oldServiceDate` is the booked date immediately before Start and its `newServiceDate` is the actual service/start date. Existing Rescheduled/Restored events still update the current Booked date before Start.
 
 The Work-list Visit summary projection uses that durable `STARTED.oldServiceDate` while a Visit is `WORKING`, falling back to persisted `actualServiceDate` when no Start booking history exists (for example a direct Start-now/Working Visit). This keeps `Overdue`, `Today`, `Upcoming`, and `Past 30 days` operationally tied to the booking date for active booked-origin work while preserving actual service date truth in the persisted Visit, completion, recurrence, record, report, Calendar, and Dispatch paths. No Room schema, `.slwork` package, lifecycle, retention, or Calendar-eligibility change is introduced.
+
+### Owner inspection correction R3 — controls, filters, and action spacing
+
+- Shared filter selectors remain white in either appearance, with fixed dark-on-white ink and a restrained `#67B9B8` pale-teal outline; menus retain pale-teal selected rows and 16dp checks.
+- Shared notebook tabs explicitly suppress touch ripple/pressed indication while preserving tab role, selected semantics, focus support, and immediate selection.
+- Full-width vertical command groups use `ServiceLoopActionStack` and the 8dp button-gap token. Service-plan, create-visit, equipment-management, customer/site management, and Dispatch editor command stacks use it.
+- Service-plan End plan is a purpose-specific danger-tonal command; concise Customer/Site lifecycle copy now says Archive/Restore only. Customer detail has an upper-section 16dp buffer before its notebook tabs and uses the heading Active follow-ups.
+- Equipment detail renders a nonblank private note in a private, non-report card.
+- Due-service record selection uses generated Phosphor `SelectionEmpty`/`SelectionChecked` aliases (`square`/`check-square`) rather than Material Checkbox UI.
+- History now uses the responsive Type + Sort selector row, retaining its existing date validation. Dispatch Outbox Status/Service date and CSV-import Rows are the additional actual list-filter dimensions migrated to the shared selector.

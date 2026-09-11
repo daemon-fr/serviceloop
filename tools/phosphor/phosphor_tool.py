@@ -60,6 +60,21 @@ def svg_paths(path: Path) -> list[dict[str, str]]:
             continue
         if tag == "rect" and node.attrib.get("fill") == "none":
             continue
+        if tag == "rect":
+            allowed = {"x", "y", "width", "height", "rx"}
+            if set(node.attrib) - allowed:
+                raise ValueError(f"{path}: unsupported filled <rect> attributes")
+            x = node.attrib.get("x", "0")
+            y = node.attrib.get("y", "0")
+            width = node.attrib.get("width")
+            height = node.attrib.get("height")
+            radius = node.attrib.get("rx", "0")
+            if width is None or height is None:
+                raise ValueError(f"{path}: filled <rect> needs width and height")
+            # VectorDrawable supports SVG arc commands; preserve the source rectangle rather
+            # than substituting a hand-authored product vector for a Phosphor asset.
+            paths.append({"d": f"M{x},{y} H{float(x) + float(width):g} V{float(y) + float(height):g} H{x} Z" if radius == "0" else f"M{float(x) + float(radius):g},{y} H{float(x) + float(width) - float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(width):g},{float(y) + float(radius):g} V{float(y) + float(height) - float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(width) - float(radius):g},{float(y) + float(height):g} H{float(x) + float(radius):g} A{radius},{radius} 0,0,1 {x},{float(y) + float(height) - float(radius):g} V{float(y) + float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(radius):g},{y} Z"})
+            continue
         if tag == "line" and node.attrib.get("x1") == node.attrib.get("x2") and node.attrib.get("y1") == node.attrib.get("y2"):
             # Some upstream Fill SVGs retain an explicitly zero-length, non-rendering line.
             continue

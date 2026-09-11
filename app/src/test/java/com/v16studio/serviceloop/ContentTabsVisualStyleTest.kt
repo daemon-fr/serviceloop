@@ -14,6 +14,9 @@ class ContentTabsVisualStyleTest {
         assertTrue(components.contains("drawLine(c.outlineDecorative"))
         assertTrue(components.contains("ServiceLoopUiTokens.Stroke.tab"))
         assertTrue(tokens.contains("val tab=1.5.dp"))
+        assertTrue(components.contains("indication = null"))
+        assertTrue(components.contains("role = Role.Tab"))
+        assertTrue(components.contains("this.selected = active"))
     }
 
     @Test
