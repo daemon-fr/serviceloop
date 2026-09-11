@@ -1,0 +1,146 @@
+name: Android Verify
+
+on:
+  push:
+    branches:
+      - master
+      - codex/b013-ui-overhaul
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    name: Build, unit tests, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 20
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Phosphor source and generator tests
+        shell: bash
+        run: |
+          python3 tools/phosphor/phosphor_tool.py verify
+          python3 tools/phosphor/test_phosphor_tool.py
+          python3 tools/phosphor/phosphor_tool.py generate
+          git diff --exit-code
+
+      - name: Show locked Gradle and Java versions
+        run: ./gradlew --version
+
+      - name: Focused Work-filter tests
+        run: >-
+          ./gradlew --no-daemon :app:testDebugUnitTest
+          --tests com.v16studio.serviceloop.VisitWorkFilterScheduleTruthTest
+          --tests com.v16studio.serviceloop.WorkFiltersTest
+          --tests com.v16studio.serviceloop.WorkFilterSelectorStyleTest
+
+      - name: Full debug unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Build debug and Android-test APKs
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Lint all app variants
+        run: ./gradlew --no-daemon :app:lint
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Check committed diff whitespace
+        shell: bash
+        run: git diff --check HEAD^ HEAD
+
+      - name: Upload build/test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-test-lint-reports
+          if-no-files-found: ignore
+          path: |
+            app/build/reports/**
+            app/build/test-results/**
+
+  instrumentation:
+    name: Instrumentation tests (API 35)
+    needs: build-test-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 20
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install compile SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM access
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run full instrumentation suite
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Upload instrumentation reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumentation-reports
+          if-no-files-found: ignore
+          path: |
+            app/build/reports/androidTests/**
+            app/build/outputs/androidTest-results/**

@@ -38,15 +38,15 @@ class PhosphorToolTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported visible"):
                 phosphor_tool.svg_paths(source)
 
-    def test_aliases_and_selected_fill_sources_are_unique(self):
+    def test_aliases_are_unique_and_only_the_explicit_check_fat_semantics_share_a_source(self):
         manifest = json.loads(phosphor_tool.MANIFEST.read_text(encoding="utf-8"))
         aliases = list(manifest["icons"])
         self.assertEqual(len(aliases), len(set(aliases)))
-        duplicates = {
-            source for source in manifest["icons"].values()
-            if list(manifest["icons"].values()).count(source) > 1
-        }
-        self.assertEqual(set(), duplicates)
+        by_source = {}
+        for alias, source in manifest["icons"].items():
+            by_source.setdefault(source, set()).add(alias)
+        duplicates = {source: aliases for source, aliases in by_source.items() if len(aliases) > 1}
+        self.assertEqual({"check-fat": {"LocalSaved", "SelectionCheck"}}, duplicates)
 
     def test_wrong_style_is_rejected_by_generate(self):
         with tempfile.TemporaryDirectory() as directory:
