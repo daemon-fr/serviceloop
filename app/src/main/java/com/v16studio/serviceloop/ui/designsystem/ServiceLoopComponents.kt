@@ -48,6 +48,10 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,15 +72,60 @@ fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)?
     }
 }
 
+@Immutable
+internal data class TrailSquare(val x: Float, val y: Float, val sizeDp: Float, val alpha: Float)
+
+internal val LeftTrailSquares = listOf(
+    TrailSquare(.04f,.42f,2f,.03f), TrailSquare(.12f,.70f,2.5f,.04f), TrailSquare(.20f,.22f,2f,.04f),
+    TrailSquare(.28f,.53f,3f,.05f), TrailSquare(.35f,.80f,2.5f,.06f), TrailSquare(.42f,.30f,3.5f,.06f),
+    TrailSquare(.48f,.62f,3f,.07f), TrailSquare(.55f,.12f,4f,.07f), TrailSquare(.60f,.44f,3.5f,.08f),
+    TrailSquare(.65f,.76f,4.5f,.08f), TrailSquare(.70f,.26f,4f,.09f), TrailSquare(.74f,.56f,5f,.09f),
+    TrailSquare(.78f,.86f,3.5f,.10f), TrailSquare(.82f,.12f,4.5f,.10f), TrailSquare(.84f,.42f,5.5f,.11f),
+    TrailSquare(.87f,.70f,4f,.12f), TrailSquare(.90f,.25f,5f,.12f), TrailSquare(.92f,.54f,6f,.13f),
+    TrailSquare(.94f,.82f,4.5f,.12f), TrailSquare(.96f,.08f,4f,.11f), TrailSquare(.97f,.34f,5.5f,.14f),
+    TrailSquare(.98f,.64f,4f,.13f), TrailSquare(.99f,.90f,3.5f,.10f), TrailSquare(.995f,.48f,5f,.15f),
+)
+internal val RightTrailSquares = listOf(
+    TrailSquare(.03f,.58f,5.5f,.15f), TrailSquare(.05f,.18f,4f,.12f), TrailSquare(.07f,.82f,4.5f,.13f),
+    TrailSquare(.09f,.39f,6f,.14f), TrailSquare(.12f,.68f,4f,.11f), TrailSquare(.15f,.08f,5f,.12f),
+    TrailSquare(.18f,.48f,4.5f,.11f), TrailSquare(.21f,.88f,3.5f,.09f), TrailSquare(.24f,.27f,5f,.10f),
+    TrailSquare(.28f,.61f,4f,.09f), TrailSquare(.32f,.13f,4.5f,.08f), TrailSquare(.37f,.76f,3.5f,.08f),
+    TrailSquare(.42f,.37f,4f,.07f), TrailSquare(.48f,.66f,3f,.07f), TrailSquare(.54f,.18f,3.5f,.06f),
+    TrailSquare(.60f,.50f,3f,.06f), TrailSquare(.67f,.83f,2.5f,.05f), TrailSquare(.72f,.29f,3f,.05f),
+    TrailSquare(.78f,.59f,2.5f,.04f), TrailSquare(.84f,.12f,2f,.04f), TrailSquare(.89f,.73f,2.5f,.03f),
+    TrailSquare(.94f,.41f,1.5f,.03f), TrailSquare(.98f,.86f,2f,.02f),
+)
+
+@Composable
+private fun SquareTrail(squares: List<TrailSquare>, color: Color, modifier: Modifier) {
+    Canvas(modifier) {
+        squares.forEach { square ->
+            val side = square.sizeDp.dp.toPx()
+            drawRect(color.copy(alpha = square.alpha), Offset((size.width-side)*square.x, (size.height-side)*square.y), Size(side, side))
+        }
+    }
+}
+
 @Composable
 fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
-    Box(
+    val c = LocalServiceLoopTokens.current
+    Row(
         modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.brandMin)
-            .background(LocalServiceLoopTokens.current.brand)
-            .padding(horizontal = ServiceLoopUiTokens.Space.lg, vertical = ServiceLoopUiTokens.Space.xs),
-        contentAlignment = Alignment.Center,
+            .background(c.brandBand).padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("ServiceLoop", color = Color.White, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+        SquareTrail(LeftTrailSquares, c.textPrimary, Modifier.weight(1f).height(22.dp).testTag("brand-left-trail"))
+        Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
+        Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color=c.textPrimary)) { append("Service") }
+                withStyle(SpanStyle(color=c.action)) { append("Loop") }
+            },
+            modifier=Modifier.testTag("serviceloop-wordmark"), fontSize=18.sp, lineHeight=22.sp,
+            fontWeight=FontWeight.Bold, letterSpacing=(-.2).sp, maxLines=1, softWrap=false,
+        )
+        Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
+        SquareTrail(RightTrailSquares, c.action, Modifier.weight(1f).height(22.dp).testTag("brand-right-trail"))
     }
 }
 
@@ -363,11 +412,10 @@ fun ServiceLoopEntityRecord(
             }
             .testTag("entity-record-card")
             .clickable(role = Role.Button, onClick = onClick).focusable()
-            .semantics { contentDescription = actionDescription ?: "Open $title" }
-            .padding(ServiceLoopUiTokens.Space.lg),
+            .semantics { contentDescription = actionDescription ?: "Open $title" },
     ) {
         val selectable = selectionChecked != null && onSelectionChange != null
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+        Column(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.lg), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                 Text(
                     title,
@@ -375,12 +423,12 @@ fun ServiceLoopEntityRecord(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
-                        .then(if (selectable) Modifier.padding(start = ServiceLoopUiTokens.Size.touchMin) else Modifier)
+                        .then(if (selectable) Modifier.padding(start = ServiceLoopUiTokens.Space.major) else Modifier)
                         .testTag("entity-record-title"),
                 )
                 status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
             }
-            context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth()) }
+            context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth().testTag("entity-record-context")) }
             metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted, modifier = Modifier.fillMaxWidth()) }
         }
         if (selectable) {
@@ -394,13 +442,14 @@ fun ServiceLoopEntityRecord(
                         role = Role.Checkbox,
                     )
                     .semantics { contentDescription = "Select $title" },
-                contentAlignment = Alignment.Center,
+                contentAlignment = Alignment.TopStart,
             ) {
                 ServiceLoopIcon(
                     if (selectionChecked) ServiceLoopIcons.SelectionChecked else ServiceLoopIcons.SelectionEmpty,
                     null,
-                    Modifier.size(ServiceLoopUiTokens.Size.iconSmall).testTag("entity-record-selection-icon"),
-                    if (selectionChecked) c.action else c.recordBorder,
+                    Modifier.padding(start=ServiceLoopUiTokens.Space.sm, top=ServiceLoopUiTokens.Space.sm)
+                        .size(ServiceLoopUiTokens.Size.checkboxGlyph).testTag("entity-record-selection-icon"),
+                    if (selectionChecked) c.action else c.recordBorder.copy(alpha=.55f),
                 )
             }
         }
@@ -562,6 +611,49 @@ fun ServiceLoopDenseNavigableRow(
             actionLabel?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.action)}
         }
         if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)
+    }
+}
+
+@Composable
+fun ServiceLoopDashboardGateway(title:String,count:Int,supporting:String,leadingIcon:Int,warning:Boolean=false,modifier:Modifier=Modifier,onClick:()->Unit) {
+    val c=LocalServiceLoopTokens.current
+    Surface(onClick=onClick,modifier=modifier.fillMaxWidth().testTag("dashboard-gateway-${title.lowercase().replace(' ','-')}")
+        .semantics{role=Role.Button},shape=RoundedCornerShape(ServiceLoopUiTokens.Radius.card),color=c.surface,
+        border=BorderStroke(ServiceLoopUiTokens.Stroke.outline,c.outlineDecorative)) {
+        Row(Modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.listRowMin).padding(ServiceLoopUiTokens.Space.lg),
+            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+            val accent=if(warning)c.warningInk else c.action
+            ServiceLoopIcon(leadingIcon,null,Modifier.size(ServiceLoopUiTokens.Size.icon),accent)
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                Text("$title · $count",style=ServiceLoopUiTokens.Type.itemTitle,color=if(warning)c.warningInk else c.textPrimary)
+                Text(supporting,style=ServiceLoopUiTokens.Type.supporting,color=c.textSecondary)
+            }
+            ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)
+        }
+    }
+}
+
+@Composable
+fun ServiceLoopAttentionRow(title:String,detail:String,modifier:Modifier=Modifier,onClick:()->Unit) =
+    ServiceLoopDenseNavigableRow(title=title,context=detail,modifier=modifier.testTag("attention-row"),leadingIcon=ServiceLoopIcons.Warning,onClick=onClick)
+
+@Composable
+fun ServiceLoopVersionRow(title:String,state:String,provenance:String,modifier:Modifier=Modifier,onClick:()->Unit) =
+    ServiceLoopDenseNavigableRow(title=title,context=state,metadata=provenance,modifier=modifier.testTag("version-row"),onClick=onClick)
+
+@Composable
+fun ServiceLoopWorkItemRow(title:String,service:String,metadata:String,navigable:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
+    val c=LocalServiceLoopTokens.current
+    val base=modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.listRowMin)
+        .drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())}
+    val interactive=if(navigable) base.serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clickable(role=Role.Button,onClick=onClick).focusable() else base
+    Row(interactive.padding(vertical=ServiceLoopUiTokens.Space.md),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+            Text(title,style=ServiceLoopUiTokens.Type.itemTitle)
+            Text(service,style=ServiceLoopUiTokens.Type.supporting,color=c.textSecondary)
+            Text(metadata,style=ServiceLoopUiTokens.Type.meta,color=c.textMuted)
+        }
+        if(navigable) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -23,6 +24,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -93,6 +95,21 @@ class B013R31SelectionAndActionStackUiTest {
     }
 
     @Test
+    fun selectionGlyphIsTwentyFourDpAndClearsShortCardContext() {
+        compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme {
+            ServiceLoopEntityRecord("P-001 · Short service","EQ-001 · Compressor",selectionChecked=false,onSelectionChange={},onClick={})
+        } } }
+        compose.waitForIdle()
+        val icon=compose.onNodeWithTag("entity-record-selection-icon",true).fetchSemanticsNode().boundsInRoot
+        val title=compose.onNodeWithTag("entity-record-title",true).fetchSemanticsNode().boundsInRoot
+        val context=compose.onNodeWithTag("entity-record-context",true).fetchSemanticsNode().boundsInRoot
+        val expected=24f*compose.activity.resources.displayMetrics.density
+        assertTrue("visible glyph should be approximately 24dp",kotlin.math.abs(icon.width-expected)<2f)
+        assertTrue("icon needs a meaningful gap before title",title.left-icon.right>=8f*compose.activity.resources.displayMetrics.density)
+        assertTrue("icon must finish above first context line",icon.bottom<context.top)
+    }
+
+    @Test
     fun actionStackGivesFullWidthCommandsAPositiveDesignSystemGap() {
         compose.runOnUiThread {
             compose.activity.setContent {
@@ -111,6 +128,19 @@ class B013R31SelectionAndActionStackUiTest {
         val second = compose.onNodeWithTag("action-second", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertTrue("action stack gap must be positive", second.top - first.bottom > 0f)
     }
+
+    @Test
+    fun brandWordmarkIsCenteredBetweenEqualTrailRegions() {
+        compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopBrandStrip(Modifier.width(360.dp).testTag("brand-strip")) } } }
+        compose.waitForIdle()
+        val strip=compose.onNodeWithTag("brand-strip",true).fetchSemanticsNode().boundsInRoot
+        val wordmark=compose.onNodeWithTag("serviceloop-wordmark",true).fetchSemanticsNode().boundsInRoot
+        val left=compose.onNodeWithTag("brand-left-trail",true).fetchSemanticsNode().boundsInRoot
+        val right=compose.onNodeWithTag("brand-right-trail",true).fetchSemanticsNode().boundsInRoot
+        assertTrue("wordmark must remain mathematically centered",kotlin.math.abs(wordmark.center.x-strip.center.x)<2f)
+        assertTrue("trail regions must have equal width",kotlin.math.abs(left.width-right.width)<2f)
+        compose.onNodeWithText("ServiceLoop").assertIsDisplayed()
+    }
 }
 
 @RunWith(AndroidJUnit4::class)
@@ -121,7 +151,7 @@ class B013R31OwnerSurfaceRenderTest {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
-        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b013-r31")
+        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b013-r4")
         check(directory.exists() || directory.mkdirs())
         val screenshot = instrumentation.uiAutomation.takeScreenshot()
         FileOutputStream(File(directory, name)).use { check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
@@ -131,20 +161,42 @@ class B013R31OwnerSurfaceRenderTest {
     @Test
     fun rendersDueReminderAndTechnicianSurfacesOnCanonicalDevice() {
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty() }
+        capture("home.png")
         compose.onNodeWithText("Work").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("field-search-due-services").fetchSemanticsNodes().isNotEmpty() }
-        capture("due-services-light.png")
+        capture("due-services.png")
+        compose.onAllNodesWithTag("entity-record-selection",useUnmergedTree=true)[0].performClick()
+        capture("due-services-unchecked.png")
+        compose.onNodeWithTag("work-more-actions").performClick()
+        compose.onNodeWithText("Import work package").assertIsDisplayed()
+        capture("work-more-open.png")
+        androidx.test.espresso.Espresso.pressBack()
 
         compose.onNodeWithText("Home").performClick()
         compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Reminders", substring = true).performClick()
+        capture("settings.png")
+        compose.onNodeWithText("Reminders").performClick()
         compose.onNodeWithTag("reminder-settings").assertIsDisplayed()
-        capture("reminder-settings-light.png")
+        capture("reminder-settings.png")
 
         androidx.test.espresso.Espresso.pressBack()
         compose.onNodeWithText("Coordinator tools").performClick()
         compose.onNodeWithText("Open Technician identity").performClick()
         compose.onNodeWithTag("technician-identity").assertIsDisplayed()
-        capture("technician-identity-light.png")
+        capture("technician-identity.png")
+    }
+
+    @Test
+    fun rendersEquipmentPrivateNoteAboveActions() {
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Register").performClick()
+        compose.onNodeWithTag("content-tab-Equipment").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("entity-record-card",true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("T-01 · Treadmill 01 — window side").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("equipment-private-note",true).fetchSemanticsNodes().isNotEmpty() }
+        val note=compose.onNodeWithTag("equipment-private-note",true).fetchSemanticsNode().boundsInRoot
+        val actions=compose.onNodeWithTag("equipment-actions",true).fetchSemanticsNode().boundsInRoot
+        assertTrue("private note must be above equipment actions",note.bottom<actions.top)
+        capture("equipment-private-note.png")
     }
 }

@@ -12,14 +12,16 @@ import org.junit.Test
 import java.io.File
 
 class ServiceLoopDesignSystemTest {
-    @Test fun brandStripHasWhiteTextContrastAboveFourPointFiveInBothThemes() {
+    @Test fun brandStripWordmarkColorsHaveReadableContrastInBothThemes() {
         fun contrast(foreground:Color,background:Color):Float {
             val high=maxOf(foreground.luminance(),background.luminance())
             val low=minOf(foreground.luminance(),background.luminance())
             return (high+.05f)/(low+.05f)
         }
-        assertEquals(true,contrast(Color.White,ServiceLoopUiTokens.LightColors.brand)>=4.5f)
-        assertEquals(true,contrast(Color.White,ServiceLoopUiTokens.DarkColors.brand)>=4.5f)
+        assertEquals(true,contrast(ServiceLoopUiTokens.LightColors.textPrimary,ServiceLoopUiTokens.LightColors.brandBand)>=4.5f)
+        assertEquals(true,contrast(ServiceLoopUiTokens.LightColors.action,ServiceLoopUiTokens.LightColors.brandBand)>=4.5f)
+        assertEquals(true,contrast(ServiceLoopUiTokens.DarkColors.textPrimary,ServiceLoopUiTokens.DarkColors.brandBand)>=4.5f)
+        assertEquals(true,contrast(ServiceLoopUiTokens.DarkColors.action,ServiceLoopUiTokens.DarkColors.brandBand)>=4.5f)
     }
     @Test fun canonicalLightAndDarkRolesAreExact() {
         with(ServiceLoopUiTokens.LightColors) {
@@ -37,9 +39,9 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun allFortyOneCustomRolesExistInBothAppearances() {
-        fun roles(c:ServiceLoopColorRoles)=listOf(c.canvas,c.surface,c.surfaceSubtle,c.surfaceRaised,c.textPrimary,c.textSecondary,c.textMuted,c.onAction,c.action,c.actionPressed,c.selection,c.onSelection,c.selectionOutline,c.outlineDecorative,c.outlineControl,c.icon,c.focus,c.disabledContainer,c.disabledText,c.neutralContainer,c.neutralInk,c.infoContainer,c.infoInk,c.warningContainer,c.warningInk,c.errorContainer,c.errorInk,c.destructive,c.onDestructive,c.successContainer,c.successInk,c.workingContainer,c.workingInk,c.historyContainer,c.historyInk,c.photoMat,c.scrimBase,c.brand,c.recordBorder,c.tonalCommandContainer,c.tonalCommandInk)
-        val light=listOf(0xFFF4F7F7,0xFFFFFFFF,0xFFEDF2F3,0xFFFFFFFF,0xFF182A30,0xFF566870,0xFF586D75,0xFFFFFFFF,0xFF08666B,0xFF07565B,0xFFE7F3F1,0xFF075C62,0xFF08747A,0xFFD8E1E3,0xFF6A828C,0xFF566870,0xFF005A61,0xFFE6ECEE,0xFF75858B,0xFFEDF2F3,0xFF425D67,0xFFEAF0FA,0xFF315F96,0xFFFFF3DD,0xFF875100,0xFFFBE9E8,0xFFA32D35,0xFFA32D35,0xFFFFFFFF,0xFFE5F2EB,0xFF236347,0xFFE5F3F2,0xFF07666B,0xFFEEEAF4,0xFF66517F,0xFFE6ECEE,0xFF000000,0xFF08747A,0xFF67B9B8,0xFFD7EFED,0xFF075C62).map(::Color)
-        val dark=listOf(0xFF10191C,0xFF19262B,0xFF223239,0xFF293C43,0xFFEAF2F4,0xFFB7C7CD,0xFF9AAFBA,0xFF062F32,0xFF79D4CE,0xFF69BDB8,0xFF173C3D,0xFFA4E6DF,0xFF79D4CE,0xFF344951,0xFF809AA5,0xFFB7C7CD,0xFFA4E6DF,0xFF2A383E,0xFF82969F,0xFF263A42,0xFFD1E0E5,0xFF20384F,0xFFB8D7FF,0xFF493519,0xFFFFDA97,0xFF49282D,0xFFFFC0C4,0xFFFFB3B9,0xFF3B0A12,0xFF173C30,0xFFA5E3BF,0xFF163B3E,0xFFA0E4DF,0xFF362E45,0xFFD9C9F1,0xFF0C1316,0xFF000000,0xFF08747A,0xFF4D8D8A,0xFF234B4D,0xFFA4E6DF).map(::Color)
+        fun roles(c:ServiceLoopColorRoles)=listOf(c.canvas,c.surface,c.surfaceSubtle,c.surfaceRaised,c.textPrimary,c.textSecondary,c.textMuted,c.onAction,c.action,c.actionPressed,c.selection,c.onSelection,c.selectionOutline,c.outlineDecorative,c.outlineControl,c.icon,c.focus,c.disabledContainer,c.disabledText,c.neutralContainer,c.neutralInk,c.infoContainer,c.infoInk,c.warningContainer,c.warningInk,c.errorContainer,c.errorInk,c.destructive,c.onDestructive,c.successContainer,c.successInk,c.workingContainer,c.workingInk,c.historyContainer,c.historyInk,c.photoMat,c.scrimBase,c.brandBand,c.recordBorder,c.tonalCommandContainer,c.tonalCommandInk)
+        val light=listOf(0xFFF4F7F7,0xFFFFFFFF,0xFFEDF2F3,0xFFFFFFFF,0xFF182A30,0xFF566870,0xFF586D75,0xFFFFFFFF,0xFF08666B,0xFF07565B,0xFFE7F3F1,0xFF075C62,0xFF08747A,0xFFD8E1E3,0xFF6A828C,0xFF566870,0xFF005A61,0xFFE6ECEE,0xFF75858B,0xFFEDF2F3,0xFF425D67,0xFFEAF0FA,0xFF315F96,0xFFFFF3DD,0xFF875100,0xFFFBE9E8,0xFFA32D35,0xFFA32D35,0xFFFFFFFF,0xFFE5F2EB,0xFF236347,0xFFE5F3F2,0xFF07666B,0xFFEEEAF4,0xFF66517F,0xFFE6ECEE,0xFF000000,0xFFF0F8F7,0xFF67B9B8,0xFFD7EFED,0xFF075C62).map(::Color)
+        val dark=listOf(0xFF10191C,0xFF19262B,0xFF223239,0xFF293C43,0xFFEAF2F4,0xFFB7C7CD,0xFF9AAFBA,0xFF062F32,0xFF79D4CE,0xFF69BDB8,0xFF173C3D,0xFFA4E6DF,0xFF79D4CE,0xFF344951,0xFF809AA5,0xFFB7C7CD,0xFFA4E6DF,0xFF2A383E,0xFF82969F,0xFF263A42,0xFFD1E0E5,0xFF20384F,0xFFB8D7FF,0xFF493519,0xFFFFDA97,0xFF49282D,0xFFFFC0C4,0xFFFFB3B9,0xFF3B0A12,0xFF173C30,0xFFA5E3BF,0xFF163B3E,0xFFA0E4DF,0xFF362E45,0xFFD9C9F1,0xFF0C1316,0xFF000000,0xFF152629,0xFF4D8D8A,0xFF234B4D,0xFFA4E6DF).map(::Color)
         assertEquals(light,roles(ServiceLoopUiTokens.LightColors))
         assertEquals(dark,roles(ServiceLoopUiTokens.DarkColors))
     }
@@ -70,7 +72,7 @@ class ServiceLoopDesignSystemTest {
         listOf(0f,2f,4f,8f,12f,16f,20f,24f,32f,40f,48f).zip(listOf(ServiceLoopUiTokens.Space.none,ServiceLoopUiTokens.Space.hair,ServiceLoopUiTokens.Space.xs,ServiceLoopUiTokens.Space.sm,ServiceLoopUiTokens.Space.md,ServiceLoopUiTokens.Space.lg,ServiceLoopUiTokens.Space.xl,ServiceLoopUiTokens.Space.section,ServiceLoopUiTokens.Space.major,ServiceLoopUiTokens.Space.hero,ServiceLoopUiTokens.Space.large)).forEach{dp(it.first,it.second)}
         listOf(8f,12f,16f,24f,999f).zip(listOf(ServiceLoopUiTokens.Radius.badge,ServiceLoopUiTokens.Radius.field,ServiceLoopUiTokens.Radius.card,ServiceLoopUiTokens.Radius.dialog,ServiceLoopUiTokens.Radius.pill)).forEach{dp(it.first,it.second)}
         listOf(1f,1f,1.5f,2f,2f).zip(listOf(ServiceLoopUiTokens.Stroke.divider,ServiceLoopUiTokens.Stroke.outline,ServiceLoopUiTokens.Stroke.selected,ServiceLoopUiTokens.Stroke.focus,ServiceLoopUiTokens.Stroke.record)).forEach{dp(it.first,it.second)}
-        val sizes=listOf(48f,20f,24f,32f,24f,48f,52f,64f,64f,64f,28f,80f,64f,64f,88f,56f,560f,560f,196f,320f,640f,840f,360f,600f,840f,480f,148f)
+        val sizes=listOf(48f,20f,24f,32f,24f,48f,52f,64f,64f,64f,36f,80f,64f,64f,88f,56f,560f,560f,196f,320f,640f,840f,360f,600f,840f,480f,148f)
         val actualSizes=listOf(ServiceLoopUiTokens.Size.touchMin,ServiceLoopUiTokens.Size.iconSmall,ServiceLoopUiTokens.Size.icon,ServiceLoopUiTokens.Size.iconLarge,ServiceLoopUiTokens.Size.checkboxGlyph,ServiceLoopUiTokens.Size.buttonMin,ServiceLoopUiTokens.Size.buttonPrimaryMin,ServiceLoopUiTokens.Size.fieldMin,ServiceLoopUiTokens.Size.pickerMin,ServiceLoopUiTokens.Size.topBarMin,ServiceLoopUiTokens.Size.brandMin,ServiceLoopUiTokens.Size.bottomNavMin,ServiceLoopUiTokens.Size.listRowMin,ServiceLoopUiTokens.Size.photoThumb,ServiceLoopUiTokens.Size.photoGridMin,ServiceLoopUiTokens.Size.editorActionReserve,ServiceLoopUiTokens.Size.sheetMaxWidth,ServiceLoopUiTokens.Size.dialogMaxWidth,ServiceLoopUiTokens.Size.menuMinWidth,ServiceLoopUiTokens.Size.menuMaxWidth,ServiceLoopUiTokens.Size.formMaxWidth,ServiceLoopUiTokens.Size.contentMaxWidth,ServiceLoopUiTokens.Size.narrowThreshold,ServiceLoopUiTokens.Size.mediumThreshold,ServiceLoopUiTokens.Size.expandedThreshold,ServiceLoopUiTokens.Size.compactHeightThreshold,ServiceLoopUiTokens.Size.pairMinCellWidth)
         sizes.zip(actualSizes).forEach{dp(it.first,it.second)}
         val layouts=listOf(16f,24f,32f,12f,24f,8f,16f,16f,8f,160f)

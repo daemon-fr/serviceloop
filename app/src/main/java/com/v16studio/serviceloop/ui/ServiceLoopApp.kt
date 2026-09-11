@@ -58,6 +58,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
@@ -143,6 +145,11 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDashboardGateway
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAttentionRow
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopVersionRow
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -382,6 +389,7 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
                 actions = {
                     TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
                     TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
+                    if(selected==RootDestination.WORK) WorkMoreMenu(nav)
                 },
             )
             }
@@ -406,6 +414,18 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
             }
         }
     }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
+}
+
+@Composable
+private fun WorkMoreMenu(nav:NavHostController) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        ServiceLoopIconAction("More Work actions",{expanded=true},Modifier.testTag("work-more-actions")) { ServiceLoopIcon(ServiceLoopIcons.More,null,Modifier.size(ServiceLoopUiTokens.Size.icon)) }
+        DropdownMenu(expanded,onDismissRequest={expanded=false}) {
+            DropdownMenuItem({Text("History")},{expanded=false;nav.navigate("history/global")},leadingIcon={ServiceLoopIcon(ServiceLoopIcons.History,null,Modifier.size(ServiceLoopUiTokens.Size.icon))},modifier=Modifier.testTag("work-more-history"))
+            DropdownMenuItem({Text("Import work package")},{expanded=false;nav.navigate("dispatch/import")},leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Backup,null,Modifier.size(ServiceLoopUiTokens.Size.icon))},modifier=Modifier.testTag("work-more-import"))
+        }
+    }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -471,12 +491,12 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
             if (bookedVisit == null) Text("No booked visits")
             else ServiceLoopEntityRecord(bookedVisit.reference, bookedVisit.siteName, bookedVisit.actualServiceDate, bookedVisit.state) { nav.navigate("visit/${bookedVisit.id}") }
         }
-        item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
+        item { ServiceLoopDashboardGateway("Overdue services",home.overdueCount,"Booked work remains due until fulfilled",ServiceLoopIcons.Warning,true){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
         items(equipment.take(3)) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",metadata="Due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
-        item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next ${home.dueSoonHorizonDays} business-local days", "View all") { nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON")) } }
-        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "View follow-ups") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS)) } }
+        item { ServiceLoopDashboardGateway("Due soon",home.dueSoonCount,"Next ${home.dueSoonHorizonDays} business-local days",ServiceLoopIcons.Time){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON"))} }
+        item { ServiceLoopDashboardGateway("Follow-ups due",home.dueFollowUpCount,listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" },ServiceLoopIcons.Work){nav.navigate(workRoute(WorkTab.FOLLOW_UPS))} }
         item { SectionTitle("Records needing attention · ${attention.size}"); if(attention.isEmpty()) Text("No correction or report-file attention needed.") }
-        items(attention) { item -> SummaryRow("${item.title}\n${item.detail}", "Open") { nav.navigate(item.route) } }
+        items(attention) { item -> ServiceLoopAttentionRow(item.title,item.detail){nav.navigate(item.route)} }
         item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
     }
 }
@@ -505,7 +525,6 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialVisitDate,
                 initialStatusFilter = initialVisitStatus,
-                includeWorkDestinations = true,
             )
             WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
                 values = state.followUps,
@@ -514,7 +533,6 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
                 nav = nav,
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialFollowUpDate,
-                includeWorkDestinations = true,
             )
         }
     }
@@ -529,7 +547,6 @@ internal fun VisitsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
-    includeWorkDestinations: Boolean = false,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -570,10 +587,6 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-        if (includeWorkDestinations) {
-            item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
-            item { Text("More", style = MaterialTheme.typography.titleLarge); SummaryRow("Import work package", "Open") { nav.navigate("dispatch/import") } }
-        }
     }
 }
 
@@ -586,7 +599,6 @@ internal fun FollowUpsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: FollowUpDateFilter = FollowUpDateFilter.ALL,
     initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
-    includeWorkDestinations: Boolean = false,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -629,10 +641,6 @@ internal fun FollowUpsWorkScreen(
                 "Due ${follow.dueDate}",
                 follow.state,
             ) { nav.navigate("follow-up/${follow.id}") }
-        }
-        if (includeWorkDestinations) {
-            item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
-            item { Text("More", style = MaterialTheme.typography.titleLarge); SummaryRow("Import work package", "Open") { nav.navigate("dispatch/import") } }
         }
     }
 }
@@ -683,14 +691,19 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
             Text(if (detail.makeModel.isBlank()) "Make/model not supplied" else detail.makeModel)
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+            if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                Text("Private equipment note",style=ServiceLoopUiTokens.Type.label)
+                Text("PRIVATE · Not included in customer report",style=ServiceLoopUiTokens.Type.meta,color=LocalServiceLoopTokens.current.textSecondary)
+                Text(detail.privateNote,style=ServiceLoopUiTokens.Type.body)
+            }
         }
-        item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
+        item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).testTag("equipment-actions"), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
             val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
             ServiceLoopEntityRecord("${plan.reference} · ${plan.name}",plan.interval,"Due ${plan.dueDate} · $dueLabel",plan.state){nav.navigate("plan/${plan.id}")}
         }
-        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) }; if(detail.privateNote.isNotBlank()) ServiceLoopSurfaceCard(Modifier.padding(top=ServiceLoopUiTokens.Space.section)){ Text("Private equipment notes", style = MaterialTheme.typography.labelLarge); Text("PRIVATE · Not included in the customer report", style = ServiceLoopUiTokens.Type.meta, color = LocalServiceLoopTokens.current.textSecondary); Text(detail.privateNote, style = ServiceLoopUiTokens.Type.body) } }
+        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) } }
     }
 }
 
@@ -860,8 +873,9 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 @Composable
 private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { SectionTitle("Settings"); SummaryRow("Business and report identity", "Open") { nav.navigate("business-profile") } }
-        item { SummaryRow("Inspection templates", "Open") { nav.navigate("template/list") }; SummaryRow("Coordinator tools", "Open") { nav.navigate("dispatch/settings") }; SummaryRow("Reminders · ${state.reminderRuntimeState.label}", "Open") { nav.navigate("reminders") }; SummaryRow("Calendar · ${state.calendarRuntimeState.label}", "Open") { nav.navigate("calendar") }; SummaryRow("Data and recovery", "Open") { nav.navigate("data-recovery") } }
+        item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.Work){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Coordinator tools",leadingIcon=ServiceLoopIcons.Customers){nav.navigate("dispatch/settings")} }
+        item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar){nav.navigate("calendar")} }
+        item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
     }
 }
 
@@ -940,8 +954,8 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<R
             else Button(onClick = { viewModel.generateReport(report.recordId, if (historical) report.revisionId else null) }, enabled = !generating, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Generate customer PDF" }) { Text(if (generating) "Generating…" else if (historical) "Recreate this historical PDF" else if (detail.report?.status == "FAILED") "Retry customer PDF" else "Generate customer PDF") }
         }
         if (historical) item { Text("Historical revision · The current record may be newer.", color = MaterialTheme.colorScheme.tertiary) }
-        if (recordVersions.isNotEmpty()) item { Text("Record revisions", style = MaterialTheme.typography.titleMedium); recordVersions.forEach { version -> SummaryRow("Revision ${version.revisionNumber}${if (version.current) " · Current" else " · Superseded"}", "${version.correctionReason.orEmpty()} · ${Instant.ofEpochMilli(version.recordedAtEpochMillis)}") { nav.navigate("record-version/${report.recordId}/${version.id}") } } }
-        if (reportVersions.isNotEmpty()) item { Text("Retained report renditions", style = MaterialTheme.typography.titleMedium); reportVersions.forEach { version -> SummaryRow("PDF v${version.versionNumber} · ${version.kind} · ${version.status}", "${version.id} · ${version.generatedAtEpochMillis?.let { Instant.ofEpochMilli(it) }}") { nav.navigate("report-version/${report.recordId}/${version.revisionId}/${version.id}") } } }
+        if (recordVersions.isNotEmpty()) item { Text("Record revisions", style = MaterialTheme.typography.titleMedium); recordVersions.forEach { version -> ServiceLoopVersionRow("Revision ${version.revisionNumber}",if(version.current)"Current" else "Superseded",listOfNotNull(version.correctionReason?.takeIf(String::isNotBlank),"Recorded ${Instant.ofEpochMilli(version.recordedAtEpochMillis)}").joinToString(" · ")) { nav.navigate("record-version/${report.recordId}/${version.id}") } } }
+        if (reportVersions.isNotEmpty()) item { Text("Retained report renditions", style = MaterialTheme.typography.titleMedium); reportVersions.forEach { version -> ServiceLoopVersionRow("PDF v${version.versionNumber}",version.status,"${version.kind.replace('_',' ').lowercase().replaceFirstChar(Char::uppercase)}${version.generatedAtEpochMillis?.let { " · Generated ${Instant.ofEpochMilli(it)}" }.orEmpty()}") { nav.navigate("report-version/${report.recordId}/${version.revisionId}/${version.id}") } } }
         if (!historical) item { if(!detail.voided) { Button(onClick={nav.navigate("correction/${report.recordId}")},modifier=Modifier.fillMaxWidth().testTag("correct-record")){Text("Correct record / Resume correction")}; OutlinedTextField(voidReason,{voidReason=it},label={Text("Customer-facing void explanation · Required")},modifier=Modifier.fillMaxWidth()); TextButton(onClick={viewModel.voidRecord(report.recordId,voidReason,""){viewModel.loadFinalRecord(report.recordId)}},enabled=voidReason.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Void this record")} } else { Text("Ordinary customer Share is disabled for a voided original. Previously shared files cannot be revoked."); if (detail.report?.kind != "VOID_NOTICE") Button(onClick = { viewModel.generateReport(report.recordId) }, enabled = !generating, modifier = Modifier.fillMaxWidth().testTag("generate-void-notice")) { Text("Generate customer void notice") } else Text("Current VOID NOTICE is ready for customer handoff.") } }
     }
 }
@@ -1007,19 +1021,6 @@ private fun ReportPhotoThumbnail(photo: PublicPhoto, index: Int, context: androi
 @Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
 
 @Composable private fun AccentCard(content: @Composable ColumnScope.() -> Unit) = ServiceLoopSurfaceCard(content = content)
-
-@Composable private fun SummaryRow(text: String, action: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = LocalServiceLoopTokens.current.surface, modifier = Modifier.fillMaxWidth()) {
-        Column {
-            Row(Modifier.padding(horizontal = ServiceLoopUiTokens.Space.sm, vertical = ServiceLoopUiTokens.Space.md).heightIn(min = ServiceLoopUiTokens.Size.listRowMin).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(text, Modifier.weight(1f))
-                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
-                Text(action, color = LocalServiceLoopTokens.current.action, fontWeight = FontWeight.Medium)
-            }
-            HorizontalDivider(color = LocalServiceLoopTokens.current.outlineDecorative)
-        }
-    }
-}
 
 @Composable private fun StatusChip(text: String, urgency: Boolean) { val colors = LocalServiceLoopTokens.current; Text(text, color = if (urgency) colors.warningInk else colors.infoInk, modifier = Modifier.background(if (urgency) colors.warningContainer else colors.infoContainer, MaterialTheme.shapes.extraSmall).padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 

@@ -32,7 +32,7 @@
     "Search": "magnifying-glass",
     "SelectionChecked": "check-square",
     "SelectionCheck": "check-fat",
-    "SelectionEmpty": "square",
+    "SelectionEmpty": "check-square",
     "Settings": "gear-six",
     "Share": "share-network",
     "Site": "buildings",
