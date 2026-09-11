@@ -95,8 +95,8 @@ class CompletionUiSemanticTest {
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("Visits").performClick()
-        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI · Finalized",substring=true))
-        compose.onNodeWithText("V-UI · Finalized · 2026-09-05\nSite").performClick()
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI · Completed",substring=true))
+        compose.onNodeWithText("V-UI · Completed · 2026-09-05\nSite").performClick()
         compose.waitUntil(5_000){compose.onAllNodesWithText("Recorded on", substring = true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
         compose.onNodeWithText("View report text").performScrollTo().performClick()

@@ -66,7 +66,7 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithText("Visits").performClick()
         composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("V-001", substring = true))
         composeRule.onNodeWithText("V-001", substring = true).performClick()
-        composeRule.onNodeWithText("V-001 · Finalized").assertIsDisplayed()
+        composeRule.onNodeWithText("V-001 · Completed").assertIsDisplayed()
         captureRenderedEvidence("final-record")
 
         composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))

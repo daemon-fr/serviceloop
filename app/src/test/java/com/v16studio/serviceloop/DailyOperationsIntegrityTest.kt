@@ -131,7 +131,7 @@ class DailyOperationsIntegrityTest {
 
     @Test fun cancelWinningPreventsStaleStartAndResolveWinningPreventsStaleFollowUpEdit() = runTest {
         val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); val delayed=RoomServiceLoopRepository(db,time,DraftWriteGate{entered.complete(Unit);release.await()},attachmentRoot=root)
-        val start=launch{assertTrue(runCatching{delayed.startVisit(visit)}.isFailure)}; entered.await(); repo.cancelVisit(visit,"Cancelled first"); release.complete(Unit); start.join(); assertEquals("CANCELLED",repo.visit(visit)!!.state)
+        val start=launch{assertTrue(runCatching{delayed.startVisit(visit)}.isFailure)}; entered.await(); repo.cancelVisit(visit,"Cancelled first"); release.complete(Unit); start.join(); assertEquals("CANCELED",repo.visit(visit)!!.state)
         val follow=repo.createFollowUp(FollowUpInput("CONTACT","Call","2026-09-06",ids.customer)); val editEntered=CompletableDeferred<Unit>(); val editRelease=CompletableDeferred<Unit>(); val delayedEdit=RoomServiceLoopRepository(db,time,DraftWriteGate{editEntered.complete(Unit);editRelease.await()},attachmentRoot=root)
         val edit=launch{assertTrue(runCatching{delayedEdit.updateFollowUp(follow,"Changed","2026-09-06",""," ")}.isFailure)}; editEntered.await(); repo.changeFollowUpState(follow,"RESOLVED","Done"); editRelease.complete(Unit); edit.join(); assertEquals("RESOLVED",repo.followUp(follow)!!.state); assertEquals("Call",repo.followUp(follow)!!.title)
     }
@@ -160,20 +160,20 @@ class DailyOperationsIntegrityTest {
         runCatching { repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-07", 2) }.onSuccess { fail("Expected exclusive claim") }
         repo.rescheduleVisit(visit, "2026-09-09", 3, "Customer requested another day"); assertEquals(dueBefore, db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
         repo.cancelVisit(visit, "Customer unavailable"); assertEquals(dueBefore, db.serviceLoopDao().plan(ids.plan)!!.currentDueDate); assertNull(repo.dueServices().single().claimedVisitId)
-        assertEquals(setOf("RESCHEDULED", "CANCELLED"), db.serviceLoopDao().visitScheduleEvents(visit).map { it.eventType }.toSet())
+        assertEquals(setOf("RESCHEDULED", "CANCELED"), db.serviceLoopDao().visitScheduleEvents(visit).map { it.eventType }.toSet())
         assertNotNull(repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-10", 4))
     }
 
     @Test fun cancelledBookingRestoresSameVisitAndClaimWithoutChangingDueDate() = runTest {
         val ids=foundation(); val due=db.serviceLoopDao().plan(ids.plan)!!.currentDueDate; val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val obligation=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
         repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")
-        assertEquals("BOOKED",repo.visit(visit)!!.state); assertEquals(1,db.serviceLoopDao().visitOwnsClaim(visit,obligation)); assertEquals(due,db.serviceLoopDao().plan(ids.plan)!!.currentDueDate); assertEquals(listOf("CANCELLED","RESTORED"),db.serviceLoopDao().visitScheduleEvents(visit).map{it.eventType})
+        assertEquals("BOOKED",repo.visit(visit)!!.state); assertEquals(1,db.serviceLoopDao().visitOwnsClaim(visit,obligation)); assertEquals(due,db.serviceLoopDao().plan(ids.plan)!!.currentDueDate); assertEquals(listOf("CANCELED","RESTORED"),db.serviceLoopDao().visitScheduleEvents(visit).map{it.eventType})
     }
 
     @Test fun restoreRejectsStaleOrAlreadyClaimedObligationAtomically() = runTest {
         val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); val old=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
         db.serviceLoopDao().insertObligations(listOf(com.v16studio.serviceloop.data.ServiceObligationEntity("replacement",ids.plan,2,"2027-09-01",2))); db.serviceLoopDao().setCurrentObligationForTest(ids.plan,"replacement")
-        assertTrue(runCatching{repo.restoreVisit(visit,"2026-09-06")}.isFailure); assertEquals("CANCELLED",repo.visit(visit)!!.state); assertNull(db.serviceLoopDao().claimForObligation(old))
+        assertTrue(runCatching{repo.restoreVisit(visit,"2026-09-06")}.isFailure); assertEquals("CANCELED",repo.visit(visit)!!.state); assertNull(db.serviceLoopDao().claimForObligation(old))
     }
 
     @Test fun oneOffOnlyCancelledVisitRestoresWithoutClaims() = runTest {
@@ -183,8 +183,8 @@ class DailyOperationsIntegrityTest {
 
     @Test fun restoreRejectsConsumedOrInactivePlanAndConcurrentAttemptsLeaveOneClaim() = runTest {
         suspend fun cancelled(): Pair<Ids,String> { val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); return ids to visit }
-        val (consumedIds, consumedVisit)=cancelled(); val obligation=db.serviceLoopDao().visitWorkItems(consumedVisit).single().capturedObligationId!!; db.serviceLoopDao().consumeObligation(obligation,consumedIds.plan,2,"revision"); assertTrue(runCatching { repo.restoreVisit(consumedVisit,"2026-09-06") }.isFailure); assertEquals("CANCELLED",repo.visit(consumedVisit)!!.state)
-        val (inactiveIds,inactiveVisit)=cancelled(); db.serviceLoopDao().updatePlan(db.serviceLoopDao().plan(inactiveIds.plan)!!.copy(state="INACTIVE")); assertTrue(runCatching { repo.restoreVisit(inactiveVisit,"2026-09-06") }.isFailure); assertEquals("CANCELLED",repo.visit(inactiveVisit)!!.state)
+        val (consumedIds, consumedVisit)=cancelled(); val obligation=db.serviceLoopDao().visitWorkItems(consumedVisit).single().capturedObligationId!!; db.serviceLoopDao().consumeObligation(obligation,consumedIds.plan,2,"revision"); assertTrue(runCatching { repo.restoreVisit(consumedVisit,"2026-09-06") }.isFailure); assertEquals("CANCELED",repo.visit(consumedVisit)!!.state)
+        val (inactiveIds,inactiveVisit)=cancelled(); db.serviceLoopDao().updatePlan(db.serviceLoopDao().plan(inactiveIds.plan)!!.copy(state="INACTIVE")); assertTrue(runCatching { repo.restoreVisit(inactiveVisit,"2026-09-06") }.isFailure); assertEquals("CANCELED",repo.visit(inactiveVisit)!!.state)
         val (raceIds,raceVisit)=cancelled(); val attempts=listOf(async { runCatching{repo.restoreVisit(raceVisit,"2026-09-06")} },async { runCatching{repo.restoreVisit(raceVisit,"2026-09-06")} }).awaitAll(); assertEquals(1,attempts.count{it.isSuccess}); val claimed=db.serviceLoopDao().visitWorkItems(raceVisit).single().capturedObligationId!!; assertEquals(1,db.serviceLoopDao().visitOwnsClaim(raceVisit,claimed)); assertEquals("BOOKED",repo.visit(raceVisit)!!.state)
     }
 

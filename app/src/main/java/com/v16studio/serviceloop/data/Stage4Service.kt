@@ -31,7 +31,7 @@ class Stage4Service(
                 rows += HistoryEntry("record-${record.id}-${equipmentId.orEmpty()}", HistoryType.SERVICE_RECORDS, if (record.voided) "VOIDED_SERVICE" else "SERVICE", "${revision.visitReference} · ${work.joinToString { it.serviceName }}", "${revision.customerName} · ${revision.siteName}${if (record.voided) " · Voided" else ""}", revision.actualServiceDate, revision.recordedAtEpochMillis, "RECORD", record.id, visit.customerId, visit.siteId, equipmentId)
             }
         }
-        dao.allVisits().filter { it.state == "CANCELLED" }.forEach { visit ->
+        dao.allVisits().filter { it.state == "CANCELED" }.forEach { visit ->
             dao.visitWorkItems(visit.id).map { it.equipmentId }.distinct().ifEmpty { listOf(null) }.forEach { equipmentId ->
                 rows += HistoryEntry("cancel-${visit.id}-${equipmentId.orEmpty()}", HistoryType.CHANGES, "CANCELLATION", "${visit.reference} cancelled", visit.cancellationReason.orEmpty(), visit.actualServiceDate, visit.cancelledAtEpochMillis ?: visit.modifiedAtEpochMillis, "VISIT", visit.id, visit.customerId, visit.siteId, equipmentId)
             }

@@ -180,7 +180,7 @@ class RoomServiceLoopRepository(
         return HomeSummary(visit?.id, visit?.reference, visit?.siteNameSnapshot, visit?.modifiedAtEpochMillis, visit?.id?.let { dao.firstWorkItemId(it) }, booked?.reference, booked?.actualServiceDate, dao.dueFollowUpCount(today.toString()), followUp?.reference, followUp?.title, dao.overdueCount(today.toString()), dao.dueSoonCount(today.toString(), today.plusDays(horizon.toLong()).toString()), dao.workingVisitCount(), dao.bookedVisitCount(), horizon)
     }
 
-    override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, it.state, it.finalRecordId, it.resumeWorkItemId) }
+    override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, VisitLifecycleState.normalize(it.state), it.finalRecordId, it.resumeWorkItemId) }
     override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate) }
     override suspend fun customerList() = dao.customerList().map { CustomerSummary(it.id, it.name, it.reference, it.siteCount, it.equipmentCount) }
     override suspend fun siteList() = dao.activeVisitSites().map { site -> SiteRegisterSummary(site.id, site.reference, site.name, site.customerName, site.address.orEmpty(), dao.equipmentForSite(site.id).size) }
@@ -258,7 +258,7 @@ class RoomServiceLoopRepository(
 
     override suspend fun visit(id: String): VisitDetail? {
         val visit = dao.visit(id) ?: return null
-        return VisitDetail(visit.id, visit.reference, visit.state, visit.customerId, visit.customerNameSnapshot, visit.siteId, visit.siteNameSnapshot, visit.siteAddressSnapshot.orEmpty(), visit.actualServiceDate, visit.scheduledAtEpochMillis, visit.appointmentZoneId, dao.visitWorkItems(id).map { VisitLine(it.id, it.equipmentNameSnapshot, it.equipmentReferenceSnapshot, it.serviceNameSnapshot, it.dueDateSnapshot, it.outcome) }, visit.cancellationReason, visit.appointmentReminderLeadMinutes)
+        return VisitDetail(visit.id, visit.reference, VisitLifecycleState.normalize(visit.state), visit.customerId, visit.customerNameSnapshot, visit.siteId, visit.siteNameSnapshot, visit.siteAddressSnapshot.orEmpty(), visit.actualServiceDate, visit.scheduledAtEpochMillis, visit.appointmentZoneId, dao.visitWorkItems(id).map { VisitLine(it.id, it.equipmentNameSnapshot, it.equipmentReferenceSnapshot, it.serviceNameSnapshot, it.dueDateSnapshot, it.outcome) }, visit.cancellationReason, visit.cancellationOrigin, visit.appointmentReminderLeadMinutes)
     }
 
     override suspend fun followUps() = dao.followUps().map { followUpDetail(it) }
@@ -417,7 +417,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun cancelVisit(id: String, reason: String): Long {
-        require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be cancelled"}; dao.updateVisit(visit.copy(state = "CANCELLED", cancellationReason = reason.trim(), cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELLED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
+        require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be cancelled"}; dao.updateVisit(visit.copy(state = VisitLifecycleState.CANCELED.code, cancellationReason = reason.trim(), cancellationOrigin = VisitCancellationOrigin.LOCAL.code, cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
     }
 
     override suspend fun restoreVisit(id: String, serviceDate: String): Long {
@@ -425,7 +425,8 @@ class RoomServiceLoopRepository(
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
         database.withTransaction {
             val visit = dao.visit(id) ?: error("Visit no longer exists")
-            require(visit.state == "CANCELLED") { "Only a cancelled visit can be restored" }
+            require(visit.state == VisitLifecycleState.CANCELED.code) { "Only a canceled visit can be restored" }
+            require(visit.cancellationOrigin !in setOf(VisitCancellationOrigin.COORDINATOR.code, VisitCancellationOrigin.ASSIGNMENT_REMOVAL.code)) { "Coordinator-canceled visits cannot be restored locally" }
             val recurring = dao.visitWorkItems(id).filter { it.servicePlanId != null }
             recurring.forEach { item ->
                 val plan = dao.plan(item.servicePlanId!!) ?: error("The old booking can no longer be restored because its service obligation changed or is already claimed")
@@ -434,7 +435,7 @@ class RoomServiceLoopRepository(
                 require(plan.state == "ACTIVE" && plan.currentObligationId == obligationId && obligation?.planId == plan.id && obligation.consumedAtEpochMillis == null && dao.claimForObligation(obligationId) == null) { "The old booking can no longer be restored because its service obligation changed or is already claimed" }
             }
             recurring.forEach { dao.insertVisitClaim(VisitClaimEntity(it.capturedObligationId!!, id, now)) }
-            dao.updateVisit(visit.copy(state = "BOOKED", actualServiceDate = serviceDate, scheduledAtEpochMillis = LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), cancellationReason = visit.cancellationReason, modifiedAtEpochMillis = now))
+            dao.updateVisit(visit.copy(state = "BOOKED", actualServiceDate = serviceDate, scheduledAtEpochMillis = LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), cancellationOrigin = null, cancellationReason = visit.cancellationReason, modifiedAtEpochMillis = now))
             dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(), id, "RESTORED", visit.actualServiceDate, serviceDate, visit.scheduledAtEpochMillis, LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), "Restored booking", now))
         }
         return now

@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -220,6 +221,9 @@ fun ServiceLoopEntityRecord(
     status: String? = null,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    actionDescription: String? = null,
+    selectionChecked: Boolean? = null,
+    onSelectionChange: ((Boolean) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val c = LocalServiceLoopTokens.current
@@ -237,18 +241,20 @@ fun ServiceLoopEntityRecord(
                 )
             }
             .clickable(role = Role.Button, onClick = onClick).focusable()
-            .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(title, context, metadata, status, "Open").joinToString(". ") }
+            .semantics { contentDescription = actionDescription ?: "Open $title" }
             .padding(ServiceLoopUiTokens.Space.lg),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-            Text(title, style = ServiceLoopUiTokens.Type.itemTitle)
-            context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary) }
-            metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted) }
-            status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                if (selectionChecked != null && onSelectionChange != null) Checkbox(selectionChecked, onSelectionChange, modifier = Modifier.semantics { contentDescription = "Select $title" })
+                Text(title, style = ServiceLoopUiTokens.Type.itemTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
+            }
+            context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth()) }
+            metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted, modifier = Modifier.fillMaxWidth()) }
         }
-        Text("Open", style = ServiceLoopUiTokens.Type.label, color = c.action)
     }
 }
 

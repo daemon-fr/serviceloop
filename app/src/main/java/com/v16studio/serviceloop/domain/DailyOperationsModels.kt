@@ -54,7 +54,7 @@ data class VisitDetail(
     val id: String, val reference: String, val state: String, val customerId: String,
     val customerName: String, val siteId: String, val siteName: String, val siteAddress: String,
     val serviceDate: String, val scheduledAtEpochMillis: Long?, val appointmentZoneId: String?,
-    val lines: List<VisitLine>, val cancellationReason: String?,
+    val lines: List<VisitLine>, val cancellationReason: String?, val cancellationOrigin: String? = null,
     val appointmentReminderLeadMinutes: Int? = null,
 )
 data class VisitLine(val workItemId: String, val equipmentName: String, val equipmentReference: String, val serviceName: String, val dueDate: String?, val outcome: String?)
@@ -75,6 +75,42 @@ data class ContactNoteInput(val customerId: String, val siteId: String? = null, 
 
 data class SearchTarget(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
 
-enum class VisitFilter { ALL, BOOKED, WORKING, FINALIZED, CANCELLED, PARTICIPATION_COMPLETE, DISPATCH_WITHDRAWN }
+/**
+ * The one technician-side Visit lifecycle. Persisted legacy spellings are
+ * accepted only at the migration/compatibility boundary (see
+ * [fromPersisted]).
+ */
+enum class VisitLifecycleState(val code: String, val label: String) {
+    BOOKED("BOOKED", "Booked"),
+    WORKING("WORKING", "Working"),
+    COMPLETED("COMPLETED", "Completed"),
+    CANCELED("CANCELED", "Canceled");
+
+    companion object {
+        fun fromPersisted(value: String): VisitLifecycleState = when (value.trim().uppercase()) {
+            "BOOKED" -> BOOKED
+            "WORKING" -> WORKING
+            "COMPLETED", "FINALIZED", "PARTICIPATION_COMPLETE" -> COMPLETED
+            "CANCELED", "CANCELLED", "DISPATCH_WITHDRAWN" -> CANCELED
+            else -> error("Unknown Visit lifecycle state: $value")
+        }
+
+        fun normalize(value: String): String = fromPersisted(value).code
+    }
+}
+
+enum class VisitCancellationOrigin(val code: String) {
+    LOCAL("LOCAL"),
+    COORDINATOR("COORDINATOR"),
+    ASSIGNMENT_REMOVAL("ASSIGNMENT_REMOVAL");
+
+    companion object {
+        fun fromCode(value: String?): VisitCancellationOrigin? = value?.let { raw ->
+            entries.firstOrNull { it.code == raw.trim().uppercase() }
+        }
+    }
+}
+
+enum class VisitFilter { ALL, BOOKED, WORKING, COMPLETED, CANCELED }
 enum class VisitDateWindow { ALL_DATES, PAST_30_DAYS, NEXT_30_DAYS }
 enum class FollowUpFilter { DUE_OR_OVERDUE, UPCOMING, ALL_OPEN, CLOSED }

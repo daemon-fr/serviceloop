@@ -35,7 +35,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -47,7 +47,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -281,6 +281,21 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE working_visits ADD COLUMN appointmentReminderLeadMinutes INTEGER")
                 db.execSQL("CREATE TABLE IF NOT EXISTS reminder_preferences (id TEXT NOT NULL PRIMARY KEY, dailySummaryEnabled INTEGER NOT NULL, summaryHour INTEGER NOT NULL, summaryMinute INTEGER NOT NULL, summaryDaysMask INTEGER NOT NULL, dueSoonHorizonDays INTEGER NOT NULL, includeDueServices INTEGER NOT NULL, includeVisits INTEGER NOT NULL, includeFollowUps INTEGER NOT NULL, includeUnfinishedVisits INTEGER NOT NULL, includeBackupReminder INTEGER NOT NULL, appointmentAlertsEnabled INTEGER NOT NULL, defaultAppointmentLeadMinutes INTEGER NOT NULL)")
                 configureReminderDefaults(db)
+                configureStage4Tracking(db)
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE working_visits ADD COLUMN cancellationOrigin TEXT")
+                db.execSQL("ALTER TABLE dispatch_outbox_visits ADD COLUMN canceledAtEpochMillis INTEGER")
+                db.execSQL("ALTER TABLE dispatch_outbox_visits ADD COLUMN cancellationReason TEXT")
+                db.execSQL("ALTER TABLE dispatch_outbox_visits ADD COLUMN lastExportedCancellationAtEpochMillis INTEGER")
+
+                // Normalize only the current Visit state column. Immutable history/change
+                // descriptions retain their original wording as provenance.
+                db.execSQL("UPDATE working_visits SET state='COMPLETED' WHERE state IN ('FINALIZED','PARTICIPATION_COMPLETE')")
+                db.execSQL("UPDATE working_visits SET state='CANCELED', cancellationOrigin=CASE WHEN state='DISPATCH_WITHDRAWN' THEN 'ASSIGNMENT_REMOVAL' ELSE COALESCE(cancellationOrigin,'LOCAL') END WHERE state IN ('DISPATCH_WITHDRAWN','CANCELLED')")
                 configureStage4Tracking(db)
             }
         }

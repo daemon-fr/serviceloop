@@ -26,11 +26,9 @@ import com.v16studio.serviceloop.calendar.CalendarRuntimeState
 import com.v16studio.serviceloop.calendar.VisitCalendarState
 import com.v16studio.serviceloop.calendar.WritableCalendar
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -283,8 +281,7 @@ class ServiceLoopViewModel(
                     ) }
                 }
             } catch (cancelled: CancellationException) {
-                if (!currentCoroutineContext().isActive) throw cancelled
-                settleDueServicesFailure(cancelled)
+                throw cancelled
             } catch (failure: Exception) {
                 settleDueServicesFailure(failure)
             }

@@ -109,11 +109,11 @@ class DueServicesStateTest {
         assertEquals(2, repository.subscriptions)
     }
 
-    @Test fun upstreamCancellationSettlesAsUnavailableInsteadOfLoadingForever() = runTest {
+    @Test fun upstreamCancellationIsNotConvertedIntoAProductError() = runTest {
         val repository = FixedFlowDueRepository(flow { throw CancellationException("upstream cancelled") })
         val viewModel = ServiceLoopViewModel(repository) {}
         assertFalse(viewModel.state.value.dueServicesReady)
-        assertEquals("upstream cancelled", viewModel.state.value.dueServicesError)
+        assertNull(viewModel.state.value.dueServicesError)
     }
 
     @Test fun workAndNewVisitShareOneCoherentProjection() = runTest {

@@ -59,6 +59,9 @@ data class DispatchOutboxVisitEntity(
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
     val concludedAtEpochMillis: Long? = null,
+    val canceledAtEpochMillis: Long? = null,
+    val cancellationReason: String? = null,
+    val lastExportedCancellationAtEpochMillis: Long? = null,
 )
 
 @Entity(

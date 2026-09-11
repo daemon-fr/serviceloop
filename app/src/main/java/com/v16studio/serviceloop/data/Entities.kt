@@ -147,6 +147,8 @@ data class WorkingVisitEntity(
     val scheduleChangeReason: String? = null,
     val cancellationReason: String? = null,
     val cancelledAtEpochMillis: Long? = null,
+    /** Why a canceled Visit became canceled; null for non-canceled Visits and legacy rows. */
+    val cancellationOrigin: String? = null,
     /** null uses the saved default; 0 disables this Visit; otherwise 120 or 1440. */
     val appointmentReminderLeadMinutes: Int? = null,
 )

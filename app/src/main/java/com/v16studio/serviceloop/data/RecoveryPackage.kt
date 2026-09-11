@@ -489,8 +489,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 11
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 12
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000

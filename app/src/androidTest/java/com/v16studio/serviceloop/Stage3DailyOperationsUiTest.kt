@@ -101,7 +101,7 @@ class Stage3DailyOperationsUiTest {
         assertEquals(dueBefore,kotlinx.coroutines.runBlocking{database.serviceLoopDao().dueServices().single().dueDate})
         compose.onNodeWithText("Cancellation reason").performTextInput("Customer unavailable")
         compose.onNodeWithText("Cancel booking").performScrollTo().performClick()
-        compose.waitUntil(15_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().visits().single().state=="CANCELLED"}}
+        compose.waitUntil(15_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().visits().single().state=="CANCELED"}}
         assertEquals(null,kotlinx.coroutines.runBlocking{database.serviceLoopDao().dueServices().single().claimedVisitId})
     }
 

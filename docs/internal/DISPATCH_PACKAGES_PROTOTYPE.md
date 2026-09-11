@@ -1,4 +1,4 @@
-# Dispatch packages v2 — accepted integration reference
+# Dispatch packages v3 — accepted integration reference
 
 **OWNER APPROVED UNDER B-015 — BANKED ON THE AUTHORITATIVE TECHNICAL DEVELOPMENT LINE**
 
@@ -52,21 +52,22 @@ A single `.slwork` package may contain many Visits with different generations.
 
 ## Coordinator lifecycle
 
-The Outbox derives exactly three office-side states:
+The Outbox derives exactly four office-side states:
 
 - **Draft** — never successfully exported into a usable `.slwork`;
 - **Dispatched** — a usable package artifact containing the Visit was successfully created and export metadata committed;
+- **Canceled** — coordinator cancellation is stored with a required reason. A canceled Draft is history-only; a canceled Dispatched Visit requires a newer package export;
 - **Concluded** — coordinator-side administrative closure only.
 
 Dispatched does not mean delivered, received, imported, accepted, started or completed. Concluded does not alter technician devices. Reopen returns Concluded → Dispatched and preserves prior export evidence/generation.
 
-Batch lifecycle actions require homogeneous eligible selections and apply atomically. Draft cannot be concluded manually; Concluded must be reopened before editing/export.
+Batch lifecycle actions require homogeneous eligible selections and apply atomically. Draft cannot be concluded manually; Draft/Dispatched can be canceled with a reason; Canceled and Concluded are read-only.
 
 ## Selection and batch export
 
 The active Outbox hides Concluded work by default and supports:
 
-- status scopes: Active / Draft / Dispatched / Concluded / All;
+- status scopes: Active / Draft / Dispatched / Canceled / Concluded / All;
 - date scopes: Today / Tomorrow / ISO calendar week / Next 7 days / Custom range / All dates.
 
 Every visible Visit can be selected. **Select all** changes to **Deselect all** when every currently visible result is selected; hidden rows are not silently targeted.
@@ -86,9 +87,9 @@ The final export sequence remains truthful:
 
 If the preparation becomes stale, export is rejected and must be reviewed again. File/write/verification/commit failure does not falsely advance status or generation. Cancelling the Android chooser after successful artifact creation still leaves the Visit Dispatched because the artifact exists, but ServiceLoop never calls that delivered or received.
 
-## `.slwork` v2
+## `.slwork` v3
 
-Format v2 is readable unsigned JSON. It carries explicit local appointment time plus IANA ZoneId, frozen Team/participant/leader snapshots, stable Visit/item identities and per-item assignees. Empty assignee list means Everyone among the selected Visit Teams. Leaders receive visibility according to the adopted role semantics.
+Format v2 remains readable unsigned JSON and is interpreted as active transport. New exports use v3, which adds per-Visit `transportLifecycle` (`ACTIVE`/`CANCELED`) and a required cancellation reason for canceled Visits. Lifecycle and reason are included in the material hash. It carries explicit local appointment time plus IANA ZoneId, frozen Team/participant/leader snapshots, stable Visit/item identities and per-item assignees. Empty assignee list means Everyone among the selected Visit Teams. Leaders receive visibility according to the adopted role semantics.
 
 The codec bounds bytes/counts/strings and validates dates, times, zones, global Visit/item uniqueness, Team uniqueness, membership/leader consistency, participant unions, Technician-name consistency, assignment membership and directory references. Earlier v1 prototype packages are rejected.
 
@@ -112,7 +113,7 @@ Possible-directory duplicates require explicit **Create separate** or **Skip bra
 - higher generation → update the same untouched Booked local Visit if safe;
 - locally changed/started/terminal Visit → no silent rewrite.
 
-If a newer generation removes the local technician's final applicable assignment, an untouched Booked Visit becomes `DISPATCH_WITHDRAWN`; started/historical work is not silently rewritten.
+If a newer generation removes the local technician's final applicable assignment, the local Booked or Working Visit becomes `CANCELED`; local work/evidence is preserved and Completed remains Completed with provenance only.
 
 A many-Visit package has one consolidated preview and **Apply N safe Visits**. Safe new/update/withdrawal work applies in one rollback-capable transaction; blocked/conflicting/no-op/unassigned work remains unapplied and is reported honestly.
 
@@ -124,7 +125,7 @@ Documentation handoff is local documentation responsibility only. It does not pr
 
 A successful handoff releases that item's local recurrence claim/link and clears recurrence draft state without advancing recurrence. If substantive local evidence/draft content exists, destructive cleanup requires explicit confirmation and uses rollback-safe app-owned file/database coordination. Undo does not silently reclaim recurrence.
 
-If all assigned items are handed off and no item is locally documented, **Finish my involvement** moves the local Visit to `PARTICIPATION_COMPLETE` without a final record, PDF, fake Not performed result, central cancellation or recurrence effect.
+If all assigned items are handed off and no item is locally documented, **Complete visit** moves the local Visit to `COMPLETED` without a final record, PDF, fake Not performed result, central cancellation or recurrence effect.
 
 Parallel independent technician reports for the same dispatch item are valid.
 
@@ -136,11 +137,11 @@ Immutable final Dispatch snapshots retain Visit/item IDs, generation, manager re
 
 Completed eligible PDFs may use **Send to office** or ordinary Share through the Android chooser. This proves handoff to the chooser only, not delivery/receipt. B-003 void/superseded restrictions remain authoritative.
 
-## Recovery, Room v10 and B-014
+## Recovery, Room v12 and B-014
 
 The integrated development line is Room **v10**.
 
-Dispatch lifecycle/state introduced through v9 remains part of complete backup/restore and erase semantics. Room v10 additionally implements adopted B-014 Working inspection-response draft retention:
+Dispatch lifecycle/state introduced through v9 remains part of complete backup/restore and erase semantics. Room v12 additionally normalizes the unified Visit lifecycle, persists cancellation origin/reason, and retains adopted B-014 Working inspection-response draft retention:
 
 - `issueFoundReasonDraft`;
 - `notApplicableReasonDraft`;

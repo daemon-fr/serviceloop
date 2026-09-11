@@ -70,6 +70,24 @@ class StageBRenderMatrixTest {
         }
         awaitSettledContent(Shot("B1","booked-visit",null),vm)
         capture(Shot("B1","booked-visit",null),dark)
+        val canceled = VisitDetail("render-canceled","V-CANCELED","CANCELED",FixtureIds.CUSTOMER,"Aster Facilities",FixtureIds.SITE,"Riverside plant","14 Riverside Way","2026-09-11",null,"Europe/Bucharest",listOf(VisitLine("render-canceled-work","Air compressor","EQ-001","Quarterly service","2026-09-11",null)),"Coordinator removed the assignment","COORDINATOR")
+        compose.activity.setContent {
+            ServiceLoopTheme(darkTheme=dark) {
+                val nav=rememberNavController()
+                Scaffold { padding -> VisitDetailScreen(canceled,padding,UiState(loading=false,businessZoneId="Europe/Bucharest"),vm,nav) }
+            }
+        }
+        awaitSettledContent(Shot("B1","canceled-visit",null),vm)
+        capture(Shot("B1","canceled-visit",null),dark)
+        val completed = VisitDetail("render-completed","V-COMPLETED","COMPLETED",FixtureIds.CUSTOMER,"Aster Facilities",FixtureIds.SITE,"Riverside plant","14 Riverside Way","2026-09-11",null,"Europe/Bucharest",listOf(VisitLine("render-completed-work","Air compressor","EQ-001","Quarterly service","2026-09-11",null)),null)
+        compose.activity.setContent {
+            ServiceLoopTheme(darkTheme=dark) {
+                val nav=rememberNavController()
+                Scaffold { padding -> VisitDetailScreen(completed,padding,UiState(loading=false,businessZoneId="Europe/Bucharest"),vm,nav) }
+            }
+        }
+        awaitSettledContent(Shot("B1","completed-no-record",null),vm)
+        capture(Shot("B1","completed-no-record",null),dark)
     }
 
     private fun awaitSettledContent(shot:Shot,vm:ServiceLoopViewModel) {

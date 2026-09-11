@@ -162,6 +162,6 @@ class ServiceLoopDesignSystemTest {
         assertEquals("Unavailable",serviceLoopStateStyle("DISABLED",c).label)
         assertEquals("Open",serviceLoopStateStyle("OPEN",c).label)
         assertEquals("Closed",serviceLoopStateStyle("CLOSED",c).label)
-        assertEquals(ServiceLoopVisualState.History,serviceLoopStateStyle("CANCELLED",c).state)
+        assertEquals(ServiceLoopVisualState.History,serviceLoopStateStyle("CANCELED",c).state)
     }
 }

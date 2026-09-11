@@ -42,7 +42,7 @@ class CalendarIntegrationTest {
         await{gateway.updates==1};assertEquals(eventId,gateway.events.keys.single())
         db.serviceLoopDao().updateCustomer(db.serviceLoopDao().customer("customer")!!.copy(name="Updated Customer"));db.serviceLoopDao().updateSite(db.serviceLoopDao().site("site")!!.copy(name="Updated Site",address="2 New Road"))
         await{gateway.updates>=2&&gateway.events[eventId]?.title=="ServiceLoop · Updated Site"};assertEquals("2 New Road",gateway.events[eventId]!!.location);assertTrue(gateway.events[eventId]!!.description.contains("Updated Customer"))
-        db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit("visit")!!.copy(state="CANCELLED",cancellationReason="Cancelled",cancelledAtEpochMillis=3))
+        db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit("visit")!!.copy(state="CANCELED",cancellationReason="Cancelled",cancelledAtEpochMillis=3))
         await{gateway.events.isEmpty()};assertEquals(1,gateway.inserts)
     }
 
@@ -84,14 +84,14 @@ class CalendarIntegrationTest {
 
     @Test fun cancellationFailureRetainsPendingLinkWithoutBusinessRollback()=runBlocking{
         coordinator.setEnabled(true);coordinator.select(gateway.calendar);gateway.failDeletes=true
-        val visit=db.serviceLoopDao().visit("visit")!!;db.serviceLoopDao().updateVisit(visit.copy(state="CANCELLED",cancellationReason="Customer requested",cancelledAtEpochMillis=3));coordinator.reconcile()
-        assertEquals("CANCELLED",db.serviceLoopDao().visit("visit")!!.state);assertEquals(1,coordinator.runtimeState().problemCount);assertEquals(1,gateway.events.size)
+        val visit=db.serviceLoopDao().visit("visit")!!;db.serviceLoopDao().updateVisit(visit.copy(state="CANCELED",cancellationReason="Customer requested",cancelledAtEpochMillis=3));coordinator.reconcile()
+        assertEquals("CANCELED",db.serviceLoopDao().visit("visit")!!.state);assertEquals(1,coordinator.runtimeState().problemCount);assertEquals(1,gateway.events.size)
     }
 
     @Test fun workingAndFinalizedStatesRetainHistoricalEvent()=runBlocking{
         coordinator.setEnabled(true);coordinator.select(gateway.calendar);val dao=db.serviceLoopDao();val visit=dao.visit("visit")!!
         dao.updateVisit(visit.copy(state="WORKING"));coordinator.reconcile();assertEquals(1,gateway.events.size);assertEquals(0,gateway.deletes)
-        dao.updateVisit(visit.copy(state="FINALIZED"));coordinator.reconcile();assertEquals(1,gateway.events.size);assertEquals(0,gateway.deletes)
+        dao.updateVisit(visit.copy(state="COMPLETED"));coordinator.reconcile();assertEquals(1,gateway.events.size);assertEquals(0,gateway.deletes)
     }
 
     @Test fun corruptStoreDisablesSafelyWithoutProviderMutation(){
@@ -135,13 +135,13 @@ class CalendarDispatchObservationTest {
     @Test fun dispatchCreateGenerationUpdateAndWithdrawalProjectAutomatically()=runBlocking{
         val first=pkg();val local=dispatch.import(dispatch.preview(first)).createdVisitIds.single();await{gateway.inserts==1};val eventId=gateway.events.keys.single()
         val newer=pkg(2,"2026-09-14","10:30");dispatch.import(dispatch.preview(newer));await{gateway.updates==1};assertEquals(eventId,gateway.events.keys.single());assertEquals(1,gateway.inserts)
-        dispatch.import(dispatch.preview(withdrawn(newer,3)));await{gateway.events.isEmpty()&&store.read("dispatch-calendar").links.isEmpty()};assertEquals("DISPATCH_WITHDRAWN",db.serviceLoopDao().visit(local)!!.state)
+        dispatch.import(dispatch.preview(withdrawn(newer,3)));await{gateway.events.isEmpty()&&store.read("dispatch-calendar").links.isEmpty()};assertEquals("CANCELED",db.serviceLoopDao().visit(local)!!.state)
     }
 
     @Test fun withdrawalDeleteFailureKeepsBusinessStateAndRetriesOnLaterInvalidation()=runBlocking{
         val first=pkg();val local=dispatch.import(dispatch.preview(first)).createdVisitIds.single();await{gateway.inserts==1};gateway.failDeletes=true
         dispatch.import(dispatch.preview(withdrawn(first,2)));await{store.read("dispatch-calendar").links[local]?.state==CalendarLinkState.DELETE_PENDING}
-        assertEquals("DISPATCH_WITHDRAWN",db.serviceLoopDao().visit(local)!!.state);assertEquals(1,gateway.events.size)
+        assertEquals("CANCELED",db.serviceLoopDao().visit(local)!!.state);assertEquals(1,gateway.events.size)
         gateway.failDeletes=false;val visit=db.serviceLoopDao().visit(local)!!;db.serviceLoopDao().updateVisit(visit.copy(modifiedAtEpochMillis=visit.modifiedAtEpochMillis+1));await{gateway.events.isEmpty()&&local !in store.read("dispatch-calendar").links}
     }
 

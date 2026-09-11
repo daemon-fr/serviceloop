@@ -113,7 +113,7 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Only timed Booked local Visits qualify automatically. Date-only bookings do not become all-day events. Events use the stored appointment instant/ZoneId, a fixed 60-minute display block, restrained operational content, no Calendar reminder rows, and no private notes/findings/checklists/contacts/Dispatch instructions/report content/opaque Technician IDs.
 - One local Visit has at most one managed event link. ServiceLoop updates the same linked event after relevant ServiceLoop changes, does not import external edits, and treats externally deleted events as **missing** until deliberate Recreate. Per-Visit Remove creates local suppression so automatic reconciliation does not recreate it; Add clears suppression.
 - Global Disable keeps existing external events and bindings but stops active synchronization. Changing the preferred Calendar affects new/unlinked events only; existing links remain tied to their original Calendar.
-- Future linked events are deleted when a Visit becomes **Cancelled** or **DISPATCH_WITHDRAWN** where provider access permits; deletion failure is retained as provider work needing retry and never changes the committed ServiceLoop state. **Working**, **Finalized**, and **PARTICIPATION_COMPLETE** events remain as historical appointment evidence.
+- Future linked events are deleted when a Visit becomes **Canceled** where provider access permits; deletion failure is retained as provider work needing retry and never changes the committed ServiceLoop state. **Working** and **Completed** events remain as historical appointment evidence.
 - Calendar reconciliation observes relevant Room changes (`working_visits`, `customers`, `sites`) plus startup/resume/manual triggers; it uses no polling service. Dispatch import, generation update, and assignment withdrawal therefore reconcile automatically through persisted local Visit changes.
 - This is not Google Calendar API integration: no Google OAuth, backend, network account logic, push/calendar sync engine, two-way scheduling, attendees, or cloud-delivery claim is authorized.
 
@@ -130,3 +130,12 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - `master` is advanced only through explicitly accepted/reviewed work or direct owner-authorized documentation/baseline maintenance. New substantial milestone branches start from the current `master` HEAD unless the owner explicitly authorizes another base.
 - Milestone/prototype branches are temporary implementation/review vehicles rather than long-lived authorities. After their accepted work is represented on `master`, they may be deleted to keep repository topology simple.
 - Historical verification meaning is preserved by commit SHA and, where useful, archive tags; keeping obsolete branches is not required merely to preserve history.
+
+## B-023 — Unified Visit lifecycle and Coordinator cancellation
+
+- The current Technician Visit lifecycle is exactly `BOOKED`, `WORKING`, `COMPLETED`, `CANCELED`; legacy finalization/participation/withdrawal spellings are migration or compatibility inputs only.
+- Completed does not imply a local final record or PDF. Documentation ownership remains item-level, and **Complete visit** may complete a local Visit without fabricating a record, report, recurrence effect, or Coordinator status return.
+- Coordinator Outbox states are Draft, Dispatched, Canceled, and Concluded. Cancellation reasons are durable and required. A canceled Draft is retained but not exported; a canceled Dispatched Visit requires a newer package export, without claiming delivery or receipt.
+- `.slwork` v2 remains readable as active transport; new exports are v3 with active/canceled lifecycle and reason in the material hash. Generation and import rules are monotonic and retry-safe.
+- Room 11→12 normalizes legacy Visit states and adds cancellation provenance fields without destructive fallback. Coordinator/assignment cancellation preserves local work/evidence and does not permit ordinary local Restore.
+- B023 explicitly excludes Stage C, broad localization, backend/live sync, status-return transport, and changes to the frozen UI reference package.

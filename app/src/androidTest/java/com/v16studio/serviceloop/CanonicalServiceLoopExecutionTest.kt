@@ -34,7 +34,7 @@ class CanonicalServiceLoopExecutionTest {
             }
             val resultAgain = repository.finalizeVisit(FixtureIds.VISIT_1) as FinalizeResult.Success
             assertEquals(recordId, resultAgain.recordId)
-            assertEquals("FINALIZED", database.serviceLoopDao().visit(FixtureIds.VISIT_1)?.state)
+            assertEquals("COMPLETED", database.serviceLoopDao().visit(FixtureIds.VISIT_1)?.state)
             assertEquals("2026-12-05", database.serviceLoopDao().plan("plan-001")?.currentDueDate)
             assertEquals("2026-09-01", database.serviceLoopDao().plan("plan-003")?.currentDueDate)
             val report = AndroidReportService(context, database, repository).generate(recordId)

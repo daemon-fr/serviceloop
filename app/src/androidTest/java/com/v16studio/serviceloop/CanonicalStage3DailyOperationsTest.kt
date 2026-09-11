@@ -121,7 +121,7 @@ class CanonicalStage3DailyOperationsTest {
         compose.onNodeWithTag("long-text-cancellation-reason").performTextInput("Rebook for runtime start")
         hideKeyboard()
         compose.onNodeWithText("Cancel booking").performScrollTo().performClick()
-        compose.waitUntil(15_000){runBlocking{dao.visit(visitId)!!.state=="CANCELLED"}}
+        compose.waitUntil(15_000){runBlocking{dao.visit(visitId)!!.state=="CANCELED"}}
         assertEquals(null,runBlocking{dao.dueServices().single{it.planId==planId}.claimedVisitId})
         back()
 
