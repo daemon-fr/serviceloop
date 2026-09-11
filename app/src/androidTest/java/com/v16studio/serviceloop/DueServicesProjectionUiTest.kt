@@ -4,6 +4,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.room.Room
@@ -61,11 +63,18 @@ class DueServicesProjectionUiTest {
         val visit = repository.createVisit(listOf(plan), "BOOKED", "2026-09-12")
         compose.onNodeWithText("Work").performClick()
         compose.waitUntil(10_000) { viewModel.state.value.dueServices.singleOrNull()?.claimedVisitId == visit }
-        compose.onNodeWithText("Booked").assertIsDisplayed()
         assertEquals(plan, viewModel.state.value.dueServices.single().planId)
+
+        compose.onNodeWithContentDescription("Visit, All").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("due-visit-selector-option-hasvisit").performClick()
+        compose.onNodeWithContentDescription("Visit, Has visit").assertIsDisplayed()
+        compose.onNodeWithText("P-001 · Projection service", substring = true).assertIsDisplayed()
 
         repository.cancelVisit(visit, "Projection regression")
         compose.waitUntil(10_000) { viewModel.state.value.dueServices.singleOrNull()?.claimedVisitId == null }
+        compose.onNodeWithContentDescription("Visit, Has visit").performClick()
+        compose.onNodeWithTag("due-visit-selector-option-novisit").performClick()
+        compose.onNodeWithContentDescription("Visit, No visit").assertIsDisplayed()
         compose.onNodeWithText("P-001 · Projection service", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Refreshing due services").assertDoesNotExist()
     }
