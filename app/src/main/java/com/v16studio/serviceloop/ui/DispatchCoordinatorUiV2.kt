@@ -226,7 +226,7 @@ private data class DispatchEditorLoad(
             if(!readOnly)ServiceLoopPrimaryButton(if(visitId==null)"Save draft" else "Save changes",{saveDraft()},Modifier.fillMaxWidth().testTag("dispatch-save-visit"),enabled=!busy,busy=busy)
             if(loadedVisit?.outboxStatus in setOf(DispatchOutboxStatus.DRAFT,DispatchOutboxStatus.DISPATCHED))ServiceLoopSecondaryButton("Cancel visit",{cancelReason="";showCancelDialog=true},Modifier.fillMaxWidth().testTag("dispatch-cancel-visit"),enabled=!busy)
             if(loadedVisit?.outboxStatus==DispatchOutboxStatus.DISPATCHED)ServiceLoopSecondaryButton("Mark concluded",{scope.launch{runCatching{withContext(Dispatchers.IO){svc.concludeOutboxVisits(listOf(visitId!!))}}.onSuccess{initialDraft=currentDraft();nav.popBackStack()}.onFailure{if(it is CancellationException)throw it else error=it.message}}},Modifier.fillMaxWidth().testTag("dispatch-conclude-visit"),enabled=!changed&&!busy)
-            if(readOnly)ServiceLoopPrimaryButton("Reopen",{scope.launch{runCatching{withContext(Dispatchers.IO){svc.reopenOutboxVisits(listOf(visitId!!))}}.onSuccess{load()}.onFailure{if(it is CancellationException)throw it else error=it.message}}},Modifier.fillMaxWidth().testTag("dispatch-reopen-visit"))
+            if(loadedVisit?.outboxStatus==DispatchOutboxStatus.CONCLUDED)ServiceLoopPrimaryButton("Reopen",{scope.launch{runCatching{withContext(Dispatchers.IO){svc.reopenOutboxVisits(listOf(visitId!!))}}.onSuccess{load()}.onFailure{if(it is CancellationException)throw it else error=it.message}}},Modifier.fillMaxWidth().testTag("dispatch-reopen-visit"))
         }
     }
 }
