@@ -123,6 +123,13 @@ val DispatchOutboxVisitEntity.outboxStatus: DispatchOutboxStatus get() = when {
     lastExportedGeneration != null -> DispatchOutboxStatus.DISPATCHED
     else -> DispatchOutboxStatus.DRAFT
 }
+
+/** True only while a cancellation for an already-dispatched Visit still needs an artifact. */
+val DispatchOutboxVisitEntity.cancellationExportPending: Boolean
+    get() = outboxStatus == DispatchOutboxStatus.CANCELED &&
+        lastExportedGeneration != null &&
+        canceledAtEpochMillis != null &&
+        (lastExportedCancellationAtEpochMillis == null || lastExportedCancellationAtEpochMillis < canceledAtEpochMillis)
 data class DispatchExportPreparation(
     val packageValue: DispatchPackage,
     val bytes: ByteArray,
@@ -139,6 +146,7 @@ data class DispatchPreview(val value:DispatchPackage,val identity:TechnicianIden
     fun directoryBlockers(visit:DispatchVisitPreview)=directory.filter{it.reference in visit.directoryReferences&&(it.classification==DispatchClassification.CONFLICT||(it.classification==DispatchClassification.POSSIBLE_DUPLICATE&&it.duplicateDecision==null))}
     fun skipped(visit:DispatchVisitPreview)=directory.any{it.reference in visit.directoryReferences&&it.duplicateDecision==DispatchDuplicateDecision.SKIP_BRANCH}
     val safeActionableVisits get()=visits.filter{it.classification in actionableClasses&&directoryBlockers(it).isEmpty()&&!skipped(it)}
+    internal val idempotentNoOp get()=visits.isNotEmpty()&&visits.all{it.classification in setOf(DispatchVisitClassification.ALREADY_CURRENT,DispatchVisitClassification.NOT_ASSIGNED)}&&visits.any{it.classification==DispatchVisitClassification.ALREADY_CURRENT}&&visits.filter{it.classification==DispatchVisitClassification.ALREADY_CURRENT}.all{directoryBlockers(it).isEmpty()&&!skipped(it)}
     val canImport get()=safeActionableVisits.isNotEmpty()
 }
 data class DispatchImportResult(val createdVisitIds:List<String>,val updatedVisitIds:List<String>,val unchangedVisitIds:List<String>,val withdrawnVisitIds:List<String> = emptyList(),val canceledVisitIds:List<String> = emptyList())
@@ -277,13 +285,15 @@ class DispatchPackageService(
         val visits=value.visits.map{v->
             val r=projected.getValue(v);val b=dispatch.visitBinding(v.dispatchVisitId);val h=DispatchPackageCodec.materialHash(v);val local=b?.let{dao.visit(it.localVisitId)}
             val c=when{
+                b==null&&v.transportLifecycle=="CANCELED"&&r.isEmpty()->DispatchVisitClassification.NOT_ASSIGNED
+                b==null&&v.transportLifecycle=="CANCELED"->DispatchVisitClassification.CANCELED
                 b==null&&r.isEmpty()->DispatchVisitClassification.NOT_ASSIGNED
                 b==null->DispatchVisitClassification.NEW_VISIT
                 v.generation==b.appliedGeneration&&h==b.appliedMaterialHash->DispatchVisitClassification.ALREADY_CURRENT
                 v.generation==b.appliedGeneration->DispatchVisitClassification.CONFLICT
                 v.generation<b.appliedGeneration->DispatchVisitClassification.OLDER_GENERATION
                 v.transportLifecycle=="CANCELED"->DispatchVisitClassification.CANCELED
-                r.isEmpty()&&local?.let{it.state in setOf("BOOKED","WORKING","COMPLETED")&&(it.state!="BOOKED"||fingerprint(b.localVisitId)==b.controlledFingerprint)}==true->DispatchVisitClassification.ASSIGNMENT_REMOVED
+                r.isEmpty()&&local?.let{it.state in setOf("BOOKED","WORKING","COMPLETED","CANCELED")&&(it.state!="BOOKED"||fingerprint(b.localVisitId)==b.controlledFingerprint)}==true->DispatchVisitClassification.ASSIGNMENT_REMOVED
                 r.isEmpty()->DispatchVisitClassification.UPDATE_BLOCKED
                 local?.state!="BOOKED"->DispatchVisitClassification.UPDATE_BLOCKED
                 fingerprint(b.localVisitId)!=b.controlledFingerprint->DispatchVisitClassification.LOCAL_CONFLICT
@@ -310,11 +320,11 @@ class DispatchPackageService(
 
     fun resolveDuplicate(preview:DispatchPreview,reference:String,decision:DispatchDuplicateDecision)=preview.copy(directory=preview.directory.map{if(it.reference==reference&&it.classification==DispatchClassification.POSSIBLE_DUPLICATE)it.copy(duplicateDecision=decision)else it})
     suspend fun import(p:DispatchPreview):DispatchImportResult {
-        require(p.canImport);val created=mutableListOf<String>();val updated=mutableListOf<String>();val unchanged=mutableListOf<String>();val withdrawn=mutableListOf<String>();val canceled=mutableListOf<String>()
+        require(p.canImport||p.idempotentNoOp);val created=mutableListOf<String>();val updated=mutableListOf<String>();val unchanged=mutableListOf<String>();val withdrawn=mutableListOf<String>();val canceled=mutableListOf<String>()
         database.withTransaction {
             var fresh=this@DispatchPackageService.preview(p.value)
             p.directory.mapNotNull{line->line.duplicateDecision?.let{line.reference to it}}.forEach{(reference,decision)->fresh=resolveDuplicate(fresh,reference,decision)}
-            require(fresh.canImport)
+            require(fresh.canImport||fresh.idempotentNoOp)
             val skip=p.directory.filter{it.duplicateDecision==DispatchDuplicateDecision.SKIP_BRANCH}.map{it.reference}.toMutableSet()
             p.value.sites.filter{it.customerReference in skip}.forEach{skip+=it.reference};p.value.equipment.filter{it.siteReference in skip}.forEach{skip+=it.reference}
             val actionable=fresh.safeActionableVisits.associateBy{it.dispatchVisitId}
@@ -330,7 +340,27 @@ class DispatchPackageService(
             activeVisits.forEach{v->val pv=actionable.getValue(v.dispatchVisitId);val r=projected.getValue(v);when(pv.classification){
                 DispatchVisitClassification.NEW_VISIT->{val s=sites[v.siteReference]?:error("Missing site");val c=customers.values.single{it.id==s.customerId};val local=stable("dispatch-visit",v.dispatchVisitId);dao.insertVisits(listOf(WorkingVisitEntity(local,"D-${v.dispatchVisitId.take(12)}",c.id,s.id,v.serviceDate,c.name,s.name,s.address,"BOOKED",now,c.reference,s.reference,scheduledAtEpochMillis=scheduled(v),appointmentZoneId=v.appointmentZoneId)));dispatch.insertVisitBinding(DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v),incoming(v,r),now,now));r.forEach{(i,role)->insertItem(v,i,role,local,equipment)};created+=local}
                 DispatchVisitClassification.UPDATE->{applyUpdate(v,p.value,pv.localVisitId!!,equipment,now,r);updated+=pv.localVisitId}
-                DispatchVisitClassification.CANCELED->{applyCoordinatorCancellation(v,p.value,pv.localVisitId!!,now);updated+=pv.localVisitId;canceled+=pv.localVisitId}
+                DispatchVisitClassification.CANCELED->{
+                    if(pv.localVisitId==null){
+                        val s=sites[v.siteReference]?:error("Missing site")
+                        val c=customers.values.single{it.id==s.customerId}
+                        val incomingSite=p.value.sites.single{it.reference==v.siteReference}
+                        val incomingCustomer=p.value.customers.single{it.reference==incomingSite.customerReference}
+                        val local=stable("dispatch-visit",v.dispatchVisitId)
+                        val canceledVisit=WorkingVisitEntity(local,"D-${v.dispatchVisitId.take(12)}",c.id,s.id,v.serviceDate,incomingCustomer.name,incomingSite.name,incomingSite.address,"CANCELED",now,incomingCustomer.reference,incomingSite.reference,scheduledAtEpochMillis=scheduled(v),appointmentZoneId=v.appointmentZoneId,cancellationReason=v.cancellationReason,cancelledAtEpochMillis=now,cancellationOrigin=VisitCancellationOrigin.COORDINATOR.code)
+                        dao.insertVisits(listOf(canceledVisit))
+                        val binding=DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v),incoming(v,r),now,now)
+                        dispatch.insertVisitBinding(binding)
+                        r.forEach{(i,role)->insertItem(v,i,role,local,equipment,p.value.equipment.single{it.reference==i.equipmentReference})}
+                        appendEvent(canceledVisit,binding,"DISPATCH_COORDINATOR_CANCELED","Coordinator cancellation received for generation ${v.generation}: ${v.cancellationReason}; the first-seen local Visit was preserved as Canceled",null,now)
+                        created+=local
+                        canceled+=local
+                    }else{
+                        applyCoordinatorCancellation(v,p.value,pv.localVisitId!!,now)
+                        updated+=pv.localVisitId
+                        canceled+=pv.localVisitId
+                    }
+                }
                 DispatchVisitClassification.ASSIGNMENT_REMOVED->{applyAssignmentRemoval(v,p.value,pv.localVisitId!!,now);updated+=pv.localVisitId;withdrawn+=pv.localVisitId}
                 else->Unit
             }}
@@ -338,7 +368,7 @@ class DispatchPackageService(
         }
         return DispatchImportResult(created,updated,unchanged.distinct(),withdrawn,canceled)
     }
-    private suspend fun insertItem(v:DispatchVisit,i:DispatchWork,role:String,local:String,equipment:Map<String,EquipmentEntity>){val e=equipment[i.equipmentReference]?:error("Equipment missing");val work=stable("dispatch-work",v.dispatchVisitId,i.dispatchItemId);dao.insertWorkItems(listOf(WorkItemEntity(work,local,e.id,null,null,null,e.name,e.reference,i.taskName,null,null,null,null,false,null,false,equipmentIdentifierSnapshot=e.technicianIdentifier,equipmentMakeSnapshot=e.make,equipmentModelSnapshot=e.model,equipmentSerialSnapshot=e.serialNumber)));dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(work,"")));dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(work,"")));dispatch.insertItemBindings(listOf(DispatchItemBindingEntity(v.dispatchVisitId,i.dispatchItemId,work,i.equipmentReference,i.taskName,i.servicePlanReference,i.dueDateSnapshot,techJson(i.assignedTechnicians),if(i.assignedTechnicians.isEmpty())"EVERYONE" else "EXPLICIT",role,if(role=="LEADER_VISIBLE")"LEADER_OBSERVE" else "PENDING")))}
+    private suspend fun insertItem(v:DispatchVisit,i:DispatchWork,role:String,local:String,equipment:Map<String,EquipmentEntity>,equipmentSnapshot:DispatchEquipment?=null){val e=equipment[i.equipmentReference]?:error("Equipment missing");val work=stable("dispatch-work",v.dispatchVisitId,i.dispatchItemId);dao.insertWorkItems(listOf(WorkItemEntity(work,local,e.id,null,null,null,equipmentSnapshot?.name?:e.name,equipmentSnapshot?.reference?:e.reference,i.taskName,i.servicePlanReference,i.dueDateSnapshot,null,null,false,null,false,equipmentIdentifierSnapshot=if(equipmentSnapshot!=null)equipmentSnapshot.identifier else e.technicianIdentifier,equipmentMakeSnapshot=if(equipmentSnapshot!=null)equipmentSnapshot.make else e.make,equipmentModelSnapshot=if(equipmentSnapshot!=null)equipmentSnapshot.model else e.model,equipmentSerialSnapshot=if(equipmentSnapshot!=null)equipmentSnapshot.serial else e.serialNumber)));dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(work,"")));dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(work,"")));dispatch.insertItemBindings(listOf(DispatchItemBindingEntity(v.dispatchVisitId,i.dispatchItemId,work,i.equipmentReference,i.taskName,i.servicePlanReference,i.dueDateSnapshot,techJson(i.assignedTechnicians),if(i.assignedTechnicians.isEmpty())"EVERYONE" else "EXPLICIT",role,if(role=="LEADER_VISIBLE")"LEADER_OBSERVE" else "PENDING")))}
     private suspend fun applyUpdate(v:DispatchVisit,p:DispatchPackage,local:String,equipment:Map<String,EquipmentEntity>,now:Long,r:List<Pair<DispatchWork,String>>){check(dispatch.updateBookedDispatchVisit(local,v.serviceDate,scheduled(v),v.appointmentZoneId,now)==1);val existing=dispatch.itemBindings(v.dispatchVisitId).associateBy{it.dispatchItemId};existing.values.filter{it.dispatchItemId !in r.map{x->x.first.dispatchItemId}.toSet()}.forEach{x->x.localWorkItemId?.let{dispatch.deleteWorkItem(it)};dispatch.deleteItemBinding(v.dispatchVisitId,x.dispatchItemId)};r.forEach{(i,role)->val old=existing[i.dispatchItemId];if(old==null)insertItem(v,i,role,local,equipment)else{val e=equipment[i.equipmentReference]?:error("Equipment missing");check(dispatch.updateBookedDispatchWork(old.localWorkItemId!!,e.id,e.name,e.reference,e.technicianIdentifier,e.make,e.model,e.serialNumber,i.taskName)==1);dispatch.updateItemBinding(old.copy(equipmentReferenceSnapshot=i.equipmentReference,taskNameSnapshot=i.taskName,servicePlanReferenceSnapshot=i.servicePlanReference,dueDateSnapshot=i.dueDateSnapshot,assignedTechniciansJson=techJson(i.assignedTechnicians),assignmentMeaning=if(i.assignedTechnicians.isEmpty())"EVERYONE" else "EXPLICIT",localRole=role,documentationDisposition=if(role=="LEADER_VISIBLE")"LEADER_OBSERVE" else "PENDING",deferredToTechnicianId=null,deferredToName=null))}};val b=dispatch.visitBinding(v.dispatchVisitId)!!;dispatch.updateVisitBinding(b.copy(appliedGeneration=v.generation,packageId=p.packageId,senderLabel=p.senderLabel,managerReference=v.managerReference,instructionsSnapshot=v.instructions,participantSnapshotJson=techJson(v.participants),leaderIdsJson=idsJson(v.leaderTechnicianIds),teamSnapshotJson=teamsJson(v.teams),appliedMaterialHash=DispatchPackageCodec.materialHash(v),controlledFingerprint=incoming(v,r),updatedAtEpochMillis=now))}
     private suspend fun applyCoordinatorCancellation(v:DispatchVisit,p:DispatchPackage,local:String,now:Long){
         val visit=dao.visit(local)?:error("Visit missing")
@@ -346,11 +376,15 @@ class DispatchPackageService(
         if(visit.state=="BOOKED"||visit.state=="WORKING"){
             dao.updateVisit(visit.copy(state="CANCELED",cancellationReason=v.cancellationReason,cancellationOrigin=VisitCancellationOrigin.COORDINATOR.code,cancelledAtEpochMillis=now,modifiedAtEpochMillis=now))
             dao.releaseVisitClaims(local)
+        }else if(visit.state=="CANCELED"){
+            // A later Coordinator package records provenance, but does not replace the first cause.
+            dao.updateVisit(visit.copy(modifiedAtEpochMillis=now))
         }else{
-            dao.updateVisit(visit.copy(cancellationOrigin=VisitCancellationOrigin.COORDINATOR.code,cancellationReason=v.cancellationReason?:visit.cancellationReason,modifiedAtEpochMillis=now))
+            // COMPLETED is not a cancellation transition; preserve its null/legacy cause.
+            dao.updateVisit(visit.copy(modifiedAtEpochMillis=now))
         }
         dispatch.updateVisitBinding(binding.copy(appliedGeneration=v.generation,packageId=p.packageId,senderLabel=p.senderLabel,managerReference=v.managerReference,instructionsSnapshot=v.instructions,participantSnapshotJson=techJson(v.participants),leaderIdsJson=idsJson(v.leaderTechnicianIds),teamSnapshotJson=teamsJson(v.teams),appliedMaterialHash=DispatchPackageCodec.materialHash(v),controlledFingerprint="coordinator-canceled",updatedAtEpochMillis=now))
-        appendEvent(visit,binding,"DISPATCH_COORDINATOR_CANCELED","Coordinator cancellation received for generation ${v.generation}; local evidence and any completed record were preserved",null,now)
+        appendEvent(visit,binding,"DISPATCH_COORDINATOR_CANCELED","Coordinator cancellation received for generation ${v.generation}: ${v.cancellationReason}; local evidence and any completed record were preserved",null,now)
     }
     private suspend fun applyAssignmentRemoval(v:DispatchVisit,p:DispatchPackage,local:String,now:Long){
         val visit=dao.visit(local)?:error("Visit missing")
@@ -360,7 +394,10 @@ class DispatchPackageService(
         items.forEach{item->val incoming=v.work.find{it.dispatchItemId==item.dispatchItemId};dispatch.updateItemBinding(item.copy(assignedTechniciansJson=incoming?.let{techJson(it.assignedTechnicians)}?:item.assignedTechniciansJson,assignmentMeaning=incoming?.let{if(it.assignedTechnicians.isEmpty())"EVERYONE" else "EXPLICIT"}?:item.assignmentMeaning,localRole="ASSIGNMENT_REMOVED",documentationDisposition=if(item.documentationDisposition=="DOCUMENT_LOCAL")"DOCUMENT_LOCAL" else "DEFERRED",deferredToTechnicianId=null,deferredToName=null))}
         if(visit.state=="BOOKED"||visit.state=="WORKING"){
             dao.updateVisit(visit.copy(state="CANCELED",cancellationReason="Coordinator removed this Technician assignment",cancellationOrigin=VisitCancellationOrigin.ASSIGNMENT_REMOVAL.code,cancelledAtEpochMillis=now,modifiedAtEpochMillis=now));dao.releaseVisitClaims(local)
-        }else if(visit.state=="COMPLETED") dao.updateVisit(visit.copy(cancellationOrigin=VisitCancellationOrigin.ASSIGNMENT_REMOVAL.code,modifiedAtEpochMillis=now))
+        }else if(visit.state=="CANCELED"||visit.state=="COMPLETED") {
+            // A later assignment event does not manufacture or replace the first cancellation cause.
+            dao.updateVisit(visit.copy(modifiedAtEpochMillis=now))
+        }
         dispatch.updateVisitBinding(binding.copy(appliedGeneration=v.generation,packageId=p.packageId,senderLabel=p.senderLabel,managerReference=v.managerReference,instructionsSnapshot=v.instructions,participantSnapshotJson=techJson(v.participants),leaderIdsJson=idsJson(v.leaderTechnicianIds),teamSnapshotJson=teamsJson(v.teams),appliedMaterialHash=DispatchPackageCodec.materialHash(v),controlledFingerprint="assignment-removed",updatedAtEpochMillis=now))
         appendEvent(visit,binding,"DISPATCH_ASSIGNMENT_REMOVED","Generation ${v.generation} removed this Technician assignment; the local Visit is Canceled and local work/evidence was preserved",null,now)
     }

@@ -2,6 +2,9 @@ package com.v16studio.serviceloop
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -19,10 +22,14 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.ServiceLoopApp
+import com.v16studio.serviceloop.ui.DueServicesScreen
+import com.v16studio.serviceloop.ui.DueServicesProjection
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
+import com.v16studio.serviceloop.ui.UiState
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.*
@@ -114,6 +121,37 @@ class ServiceLoopAdaptiveTabsTest {
         compose.waitUntil(5_000) { viewModel.state.value.dueServicesReady }
         compose.onNodeWithText("P-RETRY · Maintenance", substring = true).assertIsDisplayed()
         assertEquals(2, repository.subscriptions)
+    }
+
+    @Test fun bookedOnlyChipSharesDueDateChipGeometryAcrossReviewWidthsAndLargeText() {
+        val viewModel = ServiceLoopViewModel(RetryRepository()) {}
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(emptyList()),
+            businessDate = java.time.LocalDate.of(2026, 9, 11),
+            businessZoneId = "Europe/Bucharest",
+        )
+        listOf(360 to 1f, 411 to 1f, 360 to 2f).forEach { (width, fontScale) ->
+            compose.runOnUiThread {
+                compose.activity.setContent {
+                    val deviceDensity = LocalDensity.current.density
+                    val fittedDensity = deviceDensity * minOf(1f, 400f / width)
+                    CompositionLocalProvider(LocalDensity provides Density(fittedDensity, fontScale)) {
+                        ServiceLoopTheme {
+                            Box(Modifier.width(width.dp).fillMaxHeight()) {
+                                DueServicesScreen(emptyList(), PaddingValues(), state, viewModel, rememberNavController())
+                            }
+                        }
+                    }
+                }
+            }
+            compose.waitForIdle()
+            val dueDateChip = compose.onNodeWithTag("due-filter-OVERDUE").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val bookedOnlyChip = compose.onNodeWithTag("due-filter-booked").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertEquals("$width dp/$fontScale: shared chip height", dueDateChip.height, bookedOnlyChip.height, 0.5f)
+            assertTrue("$width dp/$fontScale: due-date chip is touch-sized", dueDateChip.height >= 48f)
+            assertTrue("$width dp/$fontScale: Booked only chip is touch-sized", bookedOnlyChip.height >= 48f)
+        }
     }
 
     private class RetryRepository : ServiceLoopRepository {

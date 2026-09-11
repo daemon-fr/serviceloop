@@ -13,6 +13,7 @@ import java.time.Clock
 import java.time.ZoneId
 import java.io.File
 import com.v16studio.serviceloop.domain.ClockBusinessTime
+import com.v16studio.serviceloop.domain.VisitCancellationOrigin
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
 import org.junit.After
@@ -169,6 +170,50 @@ class DispatchPackageTest {
 
     @Test fun coordinatorCancellationRequiresReasonAndCanceledDraftCannotExport()=runTest{val visit=outbox("JOB-CANCEL-DRAFT");assertEquals(DispatchOutboxStatus.DRAFT,db.dispatchDao().outboxVisit(visit)!!.outboxStatus);assertThrows(IllegalArgumentException::class.java){kotlinx.coroutines.runBlocking{service.cancelOutboxVisits(listOf(visit)," ")}};service.cancelOutboxVisits(listOf(visit),"Customer canceled");val canceled=db.dispatchDao().outboxVisit(visit)!!;assertEquals(DispatchOutboxStatus.CANCELED,canceled.outboxStatus);assertEquals("Customer canceled",canceled.cancellationReason);assertThrows(IllegalArgumentException::class.java){kotlinx.coroutines.runBlocking{service.prepareExport(listOf(visit),"Coordinator")}}}
     @Test fun canceledDispatchedVisitUsesOneNewGenerationAndRetryIsStable()=runTest{val visit=outbox("JOB-CANCEL-SENT");val first=service.prepareExport(listOf(visit),"Coordinator");service.commitPreparedExport(first);assertEquals(1,db.dispatchDao().outboxVisit(visit)!!.lastExportedGeneration);service.cancelOutboxVisits(listOf(visit),"Access withdrawn");val canceled=service.prepareExport(listOf(visit),"Coordinator");assertEquals(2,canceled.packageValue.visits.single().generation);assertEquals("CANCELED",canceled.packageValue.visits.single().transportLifecycle);assertEquals("Access withdrawn",canceled.packageValue.visits.single().cancellationReason);service.commitPreparedExport(canceled);val retry=service.prepareExport(listOf(visit),"Coordinator");assertEquals(2,retry.packageValue.visits.single().generation);assertEquals(canceled.packageValue.visits.single().cancellationReason,retry.packageValue.visits.single().cancellationReason)}
+
+    @Test fun firstSeenCanceledPackageCreatesOnlyHistoricalCanceledVisitAndIsIdempotent()=runTest{
+        val reason="Coordinator canceled before import";val value=pkg(2).copy(packageId="PKG-CANCELED-FIRST",visits=listOf(pkg(2).visits.single().copy(transportLifecycle="CANCELED",cancellationReason=reason)))
+        val preview=service.preview(value);assertEquals(DispatchVisitClassification.CANCELED,preview.visits.single().classification);val result=service.import(preview);val local=result.createdVisitIds.single();val visit=db.serviceLoopDao().visit(local)!!
+        assertEquals("CANCELED",visit.state);assertEquals(VisitCancellationOrigin.COORDINATOR.code,visit.cancellationOrigin);assertEquals(reason,visit.cancellationReason);assertEquals(0,db.serviceLoopDao().claimCountForVisit(local));assertNull(db.serviceLoopDao().visitWorkItems(local).single().capturedObligationId)
+        val binding=db.dispatchDao().visitBinding("DV-1")!!;assertEquals(2,binding.appliedGeneration);assertEquals(value.packageId,binding.packageId);assertEquals(DispatchPackageCodec.materialHash(value.visits.single()),binding.appliedMaterialHash);assertFalse(db.serviceLoopDao().allVisits().any{it.state=="BOOKED"});assertEquals(listOf(local),result.canceledVisitIds)
+        val repeat=service.import(service.preview(value.copy(packageId="TRANSPORT-RETRY")));assertEquals(listOf(local),repeat.unchangedVisitIds);assertEquals(1,db.serviceLoopDao().visitCount())
+    }
+
+    @Test fun firstSeenCanceledPackageForUnassignedTechnicianCreatesNoVisit()=runTest{
+        val other=DispatchTechnicianSnapshot("other-canceled-identity","Other");val base=pkg(2);val value=base.copy(packageId="PKG-CANCELED-NOT-ASSIGNED",visits=listOf(base.visits.single().copy(participants=listOf(other),teams=listOf(DispatchTeamSnapshot("TEAM-OTHER","Other",listOf(other.technicianId),emptyList())),work=listOf(base.visits.single().work.single().copy(assignedTechnicians=listOf(other))),transportLifecycle="CANCELED",cancellationReason="Not for this Technician")))
+        val preview=service.preview(value);assertEquals(DispatchVisitClassification.NOT_ASSIGNED,preview.visits.single().classification);assertFalse(preview.canImport);assertEquals(0,db.serviceLoopDao().visitCount())
+    }
+
+    @Test fun existingBookedVisitWithNewerCanceledPackageTransitionsWithoutDuplicate()=runTest{
+        val first=pkg();val local=service.import(service.preview(first)).createdVisitIds.single();val reason="Coordinator canceled after dispatch";val canceled=first.copy(packageId="PKG-CANCELED-SECOND",visits=listOf(first.visits.single().copy(generation=2,transportLifecycle="CANCELED",cancellationReason=reason)))
+        val result=service.import(service.preview(canceled));val visit=db.serviceLoopDao().visit(local)!!;assertEquals(listOf(local),result.canceledVisitIds);assertEquals("CANCELED",visit.state);assertEquals(VisitCancellationOrigin.COORDINATOR.code,visit.cancellationOrigin);assertEquals(reason,visit.cancellationReason);assertEquals(1,db.serviceLoopDao().visitCount());assertEquals(2,db.dispatchDao().visitBinding("DV-1")!!.appliedGeneration)
+    }
+
+    @Test fun cancellationExportPendingOnlyUntilSuccessfulCancellationArtifact()=runTest{
+        val id=outbox("PENDING-EXPORT");val active=service.prepareExport(listOf(id),"Coordinator");service.commitPreparedExport(active);service.cancelOutboxVisits(listOf(id),"Coordinator canceled")
+        assertTrue(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending);val prepared=service.prepareExport(listOf(id),"Coordinator");assertTrue(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending)
+        val failing=DispatchPackageService(db,root,DispatchMutationFault{if(it=="after_export_file_write_before_commit")throw IllegalStateException("commit failed")});assertThrows(IllegalStateException::class.java){kotlinx.coroutines.runBlocking{failing.createExportFile(listOf(id),"Coordinator",root)}};assertTrue(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending)
+        val stale=service.prepareExport(listOf(id),"Coordinator");service.rescheduleOutboxVisit(id,"2026-09-16","10:00","Europe/Bucharest");assertThrows(IllegalArgumentException::class.java){kotlinx.coroutines.runBlocking{service.commitPreparedExport(stale)}};assertTrue(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending)
+        val artifact=service.createExportFile(listOf(id),"Coordinator",root);assertEquals(2,artifact.packageValue.visits.single().generation);assertFalse(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending)
+        val unchanged=service.prepareExport(listOf(id),"Coordinator");assertEquals(artifact.packageValue.visits.single().generation,unchanged.packageValue.visits.single().generation);service.commitPreparedExport(unchanged);assertFalse(db.dispatchDao().outboxVisit(id)!!.cancellationExportPending);assertEquals(unchanged.packageValue.visits.single().generation,db.dispatchDao().outboxVisit(id)!!.lastExportedGeneration);assertEquals(prepared.packageValue.visits.single().transportLifecycle,"CANCELED")
+    }
+
+    @Test fun laterCoordinatorCancellationPreservesLocalCancellationCause()=runTest{
+        val first=pkg();val local=service.import(service.preview(first)).createdVisitIds.single();db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit(local)!!.copy(state="CANCELED",cancellationOrigin=VisitCancellationOrigin.LOCAL.code,cancellationReason="Canceled on this device"));val later=first.copy(packageId="LOCAL-THEN-COORDINATOR",visits=listOf(first.visits.single().copy(generation=2,transportLifecycle="CANCELED",cancellationReason="Coordinator changed plans")));service.import(service.preview(later));val visit=db.serviceLoopDao().visit(local)!!;assertEquals("CANCELED",visit.state);assertEquals(VisitCancellationOrigin.LOCAL.code,visit.cancellationOrigin);assertEquals("Canceled on this device",visit.cancellationReason);assertEquals(2,db.dispatchDao().visitBinding("DV-1")!!.appliedGeneration)
+    }
+
+    @Test fun laterAssignmentRemovalPreservesLocalCancellationCause()=runTest{
+        val first=pkg();val local=service.import(service.preview(first)).createdVisitIds.single();db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit(local)!!.copy(state="CANCELED",cancellationOrigin=VisitCancellationOrigin.LOCAL.code,cancellationReason="Canceled locally"));val other=DispatchTechnicianSnapshot("removed-later-identity","Other");val later=first.copy(packageId="LOCAL-THEN-REMOVAL",visits=listOf(first.visits.single().copy(generation=2,participants=listOf(other),teams=listOf(DispatchTeamSnapshot("TEAM-OTHER","Other",listOf(other.technicianId),emptyList())),work=listOf(first.visits.single().work.single().copy(assignedTechnicians=listOf(other))))));assertEquals(DispatchVisitClassification.ASSIGNMENT_REMOVED,service.preview(later).visits.single().classification);service.import(service.preview(later));val visit=db.serviceLoopDao().visit(local)!!;assertEquals("CANCELED",visit.state);assertEquals(VisitCancellationOrigin.LOCAL.code,visit.cancellationOrigin);assertEquals("Canceled locally",visit.cancellationReason);assertEquals(2,db.dispatchDao().visitBinding("DV-1")!!.appliedGeneration)
+    }
+
+    @Test fun laterCoordinatorCancellationDoesNotCancelCompletedVisitOrSetCause()=runTest{
+        val first=pkg();val local=service.import(service.preview(first)).createdVisitIds.single();db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit(local)!!.copy(state="COMPLETED",cancellationOrigin=null,cancellationReason=null));val later=first.copy(packageId="COMPLETED-THEN-COORDINATOR",visits=listOf(first.visits.single().copy(generation=2,transportLifecycle="CANCELED",cancellationReason="Too late")));service.import(service.preview(later));val visit=db.serviceLoopDao().visit(local)!!;assertEquals("COMPLETED",visit.state);assertNull(visit.cancellationOrigin);assertNull(visit.cancellationReason);assertEquals(2,db.dispatchDao().visitBinding("DV-1")!!.appliedGeneration);assertEquals("DISPATCH_COORDINATOR_CANCELED",db.serviceLoopDao().allChangeEntries().single().changeType)
+    }
+
+    @Test fun laterAssignmentRemovalDoesNotCancelCompletedVisitOrSetCause()=runTest{
+        val first=pkg();val local=service.import(service.preview(first)).createdVisitIds.single();db.serviceLoopDao().updateVisit(db.serviceLoopDao().visit(local)!!.copy(state="COMPLETED",cancellationOrigin=null,cancellationReason=null));val other=DispatchTechnicianSnapshot("completed-removal-identity","Other");val later=first.copy(packageId="COMPLETED-THEN-REMOVAL",visits=listOf(first.visits.single().copy(generation=2,participants=listOf(other),teams=listOf(DispatchTeamSnapshot("TEAM-OTHER","Other",listOf(other.technicianId),emptyList())),work=listOf(first.visits.single().work.single().copy(assignedTechnicians=listOf(other))))));assertEquals(DispatchVisitClassification.ASSIGNMENT_REMOVED,service.preview(later).visits.single().classification);service.import(service.preview(later));val visit=db.serviceLoopDao().visit(local)!!;assertEquals("COMPLETED",visit.state);assertNull(visit.cancellationOrigin);assertNull(visit.cancellationReason);assertEquals(2,db.dispatchDao().visitBinding("DV-1")!!.appliedGeneration);assertEquals("DISPATCH_ASSIGNMENT_REMOVED",db.serviceLoopDao().allChangeEntries().single().changeType)
+    }
+
 
     @Test fun coherentEditorSaveCreatesAndUpdatesOneDefinitionWithStableIds()=runTest{
         val(site,team)=coordinatorFixture();val itemId="stable-editor-item"

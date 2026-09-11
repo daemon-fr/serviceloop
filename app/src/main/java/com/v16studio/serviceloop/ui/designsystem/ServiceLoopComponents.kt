@@ -190,14 +190,19 @@ fun <T> ServiceLoopContentTabs(
 fun <T> ServiceLoopChoiceGroup(options: List<Pair<T, String>>, selected: T, onSelected: (T) -> Unit, modifier: Modifier = Modifier, testTagPrefix: String? = null) {
     FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
         options.forEach { (value, label) ->
-            FilterChip(
-                selected = value == selected,
-                onClick = { onSelected(value) },
-                label = { Text(label, softWrap = false) },
-                modifier = Modifier.width(IntrinsicSize.Max).heightIn(min = ServiceLoopUiTokens.Size.touchMin).then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
-            )
+            ServiceLoopChoiceChip(value == selected, { onSelected(value) }, label, if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"))
         }
     }
+}
+
+@Composable
+fun ServiceLoopChoiceChip(selected: Boolean, onClick: () -> Unit, label: String, modifier: Modifier = Modifier) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, softWrap = false, style = ServiceLoopUiTokens.Type.label) },
+        modifier = modifier.width(IntrinsicSize.Max).heightIn(min = ServiceLoopUiTokens.Size.touchMin),
+    )
 }
 
 @Composable
