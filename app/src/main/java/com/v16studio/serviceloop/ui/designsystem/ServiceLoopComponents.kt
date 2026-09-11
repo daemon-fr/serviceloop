@@ -361,6 +361,7 @@ fun ServiceLoopEntityRecord(
                     style = Stroke(width = if (selected) ServiceLoopUiTokens.Stroke.selected.toPx() else ServiceLoopUiTokens.Stroke.record.toPx(), pathEffect = if (selected) null else PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
                 )
             }
+            .testTag("entity-record-card")
             .clickable(role = Role.Button, onClick = onClick).focusable()
             .semantics { contentDescription = actionDescription ?: "Open $title" }
             .padding(ServiceLoopUiTokens.Space.lg),
@@ -368,7 +369,15 @@ fun ServiceLoopEntityRecord(
         val selectable = selectionChecked != null && onSelectionChange != null
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                Text(title, style = ServiceLoopUiTokens.Type.itemTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).then(if (selectable) Modifier.padding(start = 28.dp) else Modifier))
+                Text(
+                    title,
+                    style = ServiceLoopUiTokens.Type.itemTitle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                        .then(if (selectable) Modifier.padding(start = ServiceLoopUiTokens.Size.touchMin) else Modifier)
+                        .testTag("entity-record-title"),
+                )
                 status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
             }
             context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth()) }
@@ -377,6 +386,7 @@ fun ServiceLoopEntityRecord(
         if (selectable) {
             Box(
                 Modifier.align(Alignment.TopStart).size(ServiceLoopUiTokens.Size.touchMin)
+                    .testTag("entity-record-selection")
                     .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
                     .toggleable(
                         value = selectionChecked!!,
@@ -389,7 +399,7 @@ fun ServiceLoopEntityRecord(
                 ServiceLoopIcon(
                     if (selectionChecked) ServiceLoopIcons.SelectionChecked else ServiceLoopIcons.SelectionEmpty,
                     null,
-                    Modifier.size(ServiceLoopUiTokens.Size.iconSmall),
+                    Modifier.size(ServiceLoopUiTokens.Size.iconSmall).testTag("entity-record-selection-icon"),
                     if (selectionChecked) c.action else c.recordBorder,
                 )
             }

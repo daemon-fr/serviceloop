@@ -51,4 +51,25 @@ class WorkFilterSelectorStyleTest {
         assertTrue(icons.contains("val SelectionEmpty = R.drawable.ic_sl_selection_empty"))
         assertTrue(icons.contains("val SelectionChecked = R.drawable.ic_sl_selection_checked"))
     }
+
+    @Test
+    fun b013R31SelectionGeometryAndAuditedCommandGroupsUseSharedContracts() {
+        val components = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
+        val app = File("src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt").readText()
+        val dispatch = File("src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt").readText()
+        val daily = File("src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt").readText()
+        val stage4 = File("src/main/java/com/v16studio/serviceloop/ui/Stage4Ui.kt").readText()
+        val coordinator = File("src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt").readText()
+
+        assertTrue(components.contains(".testTag(\"entity-record-selection\")"))
+        assertTrue(components.contains(".testTag(\"entity-record-selection-icon\")"))
+        assertTrue(components.contains(".testTag(\"entity-record-title\")"))
+        assertTrue(components.contains("Modifier.padding(start = ServiceLoopUiTokens.Size.touchMin)"))
+        assertTrue(app.contains("Open Android notification settings"))
+        assertTrue(app.contains("ServiceLoopActionStack"))
+        assertTrue(dispatch.contains("ServiceLoopActionStack"))
+        assertTrue(daily.contains("ServiceLoopActionStack"))
+        assertTrue(stage4.contains("ServiceLoopActionStack"))
+        assertFalse(coordinator.contains("fun DispatchChoiceDialog"))
+    }
 }
