@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 data class EquipmentPlanRow(
@@ -269,7 +270,30 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM working_visits WHERE state='BOOKED'")
     suspend fun bookedVisitCount(): Int
 
-    @Query("SELECT v.id, v.reference, v.siteNameSnapshot siteName, v.actualServiceDate, v.state, f.id finalRecordId, (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.id LIMIT 1) resumeWorkItemId FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id ORDER BY v.actualServiceDate DESC, v.reference")
+    @Query("""
+        SELECT v.id,
+               v.reference,
+               v.siteNameSnapshot siteName,
+               CASE
+                   WHEN v.state='WORKING' THEN COALESCE(
+                       (
+                           SELECT e.oldServiceDate
+                           FROM visit_schedule_events e
+                           WHERE e.visitId=v.id AND e.eventType='STARTED'
+                           ORDER BY e.occurredAtEpochMillis DESC, e.rowid DESC
+                           LIMIT 1
+                       ),
+                       v.actualServiceDate
+                   )
+                   ELSE v.actualServiceDate
+               END actualServiceDate,
+               v.state,
+               f.id finalRecordId,
+               (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.id LIMIT 1) resumeWorkItemId
+        FROM working_visits v
+        LEFT JOIN final_records f ON f.visitId=v.id
+        ORDER BY actualServiceDate DESC, v.reference
+    """)
     suspend fun visits(): List<VisitSummaryRow>
 
     @Query("SELECT id FROM work_items WHERE visitId=:visitId ORDER BY id LIMIT 1")
@@ -352,8 +376,45 @@ interface ServiceLoopDao {
     @Query("UPDATE work_items SET templateSnapshotId=:snapshotId, equipmentNameSnapshot=:equipmentName, equipmentReferenceSnapshot=:equipmentReference, equipmentIdentifierSnapshot=:identifier, equipmentMakeSnapshot=:make, equipmentModelSnapshot=:model, equipmentSerialSnapshot=:serial, serviceNameSnapshot=:serviceName, planReferenceSnapshot=:planReference, dueDateSnapshot=:dueDate, intervalCountSnapshot=:intervalCount, intervalUnitSnapshot=:intervalUnit WHERE id=:workItemId")
     suspend fun refreshWorkItemSnapshot(workItemId: String, snapshotId: String?, equipmentName: String, equipmentReference: String, identifier: String?, make: String?, model: String?, serial: String?, serviceName: String, planReference: String?, dueDate: String?, intervalCount: Int?, intervalUnit: String?): Int
 
+    @Transaction
+    suspend fun startBookedVisit(visitId: String, serviceDate: String, customerName: String, customerReference: String, siteName: String, siteReference: String, siteAddress: String?, businessName: String?, technicianName: String?, phone: String?, email: String?, address: String?, zoneId: String?, modified: Long): Int {
+        val visit = visit(visitId) ?: return 0
+        if (visit.state != "BOOKED") return 0
+        insertVisitScheduleEvent(
+            VisitScheduleEventEntity(
+                id = UUID.randomUUID().toString(),
+                visitId = visitId,
+                eventType = "STARTED",
+                oldServiceDate = visit.actualServiceDate,
+                newServiceDate = serviceDate,
+                oldScheduledAtEpochMillis = visit.scheduledAtEpochMillis,
+                newScheduledAtEpochMillis = null,
+                reason = "Visit started",
+                occurredAtEpochMillis = modified,
+            ),
+        )
+        val updated = startBookedVisitRow(
+            visitId,
+            serviceDate,
+            customerName,
+            customerReference,
+            siteName,
+            siteReference,
+            siteAddress,
+            businessName,
+            technicianName,
+            phone,
+            email,
+            address,
+            zoneId,
+            modified,
+        )
+        check(updated == 1) { "Only a booked visit can be started" }
+        return updated
+    }
+
     @Query("UPDATE working_visits SET state='WORKING', actualServiceDate=:serviceDate, customerNameSnapshot=:customerName, customerReferenceSnapshot=:customerReference, siteNameSnapshot=:siteName, siteReferenceSnapshot=:siteReference, siteAddressSnapshot=:siteAddress, reportBusinessNameSnapshot=:businessName, reportTechnicianNameSnapshot=:technicianName, reportPhoneSnapshot=:phone, reportEmailSnapshot=:email, reportPostalAddressSnapshot=:address, reportZoneIdSnapshot=:zoneId, modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='BOOKED'")
-    suspend fun startBookedVisit(visitId: String, serviceDate: String, customerName: String, customerReference: String, siteName: String, siteReference: String, siteAddress: String?, businessName: String?, technicianName: String?, phone: String?, email: String?, address: String?, zoneId: String?, modified: Long): Int
+    suspend fun startBookedVisitRow(visitId: String, serviceDate: String, customerName: String, customerReference: String, siteName: String, siteReference: String, siteAddress: String?, businessName: String?, technicianName: String?, phone: String?, email: String?, address: String?, zoneId: String?, modified: Long): Int
 
     @Query("UPDATE work_item_public_drafts SET workPerformed=:text WHERE workItemId=:workItemId")
     suspend fun updatePublicWork(workItemId: String, text: String): Int

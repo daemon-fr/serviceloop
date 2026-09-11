@@ -224,7 +224,7 @@ fun <T> ServiceLoopFilterSelector(
         Surface(
             onClick = { expanded = true },
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-            color = colors.surfaceSubtle,
+            color = colors.selection,
             border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
@@ -242,7 +242,12 @@ fun <T> ServiceLoopFilterSelector(
                     Text(label, style = ServiceLoopUiTokens.Type.meta, color = colors.textSecondary)
                     Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = colors.textPrimary)
                 }
-                Text("▾", style = ServiceLoopUiTokens.Type.label, color = colors.icon)
+                ServiceLoopIcon(
+                    ServiceLoopIcons.Dropdown,
+                    null,
+                    Modifier.size(ServiceLoopUiTokens.Size.icon),
+                    colors.icon,
+                )
             }
         }
         DropdownMenu(
@@ -256,16 +261,33 @@ fun <T> ServiceLoopFilterSelector(
             options.forEach { (value, optionLabel) ->
                 val isSelected = value == selected
                 DropdownMenuItem(
-                    text = { Text(optionLabel, style = ServiceLoopUiTokens.Type.body) },
+                    text = {
+                        Text(
+                            optionLabel,
+                            style = ServiceLoopUiTokens.Type.body.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            ),
+                            color = if (isSelected) colors.onSelection else colors.textPrimary,
+                        )
+                    },
                     onClick = {
                         onSelected(value)
                         expanded = false
                     },
                     leadingIcon = {
-                        if (isSelected) Text("✓", style = ServiceLoopUiTokens.Type.label, color = colors.action)
-                        else Spacer(Modifier.width(ServiceLoopUiTokens.Size.iconSmall))
+                        if (isSelected) {
+                            ServiceLoopIcon(
+                                ServiceLoopIcons.SelectionCheck,
+                                null,
+                                Modifier.size(ServiceLoopUiTokens.Size.iconSmall),
+                                colors.onSelection,
+                            )
+                        } else {
+                            Spacer(Modifier.width(ServiceLoopUiTokens.Size.iconSmall))
+                        }
                     },
                     modifier = Modifier
+                        .background(if (isSelected) colors.selection else Color.Transparent)
                         .then(if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${optionLabel.filter { it.isLetterOrDigit() }.lowercase()}"))
                         .semantics { this.selected = isSelected },
                 )

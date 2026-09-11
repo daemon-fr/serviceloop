@@ -216,3 +216,13 @@ Each selector presents its stable group label, current value, and a single-choic
 For Due services, `No visit` and `Has visit` use the current obligation-to-Visit claim relationship only. They do not label an obligation as Booked and do not change its due date, fulfillment, recurrence, or Visit lifecycle.
 
 Visit `Overdue` means a scheduled date before the current ServiceLoop business date while the Visit is still `BOOKED` or `WORKING`. Historical `COMPLETED` and `CANCELED` Visits are not overdue. `Past 30 days` is `today - 30 days <= scheduled date < today`. The default Visit view is intentionally Today; selecting All remains the deliberate route to the full retained Visit population. No `ARCHIVED` Visit lifecycle is introduced and no Visit retention behavior changes.
+
+### Filter selector visual treatment
+
+The compact selectors use the canonical `selection` washed-teal container in both appearances while keeping their restrained control outline. The dropdown affordance is the vendored Phosphor Fill `CaretDown` at the normal 24dp icon geometry; Unicode/font arrows are not used. In an open selector menu, the selected option uses the full-row `selection` container, bold label treatment, and a Phosphor Fill `CheckFat` marker; unselected rows retain the ordinary menu surface and normal label weight.
+
+### Visit scheduled-date truth for Work filters
+
+`working_visits.actualServiceDate` remains the actual service date and continues to be replaced with the business date when a Booked Visit starts. To preserve the final booked date without a new lifecycle or schema column, the Booked → Working transition atomically appends a `visit_schedule_events` row with event type `STARTED`; its `oldServiceDate` is the booked date immediately before Start and its `newServiceDate` is the actual service/start date. Existing Rescheduled/Restored events still update the current Booked date before Start.
+
+The Work-list Visit summary projection uses that durable `STARTED.oldServiceDate` while a Visit is `WORKING`, falling back to persisted `actualServiceDate` when no Start booking history exists (for example a direct Start-now/Working Visit). This keeps `Overdue`, `Today`, `Upcoming`, and `Past 30 days` operationally tied to the booking date for active booked-origin work while preserving actual service date truth in the persisted Visit, completion, recurrence, record, report, Calendar, and Dispatch paths. No Room schema, `.slwork` package, lifecycle, retention, or Calendar-eligibility change is introduced.

@@ -22,6 +22,7 @@ object ServiceLoopIcons {
     @DrawableRes val Customers = R.drawable.ic_sl_customers
     @DrawableRes val Delete = R.drawable.ic_sl_delete
     @DrawableRes val Disclosure = R.drawable.ic_sl_disclosure
+    @DrawableRes val Dropdown = R.drawable.ic_sl_dropdown
     @DrawableRes val Equipment = R.drawable.ic_sl_equipment
     @DrawableRes val Error = R.drawable.ic_sl_error
     @DrawableRes val Expand = R.drawable.ic_sl_expand
@@ -37,6 +38,7 @@ object ServiceLoopIcons {
     @DrawableRes val Report = R.drawable.ic_sl_report
     @DrawableRes val Restore = R.drawable.ic_sl_restore
     @DrawableRes val Search = R.drawable.ic_sl_search
+    @DrawableRes val SelectionCheck = R.drawable.ic_sl_selection_check
     @DrawableRes val Settings = R.drawable.ic_sl_settings
     @DrawableRes val Share = R.drawable.ic_sl_share
     @DrawableRes val Site = R.drawable.ic_sl_site
