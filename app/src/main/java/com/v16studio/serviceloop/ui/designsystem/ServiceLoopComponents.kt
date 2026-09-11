@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.ui.designsystem
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -203,6 +205,96 @@ fun ServiceLoopChoiceChip(selected: Boolean, onClick: () -> Unit, label: String,
         label = { Text(label, softWrap = false, style = ServiceLoopUiTokens.Type.label) },
         modifier = modifier.width(IntrinsicSize.Max).heightIn(min = ServiceLoopUiTokens.Size.touchMin),
     )
+}
+
+/** A compact, menu-backed selector for a stable Work-filter dimension. */
+@Composable
+fun <T> ServiceLoopFilterSelector(
+    label: String,
+    selected: T,
+    options: List<Pair<T, String>>,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    testTag: String? = null,
+) {
+    var expanded by rememberSaveable(label) { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second.orEmpty()
+    val colors = LocalServiceLoopTokens.current
+    Box(modifier) {
+        Surface(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+            color = colors.surfaceSubtle,
+            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
+            modifier = Modifier.fillMaxWidth()
+                .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
+                .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
+                .semantics { contentDescription = "$label, $selectedLabel" },
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(
+                    horizontal = ServiceLoopUiTokens.Space.md,
+                    vertical = ServiceLoopUiTokens.Space.sm,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                    Text(label, style = ServiceLoopUiTokens.Type.meta, color = colors.textSecondary)
+                    Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = colors.textPrimary)
+                }
+                Text("▾", style = ServiceLoopUiTokens.Type.label, color = colors.icon)
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(
+                min = ServiceLoopUiTokens.Size.menuMinWidth,
+                max = ServiceLoopUiTokens.Size.menuMaxWidth,
+            ),
+        ) {
+            options.forEach { (value, optionLabel) ->
+                val isSelected = value == selected
+                DropdownMenuItem(
+                    text = { Text(optionLabel, style = ServiceLoopUiTokens.Type.body) },
+                    onClick = {
+                        onSelected(value)
+                        expanded = false
+                    },
+                    leadingIcon = {
+                        if (isSelected) Text("✓", style = ServiceLoopUiTokens.Type.label, color = colors.action)
+                        else Spacer(Modifier.width(ServiceLoopUiTokens.Size.iconSmall))
+                    },
+                    modifier = Modifier
+                        .then(if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${optionLabel.filter { it.isLetterOrDigit() }.lowercase()}"))
+                        .semantics { this.selected = isSelected },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ServiceLoopFilterSelectorRow(
+    first: @Composable () -> Unit,
+    second: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stack = maxWidth < ServiceLoopUiTokens.Size.pairMinCellWidth * 2 + ServiceLoopUiTokens.Layout.pairGap ||
+            LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.fontScaleStackThreshold
+        if (stack) {
+            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.pairGap)) {
+                first()
+                second()
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.pairGap)) {
+                Box(Modifier.weight(1f)) { first() }
+                Box(Modifier.weight(1f)) { second() }
+            }
+        }
+    }
 }
 
 @Composable

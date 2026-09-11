@@ -196,3 +196,23 @@ Do not overclaim real notification delivery, real Calendar provider mutation, Ta
 The immediate coding checkpoint is **B-013 Stage A — Design System + Representative Proof** on the existing single branch.
 
 Before source implementation, install and validate the exact supplied reference package under `docs/ui-reference/v1.0/`, verify its pinned commit/hash inventory, then read chapters 1, 3, 5, 6, 8, 9, 10, the proof-surface contracts in chapter 11, chapter 14 and chapter 15.
+
+## 11. Owner correction — Work filter system (adopted 2026-09-11)
+
+The three Work queues use one compact, temporal-first filtering pattern:
+
+1. Search;
+2. two equal peer filter selectors in one row where width and text scale permit;
+3. matching result records.
+
+Each selector presents its stable group label, current value, and a single-choice anchored menu. `All` clears only that dimension. The two dimensions and search query compose with logical AND; a valid empty result is shown normally rather than disabling combinations.
+
+| Work tab | Temporal selector | State / relationship selector | Defaults |
+| --- | --- | --- | --- |
+| Due services | `Due date`: All, Overdue, Today, Due soon, Upcoming | `Visit`: All, No visit, Has visit | All + All |
+| Visits | `Date`: All, Overdue, Today, Upcoming, Past 30 days | `Status`: All, Booked, Working, Completed, Canceled | Today + All |
+| Follow-ups | `Due date`: All, Overdue, Today, Upcoming | `Status`: All, Open, Closed | All + Open |
+
+For Due services, `No visit` and `Has visit` use the current obligation-to-Visit claim relationship only. They do not label an obligation as Booked and do not change its due date, fulfillment, recurrence, or Visit lifecycle.
+
+Visit `Overdue` means a scheduled date before the current ServiceLoop business date while the Visit is still `BOOKED` or `WORKING`. Historical `COMPLETED` and `CANCELED` Visits are not overdue. `Past 30 days` is `today - 30 days <= scheduled date < today`. The default Visit view is intentionally Today; selecting All remains the deliberate route to the full retained Visit population. No `ARCHIVED` Visit lifecycle is introduced and no Visit retention behavior changes.

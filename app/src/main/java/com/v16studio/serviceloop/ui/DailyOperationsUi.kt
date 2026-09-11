@@ -12,6 +12,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceChip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
@@ -176,17 +178,45 @@ internal fun PlanEditorScreen(equipmentId: String?, existing: PlanDetail?, templ
 
 @Composable
 internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, modifier: Modifier = Modifier, initialBucket: DueBucket? = null) {
-    var bucket by rememberSaveable(initialBucket) { mutableStateOf(initialBucket) }; var bookedOnly by rememberSaveable { mutableStateOf(false) }; var query by rememberSaveable { mutableStateOf("") }; var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var dateFilter by rememberSaveable(initialBucket) {
+        mutableStateOf(DueServiceDateFilter.entries.firstOrNull { it.bucket == initialBucket } ?: DueServiceDateFilter.ALL)
+    }
+    var visitFilter by rememberSaveable { mutableStateOf(DueServiceVisitFilter.ALL) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
     if (!state.dueServicesReady) {
         DailyEmpty(padding, state.dueServicesError?.let { "Unable to read due services — $it" } ?: "Reading due services", state.dueServicesError?.let { viewModel::retryDueServices })
         return
     }
-    val filtered = values.filter { (bucket == null || it.bucket == bucket) && (!bookedOnly || it.claimedVisitId != null) && (query.isBlank() || listOf(it.planReference,it.planName,it.equipmentName,it.equipmentReference,it.customerName,it.siteName).any { text -> text.contains(query, true) }) }
+    val filtered = filterDueServices(values, dateFilter, visitFilter, query)
     val selectedRows = values.filter { it.planId in selected }; val selectionSite = selectedRows.firstOrNull()?.siteId
     LazyColumn(modifier.padding(padding).testTag("due-services-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { DailyField(query, { query = it }, "Search due services"); Text("Due date",fontWeight=FontWeight.Bold); ServiceLoopChoiceGroup(listOf<DueBucket?>(null).plus(DueBucket.entries).map { option -> option to (option?.name?.lowercase()?.replace('_',' ')?.replaceFirstChar(Char::uppercase) ?: "All") },bucket,{bucket=it},testTagPrefix="due-filter"); Text("Booking",fontWeight=FontWeight.Bold); ServiceLoopChoiceChip(bookedOnly,{bookedOnly=!bookedOnly},"Booked only",Modifier.testTag("due-filter-booked")); Text("Booking never changes the service due date."); state.dueServicesError?.let { Text("Due services could not update — showing the last saved database result.", color = MaterialTheme.colorScheme.error) } }
+        item {
+            DailyField(query, { query = it }, "Search due services")
+            ServiceLoopFilterSelectorRow(
+                first = {
+                    ServiceLoopFilterSelector(
+                        label = "Due date",
+                        selected = dateFilter,
+                        options = DueServiceDateFilter.entries.map { it to it.label },
+                        onSelected = { dateFilter = it },
+                        testTag = "due-date-selector",
+                    )
+                },
+                second = {
+                    ServiceLoopFilterSelector(
+                        label = "Visit",
+                        selected = visitFilter,
+                        options = DueServiceVisitFilter.entries.map { it to it.label },
+                        onSelected = { visitFilter = it },
+                        testTag = "due-visit-selector",
+                    )
+                },
+            )
+            state.dueServicesError?.let { Text("Due services could not update — showing the last saved database result.", color = MaterialTheme.colorScheme.error) }
+        }
         if (filtered.isEmpty()) item { Text("No services match these filters.") }
-        items(filtered, key = { it.planId }) { due -> val selectable=due.claimedVisitId==null&&(selectionSite==null||selectionSite==due.siteId); ServiceLoopEntityRecord("${due.planReference} · ${due.planName}","${due.equipmentReference} · ${due.equipmentName}\n${due.customerName} · ${due.siteName}","Due ${due.dueDate} · ${due.bucket.name.lowercase().replace('_',' ')}",due.claimedVisitId?.let{"BOOKED"},selected=due.planId in selected,onClick={nav.navigate(due.claimedVisitId?.let{"visit/$it"}?:"plan/${due.planId}")},actionDescription=if(due.claimedVisitId==null) "Open service plan ${due.planReference} ${due.planName}" else "Open existing visit ${due.planReference} ${due.planName}",selectionChecked=if(selectable) due.planId in selected else null,onSelectionChange=if(selectable) { checked->if(checked)selected=selected+due.planId else selected=selected-due.planId } else null) }
+        items(filtered, key = { it.planId }) { due -> val selectable=due.claimedVisitId==null&&(selectionSite==null||selectionSite==due.siteId); ServiceLoopEntityRecord("${due.planReference} · ${due.planName}","${due.equipmentReference} · ${due.equipmentName}\n${due.customerName} · ${due.siteName}",listOf("Due ${due.dueDate}", due.bucket.name.lowercase().replace('_',' '), due.claimedVisitId?.let { "Has visit" }).filterNotNull().joinToString(" · "),selected=due.planId in selected,onClick={nav.navigate(due.claimedVisitId?.let{"visit/$it"}?:"plan/${due.planId}")},actionDescription=if(due.claimedVisitId==null) "Open service plan ${due.planReference} ${due.planName}" else "Open existing visit ${due.planReference} ${due.planName}",selectionChecked=if(selectable) due.planId in selected else null,onSelectionChange=if(selectable) { checked->if(checked)selected=selected+due.planId else selected=selected-due.planId } else null) }
         if (selected.isNotEmpty()) item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Book selected",{ nav.currentBackStackEntry?.savedStateHandle?.set("visit-setup-plan-ids", ArrayList(selected)); nav.navigate("visit/new") }, enabled = !state.operationInProgress, modifier = Modifier.weight(1f).fillMaxHeight()); ServiceLoopPrimaryButton("Start selected",{ viewModel.createVisit(selected, "WORKING", state.businessDate.toString(), null) { nav.navigate("visit/$it") } }, enabled = !state.operationInProgress, modifier = Modifier.weight(1f).fillMaxHeight()) } }
     }
 }

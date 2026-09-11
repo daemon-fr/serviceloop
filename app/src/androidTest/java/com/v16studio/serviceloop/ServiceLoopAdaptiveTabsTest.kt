@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -123,7 +124,7 @@ class ServiceLoopAdaptiveTabsTest {
         assertEquals(2, repository.subscriptions)
     }
 
-    @Test fun bookedOnlyChipSharesDueDateChipGeometryAcrossReviewWidthsAndLargeText() {
+    @Test fun dueServiceSelectorsAreBalancedAtPhoneWidthAndStackSafelyForLargeText() {
         val viewModel = ServiceLoopViewModel(RetryRepository()) {}
         val state = UiState(
             loading = false,
@@ -146,11 +147,19 @@ class ServiceLoopAdaptiveTabsTest {
                 }
             }
             compose.waitForIdle()
-            val dueDateChip = compose.onNodeWithTag("due-filter-OVERDUE").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-            val bookedOnlyChip = compose.onNodeWithTag("due-filter-booked").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-            assertEquals("$width dp/$fontScale: shared chip height", dueDateChip.height, bookedOnlyChip.height, 0.5f)
-            assertTrue("$width dp/$fontScale: due-date chip is touch-sized", dueDateChip.height >= 48f)
-            assertTrue("$width dp/$fontScale: Booked only chip is touch-sized", bookedOnlyChip.height >= 48f)
+            val dueDateSelector = compose.onNodeWithTag("due-date-selector").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val visitSelector = compose.onNodeWithTag("due-visit-selector").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("$width dp/$fontScale: due-date selector is touch-sized", dueDateSelector.height >= 64f)
+            assertTrue("$width dp/$fontScale: visit selector is touch-sized", visitSelector.height >= 64f)
+            if (fontScale < 1.3f) {
+                assertEquals("$width dp/$fontScale: side-by-side selector height", dueDateSelector.height, visitSelector.height, 0.5f)
+                assertEquals("$width dp/$fontScale: side-by-side selector top", dueDateSelector.top, visitSelector.top, 0.5f)
+                assertEquals("$width dp/$fontScale: side-by-side selector width", dueDateSelector.width, visitSelector.width, 0.5f)
+            } else {
+                assertTrue("$width dp/$fontScale: large-text selectors stack", dueDateSelector.bottom <= visitSelector.top)
+            }
+            assertTrue(compose.onAllNodesWithText("Booking").fetchSemanticsNodes().isEmpty())
+            assertTrue(compose.onAllNodesWithText("Booked only").fetchSemanticsNodes().isEmpty())
         }
     }
 

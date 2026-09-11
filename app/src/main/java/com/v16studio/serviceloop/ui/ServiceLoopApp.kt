@@ -117,9 +117,12 @@ import com.v16studio.serviceloop.domain.PublicPhoto
 import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.domain.SiteRegisterSummary
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
-import com.v16studio.serviceloop.domain.VisitFilter
-import com.v16studio.serviceloop.domain.VisitDateWindow
-import com.v16studio.serviceloop.domain.FollowUpFilter
+import com.v16studio.serviceloop.domain.FollowUpDateFilter
+import com.v16studio.serviceloop.domain.FollowUpStatusFilter
+import com.v16studio.serviceloop.domain.VisitDateFilter
+import com.v16studio.serviceloop.domain.VisitStatusFilter
+import com.v16studio.serviceloop.domain.filterFollowUps
+import com.v16studio.serviceloop.domain.filterVisits
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
@@ -133,9 +136,12 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSavedStatus
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -467,7 +473,7 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
         item { SectionTitle("Overdue services · ${home.overdueCount}"); SummaryRow("Booked service remains due until its obligation is explicitly fulfilled.","View all"){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
         items(equipment.take(3)) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",metadata="Due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
         item { SectionTitle("Due soon · ${home.dueSoonCount}"); SummaryRow("Next ${home.dueSoonHorizonDays} business-local days", "View all") { nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON")) } }
-        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "Open due") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS, "DUE_OR_OVERDUE")) } }
+        item { SectionTitle("Follow-ups due · ${home.dueFollowUpCount}"); SummaryRow(listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" }, "View follow-ups") { nav.navigate(workRoute(WorkTab.FOLLOW_UPS)) } }
         item { SectionTitle("Records needing attention · ${attention.size}"); if(attention.isEmpty()) Text("No correction or report-file attention needed.") }
         items(attention) { item -> SummaryRow("${item.title}\n${item.detail}", "Open") { nav.navigate(item.route) } }
         item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
@@ -476,37 +482,154 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
 
 @Composable
 private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, viewModel: ServiceLoopViewModel, contextualFilter: String? = null, onTabSelected: (WorkTab) -> Unit) {
-    if (tab == WorkTab.DUE_SERVICES) {
-        val contextualDueBucket=runCatching{com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty())}.getOrNull()
-        Column(Modifier.fillMaxSize()) {
-            ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected, Modifier.padding(16.dp, 12.dp, 16.dp, 0.dp))
-            DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket)
-        }
-        return
-    }
-    var visitFilter by rememberSaveable(tab,contextualFilter){mutableStateOf(runCatching{VisitFilter.valueOf(contextualFilter.orEmpty())}.getOrDefault(VisitFilter.ALL))}
-    var visitWindow by rememberSaveable(tab){mutableStateOf(VisitDateWindow.ALL_DATES)}
-    var followFilter by rememberSaveable(tab,contextualFilter){mutableStateOf(runCatching{FollowUpFilter.valueOf(contextualFilter.orEmpty())}.getOrDefault(FollowUpFilter.ALL_OPEN))}
-    val today=state.businessDate
-    LazyColumn(Modifier.testTag("work-${tab.name.lowercase()}-list"), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected) }
+    val initialVisitStatus = VisitStatusFilter.entries.firstOrNull { it.name == contextualFilter } ?: VisitStatusFilter.ALL
+    val initialVisitDate = VisitDateFilter.entries.firstOrNull { it.name == contextualFilter }
+        ?: if (initialVisitStatus == VisitStatusFilter.ALL) VisitDateFilter.TODAY else VisitDateFilter.ALL
+    val initialFollowUpDate = FollowUpDateFilter.entries.firstOrNull { it.name == contextualFilter } ?: FollowUpDateFilter.ALL
+    Column(Modifier.fillMaxSize()) {
+        ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected, Modifier.padding(16.dp, 12.dp, 16.dp, 0.dp))
         when (tab) {
-            WorkTab.DUE_SERVICES -> Unit
-            WorkTab.VISITS -> {
-                val filtered=state.visits.filter { visit -> (visitFilter==VisitFilter.ALL||visit.state==visitFilter.name) && when(visitWindow){VisitDateWindow.ALL_DATES->true;VisitDateWindow.PAST_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today.minusDays(30)..today}.getOrDefault(false);VisitDateWindow.NEXT_30_DAYS->runCatching{LocalDate.parse(visit.actualServiceDate) in today..today.plusDays(30)}.getOrDefault(false)} }
-                item { SectionTitle("Visits"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(VisitFilter.entries.map{it to it.name.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)},visitFilter,{visitFilter=it},testTagPrefix="visit-filter"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm)); ServiceLoopChoiceGroup(VisitDateWindow.entries.map{it to it.name.lowercase().replace('_',' ')},visitWindow,{visitWindow=it},testTagPrefix="visit-window") }
-                if (filtered.isEmpty()) item { Text("No visits match these filters") }
-                items(filtered) { visit -> ServiceLoopEntityRecord(visit.reference,visit.siteName,visit.actualServiceDate,visit.state){if(visit.finalRecordId!=null)nav.navigate("record/${visit.finalRecordId}")else nav.navigate("visit/${visit.id}")} }
+            WorkTab.DUE_SERVICES -> {
+                val contextualDueBucket = runCatching { com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty()) }.getOrNull()
+                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket)
             }
-            WorkTab.FOLLOW_UPS -> {
-                val filtered=state.followUps.filter{follow->val due=LocalDate.parse(follow.dueDate);when(followFilter){FollowUpFilter.DUE_OR_OVERDUE->follow.state=="OPEN"&&!due.isAfter(today);FollowUpFilter.UPCOMING->follow.state=="OPEN"&&due.isAfter(today);FollowUpFilter.ALL_OPEN->follow.state=="OPEN";FollowUpFilter.CLOSED->follow.state!="OPEN"}}
-                item { SectionTitle("Follow-ups · ${filtered.size}"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopChoiceGroup(FollowUpFilter.entries.map{it to it.name.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)},followFilter,{followFilter=it},testTagPrefix="follow-filter") }
-                if(filtered.isEmpty()) item{Text("No follow-ups match this filter")}
-                items(filtered) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · "),"Due ${follow.dueDate}",follow.state){nav.navigate("follow-up/${follow.id}")} }
+            WorkTab.VISITS -> VisitsWorkScreen(
+                values = state.visits,
+                businessDate = state.businessDate,
+                padding = PaddingValues(),
+                nav = nav,
+                modifier = Modifier.weight(1f),
+                initialDateFilter = initialVisitDate,
+                initialStatusFilter = initialVisitStatus,
+                includeWorkDestinations = true,
+            )
+            WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
+                values = state.followUps,
+                businessDate = state.businessDate,
+                padding = PaddingValues(),
+                nav = nav,
+                modifier = Modifier.weight(1f),
+                initialDateFilter = initialFollowUpDate,
+                includeWorkDestinations = true,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun VisitsWorkScreen(
+    values: List<VisitSummary>,
+    businessDate: LocalDate,
+    padding: PaddingValues,
+    nav: NavHostController,
+    modifier: Modifier = Modifier,
+    initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
+    initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
+    includeWorkDestinations: Boolean = false,
+) {
+    var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
+    var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val filtered = filterVisits(values, dateFilter, statusFilter, businessDate, query)
+    LazyColumn(
+        modifier.padding(padding).testTag("work-visits-list"),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            ServiceLoopTextField(query, { query = it }, "Search visits", modifier = Modifier.testTag("visit-search"))
+            Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
+            ServiceLoopFilterSelectorRow(
+                first = {
+                    ServiceLoopFilterSelector(
+                        label = "Date",
+                        selected = dateFilter,
+                        options = VisitDateFilter.entries.map { it to it.label },
+                        onSelected = { dateFilter = it },
+                        testTag = "visit-date-selector",
+                    )
+                },
+                second = {
+                    ServiceLoopFilterSelector(
+                        label = "Status",
+                        selected = statusFilter,
+                        options = VisitStatusFilter.entries.map { it to it.label },
+                        onSelected = { statusFilter = it },
+                        testTag = "visit-status-selector",
+                    )
+                },
+            )
+        }
+        if (filtered.isEmpty()) item { Text("No visits match these filters.") }
+        items(filtered) { visit ->
+            ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state) {
+                if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-        item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
-        item { Text("More",style=MaterialTheme.typography.titleLarge); SummaryRow("Import work package","Open"){nav.navigate("dispatch/import")} }
+        if (includeWorkDestinations) {
+            item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
+            item { Text("More", style = MaterialTheme.typography.titleLarge); SummaryRow("Import work package", "Open") { nav.navigate("dispatch/import") } }
+        }
+    }
+}
+
+@Composable
+internal fun FollowUpsWorkScreen(
+    values: List<com.v16studio.serviceloop.domain.FollowUpDetail>,
+    businessDate: LocalDate,
+    padding: PaddingValues,
+    nav: NavHostController,
+    modifier: Modifier = Modifier,
+    initialDateFilter: FollowUpDateFilter = FollowUpDateFilter.ALL,
+    initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
+    includeWorkDestinations: Boolean = false,
+) {
+    var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
+    var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val filtered = filterFollowUps(values, dateFilter, statusFilter, businessDate, query)
+    LazyColumn(
+        modifier.padding(padding).testTag("work-follow-ups-list"),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            ServiceLoopTextField(query, { query = it }, "Search follow-ups", modifier = Modifier.testTag("follow-up-search"))
+            Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
+            ServiceLoopFilterSelectorRow(
+                first = {
+                    ServiceLoopFilterSelector(
+                        label = "Due date",
+                        selected = dateFilter,
+                        options = FollowUpDateFilter.entries.map { it to it.label },
+                        onSelected = { dateFilter = it },
+                        testTag = "follow-up-date-selector",
+                    )
+                },
+                second = {
+                    ServiceLoopFilterSelector(
+                        label = "Status",
+                        selected = statusFilter,
+                        options = FollowUpStatusFilter.entries.map { it to it.label },
+                        onSelected = { statusFilter = it },
+                        testTag = "follow-up-status-selector",
+                    )
+                },
+            )
+        }
+        if (filtered.isEmpty()) item { Text("No follow-ups match these filters.") }
+        items(filtered) { follow ->
+            ServiceLoopEntityRecord(
+                "${follow.reference} · ${follow.title}",
+                listOfNotNull(follow.customerName, follow.siteName, follow.equipmentName).filter { it.isNotBlank() }.joinToString(" · "),
+                "Due ${follow.dueDate}",
+                follow.state,
+            ) { nav.navigate("follow-up/${follow.id}") }
+        }
+        if (includeWorkDestinations) {
+            item { SummaryRow("History", "Open") { nav.navigate("history/global") } }
+            item { Text("More", style = MaterialTheme.typography.titleLarge); SummaryRow("Import work package", "Open") { nav.navigate("dispatch/import") } }
+        }
     }
 }
 

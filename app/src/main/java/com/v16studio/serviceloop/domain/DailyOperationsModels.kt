@@ -110,7 +110,3 @@ enum class VisitCancellationOrigin(val code: String) {
         }
     }
 }
-
-enum class VisitFilter { ALL, BOOKED, WORKING, COMPLETED, CANCELED }
-enum class VisitDateWindow { ALL_DATES, PAST_30_DAYS, NEXT_30_DAYS }
-enum class FollowUpFilter { DUE_OR_OVERDUE, UPCOMING, ALL_OPEN, CLOSED }
