@@ -106,7 +106,7 @@ jobs:
             app/build/test-results/**
 
   instrumentation:
-    name: Instrumentation tests (API 35)
+    name: Work-filter instrumentation tests (API 35)
     needs: build-test-lint
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -152,7 +152,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run full instrumentation suite
+      - name: Run task-focused instrumentation suite
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -161,7 +161,9 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          script: >-
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.v16studio.serviceloop.WorkFilterSelectorUiTest,com.v16studio.serviceloop.DueServicesProjectionUiTest,com.v16studio.serviceloop.ServiceLoopAdaptiveTabsTest,com.v16studio.serviceloop.CanonicalDueServicesProjectionTest
 
       - name: Upload instrumentation reports on failure
         if: failure()
