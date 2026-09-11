@@ -47,11 +47,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          android sdk list '.*' --all --canary | tee /tmp/android-sdk-packages.txt
-          echo '--- Android 17 / Cinnamon / platform candidates ---'
+          echo '--- Android CLI catalog candidates ---'
+          android sdk list --all --canary | tee /tmp/android-sdk-packages.txt
           grep -Ei 'cinnamon|android-37|platforms/' /tmp/android-sdk-packages.txt || true
-          if ! grep -Eqi 'cinnamon|android-37' /tmp/android-sdk-packages.txt; then
-            echo 'Android 17 platform package was not exposed by the current Android CLI catalog.' >&2
+          echo '--- Legacy sdkmanager catalog candidates ---'
+          sdkmanager --list --channel=3 | tee /tmp/sdkmanager-packages.txt
+          grep -Ei 'cinnamon|android-37|platforms;' /tmp/sdkmanager-packages.txt || true
+          if ! grep -Eqi 'cinnamon|android-37' /tmp/android-sdk-packages.txt /tmp/sdkmanager-packages.txt; then
+            echo 'Android 17 platform package was not exposed by either SDK catalog.' >&2
             exit 1
           fi
 
@@ -130,10 +133,12 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          android sdk list '.*' --all --canary | tee /tmp/android-sdk-packages.txt
+          android sdk list --all --canary | tee /tmp/android-sdk-packages.txt
           grep -Ei 'cinnamon|android-37|platforms/' /tmp/android-sdk-packages.txt || true
-          if ! grep -Eqi 'cinnamon|android-37' /tmp/android-sdk-packages.txt; then
-            echo 'Android 17 platform package was not exposed by the current Android CLI catalog.' >&2
+          sdkmanager --list --channel=3 | tee /tmp/sdkmanager-packages.txt
+          grep -Ei 'cinnamon|android-37|platforms;' /tmp/sdkmanager-packages.txt || true
+          if ! grep -Eqi 'cinnamon|android-37' /tmp/android-sdk-packages.txt /tmp/sdkmanager-packages.txt; then
+            echo 'Android 17 platform package was not exposed by either SDK catalog.' >&2
             exit 1
           fi
 
