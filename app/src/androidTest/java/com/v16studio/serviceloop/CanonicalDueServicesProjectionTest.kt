@@ -64,7 +64,7 @@ class CanonicalDueServicesProjectionTest {
             compose.onNodeWithText("P-004 · Maintenance", substring = true).assertIsDisplayed()
             compose.onNodeWithText("Refreshing due services").assertDoesNotExist()
             compose.onNodeWithText("Reading due services").assertDoesNotExist()
-            compose.onNodeWithText(if (index % 2 == 0) "Home" else "Customers").performClick()
+            compose.onNodeWithText(if (index % 2 == 0) "Home" else "Register").performClick()
         }
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("Visits").performClick()

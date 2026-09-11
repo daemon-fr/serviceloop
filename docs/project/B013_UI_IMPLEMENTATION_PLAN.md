@@ -217,9 +217,13 @@ For Due services, `No visit` and `Has visit` use the current obligation-to-Visit
 
 Visit `Overdue` means a scheduled date before the current ServiceLoop business date while the Visit is still `BOOKED` or `WORKING`. Historical `COMPLETED` and `CANCELED` Visits are not overdue. `Past 30 days` is `today - 30 days <= scheduled date < today`. The default Visit view is intentionally Today; selecting All remains the deliberate route to the full retained Visit population. No `ARCHIVED` Visit lifecycle is introduced and no Visit retention behavior changes.
 
-### Filter selector visual treatment
+### Filter selector and notebook-tab owner inspection correction
 
-The compact selectors use the canonical `selection` washed-teal container in both appearances while keeping their restrained control outline. The dropdown affordance is the vendored Phosphor Fill `CaretDown` at the normal 24dp icon geometry; Unicode/font arrows are not used. In an open selector menu, the selected option uses the full-row `selection` container, bold label treatment, and a Phosphor Fill `CheckFat` marker; unselected rows retain the ordinary menu surface and normal label weight.
+The compact selectors are deliberately white controls in both appearances. Their fixed dark-on-white ink contract covers labels, values, chevrons, menu text, and selected checkmarks; the menu is also white. Selected menu rows use a pale teal treatment with teal ink/checkmark, and the dedicated selector-menu checkmark is 16dp. The dropdown affordance remains the vendored Phosphor Fill `CaretDown`; Unicode/font arrows are not used.
+
+`ServiceLoopContentTabs` provides the shared notebook-tab treatment. The upper tab section is white in light appearance (and uses the corresponding dark surface in dark appearance), while the active tab matches the lower canvas/content surface. Its pale-neutral 1.5dp border and baseline reach the full available width, with the active tab interrupting the baseline. Work, Register, customer detail, and report callers use the same primitive; the customer-detail identity/contact/action/handoff block is explicitly part of the upper section through the tab boundary.
+
+The third root destination is labelled **Register**. Its route and `CUSTOMERS` identifier remain unchanged, as do Customer domain language, Customer detail, and the nested Customers/Sites/Equipment tabs.
 
 ### Visit scheduled-date truth for Work filters
 

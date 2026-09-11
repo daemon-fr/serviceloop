@@ -57,7 +57,7 @@ class DueServicesProjectionUiTest {
             compose.onNodeWithText("Work").performClick()
             compose.onNodeWithText("P-001 · Projection service", substring = true).assertIsDisplayed()
             compose.onNodeWithText("Refreshing due services").assertDoesNotExist()
-            compose.onNodeWithText(if (index % 2 == 0) "Home" else "Customers").performClick()
+            compose.onNodeWithText(if (index % 2 == 0) "Home" else "Register").performClick()
         }
 
         val visit = repository.createVisit(listOf(plan), "BOOKED", "2026-09-12")

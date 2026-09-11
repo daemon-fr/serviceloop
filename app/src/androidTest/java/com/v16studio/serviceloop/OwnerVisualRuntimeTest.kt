@@ -113,13 +113,13 @@ class OwnerVisualRuntimeTest {
         repeat(3) {
             composeRule.onNodeWithText("Work").performClick()
             assertOnlyRoot("root-work")
-            composeRule.onNodeWithText("Customers").performClick()
+            composeRule.onNodeWithText("Register").performClick()
             assertOnlyRoot("root-customers")
             composeRule.onNodeWithText("Home").performClick()
             assertOnlyRoot("root-home")
         }
 
-        composeRule.onNodeWithText("Customers").performClick()
+        composeRule.onNodeWithText("Register").performClick()
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
@@ -129,7 +129,7 @@ class OwnerVisualRuntimeTest {
 
         composeRule.onNodeWithText("Visits").performClick()
         composeRule.onNodeWithTag("work-visits-list").assertIsDisplayed()
-        composeRule.onNodeWithText("Customers").performClick()
+        composeRule.onNodeWithText("Register").performClick()
         assertOnlyRoot("root-customers")
         composeRule.onNodeWithText("Work").performClick()
         assertOnlyRoot("root-work")
@@ -150,7 +150,7 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithText("History").performClick()
         composeRule.onNodeWithTag("history-list").assertIsDisplayed()
         pressBack()
-        composeRule.onNodeWithText("Customers").performClick()
+        composeRule.onNodeWithText("Register").performClick()
         composeRule.onNodeWithTag("root-customers").assertIsDisplayed()
         composeRule.onNodeWithText("Home").performClick()
         composeRule.onNodeWithTag("root-home").assertIsDisplayed()

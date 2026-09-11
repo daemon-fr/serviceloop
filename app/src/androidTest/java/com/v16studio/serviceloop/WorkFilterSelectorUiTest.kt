@@ -112,6 +112,34 @@ class WorkFilterSelectorUiTest {
         assertTrue(compose.onAllNodesWithText("Due or overdue").fetchSemanticsNodes().isEmpty())
     }
 
+    @Test fun darkAppearanceKeepsWhiteSelectorMenuInteractionReadable() {
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(emptyList()),
+            businessDate = LocalDate.of(2026, 9, 11),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(EmptyRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme(darkTheme = true) {
+                    DueServicesScreen(
+                        values = listOf(due("dark-no-visit", null)),
+                        padding = PaddingValues(),
+                        state = state,
+                        viewModel = viewModel,
+                        nav = rememberNavController(),
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Visit, All").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("due-visit-selector-option-all").assertIsSelected()
+        compose.onNodeWithTag("due-visit-selector-option-novisit").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Visit, No visit").assertIsDisplayed()
+    }
+
     private fun due(id: String, claimedVisitId: String?) = DueService(
         planId = id,
         planReference = "P-$id",

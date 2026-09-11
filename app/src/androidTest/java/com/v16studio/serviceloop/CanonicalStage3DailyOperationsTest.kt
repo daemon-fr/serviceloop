@@ -63,7 +63,7 @@ class CanonicalStage3DailyOperationsTest {
         waitForText("Revision 1")
         back(); back(); back()
 
-        compose.onNodeWithText("Customers").performClick()
+        compose.onNodeWithText("Register").performClick()
         waitForText("Add customer")
         compose.onNode(hasText("Add customer") and hasClickAction()).performClick()
         compose.onNodeWithText("Customer name · Required").performTextInput(customerName)

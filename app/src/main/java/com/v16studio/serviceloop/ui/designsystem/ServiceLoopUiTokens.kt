@@ -83,8 +83,8 @@ object ServiceLoopUiTokens {
 
     object Space { val none=0.dp; val hair=2.dp; val xs=4.dp; val sm=8.dp; val md=12.dp; val lg=16.dp; val xl=20.dp; val section=24.dp; val major=32.dp; val hero=40.dp; val large=48.dp }
     object Radius { val badge=8.dp; val field=12.dp; val card=16.dp; val dialog=24.dp; val pill=999.dp }
-    object Stroke { val divider=1.dp; val outline=1.dp; val selected=1.5.dp; val focus=2.dp; val record=2.dp }
-    object Size { val touchMin=48.dp; val iconSmall=20.dp; val icon=24.dp; val iconLarge=32.dp; val checkboxGlyph=24.dp; val buttonMin=48.dp; val buttonPrimaryMin=52.dp; val fieldMin=64.dp; val pickerMin=64.dp; val topBarMin=64.dp; val brandMin=28.dp; val bottomNavMin=80.dp; val listRowMin=64.dp; val photoThumb=64.dp; val photoGridMin=88.dp; val editorActionReserve=56.dp; val sheetMaxWidth=560.dp; val dialogMaxWidth=560.dp; val menuMinWidth=196.dp; val menuMaxWidth=320.dp; val formMaxWidth=640.dp; val contentMaxWidth=840.dp; val narrowThreshold=360.dp; val mediumThreshold=600.dp; val expandedThreshold=840.dp; val compactHeightThreshold=480.dp; val pairMinCellWidth=148.dp }
+    object Stroke { val divider=1.dp; val outline=1.dp; val selected=1.5.dp; val tab=1.5.dp; val focus=2.dp; val record=2.dp }
+    object Size { val touchMin=48.dp; val iconSmall=20.dp; val filterMenuCheck=16.dp; val icon=24.dp; val iconLarge=32.dp; val checkboxGlyph=24.dp; val buttonMin=48.dp; val buttonPrimaryMin=52.dp; val fieldMin=64.dp; val pickerMin=64.dp; val topBarMin=64.dp; val brandMin=28.dp; val bottomNavMin=80.dp; val listRowMin=64.dp; val photoThumb=64.dp; val photoGridMin=88.dp; val editorActionReserve=56.dp; val sheetMaxWidth=560.dp; val dialogMaxWidth=560.dp; val menuMinWidth=196.dp; val menuMaxWidth=320.dp; val formMaxWidth=640.dp; val contentMaxWidth=840.dp; val narrowThreshold=360.dp; val mediumThreshold=600.dp; val expandedThreshold=840.dp; val compactHeightThreshold=480.dp; val pairMinCellWidth=148.dp }
     object Layout { val pageInsetCompact=16.dp; val pageInsetMedium=24.dp; val pageInsetExpanded=32.dp; val bodyGap=12.dp; val sectionGap=24.dp; val buttonGap=8.dp; val cardPadding=16.dp; val barPadding=16.dp; val pairGap=8.dp; const val fontScaleStackThreshold=1.3f; const val badgeFontScaleStackThreshold=1.5f; val bodyMinimumVisibleHeight=160.dp }
     object Motion { const val pressMs=80; const val smallMs=120; const val containerMs=180; const val dialogMs=180; const val routeMs=0; const val reducedMs=0; val easing=CubicBezierEasing(.2f,0f,0f,1f) }
     object Elevation { val rest=0.dp; val menu=3.dp; val dialog=6.dp; val bottomBar=0.dp }
@@ -120,6 +120,17 @@ object ServiceLoopUiTokens {
         large = RoundedCornerShape(Radius.dialog),
         extraLarge = RoundedCornerShape(Radius.dialog),
     )
+}
+
+/** Fixed-ink treatment for the deliberately white Work filter controls in either appearance. */
+object ServiceLoopFilterSelectorContract {
+    val surface = Color.White
+    val primaryInk = Color(0xFF182A30)
+    val secondaryInk = Color(0xFF566870)
+    val accentInk = Color(0xFF075C62)
+    val selectedContainer = Color(0xFFE7F3F1)
+    val outline = Color(0xFF6A828C)
+    val menuCheckSize = ServiceLoopUiTokens.Size.filterMenuCheck
 }
 
 object ServiceLoopButtonContract {

@@ -61,7 +61,7 @@ class Stage3DailyOperationsUiTest {
     @After fun close()=database.close()
 
     @Test fun directoryToRecurringPlanIsReachableThroughNormalUi() {
-        compose.onNodeWithText("Customers").performClick()
+        compose.onNodeWithText("Register").performClick()
         compose.onNodeWithTag("add-customer").performClick()
         compose.onNodeWithText("Customer name · Required").performTextInput("Stage Three Customer")
         compose.onNodeWithText("Main contact").performTextInput("Dana")
@@ -106,7 +106,7 @@ class Stage3DailyOperationsUiTest {
     }
 
     @Test fun appBarAndSystemBackProtectUnsavedCreateAndEditForms()=runBlocking {
-        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Unsaved")
+        compose.onNodeWithText("Register").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Unsaved")
         compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Unsaved").assertIsDisplayed(); compose.onNodeWithText("Discard changes").assertDoesNotExist()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; compose.waitUntil(5_000){runCatching{compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()}.isSuccess}; compose.onNodeWithText("Discard changes").performClick()
         compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Guard customer"); compose.onNodeWithText("Site name · Required").performTextInput("Guard site"); compose.onNodeWithText("Save customer and first site").performScrollTo().performClick()
@@ -120,7 +120,7 @@ class Stage3DailyOperationsUiTest {
     }
 
     @Test fun expandedLongTextUsesSameBufferUntilExplicitSave()=runBlocking {
-        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
+        compose.onNodeWithText("Register").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
         compose.onNodeWithText("Site name · Required").performTextInput("Long text site")
         val longNote="Unsaved long private note that deliberately occupies enough compact-field space to exercise the reserved expand affordance region without creating a second editing buffer."
         compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed().performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput(longNote); compose.onNodeWithText("Done").performClick()
@@ -129,7 +129,7 @@ class Stage3DailyOperationsUiTest {
 
     @Test fun globalAddEquipmentUsesSiteChooserAndRealEditor()=runBlocking {
         val customer=repository.createCustomer(CustomerInput("Selector customer")); repository.createSite(customer,SiteInput("Selector site",""))
-        compose.onNodeWithText("Customers").performClick(); compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("add-equipment-from-register").performClick()
+        compose.onNodeWithText("Register").performClick(); compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("add-equipment-from-register").performClick()
         compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.waitUntil(5_000){compose.onAllNodesWithText("Selector customer\nST-001 · Selector site").fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithText("Selector customer\nST-001 · Selector site").performClick(); compose.onNodeWithText("Equipment name · Required").assertIsDisplayed(); Unit
     }
 
@@ -137,7 +137,7 @@ class Stage3DailyOperationsUiTest {
         val customerA=repository.createCustomer(CustomerInput("Customer A")); val a1=repository.createSite(customerA,SiteInput("A1","1 Alpha Street")); val a2=repository.createSite(customerA,SiteInput("A2","2 Alpha Street")); repository.createEquipment(a1,EquipmentInput("A machine one")); repository.createEquipment(a2,EquipmentInput("A machine two"))
         val customerB=repository.createCustomer(CustomerInput("Customer B")); val b1=repository.createSite(customerB,SiteInput("B1","1 Beta Street")); repository.createEquipment(b1,EquipmentInput("B machine"))
         val viewModel=ServiceLoopViewModel(repository){}; viewModel.refreshRootDataNonBlocking(); compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
-        compose.onNodeWithText("Customers").performClick(); compose.waitUntil(5_000){compose.onAllNodesWithText("Customer A",substring=true).fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithTag("customers-tab-CUSTOMERS").assertIsDisplayed(); compose.onNodeWithText("Customer A",substring=true).assertIsDisplayed(); compose.onNodeWithText("Customer B",substring=true).assertIsDisplayed()
+        compose.onNodeWithText("Register").performClick(); compose.waitUntil(5_000){compose.onAllNodesWithText("Customer A",substring=true).fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithTag("customers-tab-CUSTOMERS").assertIsDisplayed(); compose.onNodeWithText("Customer A",substring=true).assertIsDisplayed(); compose.onNodeWithText("Customer B",substring=true).assertIsDisplayed()
         compose.onNodeWithText("Sites").performClick(); compose.onNodeWithTag("customers-tab-SITES").assertIsDisplayed(); compose.onNodeWithText("1 Alpha Street",substring=true).assertIsDisplayed(); compose.onNodeWithText("Customer B",substring=true).assertIsDisplayed()
         compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("customers-tab-EQUIPMENT").assertIsDisplayed(); compose.onNodeWithText("A machine one",substring=true).assertIsDisplayed(); compose.onAllNodesWithText("Customer A",substring=true).assertCountEquals(2); compose.onNodeWithText("B machine",substring=true).assertIsDisplayed(); compose.onNodeWithTag("add-equipment-from-register").performClick(); compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.onNodeWithText("Back").performClick()
         compose.onNodeWithTag("customers-tab-CUSTOMERS").performClick(); compose.onNodeWithText("Customer A",substring=true).performClick(); compose.waitUntil(5_000){runCatching{compose.onNodeWithTag("customer-tab-SITES").assertIsDisplayed()}.isSuccess}; compose.onNodeWithTag("customer-tab-SITES").assertIsDisplayed(); compose.onNodeWithText("A1",substring=true).assertIsDisplayed(); compose.onNodeWithText("A2",substring=true).assertIsDisplayed(); compose.onNodeWithText("B1",substring=true).assertDoesNotExist()
@@ -159,7 +159,7 @@ class Stage3DailyOperationsUiTest {
         val viewModel=ServiceLoopViewModel(repository){}
         compose.runOnUiThread { compose.activity.setContent{ServiceLoopTheme{ServiceLoopApp(viewModel)}} }
         compose.waitUntil(5_000){compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithText("Customers").performClick()
+        compose.onNodeWithText("Register").performClick()
         compose.waitUntil(5_000){compose.onAllNodesWithText("Handoff customer",substring=true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Handoff customer",substring=true).performClick()
         if(navigateToSite) compose.onNodeWithText("Handoff site",substring=true).performClick()

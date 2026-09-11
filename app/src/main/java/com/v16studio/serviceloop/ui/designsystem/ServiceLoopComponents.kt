@@ -130,16 +130,16 @@ fun <T> ServiceLoopContentTabs(
                 Box(
                     Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("content-tab-$label")
                         .clip(RoundedCornerShape(topStart = ServiceLoopUiTokens.Radius.field, topEnd = ServiceLoopUiTokens.Radius.field))
-                        .background(if (active) c.surface else Color.Transparent)
+                        .background(if (active) c.canvas else Color.Transparent)
                         .drawBehind {
                             if (active) {
-                                val stroke = ServiceLoopUiTokens.Stroke.outline.toPx()
+                                val stroke = ServiceLoopUiTokens.Stroke.tab.toPx()
                                 val radius = ServiceLoopUiTokens.Radius.field.toPx()
-                                drawLine(c.outlineControl, Offset(0f, size.height), Offset(0f, radius), stroke)
-                                drawArc(c.outlineControl, 180f, 90f, false, Offset.Zero, Size(radius * 2, radius * 2), style = Stroke(stroke))
-                                drawLine(c.outlineControl, Offset(radius, 0f), Offset(size.width - radius, 0f), stroke)
-                                drawArc(c.outlineControl, 270f, 90f, false, Offset(size.width - radius * 2, 0f), Size(radius * 2, radius * 2), style = Stroke(stroke))
-                                drawLine(c.outlineControl, Offset(size.width, radius), Offset(size.width, size.height), stroke)
+                                drawLine(c.outlineDecorative, Offset(0f, size.height), Offset(0f, radius), stroke)
+                                drawArc(c.outlineDecorative, 180f, 90f, false, Offset.Zero, Size(radius * 2, radius * 2), style = Stroke(stroke))
+                                drawLine(c.outlineDecorative, Offset(radius, 0f), Offset(size.width - radius, 0f), stroke)
+                                drawArc(c.outlineDecorative, 270f, 90f, false, Offset(size.width - radius * 2, 0f), Size(radius * 2, radius * 2), style = Stroke(stroke))
+                                drawLine(c.outlineDecorative, Offset(size.width, radius), Offset(size.width, size.height), stroke)
                             }
                         }
                         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
@@ -151,7 +151,7 @@ fun <T> ServiceLoopContentTabs(
             }
         },
         modifier = modifier.fillMaxWidth()
-            .drawBehind { drawLine(c.outlineControl, Offset(0f, size.height - ServiceLoopUiTokens.Stroke.outline.toPx()), Offset(size.width, size.height - ServiceLoopUiTokens.Stroke.outline.toPx()), ServiceLoopUiTokens.Stroke.outline.toPx()) },
+            .drawBehind { drawLine(c.outlineDecorative, Offset(0f, size.height - ServiceLoopUiTokens.Stroke.tab.toPx()), Offset(size.width, size.height - ServiceLoopUiTokens.Stroke.tab.toPx()), ServiceLoopUiTokens.Stroke.tab.toPx()) },
     ) { measurables, constraints ->
         if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
         val gapPx = gap.roundToPx()
@@ -219,13 +219,12 @@ fun <T> ServiceLoopFilterSelector(
 ) {
     var expanded by rememberSaveable(label) { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selected }?.second.orEmpty()
-    val colors = LocalServiceLoopTokens.current
     Box(modifier) {
         Surface(
             onClick = { expanded = true },
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-            color = colors.selection,
-            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
+            color = ServiceLoopFilterSelectorContract.surface,
+            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, ServiceLoopFilterSelectorContract.outline),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
                 .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
@@ -239,14 +238,14 @@ fun <T> ServiceLoopFilterSelector(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-                    Text(label, style = ServiceLoopUiTokens.Type.meta, color = colors.textSecondary)
-                    Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = colors.textPrimary)
+                    Text(label, style = ServiceLoopUiTokens.Type.meta, color = ServiceLoopFilterSelectorContract.secondaryInk)
+                    Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = ServiceLoopFilterSelectorContract.primaryInk)
                 }
                 ServiceLoopIcon(
                     ServiceLoopIcons.Dropdown,
                     null,
                     Modifier.size(ServiceLoopUiTokens.Size.icon),
-                    colors.icon,
+                    ServiceLoopFilterSelectorContract.accentInk,
                 )
             }
         }
@@ -257,6 +256,7 @@ fun <T> ServiceLoopFilterSelector(
                 min = ServiceLoopUiTokens.Size.menuMinWidth,
                 max = ServiceLoopUiTokens.Size.menuMaxWidth,
             ),
+            containerColor = ServiceLoopFilterSelectorContract.surface,
         ) {
             options.forEach { (value, optionLabel) ->
                 val isSelected = value == selected
@@ -267,7 +267,7 @@ fun <T> ServiceLoopFilterSelector(
                             style = ServiceLoopUiTokens.Type.body.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             ),
-                            color = if (isSelected) colors.onSelection else colors.textPrimary,
+                            color = if (isSelected) ServiceLoopFilterSelectorContract.accentInk else ServiceLoopFilterSelectorContract.primaryInk,
                         )
                     },
                     onClick = {
@@ -279,15 +279,15 @@ fun <T> ServiceLoopFilterSelector(
                             ServiceLoopIcon(
                                 ServiceLoopIcons.SelectionCheck,
                                 null,
-                                Modifier.size(ServiceLoopUiTokens.Size.iconSmall),
-                                colors.onSelection,
+                                Modifier.size(ServiceLoopFilterSelectorContract.menuCheckSize),
+                                ServiceLoopFilterSelectorContract.accentInk,
                             )
                         } else {
-                            Spacer(Modifier.width(ServiceLoopUiTokens.Size.iconSmall))
+                            Spacer(Modifier.width(ServiceLoopFilterSelectorContract.menuCheckSize))
                         }
                     },
                     modifier = Modifier
-                        .background(if (isSelected) colors.selection else Color.Transparent)
+                        .background(if (isSelected) ServiceLoopFilterSelectorContract.selectedContainer else Color.Transparent)
                         .then(if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${optionLabel.filter { it.isLetterOrDigit() }.lowercase()}"))
                         .semantics { this.selected = isSelected },
                 )

@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -122,6 +123,17 @@ class ServiceLoopAdaptiveTabsTest {
         compose.waitUntil(5_000) { viewModel.state.value.dueServicesReady }
         compose.onNodeWithText("P-RETRY · Maintenance", substring = true).assertIsDisplayed()
         assertEquals(2, repository.subscriptions)
+    }
+
+    @Test fun registerRootKeepsTheCustomerDomainTab() {
+        val viewModel = ServiceLoopViewModel(RetryRepository()) {}
+        compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
+
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Register").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("root-customers").assertIsDisplayed()
+        compose.onNodeWithTag("content-tab-Customers").assertIsDisplayed()
+        compose.onNodeWithText("Customers").assertIsDisplayed()
     }
 
     @Test fun dueServiceSelectorsAreBalancedAtPhoneWidthAndStackSafelyForLargeText() {

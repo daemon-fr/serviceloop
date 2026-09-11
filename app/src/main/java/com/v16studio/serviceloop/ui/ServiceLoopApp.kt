@@ -166,7 +166,7 @@ private const val CUSTOMERS = "customers"
 private enum class RootDestination(val route: String, val label: String) {
     HOME("home", "Home"),
     WORK("work", "Work"),
-    CUSTOMERS("customers", "Customers"),
+    CUSTOMERS("customers", "Register"),
 }
 
 internal enum class WorkTab(val label: String) {
@@ -486,8 +486,11 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
     val initialVisitDate = VisitDateFilter.entries.firstOrNull { it.name == contextualFilter }
         ?: if (initialVisitStatus == VisitStatusFilter.ALL) VisitDateFilter.TODAY else VisitDateFilter.ALL
     val initialFollowUpDate = FollowUpDateFilter.entries.firstOrNull { it.name == contextualFilter } ?: FollowUpDateFilter.ALL
-    Column(Modifier.fillMaxSize()) {
-        ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected, Modifier.padding(16.dp, 12.dp, 16.dp, 0.dp))
+    val colors = LocalServiceLoopTokens.current
+    Column(Modifier.fillMaxSize().background(colors.canvas)) {
+        Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp)) {
+            ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
+        }
         when (tab) {
             WorkTab.DUE_SERVICES -> {
                 val contextualDueBucket = runCatching { com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty()) }.getOrNull()
@@ -636,23 +639,25 @@ internal fun FollowUpsWorkScreen(
 @Composable
 private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
-    LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}); Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = ServiceLoopUiTokens.Space.section)) }
+    val colors = LocalServiceLoopTokens.current
+    LazyColumn(contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}) } }
+        item { Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
         item {
-            when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().testTag("add-equipment-from-register")); else -> Unit }
+            when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-equipment-from-register")); else -> Unit }
         }
         when (tab) {
             "CUSTOMERS" -> {
-            if (customers.isEmpty()) item { Text("Add a customer to begin.") }
-            items(customers) { item -> ServiceLoopEntityRecord(item.name,item.reference,"${item.siteCount} site · ${item.equipmentCount} equipment"){nav.navigate("customer/${item.id}")} }
+            if (customers.isEmpty()) item { Text("Add a customer to begin.", Modifier.padding(horizontal = 16.dp)) }
+            items(customers) { item -> ServiceLoopEntityRecord(item.name,item.reference,"${item.siteCount} site · ${item.equipmentCount} equipment", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("customer/${item.id}")} }
             }
             "SITES" -> {
-                if (sites.isEmpty()) item { Text("No sites yet.") }
-                items(sites) { item -> ServiceLoopEntityRecord("${item.reference} · ${item.name}",item.customerName,"${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment"){nav.navigate("site/${item.id}")} }
+                if (sites.isEmpty()) item { Text("No sites yet.", Modifier.padding(horizontal = 16.dp)) }
+                items(sites) { item -> ServiceLoopEntityRecord("${item.reference} · ${item.name}",item.customerName,"${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("site/${item.id}")} }
             }
             else -> {
-            if (equipment.isEmpty()) item { Text("Add an equipment item to begin.") }
-            items(equipment) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}","${item.customerName} · ${item.siteName}","Next due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
+            if (equipment.isEmpty()) item { Text("Add an equipment item to begin.", Modifier.padding(horizontal = 16.dp)) }
+            items(equipment) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}","${item.customerName} · ${item.siteName}","Next due ${item.nearestDueDate ?: "not scheduled"}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("equipment/${item.id}")} }
             }
         }
     }
@@ -945,21 +950,21 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
     val rendition = detail?.report
     if (detail == null || rendition == null || rendition.status !in setOf("READY", "MISSING")) return HonestPlaceholder(padding, "Report file is not ready")
     val context = LocalContext.current; val file = remember(rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
+    val colors = LocalServiceLoopTokens.current
     var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }; var supersededShareAcknowledged by rememberSaveable(rendition.id) { mutableStateOf(false) }
     LaunchedEffect(file, pageIndex, textView) {
         if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
     }
     Column(Modifier.padding(padding).fillMaxSize()) {
     Text(if (missing) "File missing · Structured report remains available" else "PDF file ready", modifier = Modifier.fillMaxWidth().background(if(missing) LocalServiceLoopColors.current.errorTint else LocalServiceLoopColors.current.confirmedTint).padding(10.dp))
-    LazyColumn(Modifier.weight(1f).testTag("report-preview-list"), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }
-        item { ServiceLoopContentTabs(listOf(false to "PDF view",true to "Text view"),textView,{textView=it},Modifier.testTag("report-view-tabs")) }
-        if (textView) item { StructuredReportText(detail) }
-        else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error) }
-        else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth()) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
-        if (historical && !detail.voided) item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }); Text("I understand this is a superseded historical report") } }
-        if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth()) { Text("Recreate from this fixed revision") } }
-        item { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(reportShareIntent(uri,email),if(email==null)"Share customer service record" else "Send service report to office"))}; Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Send to office")}; Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Generate and share the current void notice. Previously shared files cannot be revoked." else if(historical)"Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.",style=MaterialTheme.typography.bodySmall) }
+    LazyColumn(Modifier.weight(1f).testTag("report-preview-list"), contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Column(Modifier.padding(horizontal = 12.dp)) { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }; ServiceLoopContentTabs(listOf(false to "PDF view",true to "Text view"),textView,{textView=it},Modifier.testTag("report-view-tabs")) } }
+        if (textView) item { Box(Modifier.padding(horizontal = 12.dp)) { StructuredReportText(detail) } }
+        else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
+        else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth().padding(horizontal = 12.dp)) } }; item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
+        if (historical && !detail.voided) item { Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }); Text("I understand this is a superseded historical report") } }
+        if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { Text("Recreate from this fixed revision") } }
+        item { Column(Modifier.padding(horizontal = 12.dp)) { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(reportShareIntent(uri,email),if(email==null)"Share customer service record" else "Send service report to office"))}; Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Send to office")}; Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Generate and share the current void notice. Previously shared files cannot be revoked." else if(historical)"Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.",style=MaterialTheme.typography.bodySmall) } }
     }
     }
 }
