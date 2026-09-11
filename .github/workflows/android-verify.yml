@@ -28,9 +28,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Make Gradle wrapper executable on Linux runner
-        run: chmod +x gradlew
-
       - name: Set up JDK 20
         uses: actions/setup-java@v4
         with:
@@ -68,6 +65,9 @@ jobs:
           python3 tools/phosphor/test_phosphor_tool.py
           python3 tools/phosphor/phosphor_tool.py generate
           git diff --exit-code
+
+      - name: Make Gradle wrapper executable on Linux runner
+        run: chmod +x gradlew
 
       - name: Show locked Gradle and Java versions
         run: ./gradlew --version
