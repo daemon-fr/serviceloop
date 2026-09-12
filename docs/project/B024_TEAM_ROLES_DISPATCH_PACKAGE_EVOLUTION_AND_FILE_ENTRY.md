@@ -42,4 +42,3 @@ This pass does not implement v4 because it requires coordinated codec, canonical
 - **Equipment instructions/context:** potentially useful. Prefer a deliberately selected dispatch instruction snapshot per item, separate from local private equipment notes. Do not export all equipment notes.
 - **Reusable templates:** do not export as editable master data. Export immutable, referenced inspection snapshots as described above.
 - **Attachments/photos/history/reports/follow-ups:** not justified as automatic assigned-work context. They remain excluded unless a later explicit handoff workflow defines selection, ownership, size, privacy, and retry behavior.
-
