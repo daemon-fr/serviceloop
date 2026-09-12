@@ -14,11 +14,14 @@ import androidx.activity.viewModels
 import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
+import com.v16studio.serviceloop.data.INSPECTION_TEMPLATES_MIME
 
 class MainActivity : ComponentActivity() {
     private var notificationRoute by mutableStateOf<String?>(null)
     private var incomingWorkPackage by mutableStateOf<String?>(null)
     private var incomingWorkPackageEvent by mutableStateOf(0)
+    private var incomingInspectionTemplates by mutableStateOf<String?>(null)
+    private var incomingInspectionTemplatesEvent by mutableStateOf(0)
     private val viewModel: ServiceLoopViewModel by viewModels {
         ServiceLoopViewModel.Factory((application as ServiceLoopApplication).container)
     }
@@ -30,7 +33,7 @@ class MainActivity : ComponentActivity() {
         acceptWorkPackageIntent(intent)
         setContent {
             ServiceLoopTheme(appearancePreferences = (application as ServiceLoopApplication).container.appearancePreferences) {
-                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent, (application as ServiceLoopApplication).container.appearancePreferences)
+                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent, (application as ServiceLoopApplication).container.appearancePreferences)
             }
         }
     }
@@ -56,6 +59,10 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java) else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
             else -> null
         }
-        uri?.let { incomingWorkPackage = it.toString(); incomingWorkPackageEvent++ }
+        uri?.let {
+            val isTemplates = intent?.type == INSPECTION_TEMPLATES_MIME || it.path?.lowercase()?.endsWith(".slinsp") == true
+            if (isTemplates) { incomingInspectionTemplates = it.toString(); incomingInspectionTemplatesEvent++ }
+            else { incomingWorkPackage = it.toString(); incomingWorkPackageEvent++ }
+        }
     }
 }

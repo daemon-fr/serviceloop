@@ -55,6 +55,13 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import androidx.core.content.FileProvider
 import com.v16studio.serviceloop.domain.*
+import com.v16studio.serviceloop.data.InspectionTemplateCodec
+import com.v16studio.serviceloop.data.InspectionTemplateExchangeService
+import com.v16studio.serviceloop.data.InspectionTemplateImportClassification
+import com.v16studio.serviceloop.data.InspectionTemplateImportPreview
+import com.v16studio.serviceloop.data.InspectionTemplateTransfer
+import com.v16studio.serviceloop.data.INSPECTION_TEMPLATES_MIME
+import com.v16studio.serviceloop.ServiceLoopApplication
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
@@ -274,8 +281,96 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
 }
 
 @Composable
-internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingValues, nav: NavHostController) {
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Button({ nav.navigate("template/new") }, Modifier.fillMaxWidth()) { Text("Create inspection template") } }; if (values.isEmpty()) item { Text("No reusable templates") }; items(values) { template -> ServiceLoopEntityRecord("${template.reference} · ${template.name}",metadata="Revision ${template.revisionNumber} · ${template.itemCount} items",status=template.state){nav.navigate("template/${template.id}")} } }
+internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingValues, nav: NavHostController, viewModel: ServiceLoopViewModel? = null, incomingTemplates: String? = null) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exchange = remember { InspectionTemplateExchangeService((context.applicationContext as ServiceLoopApplication).container.database) }
+    val role = remember { context.teamRole() }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var preview by remember { mutableStateOf<InspectionTemplateImportPreview?>(null) }
+    var createSeparate by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { input -> exchange.preview(input.readBounded(InspectionTemplateCodec.MAX_BYTES) ?: error("Selected file is too large")) }
+                            ?: error("Selected file is not readable")
+                    }
+                }
+                result.onSuccess { preview = it; createSeparate = emptySet() }.onFailure { message = it.message }
+            }
+        }
+    }
+    LaunchedEffect(incomingTemplates) {
+        if (incomingTemplates != null) {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(Uri.parse(incomingTemplates))?.use { input -> exchange.preview(input.readBounded(InspectionTemplateCodec.MAX_BYTES) ?: error("Received inspection template file is too large")) }
+                        ?: error("Received inspection template file is not readable")
+                }
+            }
+            result.onSuccess { preview = it; createSeparate = emptySet() }.onFailure { message = it.message }
+        }
+    }
+    preview?.let { incoming ->
+        AlertDialog(
+            modifier = Modifier.testTag("inspection-template-import-preview"),
+            onDismissRequest = { preview = null },
+            title = { Text("Import inspection templates") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Review the current-only .slinsp package before saving it locally.")
+                    incoming.entries.forEach { entry ->
+                        Text("${entry.transfer.reference} · ${entry.transfer.name}")
+                        Text("Revision ${entry.transfer.revision} · ${entry.transfer.items.size} items · ${entry.classification.name.replace('_', ' ')}")
+                        if (entry.classification == InspectionTemplateImportClassification.CONFLICT) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(entry.transfer.reference in createSeparate, { checked -> createSeparate = if (checked) createSeparate + entry.transfer.reference else createSeparate - entry.transfer.reference }, Modifier.testTag("create-separate-${entry.transfer.reference}"))
+                                Text("Create separate")
+                            }
+                        }
+                    }
+                }
+            },
+            dismissButton = { TextButton({ preview = null }) { Text("Cancel") } },
+            confirmButton = {
+                Button({
+                    scope.launch {
+                        val result = runCatching { withContext(Dispatchers.IO) { exchange.import(incoming, createSeparate) } }
+                        result.onSuccess { imported ->
+                            message = "Imported ${imported.importedReferences.size} inspection template${if (imported.importedReferences.size == 1) "" else "s"}. Exact matches were left unchanged."
+                            preview = null
+                            viewModel?.loadTemplates()
+                        }.onFailure { message = it.message }
+                    }
+                }, enabled = incoming.canImport(createSeparate), modifier = Modifier.testTag("import-inspection-templates")) { Text("Import selected") }
+            },
+        )
+    }
+    LazyColumn(Modifier.padding(padding).testTag("inspection-templates"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Button({ nav.navigate("template/new") }, Modifier.fillMaxWidth()) { Text("Create inspection template") }
+            if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) {
+                Spacer(Modifier.height(8.dp))
+                Text("Inspection templates", style = MaterialTheme.typography.titleMedium)
+                Text("Share reusable inspection definitions only. A work package still carries the immutable snapshot used by its Visit.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
+                    OutlinedButton({ scope.launch { runCatching { val export = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { InspectionTemplateCodec.encode(export) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slinsp", INSPECTION_TEMPLATES_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onFailure { message = it.message } } }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("export-inspection-templates")) { Text("Export selected") }
+                }
+            }
+            message?.let { Text(it, color = if (it.startsWith("Imported")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, modifier = Modifier.testTag("inspection-template-message")) }
+        }
+        if (values.isEmpty()) item { Text("No reusable templates") }
+        items(values, key = { it.id }) { template ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
+                ServiceLoopEntityRecord("${template.reference} · ${template.name}", metadata = "Revision ${template.revisionNumber} · ${template.itemCount} items", status = template.state, modifier = Modifier.weight(1f)) { nav.navigate("template/${template.id}") }
+            }
+        }
+    }
 }
 
 @Composable
