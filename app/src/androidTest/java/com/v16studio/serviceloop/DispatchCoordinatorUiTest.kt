@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.setContent
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,9 +42,9 @@ import org.junit.runner.RunWith
 class DispatchCoordinatorUiTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
     private val prefs get()=compose.activity.getSharedPreferences(DISPATCH_PREFS,0)
-    private var coordinatorWasEnabled=false
-    @Before fun off(){coordinatorWasEnabled=prefs.getBoolean(COORDINATOR_ENABLED,false);prefs.edit().putBoolean(COORDINATOR_ENABLED,false).commit()}
-    @After fun restorePreference(){prefs.edit().putBoolean(COORDINATOR_ENABLED,coordinatorWasEnabled).commit()}
+    private var previousRole:String?=null
+    @Before fun off(){previousRole=prefs.getString(TEAM_ROLE,null);prefs.edit().putString(TEAM_ROLE,TeamRole.SOLO.name).remove(COORDINATOR_ENABLED).commit()}
+    @After fun restorePreference(){prefs.edit().apply{if(previousRole==null)remove(TEAM_ROLE) else putString(TEAM_ROLE,previousRole)}.commit()}
     private fun capture(tag:String,name:String){
         val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),name)
         var lastFailure:Throwable?=null
@@ -86,6 +88,63 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
+    }
+
+    @Test fun memberExternalPackageOpensImportReview(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit() }
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Import work package").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
+        compose.onNodeWithText("Work package received").assertDoesNotExist()
+    }
+
+    @Test fun soloExternalPackageShowsRoleExplanationWithoutImport(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
+        compose.runOnUiThread { assertEquals(TeamRole.SOLO, compose.activity.teamRole()) }
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Work package received").assertIsDisplayed()
+        compose.onNodeWithText("Work packages are imported in Member mode.").assertIsDisplayed()
+        compose.onNodeWithText("Import work package").assertDoesNotExist()
+        compose.onNodeWithTag("external-package-open-role").performClick()
+        compose.onNodeWithTag("team-role-settings").assertIsDisplayed()
+        compose.onNodeWithTag("team-role-member").assertIsDisplayed()
+    }
+
+    @Test fun soloExternalSendPackageShowsSameExplanation(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_SEND).setType(WORK_PACKAGE_MIME).putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///sdcard/Download/sample.slwork"))) }
+        compose.onNodeWithText("Work package received").assertIsDisplayed()
+        compose.onNodeWithText("Work packages are imported in Member mode.").assertIsDisplayed()
+        compose.onNodeWithText("Import work package").assertDoesNotExist()
+    }
+
+    @Test fun coordinatorExternalPackageShowsRoleExplanationWithoutImport(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-coordinator").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.COORDINATOR.name).commit() }
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Work package received").assertIsDisplayed()
+        compose.onNodeWithText("Import work package").assertDoesNotExist()
     }
 
     @Test fun listFirstOutboxHandlesLargeDirectoryAndExplicitSelection(){

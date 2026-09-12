@@ -134,6 +134,9 @@ object ServiceLoopFilterSelectorContract {
     val menuCheckSize = ServiceLoopUiTokens.Size.filterMenuCheck
 }
 
+internal fun serviceLoopFilterSelectorOutline(colors: ServiceLoopColorRoles): Color =
+    if (colors.surface == ServiceLoopUiTokens.LightColors.surface) colors.recordBorder else colors.selectionOutline
+
 object ServiceLoopButtonContract {
     val radius = ServiceLoopUiTokens.Radius.field
     val horizontalPadding = ServiceLoopUiTokens.Space.xl

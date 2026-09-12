@@ -18,6 +18,7 @@ import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 class MainActivity : ComponentActivity() {
     private var notificationRoute by mutableStateOf<String?>(null)
     private var incomingWorkPackage by mutableStateOf<String?>(null)
+    private var incomingWorkPackageEvent by mutableStateOf(0)
     private val viewModel: ServiceLoopViewModel by viewModels {
         ServiceLoopViewModel.Factory((application as ServiceLoopApplication).container)
     }
@@ -29,12 +30,12 @@ class MainActivity : ComponentActivity() {
         acceptWorkPackageIntent(intent)
         setContent {
             ServiceLoopTheme {
-                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage)
+                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent)
             }
         }
     }
 
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); acceptReminderIntent(intent); acceptWorkPackageIntent(intent) }
+    public override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); acceptReminderIntent(intent); acceptWorkPackageIntent(intent) }
 
     override fun onResume() { super.onResume(); viewModel.onAppResumed() }
 
@@ -51,10 +52,10 @@ class MainActivity : ComponentActivity() {
 
     private fun acceptWorkPackageIntent(intent: Intent?) {
         val uri = when (intent?.action) {
-            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_VIEW -> intent.data ?: intent.clipData?.getItemAt(0)?.uri
             Intent.ACTION_SEND -> if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java) else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
             else -> null
         }
-        uri?.let { incomingWorkPackage = it.toString() }
+        uri?.let { incomingWorkPackage = it.toString(); incomingWorkPackageEvent++ }
     }
 }

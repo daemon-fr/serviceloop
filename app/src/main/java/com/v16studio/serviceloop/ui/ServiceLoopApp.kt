@@ -88,6 +88,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
@@ -185,7 +187,7 @@ internal enum class WorkTab(val label: String) {
 }
 
 @Composable
-fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null) {
+fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0) {
     val state by viewModel.state.collectAsState()
     if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
@@ -193,8 +195,10 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         if (!state.restrictedRecoveryState && notificationRoute != null) nav.navigate(notificationRoute) { launchSingleTop = true }
     }
     val context = LocalContext.current
-    LaunchedEffect(incomingWorkPackage, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingWorkPackage != null && context.teamRole() == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
+    val incomingRole = remember(incomingWorkPackage) { incomingWorkPackage?.let { context.teamRole() } }
+    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent) { mutableStateOf(incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) }
+    LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
+        if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
     }
     NavHost(
         navController = nav,
@@ -374,6 +378,17 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
                 }
             }
         }
+    }
+    if (!state.restrictedRecoveryState && showExternalRoleDialog) {
+        AlertDialog(
+            onDismissRequest = { showExternalRoleDialog = false },
+            title = { Text("Work package received") },
+            text = { Text("Work packages are imported in Member mode.") },
+            confirmButton = {
+                Button({ showExternalRoleDialog = false; nav.navigate("dispatch/settings") }, Modifier.testTag("external-package-open-role")) { Text("Open Team role settings") }
+            },
+            dismissButton = { TextButton({ showExternalRoleDialog = false }) { Text("Not now") } },
+        )
     }
 }
 
@@ -914,6 +929,10 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
 @Composable
 private fun ReminderToggle(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, onChecked); Text(label) }
 
+internal val summaryDayGap = 4.dp
+internal fun summaryDaysUseSingleRow(maxWidth: Dp, fontScale: Float): Boolean =
+    fontScale < 1.3f && maxWidth >= ServiceLoopUiTokens.Size.touchMin * 7 + summaryDayGap * 6
+
 @Composable
 private fun SummaryDayChoices(value: ReminderPreferences, onChanged: (ReminderPreferences) -> Unit) {
     val days = java.time.DayOfWeek.entries
@@ -924,10 +943,10 @@ private fun SummaryDayChoices(value: ReminderPreferences, onChanged: (ReminderPr
         modifier = Modifier.weight(1f).heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("summary-day-${day.name.lowercase()}"),
     )
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("summary-days")) {
-        if (maxWidth >= 350.dp) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { days.forEach { Day(it) } }
+        if (summaryDaysUseSingleRow(maxWidth, LocalDensity.current.fontScale)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(summaryDayGap)) { days.forEach { Day(it) } }
         else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.take(4).forEach { Day(it) } }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.drop(4).forEach { Day(it) } }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.take(4).forEach { Day(it) } }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.drop(4).forEach { Day(it) } }
         }
     }
 }

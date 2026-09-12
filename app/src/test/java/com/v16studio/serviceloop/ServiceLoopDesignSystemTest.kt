@@ -12,6 +12,12 @@ import org.junit.Test
 import java.io.File
 
 class ServiceLoopDesignSystemTest {
+    @Test fun filterSelectorOutlineUsesPaleTealLightAndVisibleTealDark() {
+        assertEquals(ServiceLoopUiTokens.LightColors.recordBorder, serviceLoopFilterSelectorOutline(ServiceLoopUiTokens.LightColors))
+        assertEquals(ServiceLoopUiTokens.DarkColors.selectionOutline, serviceLoopFilterSelectorOutline(ServiceLoopUiTokens.DarkColors))
+        assertNotEquals(ServiceLoopUiTokens.LightColors.outlineControl, serviceLoopFilterSelectorOutline(ServiceLoopUiTokens.LightColors))
+    }
+
     @Test fun brandStripWordmarkColorsHaveReadableContrastInBothThemes() {
         fun contrast(foreground:Color,background:Color):Float {
             val high=maxOf(foreground.luminance(),background.luminance())

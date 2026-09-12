@@ -248,13 +248,14 @@ fun <T> ServiceLoopFilterSelector(
     val secondaryInk = colors.textSecondary
     val accentInk = colors.action
     val selectedContainer = colors.selection
+    val selectorOutline = serviceLoopFilterSelectorOutline(colors)
     val selectedLabel = options.firstOrNull { it.first == selected }?.second.orEmpty()
     Box(modifier) {
         Surface(
             onClick = { expanded = true },
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
             color = selectorSurface,
-            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
+            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, selectorOutline),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
                 .then(if (testTag == null) Modifier else Modifier.testTag(testTag))

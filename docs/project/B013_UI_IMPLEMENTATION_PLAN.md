@@ -233,7 +233,7 @@ The Work-list Visit summary projection uses that durable `STARTED.oldServiceDate
 
 ### Owner inspection correction R3 — controls, filters, and action spacing
 
-- Shared filter selectors remain white in either appearance, with fixed dark-on-white ink and a restrained `#67B9B8` pale-teal outline; menus retain pale-teal selected rows and 16dp checks.
+- Shared filter selectors use the active theme surface and readable theme ink. Light mode retains a white surface with the pale-teal `recordBorder` outline (`#67B9B8`); dark mode uses the dark surface with the visible teal `selectionOutline` role. Menus retain theme-aware selected rows and 16dp checks.
 - Shared notebook tabs explicitly suppress touch ripple/pressed indication while preserving tab role, selected semantics, focus support, and immediate selection.
 - Full-width vertical command groups use `ServiceLoopActionStack` and the 8dp button-gap token. Service-plan, create-visit, equipment-management, customer/site management, and Dispatch editor command stacks use it.
 - Service-plan End plan is a purpose-specific danger-tonal command; concise Customer/Site lifecycle copy now says Archive/Restore only. Customer detail has an upper-section 16dp buffer before its notebook tabs and uses the heading Active follow-ups.

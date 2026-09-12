@@ -13,7 +13,7 @@ ServiceLoop persists one device-local role: `SOLO`, `MEMBER`, or `COORDINATOR`. 
 
 ## Android work-package entry
 
-The app declares bounded `ACTION_VIEW` support for the ServiceLoop work-package MIME type and `.slwork` content/file URIs, plus `ACTION_SEND` support for the custom MIME type. A received URI opens the existing import validation/review surface for a Member. It never silently applies a package. Providers that erase both the custom MIME type and filename may not resolve to ServiceLoop; broad `application/json` association is deliberately rejected because it would claim unrelated JSON files.
+The canonical work-package MIME is `application/vnd.serviceloop.work-package+json`. The app declares bounded `ACTION_VIEW` support for that MIME and `.slwork` content/file URIs, plus `ACTION_SEND` support for the same custom MIME type. A received URI opens the existing import validation/review surface for a Member. Solo and Coordinator receive an explicit explanation dialog with a link to Team role settings; they are never silently ignored, automatically switched, or imported. Providers that erase both the custom MIME type and filename may not resolve to ServiceLoop; broad `application/json` association is deliberately rejected because it would claim unrelated JSON files.
 
 ## Current package audit
 
