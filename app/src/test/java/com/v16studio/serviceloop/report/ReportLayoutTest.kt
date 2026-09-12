@@ -67,6 +67,49 @@ class ReportLayoutTest {
         assertTrue(pages.flatMap { it.lines }.count { it.style == FixedServiceRecordPdf.LineStyle.TABLE_ROW } >= 120)
     }
 
+    @Test fun sectionMovesWithSubsectionAndFirstBodyLineAtExactBoundary() {
+        val boundary = (0..1000).firstNotNullOfOrNull { paddingWords ->
+            val pages = FixedServiceRecordPdf.layout(
+                report(listOf(line(1, "Maker Model Serial-1", "Routine work"))).copy(
+                    businessContact = "Contact ${"padding ".repeat(paddingWords)}".trim(),
+                ),
+            )
+            val sectionPageIndex = pages.indexOfFirst { page ->
+                page.lines.any { it.style == FixedServiceRecordPdf.LineStyle.SECTION && it.text == "Work completed" }
+            }
+            if (sectionPageIndex <= 0) return@firstNotNullOfOrNull null
+
+            val remainingHeight = FixedServiceRecordPdf.CONTENT_HEIGHT - pages[sectionPageIndex - 1].contentHeight
+            if (
+                remainingHeight >= FixedServiceRecordPdf.LineStyle.SECTION.height + FixedServiceRecordPdf.LineStyle.SUBSECTION.height &&
+                remainingHeight < FixedServiceRecordPdf.LineStyle.SECTION.height + FixedServiceRecordPdf.LineStyle.SUBSECTION.height + FixedServiceRecordPdf.LineStyle.BODY.height
+            ) {
+                pages to sectionPageIndex
+            } else {
+                null
+            }
+        } ?: error("Could not construct the requested SECTION/SUBSECTION boundary")
+
+        val pages = boundary.first
+        val sectionPage = pages[boundary.second]
+        val sectionIndex = sectionPage.lines.indexOfFirst {
+            it.style == FixedServiceRecordPdf.LineStyle.SECTION && it.text == "Work completed"
+        }
+
+        assertTrue(sectionIndex >= 0)
+        assertEquals(FixedServiceRecordPdf.LineStyle.SUBSECTION, sectionPage.lines[sectionIndex + 1].style)
+        assertTrue(sectionPage.lines[sectionIndex + 1].text.startsWith("01 ·"))
+        assertEquals(FixedServiceRecordPdf.LineStyle.BODY, sectionPage.lines[sectionIndex + 2].style)
+        assertTrue(sectionPage.lines[sectionIndex + 2].text.startsWith("Equipment identification:"))
+        assertFalse(
+            pages[boundary.second - 1].lines.last().style in setOf(
+                FixedServiceRecordPdf.LineStyle.SECTION,
+                FixedServiceRecordPdf.LineStyle.SUBSECTION,
+                FixedServiceRecordPdf.LineStyle.TABLE_HEADER,
+            ),
+        )
+    }
+
     @Test fun customerReportUsesOnlyShortTechnicianReference() {
         val fullId="12345678-1234-1234-1234-123456789abc"
         val model=report(listOf(line(1,"Pump","Serviced").copy(dispatchItemId="dispatch-item",dispatchAssignment="Alex"))).copy(dispatch=PublicDispatchProvenance("dispatch-visit",2,"JOB-7","Office",fullId,"John"))

@@ -196,19 +196,22 @@ object FixedServiceRecordPdf {
         val lines = buildLines(model).ifEmpty { listOf(ReportDrawLine("No public service content", LineStyle.BODY)) }
         val pages = mutableListOf<MutableList<ReportDrawLine>>(); var current = mutableListOf<ReportDrawLine>(); var used = 0f
         fun newPage() { if (current.isNotEmpty()) pages += current; current = mutableListOf(); used = 0f }
+        val headingStyles = setOf(LineStyle.SECTION, LineStyle.SUBSECTION, LineStyle.TABLE_HEADER)
+        fun requiredHeight(index: Int, line: ReportDrawLine): Float {
+            if (line.style !in headingStyles) return line.height
+
+            var height = line.height
+            var followingIndex = index + 1
+            while (followingIndex < lines.size && lines[followingIndex].style in headingStyles) {
+                height += lines[followingIndex].height
+                followingIndex++
+            }
+            if (followingIndex < lines.size) height += lines[followingIndex].height
+            return height
+        }
+
         lines.forEachIndexed { index, line ->
-            val next = lines.getOrNull(index + 1)
-            val keepWithNext = when (line.style) {
-                LineStyle.SECTION, LineStyle.SUBSECTION -> next != null
-                LineStyle.TABLE_HEADER -> next?.style == LineStyle.TABLE_ROW
-                else -> false
-            }
-            val chainedTableRow = line.style == LineStyle.SUBSECTION && next?.style == LineStyle.TABLE_HEADER && lines.getOrNull(index + 2)?.style == LineStyle.TABLE_ROW
-            val required = line.height + when {
-                chainedTableRow -> next.height + lines[index + 2].height
-                keepWithNext -> next!!.height
-                else -> 0f
-            }
+            val required = requiredHeight(index, line)
             if (current.isNotEmpty() && used + required > CONTENT_HEIGHT) newPage()
             if (current.isNotEmpty() && used + line.height > CONTENT_HEIGHT) newPage()
             current += line; used += line.height
