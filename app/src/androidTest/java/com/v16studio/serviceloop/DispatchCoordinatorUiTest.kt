@@ -134,6 +134,24 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithText("Import work package").assertDoesNotExist()
     }
 
+    @Test fun reopeningSameExternalPackageAfterBecomingMemberUsesFreshRole(){
+        val packageIntent = { Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/reopen.slwork"), WORK_PACKAGE_MIME) }
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit(); compose.activity.onNewIntent(packageIntent()) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("external-package-open-role").performClick()
+        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit(); compose.activity.onNewIntent(packageIntent()) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("dispatch-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
+        compose.onNodeWithText("Work package received").assertDoesNotExist()
+    }
+
     @Test fun coordinatorExternalPackageShowsRoleExplanationWithoutImport(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()

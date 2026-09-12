@@ -195,7 +195,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         if (!state.restrictedRecoveryState && notificationRoute != null) nav.navigate(notificationRoute) { launchSingleTop = true }
     }
     val context = LocalContext.current
-    val incomingRole = remember(incomingWorkPackage) { incomingWorkPackage?.let { context.teamRole() } }
+    val incomingRole = remember(incomingWorkPackage, incomingWorkPackageEvent) { incomingWorkPackage?.let { context.teamRole() } }
     var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent) { mutableStateOf(incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) }
     LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
         if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
