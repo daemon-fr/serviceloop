@@ -5,6 +5,7 @@
   },
   "icons": {
     "Add": "plus",
+    "Appearance": "circle-half",
     "Backup": "floppy-disk",
     "Back": "arrow-left",
     "Calendar": "calendar-dots",

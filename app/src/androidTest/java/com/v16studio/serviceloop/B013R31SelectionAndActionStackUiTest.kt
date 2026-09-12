@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,9 +26,12 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
+import com.v16studio.serviceloop.ui.setTeamRole
+import com.v16studio.serviceloop.ui.theme.AppearanceMode
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -147,6 +151,13 @@ class B013R31SelectionAndActionStackUiTest {
 class B013R31OwnerSurfaceRenderTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @After
+    fun restoreOwnerReviewPreferences() {
+        val app = compose.activity.application as ServiceLoopApplication
+        app.container.appearancePreferences.setMode(AppearanceMode.SYSTEM)
+        compose.activity.setTeamRole(com.v16studio.serviceloop.ui.TeamRole.SOLO)
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -161,6 +172,8 @@ class B013R31OwnerSurfaceRenderTest {
     @Test
     fun rendersDueReminderAndTechnicianSurfacesOnCanonicalDevice() {
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty() }
+        (compose.activity.application as ServiceLoopApplication).container.appearancePreferences.setMode(AppearanceMode.LIGHT)
+        compose.waitForIdle()
         capture("home.png")
         compose.onNodeWithText("Work").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("field-search-due-services").fetchSemanticsNodes().isNotEmpty() }
@@ -172,15 +185,48 @@ class B013R31OwnerSurfaceRenderTest {
         compose.onNodeWithText("Home").performClick()
         compose.onNodeWithText("Settings").performClick()
         capture("settings.png")
+        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithTag("appearance-settings").assertIsDisplayed()
+        capture("appearance-light.png")
+        androidx.test.espresso.Espresso.pressBack()
         compose.onNodeWithText("Reminders").performClick()
         compose.onNodeWithTag("reminder-settings").assertIsDisplayed()
         capture("reminder-settings.png")
+        compose.onNodeWithTag("reminder-settings").performScrollToNode(androidx.compose.ui.test.hasTestTag("appointment-lead-60"))
+        capture("reminder-presets.png")
+        compose.onNodeWithTag("reminder-settings").performScrollToNode(androidx.compose.ui.test.hasTestTag("save-reminders"))
+        capture("reminder-save-spacing.png")
 
         androidx.test.espresso.Espresso.pressBack()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithText("Open Technician identity").performClick()
+        compose.onNodeWithTag("team-role-solo").performClick()
+        capture("team-role-solo.png")
+        compose.onNodeWithTag("team-role-member").performClick()
         compose.onNodeWithTag("technician-identity").assertIsDisplayed()
-        capture("technician-identity.png")
+        capture("team-role-member.png")
+        compose.onNodeWithTag("team-role-coordinator").performClick()
+        compose.onNodeWithTag("technician-identity").assertDoesNotExist()
+        capture("team-role-coordinator.png")
+    }
+
+    @Test
+    fun rendersDarkRootWorkAppearanceAndReminderSurfacesOnCanonicalDevice() {
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("root-home").fetchSemanticsNodes().isNotEmpty() }
+        (compose.activity.application as ServiceLoopApplication).container.appearancePreferences.setMode(AppearanceMode.DARK)
+        compose.waitForIdle()
+        capture("dark-home.png")
+        compose.onNodeWithText("Work").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("field-search-due-services").fetchSemanticsNodes().isNotEmpty() }
+        capture("dark-work.png")
+        compose.onNodeWithText("Home").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithTag("appearance-settings").assertIsDisplayed()
+        capture("dark-appearance.png")
+        androidx.test.espresso.Espresso.pressBack()
+        compose.onNodeWithText("Reminders").performClick()
+        compose.onNodeWithTag("reminder-settings").assertIsDisplayed()
+        capture("dark-reminders.png")
     }
 
     @Test

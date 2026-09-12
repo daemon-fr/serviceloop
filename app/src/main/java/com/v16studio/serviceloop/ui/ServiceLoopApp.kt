@@ -129,6 +129,8 @@ import com.v16studio.serviceloop.domain.VisitStatusFilter
 import com.v16studio.serviceloop.domain.filterFollowUps
 import com.v16studio.serviceloop.domain.filterVisits
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
+import com.v16studio.serviceloop.ui.theme.AppearanceMode
+import com.v16studio.serviceloop.ui.theme.AppearancePreferences
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
@@ -141,6 +143,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDayToggle
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSavedStatus
@@ -187,14 +190,15 @@ internal enum class WorkTab(val label: String) {
 }
 
 @Composable
-fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0) {
+fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0, appearancePreferences: AppearancePreferences? = null) {
     val state by viewModel.state.collectAsState()
     if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
+    val context = LocalContext.current
+    val appearanceController = appearancePreferences ?: remember { AppearancePreferences(context) }
     LaunchedEffect(notificationRoute, state.restrictedRecoveryState) {
         if (!state.restrictedRecoveryState && notificationRoute != null) nav.navigate(notificationRoute) { launchSingleTop = true }
     }
-    val context = LocalContext.current
     val incomingRole = remember(incomingWorkPackage, incomingWorkPackageEvent) { incomingWorkPackage?.let { context.teamRole() } }
     var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent) { mutableStateOf(incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) }
     LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
@@ -288,7 +292,10 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         }
         composable("settings") {
             LaunchedEffect(Unit) { viewModel.loadReminderSettings() }
-            DetailScaffold("Settings", nav) { padding -> SettingsScreen(state, padding, nav) }
+            DetailScaffold("Settings", nav) { padding -> SettingsScreen(state, padding, nav, appearanceController) }
+        }
+        composable("appearance") {
+            DetailScaffold("Appearance", nav) { padding -> AppearanceSettingsScreen(padding, appearanceController) }
         }
         composable("reminders") {
             LaunchedEffect(Unit) { viewModel.loadReminderSettings() }
@@ -299,7 +306,6 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             DetailScaffold("Calendar integration", nav) { padding -> CalendarSettingsScreen(state, padding, viewModel) }
         }
         composable("dispatch/settings") { DetailScaffold("Team role settings",nav){DispatchSettings(it,nav)} }
-        composable("dispatch/identity") { DetailScaffold("Technician identity",nav){TechnicianIdentityScreen(it)} }
         composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
         composable("dispatch/teams") { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} }
         composable("dispatch/create") { DetailScaffold("Outbox",nav,topAction={ ServiceLoopPrimaryButton("New visit",{nav.navigate("dispatch/visit/new")},Modifier.testTag("dispatch-new-visit"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Add,null,Modifier.size(ServiceLoopUiTokens.Size.icon))}) }){DispatchOutboxScreen(it,nav,state.businessDate,showEmbeddedTopAction=false)} }
@@ -878,11 +884,48 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 }
 
 @Composable
-private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
+private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController, appearancePreferences: AppearancePreferences) {
+    val appearanceMode by appearancePreferences.mode.collectAsState()
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
+        item { SectionTitle("App"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
         item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.InspectionTemplates){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole){nav.navigate("dispatch/settings")} }
         item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar){nav.navigate("calendar")} }
         item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+    }
+}
+
+@Composable
+private fun AppearanceSettingsScreen(padding: PaddingValues, appearancePreferences: AppearancePreferences) {
+    val selected by appearancePreferences.mode.collectAsState()
+    LazyColumn(
+        Modifier.padding(padding).testTag("appearance-settings"),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
+        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+    ) {
+        item {
+            Text("Appearance", style = MaterialTheme.typography.titleLarge)
+            Text("Choose how ServiceLoop should appear. Changes apply immediately; no restart is required.")
+        }
+        AppearanceMode.entries.forEach { mode ->
+            item {
+                val description = "${mode.label} — ${mode.meaning}"
+                Row(
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                        .testTag("appearance-${mode.name.lowercase()}")
+                        .selectable(selected == mode, onClick = { appearancePreferences.setMode(mode) })
+                        .semantics { contentDescription = description }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected == mode, null)
+                    Column(Modifier.weight(1f)) {
+                        Text(mode.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(mode.meaning, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -920,9 +963,9 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
         item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); SummaryDayChoices(draft){draft=it}; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
         item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(0,7,14,30).map{it to "$it days"},draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
         item { Text("Summary content", fontWeight = FontWeight.Bold); ReminderToggle("Due services", draft.includeDueServices) { draft = draft.copy(includeDueServices = it) }; ReminderToggle("Visits", draft.includeVisits) { draft = draft.copy(includeVisits = it) }; ReminderToggle("Follow-ups", draft.includeFollowUps) { draft = draft.copy(includeFollowUps = it) }; ReminderToggle("Unfinished visits", draft.includeUnfinishedVisits) { draft = draft.copy(includeUnfinishedVisits = it) }; ReminderToggle("Backup reminder", draft.includeBackupReminder) { draft = draft.copy(includeBackupReminder = it) } }
-        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(120 to "2 hours",1440 to "1 day"),draft.defaultAppointmentLeadMinutes,{draft=draft.copy(defaultAppointmentLeadMinutes=it)}) }
+        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS, draft.defaultAppointmentLeadMinutes, { draft = draft.copy(defaultAppointmentLeadMinutes = it) }, testTagPrefix = "appointment-lead"); if (draft.defaultAppointmentLeadMinutes == ReminderPreferences.LEGACY_APPOINTMENT_LEAD_MINUTES) Text("Current saved lead: 2h. Choose a new preset to replace it.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("legacy-default-appointment-lead")) }
         item { ServiceLoopActionStack { OutlinedButton({ context.startActivity((context.applicationContext as com.v16studio.serviceloop.ServiceLoopApplication).container.reminderCoordinator.openAndroidSettingsIntent()) }, Modifier.fillMaxWidth()) { Text("Open Android notification settings") }; OutlinedButton(viewModel::sendTestNotification, Modifier.fillMaxWidth().testTag("send-test-notification")) { Text("Send test notification") } }; state.operationMessage?.let { Text(it) } }
-        item { SaveStateBanner(state.reminderSaveStatus); ServiceLoopActionStack { ServiceLoopPrimaryButton(if (state.reminderSaveStatus is SaveStatus.Saving) "Saving reminder settings" else "Save reminder settings", { if (parsedTime != null) viewModel.saveReminderSettings(normalized, requested) }, enabled = parsedTime != null && (!draft.dailySummaryEnabled || draft.summaryDaysMask and ReminderPreferences.ALL_DAYS != 0), busy = state.reminderSaveStatus is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().testTag("save-reminders")); TextButton({ nav.popBackStack() }, Modifier.fillMaxWidth()) { Text("Cancel / Back") } } }
+        item { SaveStateBanner(state.reminderSaveStatus); Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); ServiceLoopActionStack { ServiceLoopPrimaryButton(if (state.reminderSaveStatus is SaveStatus.Saving) "Saving reminder settings" else "Save reminder settings", { if (parsedTime != null) viewModel.saveReminderSettings(normalized, requested) }, enabled = parsedTime != null && (!draft.dailySummaryEnabled || draft.summaryDaysMask and ReminderPreferences.ALL_DAYS != 0), busy = state.reminderSaveStatus is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().testTag("save-reminders")); TextButton({ nav.popBackStack() }, Modifier.fillMaxWidth()) { Text("Cancel / Back") } } }
     }
 }
 
@@ -936,11 +979,11 @@ internal fun summaryDaysUseSingleRow(maxWidth: Dp, fontScale: Float): Boolean =
 @Composable
 private fun SummaryDayChoices(value: ReminderPreferences, onChanged: (ReminderPreferences) -> Unit) {
     val days = java.time.DayOfWeek.entries
-    @Composable fun RowScope.Day(day: java.time.DayOfWeek) = FilterChip(
+    @Composable fun RowScope.Day(day: java.time.DayOfWeek) = ServiceLoopDayToggle(
+        label = day.name.take(2),
         selected = value.includes(day),
-        onClick = { onChanged(value.copy(summaryDaysMask = value.summaryDaysMask xor (1 shl (day.value - 1)))) },
-        label = { Text(day.name.take(2), softWrap = false) },
-        modifier = Modifier.weight(1f).heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("summary-day-${day.name.lowercase()}"),
+        onSelectedChange = { onChanged(value.copy(summaryDaysMask = value.summaryDaysMask xor (1 shl (day.value - 1)))) },
+        modifier = Modifier.weight(1f).testTag("summary-day-${day.name.lowercase()}"),
     )
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("summary-days")) {
         if (summaryDaysUseSingleRow(maxWidth, LocalDensity.current.fontScale)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(summaryDayGap)) { days.forEach { Day(it) } }

@@ -28,6 +28,8 @@ class ServiceLoopDesignSystemTest {
         assertEquals(true,contrast(ServiceLoopUiTokens.LightColors.action,ServiceLoopUiTokens.LightColors.brandBand)>=4.5f)
         assertEquals(true,contrast(ServiceLoopUiTokens.DarkColors.textPrimary,ServiceLoopUiTokens.DarkColors.brandBand)>=4.5f)
         assertEquals(true,contrast(ServiceLoopUiTokens.DarkColors.action,ServiceLoopUiTokens.DarkColors.brandBand)>=4.5f)
+        assertEquals(Color.Black, serviceLoopBrandNeutral(ServiceLoopUiTokens.LightColors))
+        assertEquals(Color.White, serviceLoopBrandNeutral(ServiceLoopUiTokens.DarkColors))
     }
     @Test fun canonicalLightAndDarkRolesAreExact() {
         with(ServiceLoopUiTokens.LightColors) {

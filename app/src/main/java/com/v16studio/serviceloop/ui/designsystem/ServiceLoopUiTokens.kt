@@ -137,6 +137,9 @@ object ServiceLoopFilterSelectorContract {
 internal fun serviceLoopFilterSelectorOutline(colors: ServiceLoopColorRoles): Color =
     if (colors.surface == ServiceLoopUiTokens.LightColors.surface) colors.recordBorder else colors.selectionOutline
 
+fun serviceLoopBrandNeutral(colors: ServiceLoopColorRoles): Color =
+    if (colors === ServiceLoopUiTokens.LightColors) Color.Black else Color.White
+
 object ServiceLoopButtonContract {
     val radius = ServiceLoopUiTokens.Radius.field
     val horizontalPadding = ServiceLoopUiTokens.Space.xl

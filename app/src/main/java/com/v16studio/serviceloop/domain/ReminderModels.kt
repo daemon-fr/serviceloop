@@ -17,7 +17,7 @@ data class ReminderPreferences(
     val includeUnfinishedVisits: Boolean = true,
     val includeBackupReminder: Boolean = true,
     val appointmentAlertsEnabled: Boolean = false,
-    val defaultAppointmentLeadMinutes: Int = 120,
+    val defaultAppointmentLeadMinutes: Int = 180,
 ) {
     fun validate() {
         require(summaryHour in 0..23 && summaryMinute in 0..59) { "Choose a valid summary time" }
@@ -28,7 +28,19 @@ data class ReminderPreferences(
     fun includes(day: DayOfWeek) = summaryDaysMask and (1 shl (day.value - 1)) != 0
     companion object {
         val HORIZONS = setOf(0, 7, 14, 30)
-        val APPOINTMENT_LEADS = setOf(120, 1440)
+        /** The six user-facing appointment lead presets, in display order. */
+        val APPOINTMENT_LEAD_PRESETS = listOf(
+            60 to "1h",
+            180 to "3h",
+            360 to "6h",
+            720 to "12h",
+            1440 to "24h",
+            2880 to "48h",
+        )
+
+        /** Supported values include the former 2-hour value for safe legacy reads. */
+        val APPOINTMENT_LEADS = (APPOINTMENT_LEAD_PRESETS.map { it.first } + 120).toSet()
+        const val LEGACY_APPOINTMENT_LEAD_MINUTES = 120
         const val ALL_DAYS = 0x7f
     }
 }

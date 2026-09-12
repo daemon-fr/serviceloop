@@ -74,24 +74,23 @@ fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)?
 
 @Composable
 private fun BrandLine(color: Color, modifier: Modifier) = Canvas(modifier) {
-    val stroke = 1.dp.toPx()
-    drawLine(color.copy(alpha = .28f), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), stroke)
-    drawLine(color, Offset(size.width * .36f, size.height / 2), Offset(size.width, size.height / 2), stroke)
+    drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1.dp.toPx())
 }
 
 @Composable
 fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
     val c = LocalServiceLoopTokens.current
+    val brandNeutral = serviceLoopBrandNeutral(c)
     Row(
         modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.brandMin)
             .background(c.brandBand).padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BrandLine(c.textPrimary, Modifier.weight(1f).height(22.dp).testTag("brand-left-line"))
+        BrandLine(brandNeutral, Modifier.weight(1f).height(22.dp).testTag("brand-left-line"))
         Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
         Text(
             buildAnnotatedString {
-                withStyle(SpanStyle(color=c.textPrimary)) { append("Service") }
+                withStyle(SpanStyle(color=brandNeutral)) { append("Service") }
                 withStyle(SpanStyle(color=c.action)) { append("Loop") }
             },
             modifier=Modifier.testTag("serviceloop-wordmark"), fontSize=18.sp, lineHeight=22.sp,
@@ -99,6 +98,33 @@ fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
         BrandLine(c.action, Modifier.weight(1f).height(22.dp).testTag("brand-right-line"))
+    }
+}
+
+/** A compact, purpose-built weekday toggle. It intentionally has no FilterChip padding. */
+@Composable
+fun ServiceLoopDayToggle(
+    label: String,
+    selected: Boolean,
+    onSelectedChange: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalServiceLoopTokens.current
+    val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
+    Box(
+        modifier = modifier
+            .defaultMinSize(ServiceLoopUiTokens.Size.touchMin, ServiceLoopUiTokens.Size.touchMin)
+            .clip(shape)
+            .background(if (selected) colors.selection else colors.surface)
+            .border(
+                BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) colors.selectionOutline else colors.outlineControl),
+                shape,
+            )
+            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onSelectedChange() })
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = ServiceLoopUiTokens.Type.label, color = if (selected) colors.action else colors.textPrimary, textAlign = TextAlign.Center, softWrap = false)
     }
 }
 

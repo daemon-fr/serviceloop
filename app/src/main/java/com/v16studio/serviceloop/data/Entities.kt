@@ -149,7 +149,7 @@ data class WorkingVisitEntity(
     val cancelledAtEpochMillis: Long? = null,
     /** Why a canceled Visit became canceled; null for non-canceled Visits and legacy rows. */
     val cancellationOrigin: String? = null,
-    /** null uses the saved default; 0 disables this Visit; otherwise 120 or 1440. */
+    /** null uses the saved default; 0 disables this Visit; otherwise a supported lead, including legacy 120. */
     val appointmentReminderLeadMinutes: Int? = null,
 )
 
@@ -672,5 +672,5 @@ data class ReminderPreferencesEntity(
     val includeUnfinishedVisits: Boolean = true,
     val includeBackupReminder: Boolean = true,
     val appointmentAlertsEnabled: Boolean = false,
-    val defaultAppointmentLeadMinutes: Int = 120,
+    val defaultAppointmentLeadMinutes: Int = 180,
 )

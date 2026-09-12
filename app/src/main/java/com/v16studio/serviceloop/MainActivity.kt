@@ -29,8 +29,8 @@ class MainActivity : ComponentActivity() {
         acceptReminderIntent(intent)
         acceptWorkPackageIntent(intent)
         setContent {
-            ServiceLoopTheme {
-                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent)
+            ServiceLoopTheme(appearancePreferences = (application as ServiceLoopApplication).container.appearancePreferences) {
+                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent, (application as ServiceLoopApplication).container.appearancePreferences)
             }
         }
     }

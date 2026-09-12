@@ -34,6 +34,7 @@ class StageBRenderMatrixTest {
         val record=runBlocking{dao.finalRecordForVisit(FixtureIds.VISIT_1)} ?: error("V-001 final record fixture is required")
         val revision=runBlocking{dao.finalRevisions(record.id).first()}
         val route=mutableStateOf<String?>(null)
+        app.container.appearancePreferences.setMode(if (dark) com.v16studio.serviceloop.ui.theme.AppearanceMode.DARK else com.v16studio.serviceloop.ui.theme.AppearanceMode.LIGHT)
         val vm=ServiceLoopViewModel(app.container.repository,app.container.reportService,app.container.restrictedRecoveryState,app.container.businessDateSignal,app.container.reminderCoordinator,app.container.calendarCoordinator){app.container.startup.await()}
         compose.activity.setContent{ServiceLoopTheme(darkTheme=dark){ServiceLoopApp(vm,route.value)}}
         val shots=listOf(
@@ -48,9 +49,9 @@ class StageBRenderMatrixTest {
             Shot("B3","superseded-context","record-version/${record.id}/${revision.id}"),Shot("B3","recovery","data-recovery"),
             Shot("B3","backup","backup/create"),Shot("B3","restore-inspection","backup/restore"),Shot("B3","csv-export","csv/export"),
             Shot("B3","csv-import","csv/import"),Shot("B3","restricted-destructive","data/erase"),
-            Shot("B4","coordinator","dispatch/settings"),Shot("B4","technician-identity","dispatch/identity"),Shot("B4","teams","dispatch/teams"),
+            Shot("B4","coordinator","dispatch/settings"),Shot("B4","member-identity","dispatch/settings"),Shot("B4","teams","dispatch/teams"),
             Shot("B4","outbox","dispatch/create"),Shot("B4","dispatch-import-review","dispatch/import"),Shot("B4","reminders","reminders"),
-            Shot("B4","calendar-settings","calendar"),Shot("B4","visit-calendar","visit/${FixtureIds.VISIT_2}"),Shot("B4","settings-info","settings"),
+            Shot("B4","calendar-settings","calendar"),Shot("B4","visit-calendar","visit/${FixtureIds.VISIT_2}"),Shot("B4","settings-info","settings"),Shot("B4","appearance","appearance"),
         )
         shots.forEach { shot ->
             shot.route?.let{compose.runOnIdle{route.value=it}}

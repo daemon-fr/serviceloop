@@ -65,7 +65,9 @@ class ReminderSemanticsTest {
         assertTrue(p.dailySummaryEnabled); assertEquals(8,p.summaryHour); assertEquals(0,p.summaryMinute)
         assertEquals(127,p.summaryDaysMask); assertEquals(14,p.dueSoonHorizonDays)
         assertTrue(p.includeDueServices && p.includeVisits && p.includeFollowUps && p.includeUnfinishedVisits && p.includeBackupReminder)
-        assertFalse(p.appointmentAlertsEnabled); assertEquals(120,p.defaultAppointmentLeadMinutes)
+        assertFalse(p.appointmentAlertsEnabled); assertEquals(180,p.defaultAppointmentLeadMinutes)
+        assertEquals(listOf(60,180,360,720,1440,2880), ReminderPreferences.APPOINTMENT_LEAD_PRESETS.map { it.first })
+        ReminderPreferences.APPOINTMENT_LEADS.forEach { p.copy(defaultAppointmentLeadMinutes = it).validate() }
         runCatching { p.copy(summaryDaysMask=0).validate() }.onSuccess { error("Expected validation failure") }
     }
 
@@ -99,6 +101,9 @@ class ReminderSemanticsTest {
         assertEquals(Instant.parse("2026-09-09T05:00:00Z").toEpochMilli(), AppointmentReminderRules.triggerAt(ten, 120))
         val twelve = Instant.parse("2026-09-09T09:00:00Z").toEpochMilli()
         assertEquals(Instant.parse("2026-09-09T07:00:00Z").toEpochMilli(), AppointmentReminderRules.triggerAt(twelve, 120))
+        assertEquals(Instant.parse("2026-09-09T06:00:00Z").toEpochMilli(), AppointmentReminderRules.triggerAt(twelve, 180))
+        assertEquals(2880, AppointmentReminderRules.effectiveLead(null, p.copy(defaultAppointmentLeadMinutes = 2880)))
+        assertEquals(120, AppointmentReminderRules.effectiveLead(120, p))
         listOf("WORKING","FINALIZED","CANCELLED","DISPATCH_WITHDRAWN","PARTICIPATION_COMPLETE").forEach { state ->
             assertFalse(state, AppointmentReminderRules.eligible(state, ten, now, null, p))
         }

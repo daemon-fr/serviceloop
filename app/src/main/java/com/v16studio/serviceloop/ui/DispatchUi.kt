@@ -48,6 +48,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
@@ -63,6 +67,7 @@ import com.v16studio.serviceloop.data.DispatchVisitBindingEntity
 import com.v16studio.serviceloop.data.TECHNICIAN_IDENTITY_MIME
 import com.v16studio.serviceloop.data.TechnicianIdentity
 import com.v16studio.serviceloop.data.TechnicianIdentityCodec
+import com.v16studio.serviceloop.data.TechnicianIdCodec
 import com.v16studio.serviceloop.data.WORK_PACKAGE_MIME
 import com.v16studio.serviceloop.domain.VisitCancellationOrigin
 import com.v16studio.serviceloop.domain.VisitDetail
@@ -111,9 +116,120 @@ private fun java.io.InputStream.readBounded(limit:Int):ByteArray{val out=ByteArr
 private fun shareFile(context:Context,dirName:String,fileName:String,mime:String,bytes:ByteArray,title:String){val dir=File(context.cacheDir,dirName).apply{mkdirs();listFiles()?.filter{it.lastModified()<System.currentTimeMillis()-86_400_000}?.forEach(File::delete)};val file=File(dir,fileName).apply{writeBytes(bytes)};val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),title))}
 internal fun shareExistingFile(context:Context,file:File,mime:String,title:String){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),title))}
 
-@Composable internal fun DispatchSettings(padding:PaddingValues,nav:NavHostController){val context=LocalContext.current;val prefs=remember{context.getSharedPreferences(DISPATCH_PREFS,0)};var role by rememberSaveable{mutableStateOf(context.teamRole())};var email by rememberSaveable{mutableStateOf(prefs.getString(OFFICE_EMAIL,"").orEmpty())};val choices=listOf(TeamRole.SOLO to ("Solo" to "I work alone"),TeamRole.MEMBER to ("Member" to "I work in a team"),TeamRole.COORDINATOR to ("Coordinator" to "I oversee teams"));LazyColumn(Modifier.padding(padding).testTag("team-role-settings"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Text("What is your role?",style=MaterialTheme.typography.titleLarge);choices.forEach{(value,copy)->val select={role=value;context.setTeamRole(value)};Row(Modifier.fillMaxWidth().testTag("team-role-${value.name.lowercase()}").selectable(role==value,onClick=select).semantics{contentDescription="${copy.first} — ${copy.second}"},verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){RadioButton(role==value,null);Column{Text(copy.first,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold);Text(copy.second,style=MaterialTheme.typography.bodySmall)}}};Text("Roles only control local file-based workflows. No account, synchronization, or shared database is created.",style=MaterialTheme.typography.bodySmall)};if(role==TeamRole.COORDINATOR)item{Text("Coordinator tools are available from Home.",style=MaterialTheme.typography.bodySmall)};item{Text("Technician identity",style=MaterialTheme.typography.titleLarge);Text("Every installation has a stable routing identity, separate from report identity.");Button({nav.navigate("dispatch/identity")},Modifier.fillMaxWidth()){Text("Open Technician identity")}};item{OutlinedTextField(email,{email=it;prefs.edit().putString(OFFICE_EMAIL,it.trim()).apply()},label={Text("Office report recipient · Optional")},modifier=Modifier.fillMaxWidth())}}}
+@Composable
+internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(DISPATCH_PREFS, 0) }
+    var role by rememberSaveable { mutableStateOf(context.teamRole()) }
+    var email by rememberSaveable { mutableStateOf(prefs.getString(OFFICE_EMAIL, "").orEmpty()) }
+    val choices = listOf(
+        TeamRole.SOLO to ("Solo" to "I work alone"),
+        TeamRole.MEMBER to ("Member" to "I work in a team"),
+        TeamRole.COORDINATOR to ("Coordinator" to "I oversee teams"),
+    )
+    LazyColumn(
+        Modifier.padding(padding).testTag("team-role-settings"),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("What is your role?", style = MaterialTheme.typography.titleLarge)
+            choices.forEach { (value, copy) ->
+                val fullLabel = "${copy.first} (${copy.second})"
+                Row(
+                    Modifier.fillMaxWidth()
+                        .testTag("team-role-${value.name.lowercase()}")
+                        .selectable(role == value, onClick = { role = value; context.setTeamRole(value) })
+                        .semantics { contentDescription = fullLabel }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    RadioButton(role == value, null)
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(copy.first) }
+                            withStyle(SpanStyle(fontWeight = FontWeight.Normal)) { append(" (${copy.second})") }
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Text("Roles only control local file-based workflows. No account, synchronization, or shared database is created.", style = MaterialTheme.typography.bodySmall)
+            if (role == TeamRole.COORDINATOR) Text("Coordinator tools are available from Home.", style = MaterialTheme.typography.bodySmall)
+        }
+        item {
+            OutlinedTextField(
+                email,
+                { email = it; prefs.edit().putString(OFFICE_EMAIL, it.trim()).apply() },
+                label = { Text("Send report copies to (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (role == TeamRole.MEMBER) item {
+            TechnicianIdentityContent()
+        }
+    }
+}
 
-@Composable internal fun TechnicianIdentityScreen(padding:PaddingValues){val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var value by remember{mutableStateOf<TechnicianIdentity?>(null)};var name by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)};LaunchedEffect(Unit){value=withContext(Dispatchers.IO){svc.identity()};name=value!!.name};LazyColumn(Modifier.padding(padding).testTag("technician-identity"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Text("Technician identity",style=MaterialTheme.typography.headlineSmall);Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.");Spacer(Modifier.padding(top=8.dp));OutlinedTextField(name,{name=it},label={Text("Name")},modifier=Modifier.fillMaxWidth().testTag("technician-name"));Text("Technician ID",modifier=Modifier.padding(top=12.dp));Text(com.v16studio.serviceloop.data.TechnicianIdCodec.display(value?.technicianId.orEmpty()),style=MaterialTheme.typography.headlineSmall,modifier=Modifier.padding(vertical=12.dp).testTag("technician-id-value"));ServiceLoopActionStack { Button({scope.launch{runCatching{withContext(Dispatchers.IO){svc.renameIdentity(name)}}.onSuccess{value=it}.onFailure{error=it.message}}},enabled=name.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Save name")};OutlinedButton({value?.let{(context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop Technician ID",it.technicianId))}},Modifier.fillMaxWidth()){ServiceLoopIcon(ServiceLoopIcons.Copy,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Copy ID")};OutlinedButton({value?.let{v->scope.launch{withContext(Dispatchers.IO){TechnicianIdentityCodec.encode(v)}.let{shareFile(context,"technician-identity","serviceloop-${v.technicianId.take(8)}.sltech",TECHNICIAN_IDENTITY_MIME,it,"Share ServiceLoop Technician identity")}}}},Modifier.fillMaxWidth()){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Share identity")} };error?.let{Text(it,color=MaterialTheme.colorScheme.error)}}}}
+@Composable
+internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val svc = remember { service(context) }
+    val scope = rememberCoroutineScope()
+    var value by remember { mutableStateOf<TechnicianIdentity?>(null) }
+    var name by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) { svc.identity() }
+        value = loaded
+        name = loaded.name
+    }
+    Column(modifier.fillMaxWidth().testTag("technician-identity"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Technician identity", style = MaterialTheme.typography.titleLarge)
+        Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.")
+        OutlinedTextField(name, { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth().testTag("technician-name"))
+        Text("Technician ID")
+        Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("technician-id-value"))
+        ServiceLoopActionStack {
+            Button(
+                {
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { svc.renameIdentity(name) } }
+                            .onSuccess { value = it }
+                            .onFailure { error = it.message }
+                    }
+                },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save name") }
+            OutlinedButton(
+                { value?.let { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop Technician ID", it.technicianId)) } },
+                Modifier.fillMaxWidth(),
+            ) {
+                ServiceLoopIcon(ServiceLoopIcons.Copy, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
+                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
+                Text("Copy ID")
+            }
+            OutlinedButton(
+                {
+                    value?.let { identity ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) { TechnicianIdentityCodec.encode(identity) }
+                                .let { bytes -> shareFile(context, "technician-identity", "serviceloop-${identity.technicianId.take(8)}.sltech", TECHNICIAN_IDENTITY_MIME, bytes, "Share ServiceLoop Technician identity") }
+                        }
+                    }
+                },
+                Modifier.fillMaxWidth(),
+            ) {
+                ServiceLoopIcon(ServiceLoopIcons.Share, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
+                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
+                Text("Share identity")
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    }
+}
 
 @Composable internal fun DispatchTechniciansScreen(padding:PaddingValues){
     val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope()

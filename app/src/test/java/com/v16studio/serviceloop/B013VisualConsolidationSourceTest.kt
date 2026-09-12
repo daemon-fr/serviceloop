@@ -1,6 +1,7 @@
 package com.v16studio.serviceloop
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +22,10 @@ class B013VisualConsolidationSourceTest {
         assertTrue(components.contains("drawLine"))
         assertTrue(components.contains("brand-left-line"))
         assertTrue(components.contains("brand-right-line"))
+        val brandLine = components.substringAfter("private fun BrandLine").substringBefore("@Composable\nfun ServiceLoopBrandStrip")
+        assertEquals(1, Regex("drawLine\\(").findAll(brandLine).count())
+        assertFalse(brandLine.contains("copy(alpha"))
+        assertTrue(components.contains("serviceLoopBrandNeutral"))
         assertFalse(components.contains("TrailSquare"))
         assertFalse(components.contains("Random("))
         val raster=File(root,"app/src/main/res").walkTopDown().filter{it.extension.lowercase() in setOf("png","jpg","jpeg","webp")}.map{it.name}.toList()

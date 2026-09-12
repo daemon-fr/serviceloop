@@ -301,7 +301,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
         }
 
         private fun configureReminderDefaults(db: SupportSQLiteDatabase) {
-            db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,120)")
+            db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,180)")
         }
 
         private fun configureDispatchIdentity(db: SupportSQLiteDatabase) {

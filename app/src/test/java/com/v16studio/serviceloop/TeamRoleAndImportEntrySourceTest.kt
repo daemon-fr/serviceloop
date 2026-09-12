@@ -56,5 +56,29 @@ class TeamRoleAndImportEntrySourceTest {
         assertTrue(app.contains("days.take(4)"))
         assertTrue(app.contains("days.drop(4)"))
         assertTrue(app.contains("Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)"))
+        assertTrue(app.contains("ServiceLoopDayToggle"))
+        assertTrue(app.contains("label = day.name.take(2)"))
+        assertFalse(app.substringAfter("private fun SummaryDayChoices").substringBefore("private fun BusinessProfileScreen").contains("FilterChip"))
+    }
+
+    @Test fun teamRoleSettingsUseCombinedLabelsAndEmbedMemberIdentity() {
+        val dispatch = source("java/com/v16studio/serviceloop/ui/DispatchUi.kt")
+        assertTrue(dispatch.contains("TeamRole.SOLO to (\"Solo\" to \"I work alone\")"))
+        assertTrue(dispatch.contains("Send report copies to (optional)"))
+        assertTrue(dispatch.contains("if (role == TeamRole.MEMBER)"))
+        assertTrue(dispatch.contains("TechnicianIdentityContent"))
+        assertFalse(dispatch.contains("Open Technician identity"))
+    }
+
+    @Test fun appearanceIsARealPersistedRootThemeSetting() {
+        val app = appSource()
+        val theme = source("java/com/v16studio/serviceloop/ui/theme/Theme.kt")
+        val prefs = source("java/com/v16studio/serviceloop/ui/theme/AppearancePreferences.kt")
+        assertTrue(app.contains("composable(\"appearance\")"))
+        assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"Appearance\""))
+        assertTrue(theme.contains("AppearanceMode.LIGHT -> false"))
+        assertTrue(theme.contains("AppearanceMode.DARK -> true"))
+        assertTrue(prefs.contains("const val PREFERENCES = \"serviceloop_appearance\""))
+        assertTrue(prefs.contains("SYSTEM(\"System default\""))
     }
 }

@@ -573,7 +573,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun setAppointmentReminderLead(visitId: String, minutes: Int?): Long {
-        require(minutes == null || minutes in setOf(0, 120, 1440)) { "Choose Off, default, 2 hours, or 1 day" }
+        require(minutes == null || minutes == 0 || minutes in ReminderPreferences.APPOINTMENT_LEADS) { "Choose Default, Off, or a supported appointment lead" }
         writeGate.beforeWrite()
         check(dao.updateAppointmentReminderLead(visitId, minutes) == 1) { "Only a booked Visit can change its appointment reminder" }
         return businessTime.instant().toEpochMilli()

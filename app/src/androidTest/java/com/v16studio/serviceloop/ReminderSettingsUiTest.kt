@@ -3,6 +3,8 @@ package com.v16studio.serviceloop
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -10,10 +12,14 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.platform.LocalDensity
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
+import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
+import kotlin.math.abs
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -23,13 +29,22 @@ class ReminderSettingsUiTest {
     @Test fun remindersDestinationShowsDefaultsAndRequiresOneSummaryDay() {
         val repository = FakeRepository()
         val viewModel = ServiceLoopViewModel(repository) {}
-        compose.setContent { ServiceLoopApp(viewModel) }
+        var density = 1f
+        compose.setContent { ServiceLoopTheme { density = LocalDensity.current.density; ServiceLoopApp(viewModel) } }
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Reminders").performClick()
         compose.onNodeWithTag("reminder-settings").assertIsDisplayed()
         compose.onNodeWithTag("due-horizon-14").assertIsDisplayed()
+        val days = java.time.DayOfWeek.entries.map { compose.onNodeWithTag("summary-day-${it.name.lowercase()}").fetchSemanticsNode().boundsInRoot }
+        assertTrue(days.all { it.width >= 48f * density && it.height >= 48f * density })
+        assertTrue(days.drop(1).all { abs(it.width - days.first().width) < 2f })
+        compose.onNodeWithText("MO").assertIsDisplayed()
+        compose.onNodeWithTag("summary-day-monday").assertIsOn().performClick().assertIsOff()
+        compose.onNodeWithTag("summary-day-monday").performClick().assertIsOn()
         java.time.DayOfWeek.entries.forEach { compose.onNodeWithTag("summary-day-${it.name.lowercase()}").performClick() }
         compose.onNodeWithText("Select at least one summary day").assertIsDisplayed()
+        compose.onNodeWithTag("reminder-settings").performScrollToNode(hasTestTag("appointment-lead-60"))
+        listOf("1h", "3h", "6h", "12h", "24h", "48h").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         compose.onNodeWithTag("reminder-settings").performScrollToNode(hasTestTag("save-reminders"))
         compose.onNodeWithTag("save-reminders").assertIsNotEnabled()
         compose.onNodeWithTag("reminder-settings").performScrollToNode(hasTestTag("summary-day-monday"))

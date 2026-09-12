@@ -12,6 +12,7 @@ import com.v16studio.serviceloop.calendar.CalendarCoordinator
 import com.v16studio.serviceloop.calendar.CalendarDeviceStore
 import com.v16studio.serviceloop.report.AndroidReportService
 import com.v16studio.serviceloop.report.ReportService
+import com.v16studio.serviceloop.ui.theme.AppearancePreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,7 +41,8 @@ class ServiceLoopApplication : Application() {
         val repository = RoomServiceLoopRepository(database, businessTime, attachmentRoot = filesDir, businessDateSignal = businessDateSignal)
         val reminders = ReminderCoordinator(this, database, businessTime, applicationScope)
         val calendar = CalendarCoordinator(this, database, AndroidCalendarGateway(this), CalendarDeviceStore(this), applicationScope)
-        container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup, restrictedRecoveryState, applicationScope, businessDateSignal, reminders, calendar)
+        val appearancePreferences = AppearancePreferences(this)
+        container = AppContainer(database, repository, AndroidReportService(this, database, repository), startup, restrictedRecoveryState, applicationScope, businessDateSignal, reminders, calendar, appearancePreferences)
         businessDateSignal.start()
         reminders.start()
         calendar.start()
@@ -57,6 +59,7 @@ data class AppContainer(
     val businessDateSignal: BusinessDateSignal,
     val reminderCoordinator: ReminderCoordinator,
     val calendarCoordinator: CalendarCoordinator,
+    val appearancePreferences: AppearancePreferences,
 )
 
 fun interface StartupSeeder { suspend fun seedIfNeeded() }

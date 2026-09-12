@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-09
+**Updated:** 2026-09-12
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -55,7 +55,7 @@ Working inspection response modes retain separate saved drafts for Issue-found d
 
 The midnight-staleness gap remains fixed. Date-derived Home/Work state uses an injectable business clock/zone plus an observable business-date token and one suspended wait to the next business-local midnight. Foreground/resume and relevant clock/date/timezone/business-zone changes invalidate immediately; no polling/service/manufactured Room write is used.
 
-Room v11 persists the adopted reminder preferences and bounded per-Visit appointment lead override. Defaults remain: daily summary 08:00, all days, 14-day shared Due-soon horizon, all summary categories enabled, appointment alerts Off, default lead 2 hours. Device-local reminder delivery is Off initially and excluded from portable recovery.
+Room v11 persists the adopted reminder preferences and bounded per-Visit appointment lead override. Defaults remain: daily summary 08:00, all days, 14-day shared Due-soon horizon, all summary categories enabled, appointment alerts Off, default lead 3 hours. The current UI presets are 1h, 3h, 6h, 12h, 24h, and 48h; the prior 2-hour value remains readable for existing saved data and is replaced when the user chooses a new preset. Device-local reminder delivery is Off initially and excluded from portable recovery.
 
 Reminder scheduling remains one-shot approximate `AlarmManager.setWindow` with stable Work-summary and Appointment-reminder channels, contextual notification permission, privacy-safe content, duplicate-summary suppression, stale appointment suppression, reboot/time/process reconciliation and dataset-scoped PendingIntent identity. Exact alarms, foreground service and battery exemption are not used.
 

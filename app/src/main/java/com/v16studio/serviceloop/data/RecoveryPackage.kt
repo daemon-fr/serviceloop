@@ -7,6 +7,7 @@ import android.util.Base64
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.BackupInspection
 import com.v16studio.serviceloop.domain.BackupResult
+import com.v16studio.serviceloop.domain.ReminderPreferences
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -243,7 +244,7 @@ class RecoveryPackage(
         reminders.single().let { value ->
             require(value.getInt("summaryHour") in 0..23 && value.getInt("summaryMinute") in 0..59)
             require(value.getInt("summaryDaysMask") in 0..127 && value.getInt("dueSoonHorizonDays") in setOf(0, 7, 14, 30))
-            require(value.getInt("defaultAppointmentLeadMinutes") in setOf(120, 1440))
+            require(value.getInt("defaultAppointmentLeadMinutes") in ReminderPreferences.APPOINTMENT_LEADS)
             val booleanFields = listOf("dailySummaryEnabled", "includeDueServices", "includeVisits", "includeFollowUps", "includeUnfinishedVisits", "includeBackupReminder", "appointmentAlertsEnabled")
             require(booleanFields.all { value.getInt(it) in 0..1 })
             require(value.getInt("dailySummaryEnabled") == 0 || value.getInt("summaryDaysMask") != 0)
@@ -340,7 +341,7 @@ class RecoveryPackage(
         .put("id", "primary").put("dailySummaryEnabled", 1).put("summaryHour", 8).put("summaryMinute", 0)
         .put("summaryDaysMask", 127).put("dueSoonHorizonDays", 14).put("includeDueServices", 1)
         .put("includeVisits", 1).put("includeFollowUps", 1).put("includeUnfinishedVisits", 1)
-        .put("includeBackupReminder", 1).put("appointmentAlertsEnabled", 0).put("defaultAppointmentLeadMinutes", 120)
+        .put("includeBackupReminder", 1).put("appointmentAlertsEnabled", 0).put("defaultAppointmentLeadMinutes", 180)
     private fun countRecords(root: JSONObject): Int = TABLE_ORDER.sumOf { tableRows(root, it).size }
 
     /** Recoverable erase: file adoption and the empty database share one durable commit identity. */
