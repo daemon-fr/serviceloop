@@ -10,7 +10,7 @@ Current authoritative branch:
 
 - branch: `master`
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
-- Room schema: v11
+- Room schema: v13 on the B013 milestone branch (v11 at the frozen SL-5C checkpoint)
 
 `master` is now the single technical starting point for B-013 and subsequent accepted work. Documentation-only commits may advance `master` beyond the production checkpoint without changing the verification meaning of `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. New milestone branches should start from the current `master` HEAD unless the owner explicitly authorizes another base.
 
@@ -22,6 +22,7 @@ Current authoritative branch:
 - **SL-4:** IMPLEMENTED, independently Phase-B verified, and **VERIFIED AND BANKED**.
 - **Dispatch:** OWNER APPROVED under B-015 and deliberately integrated/banked as real product scope within the local-first/file-based boundary.
 - **B-014 durable Working inspection-response drafts:** adopted and preserved through Room v11.
+- **B-013 output / identity / inspection-transport pass:** implemented on `codex/b013-ui-overhaul`; the output boundary and evidence matrix is in `B013_OUTPUT_ARTIFACT_MATRIX.md`. Final branch acceptance evidence is recorded at handoff.
 - **SL-5A — time-aware work state + local reminders:** IMPLEMENTED and independently reviewed.
 - **SL-5B — optional Android Calendar integration:** IMPLEMENTED, corrected, source-reviewed and banked under B-016.
 - **SL-5C — final functional completion/hardening:** IMPLEMENTED and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`; no known ordinary-workflow functional placeholder remains before B-013.
@@ -110,7 +111,7 @@ Reported evidence:
 - `:app:lintDebug`: PASS;
 - `:app:assembleRelease`: PASS;
 - `git diff --check`: PASS;
-- Room remains v11;
+- Room was v11 at this checkpoint; B013 adds the non-destructive v12→v13 migration;
 - release fixture seeder remains no-op;
 - final debug APK installed explicitly with `adb -s <resolved> install -r` on canonical `Pixel_10a_ServiceLoop`;
 - canonical business dataset preserved and representative Home/Work/Customers/Settings/Reminders/Calendar/report surfaces inspected non-destructively;
@@ -122,6 +123,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 
 1. **B-013 — dedicated whole-product UI/UX overhaul**
    - implement the comprehensive visual/UI authority against the functionally frozen product;
+   - professional customer PDF/share metadata, authoritative BusinessProfile technician name, optional dispatch designation, current-only `.sltech`/`.slinsp`/`.slwork` transport and immutable inspection snapshots;
    - coherent hierarchy/task clarity;
    - reusable components/primitives and action/navigation patterns;
    - typography, spacing/density and semantic colors;

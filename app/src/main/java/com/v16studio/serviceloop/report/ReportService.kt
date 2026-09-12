@@ -14,6 +14,7 @@ import com.v16studio.serviceloop.data.ReportRenditionEntity
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.data.BusinessFileCoordinator
+import com.v16studio.serviceloop.brand.ServiceLoopBrandSpec
 import com.v16studio.serviceloop.domain.PublicReportModel
 import com.v16studio.serviceloop.domain.ReportRendition
 import java.io.File
@@ -123,13 +124,14 @@ object FixedServiceRecordPdf {
     internal const val HEIGHT = 842
     internal const val LEFT = 42f
     internal const val RIGHT = 42f
-    internal const val TOP = 48f
-    internal const val BOTTOM = 54f
+    internal const val TOP = 72f
+    internal const val BOTTOM = 68f
     internal const val CONTENT_WIDTH = WIDTH - LEFT - RIGHT
     internal const val CONTENT_HEIGHT = HEIGHT - TOP - BOTTOM
 
     internal enum class LineStyle(val textSize: Float, val height: Float, val bold: Boolean) {
-        TITLE(18f, 31f, true), SECTION(12f, 20f, true), BODY(10f, 15f, false), FOOTER(8f, 10f, false),
+        TITLE(19f, 30f, true), SECTION(11f, 21f, true), SUBSECTION(10f, 18f, true), BODY(9.5f, 14f, false),
+        TABLE_HEADER(8.5f, 17f, true), TABLE_ROW(9f, 16f, false), ALERT(10f, 19f, true), META(8.5f, 13f, false), FOOTER(7.5f, 10f, false),
     }
 
     internal data class ReportDrawLine(val text: String, val style: LineStyle) { val height: Float get() = style.height }
@@ -144,14 +146,24 @@ object FixedServiceRecordPdf {
         try {
             pages.forEachIndexed { pageIndex, lines ->
                 val page = document.startPage(PdfDocument.PageInfo.Builder(WIDTH, HEIGHT, pageIndex + 1).create())
+                page.canvas.drawColor(Color.WHITE)
+                drawHeader(page.canvas, model)
                 var y = TOP
                 lines.lines.forEach { line ->
-                    page.canvas.drawText(line.text, LEFT, y + line.style.textSize, paint(line.style))
+                    val linePaint = paint(line.style)
+                    val x = if (line.style == LineStyle.ALERT || line.style == LineStyle.TABLE_ROW) LEFT + 8f else LEFT
+                    if (line.style == LineStyle.ALERT) {
+                        page.canvas.drawRect(LEFT, y + 1f, WIDTH - RIGHT, y + line.height - 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 244, 226) })
+                    } else if (line.style == LineStyle.TABLE_HEADER) {
+                        page.canvas.drawRect(LEFT, y + 1f, WIDTH - RIGHT, y + line.height - 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(231, 244, 244) })
+                    }
+                    page.canvas.drawText(line.text, x, y + line.style.textSize + 3f, linePaint)
                     y += line.height
                 }
-                val footer = "${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of $totalPages"
-                wrap(RawLine(footer, LineStyle.FOOTER)).take(4).forEachIndexed { footerIndex, line ->
-                    page.canvas.drawText(line.text, LEFT, HEIGHT - 44f + footerIndex * LineStyle.FOOTER.height + LineStyle.FOOTER.textSize, paint(LineStyle.FOOTER).apply { color = Color.DKGRAY })
+                val footer = "${ServiceLoopBrandSpec.GENERATED_WITH} · ${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · ${Instant.ofEpochMilli(generatedAtEpochMillis).toString().take(10)} · Page ${pageIndex + 1} of $totalPages"
+                page.canvas.drawLine(LEFT, HEIGHT - BOTTOM - 9f, WIDTH - RIGHT, HEIGHT - BOTTOM - 9f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.LTGRAY; strokeWidth = 1f })
+                wrap(RawLine(footer, LineStyle.FOOTER)).take(3).forEachIndexed { footerIndex, line ->
+                    page.canvas.drawText(line.text, LEFT, HEIGHT - BOTTOM + footerIndex * LineStyle.FOOTER.height + LineStyle.FOOTER.textSize, paint(LineStyle.FOOTER).apply { color = Color.DKGRAY })
                 }
                 document.finishPage(page)
             }
@@ -159,11 +171,20 @@ object FixedServiceRecordPdf {
                 val source=attachmentRoot?.let{File(it,photo.relativePath)} ?: error("Photograph storage is unavailable")
                 val bitmap=BitmapFactory.decodeFile(source.absolutePath) ?: error("Selected report photograph is missing or unreadable")
                 val pageNumber=pages.size+photoPageIndex+1; val page=document.startPage(PdfDocument.PageInfo.Builder(WIDTH,HEIGHT,pageNumber).create())
-                page.canvas.drawText("${line.equipmentReference} · ${line.equipmentName}",LEFT,TOP+LineStyle.SECTION.textSize,paint(LineStyle.SECTION))
-                page.canvas.drawText("Photograph ${photoIndex+1}${photo.caption?.let{": $it"}.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}",LEFT,TOP+38f,paint(LineStyle.BODY))
-                val availableHeight=HEIGHT-TOP-BOTTOM-70f; val scale=minOf(CONTENT_WIDTH/bitmap.width,availableHeight/bitmap.height); val width=bitmap.width*scale; val height=bitmap.height*scale
-                page.canvas.drawBitmap(bitmap,null,RectF(LEFT,TOP+55f,LEFT+width,TOP+55f+height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-                val footer="${model.visitReference} · R${model.revisionNumber} · PDF v$versionNumber · ${renditionId.take(8)} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-34f,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
+                page.canvas.drawColor(Color.WHITE)
+                drawHeader(page.canvas, model)
+                page.canvas.drawText("Photographic evidence", LEFT, TOP + LineStyle.SECTION.textSize + 3f, paint(LineStyle.SECTION))
+                val contextLines = wrap(RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SUBSECTION))
+                contextLines.take(2).forEachIndexed { index, context -> page.canvas.drawText(context.text, LEFT, TOP + 31f + index * context.height, paint(LineStyle.SUBSECTION)) }
+                val caption = "Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}"
+                val captionLines = wrap(RawLine(caption, LineStyle.BODY))
+                captionLines.take(3).forEachIndexed { index, captionLine -> page.canvas.drawText(captionLine.text, LEFT, TOP + 65f + index * captionLine.height, paint(LineStyle.BODY)) }
+                val imageTop = TOP + 65f + captionLines.take(3).size * LineStyle.BODY.height + 12f
+                val availableHeight=HEIGHT-BOTTOM-imageTop-18f; val scale=minOf(CONTENT_WIDTH/bitmap.width,availableHeight/bitmap.height); val width=bitmap.width*scale; val height=bitmap.height*scale
+                val imageLeft = LEFT + (CONTENT_WIDTH - width) / 2f
+                page.canvas.drawBitmap(bitmap,null,RectF(imageLeft,imageTop,imageLeft+width,imageTop+height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+                page.canvas.drawLine(LEFT, HEIGHT - BOTTOM - 9f, WIDTH - RIGHT, HEIGHT - BOTTOM - 9f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.LTGRAY; strokeWidth = 1f })
+                val footer="${ServiceLoopBrandSpec.GENERATED_WITH} · ${model.visitReference} · R${model.revisionNumber} · Page $pageNumber of $totalPages"; page.canvas.drawText(footer,LEFT,HEIGHT-BOTTOM+LineStyle.FOOTER.textSize,paint(LineStyle.FOOTER).apply{color=Color.DKGRAY})
                 document.finishPage(page); bitmap.recycle()
             }
             FileOutputStream(file).use(document::writeTo)
@@ -189,40 +210,73 @@ object FixedServiceRecordPdf {
     internal fun measuredWidth(line: ReportDrawLine): Float = paint(line.style).measureText(line.text)
 
     private fun buildLines(model: PublicReportModel): List<ReportDrawLine> {
-        val raw = mutableListOf(RawLine(model.businessName, LineStyle.TITLE), RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.BODY), RawLine("Technician: ${model.technicianName}", LineStyle.BODY), RawLine(model.businessContact, LineStyle.BODY), RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY), RawLine("Customer and site", LineStyle.SECTION), RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY), RawLine("${model.siteReference.orEmpty()} · ${model.siteName}", LineStyle.BODY), RawLine(model.siteAddress.orEmpty(), LineStyle.BODY))
+        val raw = mutableListOf(
+            RawLine(model.businessName, LineStyle.TITLE),
+            RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.META),
+            RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY),
+            RawLine("Technician: ${model.technicianName}", LineStyle.BODY),
+            RawLine(model.businessContact, LineStyle.BODY),
+            RawLine("Customer & site", LineStyle.SECTION),
+            RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY),
+            RawLine("${model.siteReference.orEmpty()} · ${model.siteName}", LineStyle.BODY),
+            RawLine(model.siteAddress.orEmpty(), LineStyle.BODY),
+            RawLine("Work completed", LineStyle.SECTION),
+        )
         if (model.voided) {
-            raw.add(0, RawLine("VOID NOTICE — this service record is void", LineStyle.TITLE))
-            raw.add(1, RawLine("Customer explanation: ${model.publicVoidReason.orEmpty()}", LineStyle.SECTION))
+            raw.add(0, RawLine("VOID NOTICE — this service record is void", LineStyle.ALERT))
+            raw.add(1, RawLine("Customer explanation: ${model.publicVoidReason.orEmpty()}", LineStyle.ALERT))
         }
-        model.publicNote?.let { raw += RawLine("Record note: $it", LineStyle.BODY) }
+        if (model.revisionNumber > 1) raw.add(5, RawLine("Correction revision ${model.revisionNumber} — earlier issued revisions remain historical", LineStyle.ALERT))
+        model.publicNote?.let { raw += RawLine("Customer note: $it", LineStyle.BODY) }
         model.dispatch?.let { dispatch ->
-            raw += RawLine("Dispatch", LineStyle.SECTION)
-            raw += RawLine("Job: ${dispatch.managerReference ?: dispatch.dispatchVisitId}", LineStyle.BODY)
-            raw += RawLine("Generation: ${dispatch.generation}", LineStyle.BODY)
+            raw += RawLine("Service coordination", LineStyle.SUBSECTION)
+            raw += RawLine("Job reference: ${dispatch.managerReference ?: dispatch.dispatchVisitId}", LineStyle.BODY)
             raw += RawLine("Documented by: ${dispatch.documentingTechnicianName}", LineStyle.BODY)
-            raw += RawLine("Technician reference: ${dispatch.documentingTechnicianId.take(8)}", LineStyle.BODY)
+            raw += RawLine("Technician reference: ${dispatch.documentingTechnicianId.take(8)}", LineStyle.META)
         }
         model.lines.forEach { line ->
-            raw += RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SECTION)
-            line.dispatchItemId?.let { raw += RawLine("Dispatch item: $it · Assigned to: ${line.dispatchAssignment.orEmpty()}", LineStyle.BODY) }
-            raw += listOf(RawLine(line.equipmentIdentification, LineStyle.BODY), RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY), RawLine("Outcome: ${line.outcome.replace('_', ' ')}", LineStyle.BODY))
-            line.publicWorkNote?.let { raw += RawLine("Work: $it", LineStyle.BODY) }; line.notPerformedReason?.let { raw += RawLine("Reason: $it", LineStyle.BODY) }
-            line.parts.forEach { part -> raw += RawLine("Part: ${part.description} — ${part.quantity} ${part.unit}", LineStyle.BODY) }
-            line.photos.forEachIndexed { photoIndex, photo -> raw += RawLine("Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}", LineStyle.BODY) }
-            raw += RawLine(when { line.historyOnly -> "Recurring historical work — History only; no current due-date effect"; !line.isRecurringPlan -> "Due effect: one-off work — no recurring due date effect"; line.fulfilledObligation -> "Due effect: ${line.oldDueDate} to ${line.nextDueDate}"; else -> "Due effect: current service remains due ${line.oldDueDate}" }, LineStyle.BODY)
-            line.checklist.forEach { q -> raw += RawLine("${q.position}. ${q.label}: ${q.value ?: q.disposition.replace('_', ' ')}${q.unit?.let { " $it" }.orEmpty()}${q.reason?.let { " — $it" }.orEmpty()}", LineStyle.BODY) }
+            raw += RawLine("${line.position.toString().padStart(2, '0')} · ${line.equipmentReference} · ${line.equipmentName}", LineStyle.SUBSECTION)
+            raw += RawLine("Equipment identification: ${line.equipmentIdentification}", LineStyle.BODY)
+            raw += RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY)
+            val outcomeStyle = if (line.outcome == "NOT_PERFORMED" || line.outcome == "PARTLY_PERFORMED") LineStyle.ALERT else LineStyle.BODY
+            raw += RawLine("Outcome: ${line.outcome.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }}", outcomeStyle)
+            line.publicWorkNote?.let { raw += RawLine("Work performed: $it", LineStyle.BODY) }
+            line.notPerformedReason?.let { raw += RawLine("Reason work was not performed: $it", LineStyle.ALERT) }
+            raw += RawLine(when { line.historyOnly -> "History only — this recurring work has no current due-date effect"; !line.isRecurringPlan -> "One-off work — no recurring due-date effect"; line.fulfilledObligation -> "Obligation advanced: ${line.oldDueDate} → ${line.nextDueDate}"; else -> "Current obligation remains due: ${line.oldDueDate}" }, if (line.historyOnly || !line.fulfilledObligation && line.isRecurringPlan) LineStyle.ALERT else LineStyle.META)
+            if (line.parts.isNotEmpty()) {
+                raw += RawLine("Parts and materials", LineStyle.SUBSECTION)
+                line.parts.forEach { part -> raw += RawLine("${part.description} — ${part.quantity} ${part.unit}", LineStyle.TABLE_ROW) }
+            }
+            if (line.checklist.isNotEmpty()) {
+                raw += RawLine("Inspection checklist", LineStyle.SUBSECTION)
+                raw += RawLine("# · Check · Result", LineStyle.TABLE_HEADER)
+                line.checklist.forEach { q ->
+                    val result = q.value ?: q.disposition.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+                    raw += RawLine("${q.position} · ${q.label} · $result${q.unit?.let { " $it" }.orEmpty()}", LineStyle.TABLE_ROW)
+                    q.reason?.takeIf(String::isNotBlank)?.let { raw += RawLine("Finding: $it", LineStyle.ALERT) }
+                }
+            }
+            val outstanding = buildList {
+                line.notPerformedReason?.let { add(it) }
+                line.checklist.mapNotNull { it.reason?.takeIf(String::isNotBlank) }.forEach(::add)
+            }
+            if (outstanding.isNotEmpty()) {
+                raw += RawLine("Findings & follow-up", LineStyle.SECTION)
+                outstanding.distinct().forEach { raw += RawLine("Outstanding: $it", LineStyle.ALERT) }
+            }
         }
         return raw.filter { it.text.isNotBlank() }.flatMap(::wrap)
     }
 
     private fun wrap(raw: RawLine): List<ReportDrawLine> {
         val paint = paint(raw.style); val result = mutableListOf<ReportDrawLine>(); var current = ""
+        val availableWidth = CONTENT_WIDTH - if (raw.style == LineStyle.ALERT || raw.style == LineStyle.TABLE_ROW) 8f else 0f
         fun flush() { if (current.isNotEmpty()) { result += ReportDrawLine(current, raw.style); current = "" } }
         fun acceptWord(word: String) {
             var remaining = word
             while (remaining.isNotEmpty()) {
-                if (paint.measureText(remaining) <= CONTENT_WIDTH) { current = remaining; return }
-                val count = paint.breakText(remaining, true, CONTENT_WIDTH, null).coerceAtLeast(1)
+                if (paint.measureText(remaining) <= availableWidth) { current = remaining; return }
+                val count = paint.breakText(remaining, true, availableWidth, null).coerceAtLeast(1)
                 result += ReportDrawLine(remaining.take(count), raw.style); remaining = remaining.drop(count)
             }
         }
@@ -230,11 +284,36 @@ object FixedServiceRecordPdf {
             if (current.isEmpty()) acceptWord(word)
             else {
                 val candidate = "$current $word"
-                if (paint.measureText(candidate) <= CONTENT_WIDTH) current = candidate else { flush(); acceptWord(word) }
+                if (paint.measureText(candidate) <= availableWidth) current = candidate else { flush(); acceptWord(word) }
             }
         }
         flush(); return result
     }
 
-    private fun paint(style: LineStyle) = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(31, 42, 48); textSize = style.textSize; typeface = Typeface.create("sans", if (style.bold) Typeface.BOLD else Typeface.NORMAL) }
+    private fun drawHeader(canvas: android.graphics.Canvas, model: PublicReportModel) {
+        drawBrandMark(canvas, 24f)
+        val headerPaint = paint(LineStyle.META).apply { color = Color.DKGRAY }
+        canvas.drawText(model.businessName, LEFT, 56f, headerPaint)
+        val reference = "${model.visitReference} · R${model.revisionNumber}"
+        canvas.drawText(reference, WIDTH - RIGHT - headerPaint.measureText(reference), 56f, headerPaint)
+    }
+
+    private fun drawBrandMark(canvas: android.graphics.Canvas, top: Float) {
+        val servicePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 11f; typeface = Typeface.create("sans", Typeface.BOLD) }
+        val loopPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(8, 102, 107); textSize = 11f; typeface = Typeface.create("sans", Typeface.BOLD) }
+        val serviceWidth = servicePaint.measureText("Service")
+        val loopWidth = loopPaint.measureText("Loop")
+        val wordmarkWidth = serviceWidth + loopWidth
+        val start = (WIDTH - wordmarkWidth) / 2f
+        val lineY = top + 7f
+        val lineGap = ServiceLoopBrandSpec.WORDMARK_LINE_GAP_PX
+        val leftLineEnd = start - lineGap
+        val rightLineStart = start + wordmarkWidth + lineGap
+        canvas.drawLine(LEFT, lineY, leftLineEnd, lineY, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; strokeWidth = ServiceLoopBrandSpec.LINE_THICKNESS_PX })
+        canvas.drawLine(rightLineStart, lineY, WIDTH - RIGHT, lineY, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(8, 102, 107); strokeWidth = ServiceLoopBrandSpec.LINE_THICKNESS_PX })
+        canvas.drawText("Service", start, top + 11f, servicePaint)
+        canvas.drawText("Loop", start + serviceWidth, top + 11f, loopPaint)
+    }
+
+    private fun paint(style: LineStyle) = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (style == LineStyle.ALERT) Color.rgb(125, 64, 0) else Color.rgb(31, 42, 48); textSize = style.textSize; typeface = Typeface.create("sans", if (style.bold) Typeface.BOLD else Typeface.NORMAL) }
 }

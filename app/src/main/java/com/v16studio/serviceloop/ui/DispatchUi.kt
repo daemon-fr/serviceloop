@@ -103,7 +103,7 @@ internal fun Context.setTeamRole(role: TeamRole) =
     getSharedPreferences(DISPATCH_PREFS, 0).edit().putString(TEAM_ROLE, role.name).remove(COORDINATOR_ENABLED).apply()
 
 internal fun reportShareEligible(filePresent:Boolean,voided:Boolean,renditionKind:String,historical:Boolean,acknowledged:Boolean)=filePresent&&(!voided||renditionKind=="VOID_NOTICE")&&(!historical||voided||acknowledged)
-internal fun reportShareIntent(uri:Uri,officeEmail:String?=null)=Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply{officeEmail?.takeIf{it.isNotBlank()}?.let{putExtra(Intent.EXTRA_EMAIL,arrayOf(it))}}
+internal fun reportShareIntent(uri:Uri,officeEmail:String?=null,subject:String?=null,body:String?=null)=Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply{officeEmail?.takeIf{it.isNotBlank()}?.let{putExtra(Intent.EXTRA_EMAIL,arrayOf(it))};subject?.let{putExtra(Intent.EXTRA_SUBJECT,it)};body?.let{putExtra(Intent.EXTRA_TEXT,it)}}
 internal fun canceledDispatchVisitMessage(origin:String?):String=when(VisitCancellationOrigin.fromCode(origin)){
     VisitCancellationOrigin.LOCAL->"Canceled on this device."
     VisitCancellationOrigin.COORDINATOR->"Canceled by Coordinator."
@@ -113,8 +113,8 @@ internal fun canceledDispatchVisitMessage(origin:String?):String=when(VisitCance
 
 private fun service(context:Context)=DispatchPackageService((context.applicationContext as ServiceLoopApplication).container.database,context.filesDir)
 private fun java.io.InputStream.readBounded(limit:Int):ByteArray{val out=ByteArrayOutputStream();val b=ByteArray(8192);while(true){val n=read(b);if(n<0)break;require(out.size()+n<=limit){"Selected file is too large"};out.write(b,0,n)};return out.toByteArray()}
-private fun shareFile(context:Context,dirName:String,fileName:String,mime:String,bytes:ByteArray,title:String){val dir=File(context.cacheDir,dirName).apply{mkdirs();listFiles()?.filter{it.lastModified()<System.currentTimeMillis()-86_400_000}?.forEach(File::delete)};val file=File(dir,fileName).apply{writeBytes(bytes)};val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),title))}
-internal fun shareExistingFile(context:Context,file:File,mime:String,title:String){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),title))}
+internal fun shareFile(context:Context,dirName:String,fileName:String,mime:String,bytes:ByteArray,title:String,subject:String?=null,body:String?=null){val dir=File(context.cacheDir,dirName).apply{mkdirs();listFiles()?.filter{it.lastModified()<System.currentTimeMillis()-86_400_000}?.forEach(File::delete)};val file=File(dir,fileName).apply{writeBytes(bytes)};val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply{subject?.let{putExtra(Intent.EXTRA_SUBJECT,it)};body?.let{putExtra(Intent.EXTRA_TEXT,it)}},title))}
+internal fun shareExistingFile(context:Context,file:File,mime:String,title:String,subject:String?=null,body:String?=null){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply{subject?.let{putExtra(Intent.EXTRA_SUBJECT,it)};body?.let{putExtra(Intent.EXTRA_TEXT,it)}},title))}
 
 @Composable
 internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
@@ -167,42 +167,50 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
             )
         }
         if (role == TeamRole.MEMBER) item {
-            TechnicianIdentityContent()
+            TechnicianIdentityContent(nav = nav)
         }
     }
 }
 
 @Composable
-internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
+internal fun TechnicianIdentityContent(modifier: Modifier = Modifier, nav: NavHostController? = null) {
     val context = LocalContext.current
     val svc = remember { service(context) }
     val scope = rememberCoroutineScope()
     var value by remember { mutableStateOf<TechnicianIdentity?>(null) }
-    var name by remember { mutableStateOf("") }
+    var profileName by remember { mutableStateOf("") }
+    var designation by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { svc.identity() }
         value = loaded
-        name = loaded.name
+        designation = loaded.designation.orEmpty()
+        profileName = withContext(Dispatchers.IO) { svcProfile(context)?.technicianName.orEmpty() }
     }
     Column(modifier.fillMaxWidth().testTag("technician-identity"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Technician identity", style = MaterialTheme.typography.titleLarge)
         Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.")
-        OutlinedTextField(name, { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth().testTag("technician-name"))
+        Text("Actual report name", style = MaterialTheme.typography.labelLarge)
+        Text(profileName.ifBlank { "Not set" }, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("technician-report-name"))
+        Text("The actual name on service records is managed under Business and report identity.", style = MaterialTheme.typography.bodySmall)
+        nav?.let { destination ->
+            TextButton({ destination.navigate("business-profile") }, Modifier.testTag("open-business-report-identity")) { Text("Business and report identity") }
+        }
+        OutlinedTextField(designation, { designation = it }, label = { Text("Team designation or badge (optional)") }, modifier = Modifier.fillMaxWidth().testTag("technician-designation"))
         Text("Technician ID")
         Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("technician-id-value"))
         ServiceLoopActionStack {
             Button(
                 {
                     scope.launch {
-                        runCatching { withContext(Dispatchers.IO) { svc.renameIdentity(name) } }
+                        runCatching { withContext(Dispatchers.IO) { svc.updateIdentityDesignation(designation) } }
                             .onSuccess { value = it }
                             .onFailure { error = it.message }
                     }
                 },
-                enabled = name.isNotBlank(),
+                enabled = value != null,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save name") }
+            ) { Text("Save") }
             OutlinedButton(
                 { value?.let { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop Technician ID", it.technicianId)) } },
                 Modifier.fillMaxWidth(),
@@ -216,7 +224,7 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
                     value?.let { identity ->
                         scope.launch {
                             withContext(Dispatchers.IO) { TechnicianIdentityCodec.encode(identity) }
-                                .let { bytes -> shareFile(context, "technician-identity", "serviceloop-${identity.technicianId.take(8)}.sltech", TECHNICIAN_IDENTITY_MIME, bytes, "Share ServiceLoop Technician identity") }
+                                .let { bytes -> shareFile(context, "technician-identity", "serviceloop-${identity.technicianId.take(8)}.sltech", TECHNICIAN_IDENTITY_MIME, bytes, "Share ServiceLoop Technician identity", "ServiceLoop technician identity", "ServiceLoop technician identity\nGenerated with ServiceLoop") }
                         }
                     }
                 },
@@ -231,15 +239,17 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
     }
 }
 
+private suspend fun svcProfile(context: Context) = (context.applicationContext as ServiceLoopApplication).container.database.serviceLoopDao().businessProfile()
+
 @Composable internal fun DispatchTechniciansScreen(padding:PaddingValues){
     val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope()
-    var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var id by rememberSaveable{mutableStateOf("")};var name by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<com.v16studio.serviceloop.data.TechnicianRenameReview?>(null)}
+    var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var id by rememberSaveable{mutableStateOf("")};var name by rememberSaveable{mutableStateOf("")};var designation by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<com.v16studio.serviceloop.data.TechnicianRenameReview?>(null)}
     fun reload(){scope.launch{techs=withContext(Dispatchers.IO){svc.technicians()}}}
-    fun submit(value:TechnicianIdentity,manual:Boolean=false){scope.launch{runCatching{val normalized=if(manual)value.copy(technicianId=com.v16studio.serviceloop.data.TechnicianIdCodec.normalize(value.technicianId)?:throw IllegalArgumentException("Technician ID is not a valid ServiceLoop Technician ID."))else value;withContext(Dispatchers.IO){svc.technicianRenameReview(normalized)} to normalized}.onSuccess{(review,normalized)->if(review!=null)rename=review else scope.launch{withContext(Dispatchers.IO){if(manual)svc.importTechnicianManually(normalized) else svc.importTechnician(normalized)};id="";name="";reload()}}.onFailure{error=it.message}}}
+    fun submit(value:TechnicianIdentity,manual:Boolean=false){scope.launch{runCatching{val normalized=if(manual)value.copy(technicianId=com.v16studio.serviceloop.data.TechnicianIdCodec.normalize(value.technicianId)?:throw IllegalArgumentException("Technician ID is not a valid ServiceLoop Technician ID."))else value;withContext(Dispatchers.IO){svc.technicianRenameReview(normalized)} to normalized}.onSuccess{(review,normalized)->if(review!=null)rename=review else scope.launch{withContext(Dispatchers.IO){if(manual)svc.importTechnicianManually(normalized) else svc.importTechnician(normalized)};id="";name="";designation="";reload()}}.onFailure{error=it.message}}}
     LaunchedEffect(Unit){reload()}
     val open=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let{scope.launch{runCatching{withContext(Dispatchers.IO){val bytes=context.contentResolver.openInputStream(it)!!.use{x->x.readBounded(TechnicianIdentityCodec.MAX_BYTES)};TechnicianIdentityCodec.decode(bytes)}}.onSuccess(::submit).onFailure{if(it is CancellationException)throw it else error=it.message}}}}
-    rename?.let{review->AlertDialog(modifier=Modifier.testTag("technician-rename-dialog"),onDismissRequest={rename=null},title={Text("Technician ID already exists")},text={Text("Old name: ${review.existingName}\nIncoming name: ${review.incoming.name}")},dismissButton={TextButton({rename=null},Modifier.testTag("technician-rename-keep")){Text("Keep existing name")}},confirmButton={Button({scope.launch{withContext(Dispatchers.IO){svc.importTechnician(review.incoming,true)};rename=null;id="";name="";reload()}},Modifier.testTag("technician-rename-update")){Text("Update name")}})}
-    LazyColumn(Modifier.padding(padding).testTag("dispatch-technicians"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Text("Technicians",style=MaterialTheme.typography.headlineSmall);Text("Technician IDs route readable unsigned files; they are not authentication.");Button({open.launch(arrayOf(TECHNICIAN_IDENTITY_MIME,"application/json"))},Modifier.fillMaxWidth()){Text("Import .sltech")};OutlinedTextField(id,{id=it},label={Text("Technician ID")},modifier=Modifier.fillMaxWidth().testTag("manual-technician-id"));OutlinedTextField(name,{name=it},label={Text("Name")},modifier=Modifier.fillMaxWidth());OutlinedButton({submit(TechnicianIdentity(id,name.trim()),true)},enabled=id.isNotBlank()&&name.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("manual-technician-add")){Text("Add manually")};error?.let{Text(it,color=MaterialTheme.colorScheme.error)}};items(techs){Text("${it.displayName}\n${it.technicianId}")}}
+    rename?.let{review->AlertDialog(modifier=Modifier.testTag("technician-rename-dialog"),onDismissRequest={rename=null},title={Text("Technician ID already exists")},text={Text("Old name: ${review.existingName}${review.existingDesignation?.let{" · $it"}.orEmpty()}\nIncoming name: ${review.incoming.name}${review.incoming.designation?.let{" · $it"}.orEmpty()}")},dismissButton={TextButton({rename=null},Modifier.testTag("technician-rename-keep")){Text("Keep existing")}},confirmButton={Button({scope.launch{withContext(Dispatchers.IO){svc.importTechnician(review.incoming,true)};rename=null;id="";name="";designation="";reload()}},Modifier.testTag("technician-rename-update")){Text("Update technician")}})}
+    LazyColumn(Modifier.padding(padding).testTag("dispatch-technicians"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Text("Technicians",style=MaterialTheme.typography.headlineSmall);Text("Technician IDs route readable unsigned files; they are not authentication.");Button({open.launch(arrayOf(TECHNICIAN_IDENTITY_MIME,"application/json"))},Modifier.fillMaxWidth()){Text("Import .sltech")};OutlinedTextField(id,{id=it},label={Text("Technician ID")},modifier=Modifier.fillMaxWidth().testTag("manual-technician-id"));OutlinedTextField(name,{name=it},label={Text("Actual name")},modifier=Modifier.fillMaxWidth());OutlinedTextField(designation,{designation=it},label={Text("Team designation or badge (optional)")},modifier=Modifier.fillMaxWidth());OutlinedButton({submit(TechnicianIdentity(id,name.trim(),designation.trim().takeIf{it.isNotEmpty()}),true)},enabled=id.isNotBlank()&&name.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("manual-technician-add")){Text("Add manually")};error?.let{Text(it,color=MaterialTheme.colorScheme.error)}};items(techs){tech->Column{Text(tech.displayName,style=MaterialTheme.typography.titleMedium);tech.designation?.takeIf{it.isNotBlank()}?.let{Text(it,style=MaterialTheme.typography.bodyMedium)};Text(tech.technicianId,style=MaterialTheme.typography.bodySmall)}}}
 }
 @Composable internal fun DispatchTeamsScreen(padding:PaddingValues){val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var teams by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTeamDetail>())};var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var name by rememberSaveable{mutableStateOf("")};fun reload(){scope.launch{teams=withContext(Dispatchers.IO){svc.teams()};techs=withContext(Dispatchers.IO){svc.technicians()}}};LaunchedEffect(Unit){reload()};LazyColumn(Modifier.padding(padding).testTag("dispatch-teams"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Text("Teams and leaders",style=MaterialTheme.typography.headlineSmall);OutlinedTextField(name,{name=it},label={Text("New team name")},modifier=Modifier.fillMaxWidth());Button({scope.launch{withContext(Dispatchers.IO){svc.createTeam(name)};name="";reload()}},enabled=name.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Create team")}};items(teams){team->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(team.team.name,style=MaterialTheme.typography.titleMedium);Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Text("Member",Modifier.padding(horizontal=4.dp));Text("Technician",Modifier.weight(1f));Text("Leader",Modifier.padding(horizontal=4.dp))};techs.forEach{t->val member=team.members.find{it.first.technicianId==t.technicianId};Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(member!=null,{checked->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,checked,false)};reload()}},Modifier.semantics{contentDescription="Member — ${t.displayName}"});Text(t.displayName,Modifier.weight(1f));Checkbox(member?.second==true,{leader->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,true,leader)};reload()}},Modifier.semantics{contentDescription="Leader — ${t.displayName}"},enabled=member!=null)}}}}}}}
 

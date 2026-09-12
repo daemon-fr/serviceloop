@@ -771,7 +771,9 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             "Expand $label",
             { expanded = true },
             enabled = enabled,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = ServiceLoopUiTokens.Space.sm, bottom = ServiceLoopUiTokens.Space.sm).testTag("$tag-expand"),
+            // Keep the full 48dp target while placing the visible glyph at the
+            // visual field corner instead of leaving a floating icon well.
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = ServiceLoopUiTokens.Space.hair, bottom = ServiceLoopUiTokens.Space.hair).testTag("$tag-expand"),
         ) { ServiceLoopIcon(ServiceLoopIcons.Expand, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) }
     }
     if (private) Text("PRIVATE · Not included in the customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)

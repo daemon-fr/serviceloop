@@ -190,7 +190,7 @@ internal enum class WorkTab(val label: String) {
 }
 
 @Composable
-fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0, appearancePreferences: AppearancePreferences? = null) {
+fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0, incomingInspectionTemplates: String? = null, incomingInspectionTemplatesEvent: Int = 0, appearancePreferences: AppearancePreferences? = null) {
     val state by viewModel.state.collectAsState()
     if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
@@ -200,9 +200,13 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         if (!state.restrictedRecoveryState && notificationRoute != null) nav.navigate(notificationRoute) { launchSingleTop = true }
     }
     val incomingRole = remember(incomingWorkPackage, incomingWorkPackageEvent) { incomingWorkPackage?.let { context.teamRole() } }
-    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent) { mutableStateOf(incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) }
+    val incomingTemplateRole = remember(incomingInspectionTemplates, incomingInspectionTemplatesEvent) { incomingInspectionTemplates?.let { context.teamRole() } }
+    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent) { mutableStateOf((incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) || (incomingInspectionTemplates != null && incomingTemplateRole !in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR))) }
     LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
         if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
+    }
+    LaunchedEffect(incomingInspectionTemplates, incomingInspectionTemplatesEvent, state.restrictedRecoveryState) {
+        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null && incomingTemplateRole in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) nav.navigate("template/list") { launchSingleTop = true }
     }
     NavHost(
         navController = nav,
@@ -261,7 +265,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("plan/new/{equipmentId}") { entry -> val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} }
         composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
         composable("plan/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} }
-        composable("template/list") { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav)} }
+        composable("template/list") { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel,incomingInspectionTemplates)} }
         composable("template/new") { DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav)} }
         composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
         composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
@@ -388,8 +392,8 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
     if (!state.restrictedRecoveryState && showExternalRoleDialog) {
         AlertDialog(
             onDismissRequest = { showExternalRoleDialog = false },
-            title = { Text("Work package received") },
-            text = { Text("Work packages are imported in Member mode.") },
+            title = { Text(if (incomingInspectionTemplates != null) "Inspection templates received" else "Work package received") },
+            text = { Text(if (incomingInspectionTemplates != null) "Inspection template files are imported in Member or Coordinator mode." else "Work packages are imported in Member mode.") },
             confirmButton = {
                 Button({ showExternalRoleDialog = false; nav.navigate("dispatch/settings") }, Modifier.testTag("external-package-open-role")) { Text("Open Team role settings") }
             },
@@ -961,7 +965,7 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
     LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Local reminders", style = MaterialTheme.typography.titleLarge); Text("${state.reminderRuntimeState.label}. Reminders may be delayed. Work lists remain the source of truth."); Text("Work summaries channel: ${if(state.reminderRuntimeState.summariesChannelEnabled) "available" else "blocked"}"); Text("Appointment reminders channel: ${if(state.reminderRuntimeState.appointmentsChannelEnabled) "available" else "blocked"}"); state.reminderRuntimeState.schedulingError?.let { Text("Scheduling error: $it", color = MaterialTheme.colorScheme.error) }; Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(requested, ::toggleDelivery, modifier = Modifier.testTag("reminder-delivery")); Text("Request local reminders") }; if (changed && requested) Text("Android permission changes are external and are not undone by Cancel.", style = MaterialTheme.typography.bodySmall) }
         item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); SummaryDayChoices(draft){draft=it}; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
-        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(0,7,14,30).map{it to "$it days"},draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(1 to "1 day", 7 to "7 days", 14 to "14 days", 30 to "30 days"),draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
         item { Text("Summary content", fontWeight = FontWeight.Bold); ReminderToggle("Due services", draft.includeDueServices) { draft = draft.copy(includeDueServices = it) }; ReminderToggle("Visits", draft.includeVisits) { draft = draft.copy(includeVisits = it) }; ReminderToggle("Follow-ups", draft.includeFollowUps) { draft = draft.copy(includeFollowUps = it) }; ReminderToggle("Unfinished visits", draft.includeUnfinishedVisits) { draft = draft.copy(includeUnfinishedVisits = it) }; ReminderToggle("Backup reminder", draft.includeBackupReminder) { draft = draft.copy(includeBackupReminder = it) } }
         item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS, draft.defaultAppointmentLeadMinutes, { draft = draft.copy(defaultAppointmentLeadMinutes = it) }, testTagPrefix = "appointment-lead"); if (draft.defaultAppointmentLeadMinutes == ReminderPreferences.LEGACY_APPOINTMENT_LEAD_MINUTES) Text("Current saved lead: 2h. Choose a new preset to replace it.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("legacy-default-appointment-lead")) }
         item { ServiceLoopActionStack { OutlinedButton({ context.startActivity((context.applicationContext as com.v16studio.serviceloop.ServiceLoopApplication).container.reminderCoordinator.openAndroidSettingsIntent()) }, Modifier.fillMaxWidth()) { Text("Open Android notification settings") }; OutlinedButton(viewModel::sendTestNotification, Modifier.fillMaxWidth().testTag("send-test-notification")) { Text("Send test notification") } }; state.operationMessage?.let { Text(it) } }
@@ -1051,14 +1055,37 @@ private fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValu
         else { item { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth().padding(horizontal = 12.dp)) } }; item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
         if (historical && !detail.voided) item { Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }); Text("I understand this is a superseded historical report") } }
         if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { Text("Recreate from this fixed revision") } }
-        item { Column(Modifier.padding(horizontal = 12.dp)) { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);context.startActivity(Intent.createChooser(reportShareIntent(uri,email),if(email==null)"Share customer service record" else "Send service report to office"))}; ServiceLoopActionStack { Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Send to office")} }; Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Generate and share the current void notice. Previously shared files cannot be revoked." else if(historical)"Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.",style=MaterialTheme.typography.bodySmall) } }
+     item { Column(Modifier.padding(horizontal = 12.dp)) { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);val subject="Service report ${detail.public.visitReference} · ${detail.public.businessName}";val body="Attached is the service report for ${detail.public.customerName} · ${detail.public.siteName} dated ${detail.public.actualServiceDate}.\n\nGenerated with ServiceLoop";context.startActivity(Intent.createChooser(reportShareIntent(uri,email,subject,body),if(email==null)"Share customer service record" else "Send service report to office"))}; ServiceLoopActionStack { Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Send to office")} }; Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Generate and share the current void notice. Previously shared files cannot be revoked." else if(historical)"Superseded report: confirm before customer handoff. Sharing does not prove delivery." else "Sharing initiates the Android handoff; it does not prove delivery.",style=MaterialTheme.typography.bodySmall) } }
     }
     }
 }
 
 @Composable
 private fun StructuredReportText(detail: FinalRecordDetail) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { val r = detail.public; Text(r.businessName, style = MaterialTheme.typography.titleLarge); Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}"); Text("Service date ${r.actualServiceDate}"); Text("Technician ${r.technicianName}\n${r.businessContact}"); Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}"); r.publicNote?.let { Text("Record note: $it") };r.dispatch?.let{Text("Dispatch",style=MaterialTheme.typography.titleMedium);Text("Job ${it.managerReference?:it.dispatchVisitId} · Generation ${it.generation}\nDocumented by ${it.documentingTechnicianName}\nTechnician ID ${it.documentingTechnicianId}")}; r.lines.forEach { line -> Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium);line.dispatchItemId?.let{Text("Dispatch item $it · Assigned to ${line.dispatchAssignment.orEmpty()}")}; Text(line.equipmentIdentification); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val r = detail.public
+        Text(r.businessName, style = MaterialTheme.typography.titleLarge)
+        Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}")
+        Text("Service date ${r.actualServiceDate}")
+        Text("Technician ${r.technicianName}\n${r.businessContact}")
+        Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}")
+        r.publicNote?.let { Text("Record note: $it") }
+        r.dispatch?.let {
+            Text("Service coordination", style = MaterialTheme.typography.titleMedium)
+            Text("Job ${it.managerReference ?: it.dispatchVisitId} · Generation ${it.generation}\nDocumented by ${it.documentingTechnicianName}\nTechnician reference ${it.documentingTechnicianId.take(8)}")
+        }
+        r.lines.forEach { line ->
+            Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium)
+            Text(line.equipmentIdentification)
+            Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}")
+            line.publicWorkNote?.let { Text(it) }
+            line.notPerformedReason?.let { Text("Reason: $it") }
+            Text(dueEffect(line))
+            line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }
+            line.photos.forEachIndexed { index, photo -> Text("Photograph ${index + 1}${photo.caption?.let { caption -> ": $caption" }.orEmpty()}") }
+            line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.unit?.let { unit -> " $unit" }.orEmpty()}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") }
+        }
+    }
 }
 
 @Composable

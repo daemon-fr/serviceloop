@@ -43,7 +43,7 @@ class ReportLayoutTest {
         val fullId="12345678-1234-1234-1234-123456789abc"
         val model=report(listOf(line(1,"Pump","Serviced").copy(dispatchItemId="dispatch-item",dispatchAssignment="Alex"))).copy(dispatch=PublicDispatchProvenance("dispatch-visit",2,"JOB-7","Office",fullId,"John"))
         val text=FixedServiceRecordPdf.layout(model).flatMap{it.lines}.joinToString("\n"){it.text}
-        assertTrue(text.contains("Documented by: John"));assertTrue(text.contains("Technician reference: 12345678"));assertFalse(text.contains(fullId))
+        assertTrue(text.contains("Documented by: John"));assertTrue(text.contains("Technician reference: 12345678"));assertFalse(text.contains(fullId));assertFalse(text.contains("Dispatch item:"));assertTrue(text.contains("Inspection checklist"));assertTrue(text.contains("Findings & follow-up"))
     }
 
     private fun report(lines: List<PublicWorkLine>) = PublicReportModel(

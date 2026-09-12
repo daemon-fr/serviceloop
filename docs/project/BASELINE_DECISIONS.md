@@ -139,3 +139,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - `.slwork` v2 remains readable as active transport; new exports are v3 with active/canceled lifecycle and reason in the material hash. Generation and import rules are monotonic and retry-safe.
 - Room 11→12 normalizes legacy Visit states and adds cancellation provenance fields without destructive fallback. Coordinator/assignment cancellation preserves local work/evidence and does not permit ordinary local Restore.
 - B023 explicitly excludes Stage C, broad localization, backend/live sync, status-return transport, and changes to the frozen UI reference package.
+
+## B-013 — Output, identity, and inspection transport pass
+
+- The B013 milestone branch may replace unreleased `.sltech`, `.slinsp`, and `.slwork` transport formats with the current version required by the pass; those decoders are current-only and do not retain pre-release compatibility branches.
+- `BusinessProfile.technicianName` is the authoritative actual report identity. Dispatch identity retains its stable installation ID and an optional team designation/badge as separate data; the Member screen does not edit the actual report name.
+- Work packages carry immutable inspection snapshots at package level and bind imported work to local immutable snapshots. Reusable template edits never rewrite issued Visit/report meaning.
+- Output producers, public/private boundaries, provenance, and acknowledgement semantics are recorded in `docs/project/B013_OUTPUT_ARTIFACT_MATRIX.md`.
