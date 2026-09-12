@@ -11,6 +11,7 @@ data class TechnicianIdentityEntity(
     val displayName: String,
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
+    val designation: String? = null,
 )
 
 @Entity(tableName = "dispatch_technicians")
@@ -19,6 +20,7 @@ data class DispatchTechnicianEntity(
     val displayName: String,
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
+    val designation: String? = null,
 )
 
 @Entity(tableName = "dispatch_teams", indices = [Index(value = ["name"], unique = true)])

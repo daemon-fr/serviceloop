@@ -27,7 +27,7 @@ data class ReminderPreferences(
     }
     fun includes(day: DayOfWeek) = summaryDaysMask and (1 shl (day.value - 1)) != 0
     companion object {
-        val HORIZONS = setOf(0, 7, 14, 30)
+        val HORIZONS = setOf(1, 7, 14, 30)
         /** The six user-facing appointment lead presets, in display order. */
         val APPOINTMENT_LEAD_PRESETS = listOf(
             60 to "1h",

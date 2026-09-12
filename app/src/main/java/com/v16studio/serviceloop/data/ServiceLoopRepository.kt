@@ -408,7 +408,17 @@ class RoomServiceLoopRepository(
             ) { "${item.equipmentReferenceSnapshot} · ${item.serviceNameSnapshot} is stale — rebook this work" }
         }
         val site=dao.site(visit.siteId)?:error("Site missing"); val customer=dao.customer(site.customerId)?:error("Customer missing"); val profile=dao.businessProfile(); val now = businessTime.instant().toEpochMilli()
-        workItems.forEach { item -> val eq=dao.equipment(item.equipmentId)?:error("Equipment missing"); require(eq.siteId==visit.siteId); val plan=item.servicePlanId?.let{dao.plan(it) ?: error("Plan missing")}; val snapshot=plan?.let{captureTemplateSnapshot(it.reusableTemplateId,id,it.id,now)}; check(dao.refreshWorkItemSnapshot(item.id,snapshot,eq.name,eq.reference,eq.technicianIdentifier,eq.make,eq.model,eq.serialNumber,plan?.name ?: item.serviceNameSnapshot,plan?.reference,plan?.currentDueDate,item.intervalCountSnapshot?.let{plan?.intervalCount},item.intervalUnitSnapshot?.let{plan?.intervalUnit})==1) }
+        workItems.forEach { item ->
+            val eq=dao.equipment(item.equipmentId)?:error("Equipment missing"); require(eq.siteId==visit.siteId)
+            val plan=item.servicePlanId?.let{dao.plan(it) ?: error("Plan missing")}
+            val existingSnapshot=item.templateSnapshotId?.let { snapshotId -> dao.templateSnapshot(snapshotId) }
+            val currentRevision=plan?.reusableTemplateId?.let { templateId -> dao.reusableTemplate(templateId)?.let { master -> dao.reusableTemplateRevision(master.currentRevisionId) } }
+            val preserveSnapshot=existingSnapshot?.takeIf { snapshot ->
+                snapshot.sourceTemplateId==null || (snapshot.sourceTemplateId==plan?.reusableTemplateId && snapshot.revision==currentRevision?.revisionNumber && snapshot.templateName==currentRevision?.nameSnapshot)
+            }?.id
+            val snapshot=preserveSnapshot ?: plan?.let{captureTemplateSnapshot(it.reusableTemplateId,id,it.id,now)}
+            check(dao.refreshWorkItemSnapshot(item.id,snapshot,eq.name,eq.reference,eq.technicianIdentifier,eq.make,eq.model,eq.serialNumber,plan?.name ?: item.serviceNameSnapshot,plan?.reference,plan?.currentDueDate,item.intervalCountSnapshot?.let{plan?.intervalCount},item.intervalUnitSnapshot?.let{plan?.intervalUnit})==1)
+        }
         check(dao.startBookedVisit(id,businessTime.today().toString(),customer.name,customer.reference,site.name,site.reference,site.address,profile?.businessName,profile?.technicianName,profile?.phone,profile?.email,profile?.postalAddress,profile?.zoneId,now)==1){"Only a booked visit can be started"}; now
     } }
 
@@ -555,7 +565,16 @@ class RoomServiceLoopRepository(
         require(businessName.isNotBlank() && technicianName.isNotBlank()) { "Business and technician names are required" }; require(zoneId.isNotBlank()) { "Business time zone is required" }; val parsedZone = ZoneId.of(zoneId)
         dao.businessProfile()?.let { existing -> if (existing.businessName == businessName && existing.technicianName == technicianName && existing.phone == phone && existing.email == email && existing.postalAddress == address && existing.zoneId == zoneId) return existing.modifiedAtEpochMillis }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
-        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = businessName, technicianName = technicianName, phone = phone, email = email, postalAddress = address, zoneId = zoneId, modifiedAtEpochMillis = now))
+        database.withTransaction {
+            dao.upsertBusinessProfile(BusinessProfileEntity(businessName = businessName, technicianName = technicianName, phone = phone, email = email, postalAddress = address, zoneId = zoneId, modifiedAtEpochMillis = now))
+            dispatchDao.technicianIdentity()?.let { identity ->
+                val synced = identity.copy(displayName = technicianName, modifiedAtEpochMillis = now)
+                dispatchDao.updateTechnicianIdentity(synced)
+                dispatchDao.technician(identity.technicianId)?.let { directory ->
+                    dispatchDao.updateTechnician(directory.copy(displayName = technicianName, modifiedAtEpochMillis = now))
+                }
+            }
+        }
         (businessTime as? MutableBusinessTime)?.updateZone(parsedZone)
         businessDateSignal?.invalidate()
         return now
@@ -733,8 +752,9 @@ class RoomServiceLoopRepository(
     private suspend fun captureTemplateSnapshot(templateId: String?, visitId: String, planId: String, now: Long): String? {
         val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
         val revision = dao.reusableTemplateRevision(master.currentRevisionId) ?: error("Template revision missing")
-        val snapshotId = stableId("template-snapshot", visitId, planId, revision.id)
         val revisionItems=dao.reusableTemplateItems(revision.id)
+        val content = DispatchInspectionSnapshot("", revision.nameSnapshot, master.reference, revision.revisionNumber, revisionItems.map { item -> DispatchInspectionItem(item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance) })
+        val snapshotId = DispatchPackageCodec.contentAddressedSnapshotId(content)
         dao.templateSnapshot(snapshotId)?.let { existing ->
             require(existing.sourceTemplateId==master.id&&existing.templateName==revision.nameSnapshot&&existing.revision==revision.revisionNumber){"Existing template snapshot does not match the current immutable revision"}
             val expected=revisionItems.map { item -> ChecklistItemSnapshotEntity(stableId("snapshot-item",snapshotId,item.id),snapshotId,item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance) }

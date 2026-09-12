@@ -35,7 +35,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -47,7 +47,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -296,6 +296,18 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 // descriptions retain their original wording as provenance.
                 db.execSQL("UPDATE working_visits SET state='COMPLETED' WHERE state IN ('FINALIZED','PARTICIPATION_COMPLETE')")
                 db.execSQL("UPDATE working_visits SET state='CANCELED', cancellationOrigin=CASE WHEN state='DISPATCH_WITHDRAWN' THEN 'ASSIGNMENT_REMOVAL' ELSE COALESCE(cancellationOrigin,'LOCAL') END WHERE state IN ('DISPATCH_WITHDRAWN','CANCELLED')")
+                configureStage4Tracking(db)
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE technician_identity ADD COLUMN designation TEXT")
+                db.execSQL("ALTER TABLE dispatch_technicians ADD COLUMN designation TEXT")
+                // 0 days was never released as a supported horizon. Normalize
+                // development data during the ordinary Room upgrade instead of
+                // keeping obsolete product validation alive.
+                db.execSQL("UPDATE reminder_preferences SET dueSoonHorizonDays=1 WHERE dueSoonHorizonDays=0")
                 configureStage4Tracking(db)
             }
         }

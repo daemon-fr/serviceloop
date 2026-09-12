@@ -243,7 +243,7 @@ class RecoveryPackage(
         require(reminders.size == 1 && reminders.single().getString("id") == "primary") { "Reminder preferences singleton is invalid" }
         reminders.single().let { value ->
             require(value.getInt("summaryHour") in 0..23 && value.getInt("summaryMinute") in 0..59)
-            require(value.getInt("summaryDaysMask") in 0..127 && value.getInt("dueSoonHorizonDays") in setOf(0, 7, 14, 30))
+            require(value.getInt("summaryDaysMask") in 0..127 && value.getInt("dueSoonHorizonDays") in ReminderPreferences.HORIZONS)
             require(value.getInt("defaultAppointmentLeadMinutes") in ReminderPreferences.APPOINTMENT_LEADS)
             val booleanFields = listOf("dailySummaryEnabled", "includeDueServices", "includeVisits", "includeFollowUps", "includeUnfinishedVisits", "includeBackupReminder", "appointmentAlertsEnabled")
             require(booleanFields.all { value.getInt(it) in 0..1 })
@@ -490,8 +490,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 12
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 13
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000

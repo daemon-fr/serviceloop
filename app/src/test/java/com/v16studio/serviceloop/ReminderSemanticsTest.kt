@@ -50,7 +50,7 @@ class ReminderSemanticsTest {
     @Test fun allAdoptedHorizonsClassifyExactBoundariesWithoutChangingDates() {
         val today = LocalDate.parse("2026-09-10")
         val due = listOf(0L,1L,7L,14L,30L,31L).associateWith { today.plusDays(it) }
-        listOf(0,7,14,30).forEach { horizon ->
+        ReminderPreferences.HORIZONS.sorted().forEach { horizon ->
             due.forEach { (offset,date) ->
                 val expected = if (offset == 0L) DueBucket.TODAY else if (offset <= horizon) DueBucket.DUE_SOON else DueBucket.UPCOMING
                 assertEquals("horizon=$horizon offset=$offset", expected, DueClassifier.bucket(date, today, horizon))
