@@ -130,15 +130,15 @@ class B013R31SelectionAndActionStackUiTest {
     }
 
     @Test
-    fun brandWordmarkIsCenteredBetweenEqualTrailRegions() {
+    fun brandWordmarkIsCenteredBetweenEqualLineRegions() {
         compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopBrandStrip(Modifier.width(360.dp).testTag("brand-strip")) } } }
         compose.waitForIdle()
         val strip=compose.onNodeWithTag("brand-strip",true).fetchSemanticsNode().boundsInRoot
         val wordmark=compose.onNodeWithTag("serviceloop-wordmark",true).fetchSemanticsNode().boundsInRoot
-        val left=compose.onNodeWithTag("brand-left-trail",true).fetchSemanticsNode().boundsInRoot
-        val right=compose.onNodeWithTag("brand-right-trail",true).fetchSemanticsNode().boundsInRoot
+        val left=compose.onNodeWithTag("brand-left-line",true).fetchSemanticsNode().boundsInRoot
+        val right=compose.onNodeWithTag("brand-right-line",true).fetchSemanticsNode().boundsInRoot
         assertTrue("wordmark must remain mathematically centered",kotlin.math.abs(wordmark.center.x-strip.center.x)<2f)
-        assertTrue("trail regions must have equal width",kotlin.math.abs(left.width-right.width)<2f)
+        assertTrue("line regions must have equal width",kotlin.math.abs(left.width-right.width)<2f)
         compose.onNodeWithText("ServiceLoop").assertIsDisplayed()
     }
 }
@@ -167,10 +167,7 @@ class B013R31OwnerSurfaceRenderTest {
         capture("due-services.png")
         compose.onAllNodesWithTag("entity-record-selection",useUnmergedTree=true)[0].performClick()
         capture("due-services-unchecked.png")
-        compose.onNodeWithTag("work-more-actions").performClick()
-        compose.onNodeWithText("Import work package").assertIsDisplayed()
-        capture("work-more-open.png")
-        androidx.test.espresso.Espresso.pressBack()
+        compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
 
         compose.onNodeWithText("Home").performClick()
         compose.onNodeWithText("Settings").performClick()
@@ -180,7 +177,7 @@ class B013R31OwnerSurfaceRenderTest {
         capture("reminder-settings.png")
 
         androidx.test.espresso.Espresso.pressBack()
-        compose.onNodeWithText("Coordinator tools").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
         compose.onNodeWithText("Open Technician identity").performClick()
         compose.onNodeWithTag("technician-identity").assertIsDisplayed()
         capture("technician-identity.png")

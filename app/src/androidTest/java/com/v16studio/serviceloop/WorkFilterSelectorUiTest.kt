@@ -112,7 +112,7 @@ class WorkFilterSelectorUiTest {
         assertTrue(compose.onAllNodesWithText("Due or overdue").fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun darkAppearanceKeepsWhiteSelectorMenuInteractionReadable() {
+    @Test fun darkAppearanceKeepsDarkSelectorMenuInteractionReadable() {
         val state = UiState(
             loading = false,
             dueServicesProjection = DueServicesProjection.Available(emptyList()),

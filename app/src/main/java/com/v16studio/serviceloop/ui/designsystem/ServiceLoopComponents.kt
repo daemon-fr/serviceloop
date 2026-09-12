@@ -72,38 +72,11 @@ fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)?
     }
 }
 
-@Immutable
-internal data class TrailSquare(val x: Float, val y: Float, val sizeDp: Float, val alpha: Float)
-
-internal val LeftTrailSquares = listOf(
-    TrailSquare(.04f,.42f,2f,.03f), TrailSquare(.12f,.70f,2.5f,.04f), TrailSquare(.20f,.22f,2f,.04f),
-    TrailSquare(.28f,.53f,3f,.05f), TrailSquare(.35f,.80f,2.5f,.06f), TrailSquare(.42f,.30f,3.5f,.06f),
-    TrailSquare(.48f,.62f,3f,.07f), TrailSquare(.55f,.12f,4f,.07f), TrailSquare(.60f,.44f,3.5f,.08f),
-    TrailSquare(.65f,.76f,4.5f,.08f), TrailSquare(.70f,.26f,4f,.09f), TrailSquare(.74f,.56f,5f,.09f),
-    TrailSquare(.78f,.86f,3.5f,.10f), TrailSquare(.82f,.12f,4.5f,.10f), TrailSquare(.84f,.42f,5.5f,.11f),
-    TrailSquare(.87f,.70f,4f,.12f), TrailSquare(.90f,.25f,5f,.12f), TrailSquare(.92f,.54f,6f,.13f),
-    TrailSquare(.94f,.82f,4.5f,.12f), TrailSquare(.96f,.08f,4f,.11f), TrailSquare(.97f,.34f,5.5f,.14f),
-    TrailSquare(.98f,.64f,4f,.13f), TrailSquare(.99f,.90f,3.5f,.10f), TrailSquare(.995f,.48f,5f,.15f),
-)
-internal val RightTrailSquares = listOf(
-    TrailSquare(.03f,.58f,5.5f,.15f), TrailSquare(.05f,.18f,4f,.12f), TrailSquare(.07f,.82f,4.5f,.13f),
-    TrailSquare(.09f,.39f,6f,.14f), TrailSquare(.12f,.68f,4f,.11f), TrailSquare(.15f,.08f,5f,.12f),
-    TrailSquare(.18f,.48f,4.5f,.11f), TrailSquare(.21f,.88f,3.5f,.09f), TrailSquare(.24f,.27f,5f,.10f),
-    TrailSquare(.28f,.61f,4f,.09f), TrailSquare(.32f,.13f,4.5f,.08f), TrailSquare(.37f,.76f,3.5f,.08f),
-    TrailSquare(.42f,.37f,4f,.07f), TrailSquare(.48f,.66f,3f,.07f), TrailSquare(.54f,.18f,3.5f,.06f),
-    TrailSquare(.60f,.50f,3f,.06f), TrailSquare(.67f,.83f,2.5f,.05f), TrailSquare(.72f,.29f,3f,.05f),
-    TrailSquare(.78f,.59f,2.5f,.04f), TrailSquare(.84f,.12f,2f,.04f), TrailSquare(.89f,.73f,2.5f,.03f),
-    TrailSquare(.94f,.41f,1.5f,.03f), TrailSquare(.98f,.86f,2f,.02f),
-)
-
 @Composable
-private fun SquareTrail(squares: List<TrailSquare>, color: Color, modifier: Modifier) {
-    Canvas(modifier) {
-        squares.forEach { square ->
-            val side = square.sizeDp.dp.toPx()
-            drawRect(color.copy(alpha = square.alpha), Offset((size.width-side)*square.x, (size.height-side)*square.y), Size(side, side))
-        }
-    }
+private fun BrandLine(color: Color, modifier: Modifier) = Canvas(modifier) {
+    val stroke = 1.dp.toPx()
+    drawLine(color.copy(alpha = .28f), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), stroke)
+    drawLine(color, Offset(size.width * .36f, size.height / 2), Offset(size.width, size.height / 2), stroke)
 }
 
 @Composable
@@ -114,7 +87,7 @@ fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
             .background(c.brandBand).padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SquareTrail(LeftTrailSquares, c.textPrimary, Modifier.weight(1f).height(22.dp).testTag("brand-left-trail"))
+        BrandLine(c.textPrimary, Modifier.weight(1f).height(22.dp).testTag("brand-left-line"))
         Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
         Text(
             buildAnnotatedString {
@@ -125,7 +98,7 @@ fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
             fontWeight=FontWeight.Bold, letterSpacing=(-.2).sp, maxLines=1, softWrap=false,
         )
         Spacer(Modifier.width(ServiceLoopUiTokens.Space.md))
-        SquareTrail(RightTrailSquares, c.action, Modifier.weight(1f).height(22.dp).testTag("brand-right-trail"))
+        BrandLine(c.action, Modifier.weight(1f).height(22.dp).testTag("brand-right-line"))
     }
 }
 
@@ -269,13 +242,19 @@ fun <T> ServiceLoopFilterSelector(
     testTag: String? = null,
 ) {
     var expanded by rememberSaveable(label) { mutableStateOf(false) }
+    val colors = LocalServiceLoopTokens.current
+    val selectorSurface = colors.surface
+    val primaryInk = colors.textPrimary
+    val secondaryInk = colors.textSecondary
+    val accentInk = colors.action
+    val selectedContainer = colors.selection
     val selectedLabel = options.firstOrNull { it.first == selected }?.second.orEmpty()
     Box(modifier) {
         Surface(
             onClick = { expanded = true },
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-            color = ServiceLoopFilterSelectorContract.surface,
-            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, ServiceLoopFilterSelectorContract.outline),
+            color = selectorSurface,
+            border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
                 .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
@@ -289,14 +268,14 @@ fun <T> ServiceLoopFilterSelector(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-                    Text(label, style = ServiceLoopUiTokens.Type.meta, color = ServiceLoopFilterSelectorContract.secondaryInk)
-                    Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = ServiceLoopFilterSelectorContract.primaryInk)
+                    Text(label, style = ServiceLoopUiTokens.Type.meta, color = secondaryInk)
+                    Text(selectedLabel, style = ServiceLoopUiTokens.Type.label, color = primaryInk)
                 }
                 ServiceLoopIcon(
                     ServiceLoopIcons.Dropdown,
                     null,
                     Modifier.size(ServiceLoopUiTokens.Size.icon),
-                    ServiceLoopFilterSelectorContract.accentInk,
+                    accentInk,
                 )
             }
         }
@@ -307,7 +286,7 @@ fun <T> ServiceLoopFilterSelector(
                 min = ServiceLoopUiTokens.Size.menuMinWidth,
                 max = ServiceLoopUiTokens.Size.menuMaxWidth,
             ),
-            containerColor = ServiceLoopFilterSelectorContract.surface,
+            containerColor = selectorSurface,
         ) {
             options.forEach { (value, optionLabel) ->
                 val isSelected = value == selected
@@ -318,7 +297,7 @@ fun <T> ServiceLoopFilterSelector(
                             style = ServiceLoopUiTokens.Type.body.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             ),
-                            color = if (isSelected) ServiceLoopFilterSelectorContract.accentInk else ServiceLoopFilterSelectorContract.primaryInk,
+                            color = if (isSelected) accentInk else primaryInk,
                         )
                     },
                     onClick = {
@@ -331,14 +310,14 @@ fun <T> ServiceLoopFilterSelector(
                                 ServiceLoopIcons.SelectionCheck,
                                 null,
                                 Modifier.size(ServiceLoopFilterSelectorContract.menuCheckSize),
-                                ServiceLoopFilterSelectorContract.accentInk,
+                                accentInk,
                             )
                         } else {
                             Spacer(Modifier.width(ServiceLoopFilterSelectorContract.menuCheckSize))
                         }
                     },
                     modifier = Modifier
-                        .background(if (isSelected) ServiceLoopFilterSelectorContract.selectedContainer else Color.Transparent)
+                        .background(if (isSelected) selectedContainer else Color.Transparent)
                         .then(if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${optionLabel.filter { it.isLetterOrDigit() }.lowercase()}"))
                         .semantics { this.selected = isSelected },
                 )

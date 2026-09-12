@@ -26,20 +26,18 @@ class WorkFilterSelectorStyleTest {
     }
 
     @Test
-    fun selectorUsesFixedWhiteSurfaceAndReadableInkInBothAppearances() {
+    fun selectorUsesThemeSurfaceAndReadableInkInBothAppearances() {
         val components = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
         val tokens = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopUiTokens.kt").readText()
         val icons = File("src/main/java/com/v16studio/serviceloop/ui/icons/ServiceLoopIcons.kt").readText()
 
-        assertTrue(components.contains("color = ServiceLoopFilterSelectorContract.surface"))
-        assertTrue(components.contains("containerColor = ServiceLoopFilterSelectorContract.surface"))
-        assertTrue(components.contains("ServiceLoopFilterSelectorContract.primaryInk"))
-        assertTrue(components.contains("ServiceLoopFilterSelectorContract.secondaryInk"))
-        assertTrue(components.contains("ServiceLoopFilterSelectorContract.accentInk"))
-        assertTrue(components.contains(".background(if (isSelected) ServiceLoopFilterSelectorContract.selectedContainer else Color.Transparent)"))
+        assertTrue(components.contains("color = selectorSurface"))
+        assertTrue(components.contains("containerColor = selectorSurface"))
+        assertTrue(components.contains("val selectorSurface = colors.surface"))
+        assertTrue(components.contains("val primaryInk = colors.textPrimary"))
+        assertTrue(components.contains("val accentInk = colors.action"))
+        assertTrue(components.contains(".background(if (isSelected) selectedContainer else Color.Transparent)"))
         assertTrue(components.contains("ServiceLoopFilterSelectorContract.menuCheckSize"))
-        assertTrue(tokens.contains("val surface = Color.White"))
-        assertTrue(tokens.contains("val outline = Color(0xFF67B9B8)"))
         assertTrue(tokens.contains("val filterMenuCheck=16.dp"))
         assertTrue(components.contains("fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal"))
         assertTrue(components.contains("ServiceLoopIcons.Dropdown"))

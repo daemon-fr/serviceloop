@@ -2,7 +2,6 @@ package com.v16studio.serviceloop
 
 import java.io.File
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,16 +15,14 @@ class B013VisualConsolidationSourceTest {
         assertFalse(Regex("\\bDailyRow\\s*\\(").containsMatchIn(production))
     }
 
-    @Test fun brandGeometryIsFixedSquareOnlyAndCodeRendered() {
+    @Test fun brandGeometryUsesRestrainedCodeRenderedLines() {
         val components=source("app/src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt")
-        assertTrue(components.contains("data class TrailSquare(val x: Float, val y: Float, val sizeDp: Float, val alpha: Float)"))
-        assertTrue(components.contains("Size(side, side)"))
-        assertTrue(components.contains("LeftTrailSquares = listOf("))
-        assertTrue(components.contains("RightTrailSquares = listOf("))
+        assertTrue(components.contains("private fun BrandLine"))
+        assertTrue(components.contains("drawLine"))
+        assertTrue(components.contains("brand-left-line"))
+        assertTrue(components.contains("brand-right-line"))
+        assertFalse(components.contains("TrailSquare"))
         assertFalse(components.contains("Random("))
-        val left=components.substringAfter("LeftTrailSquares = listOf(").substringBefore("internal val RightTrailSquares")
-        val right=components.substringAfter("RightTrailSquares = listOf(").substringBefore("@Composable\nprivate fun SquareTrail")
-        assertNotEquals(left,right)
         val raster=File(root,"app/src/main/res").walkTopDown().filter{it.extension.lowercase() in setOf("png","jpg","jpeg","webp")}.map{it.name}.toList()
         assertFalse(raster.any{it.contains("brand",true)||it.contains("logo",true)})
     }
@@ -34,7 +31,7 @@ class B013VisualConsolidationSourceTest {
         val app=source("app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt")
         assertTrue(app.substringAfter("private fun RootScaffold").substringBefore("internal fun DetailScaffold").contains("ServiceLoopBrandStrip()"))
         assertTrue(app.substringAfter("internal fun DetailScaffold").substringBefore("internal val LocalDetailBackInterceptor").contains("ServiceLoopBrandStrip()"))
-        assertTrue(app.contains("More Work actions"))
+        assertFalse(app.contains("More Work actions"))
         assertFalse(app.contains("includeWorkDestinations"))
     }
 

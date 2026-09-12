@@ -63,14 +63,29 @@ class DispatchCoordinatorUiTest {
     @Test fun coordinatorWorkspaceMovesFromSettingsToReactiveHomeActions(){
         compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
         compose.onNodeWithTag("root-nav-home").assertIsDisplayed();compose.onNodeWithTag("root-nav-work").assertIsDisplayed();compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
-        compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Coordinator tools").performClick();compose.onNodeWithTag("coordinator-tools-switch").performClick()
+        compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-coordinator").performClick()
         compose.onNodeWithText("Coordinator tools are available from Home.").assertIsDisplayed();compose.onNodeWithText("Technicians").assertDoesNotExist();compose.onNodeWithText("Teams and leaders").assertDoesNotExist();compose.onNodeWithText("Dispatch outbox").assertDoesNotExist()
         compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed();capture("root-home","dispatch-home-coordinator.png")
         compose.onNodeWithText("Technicians").performClick();compose.onNodeWithTag("dispatch-technicians").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Teams").performClick();compose.onNodeWithTag("dispatch-teams").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Outbox").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.onNodeWithTag("dispatch-new-visit").performClick();compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed()
         compose.onNodeWithTag("dispatch-save-visit").assertIsEnabled().performClick();compose.onNodeWithText("Choose a Site.").assertIsDisplayed()
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-optional-details"));compose.onNodeWithTag("dispatch-optional-details").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-manager-reference"));compose.onNodeWithTag("dispatch-manager-reference").performTextInput("unsaved");compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed();compose.onNodeWithText("Keep editing").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard changes").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Coordinator tools").performClick();compose.onNodeWithTag("coordinator-tools-switch").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-optional-details"));compose.onNodeWithTag("dispatch-optional-details").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-manager-reference"));compose.onNodeWithTag("dispatch-manager-reference").performTextInput("unsaved");compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed();compose.onNodeWithText("Keep editing").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard changes").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-solo").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
+    }
+
+    @Test fun memberSeesImportOnHomeAndHistoryLivesInSettingsData(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("History").assertIsDisplayed().performClick()
+        compose.onNodeWithText("History",useUnmergedTree=true).assertIsDisplayed()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithTag("member-import-work-package").assertIsDisplayed()
+        compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
+        compose.onNodeWithText("Work").performClick()
+        compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
     }
 
     @Test fun listFirstOutboxHandlesLargeDirectoryAndExplicitSelection(){

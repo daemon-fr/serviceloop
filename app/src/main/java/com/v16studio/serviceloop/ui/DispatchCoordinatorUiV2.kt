@@ -246,7 +246,8 @@ private data class DispatchEditorLoad(
 }
 
 @Composable internal fun CoordinatorHomeActions(nav:NavHostController){
-    val context=LocalContext.current;val prefs=remember{context.getSharedPreferences(DISPATCH_PREFS,0)};var enabled by remember{mutableStateOf(prefs.getBoolean(COORDINATOR_ENABLED,false))}
-    DisposableEffect(prefs){val listener=android.content.SharedPreferences.OnSharedPreferenceChangeListener{shared,key->if(key==COORDINATOR_ENABLED)enabled=shared.getBoolean(COORDINATOR_ENABLED,false)};prefs.registerOnSharedPreferenceChangeListener(listener);onDispose{prefs.unregisterOnSharedPreferenceChangeListener(listener)}}
-    if(enabled){Row(Modifier.fillMaxWidth().testTag("coordinator-home-actions"),horizontalArrangement=Arrangement.spacedBy(6.dp)){ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.weight(1f));ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.weight(1f));ServiceLoopSecondaryButton("Outbox",{nav.navigate("dispatch/create")},Modifier.weight(1f))}}
+    val context=LocalContext.current;val prefs=remember{context.getSharedPreferences(DISPATCH_PREFS,0)};var role by remember{mutableStateOf(context.teamRole())}
+    DisposableEffect(prefs){val listener=android.content.SharedPreferences.OnSharedPreferenceChangeListener{_,key->if(key==TEAM_ROLE)role=context.teamRole()};prefs.registerOnSharedPreferenceChangeListener(listener);onDispose{prefs.unregisterOnSharedPreferenceChangeListener(listener)}}
+    if(role==TeamRole.COORDINATOR){Row(Modifier.fillMaxWidth().testTag("coordinator-home-actions"),horizontalArrangement=Arrangement.spacedBy(6.dp)){ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.weight(1f));ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.weight(1f));ServiceLoopSecondaryButton("Outbox",{nav.navigate("dispatch/create")},Modifier.weight(1f))}}
+    if(role==TeamRole.MEMBER){ServiceLoopSecondaryButton("Import work package",{nav.navigate("dispatch/import")},Modifier.fillMaxWidth().testTag("member-import-work-package"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Backup,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})}
 }

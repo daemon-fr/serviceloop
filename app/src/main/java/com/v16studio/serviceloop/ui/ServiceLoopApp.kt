@@ -16,6 +16,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -184,12 +185,16 @@ internal enum class WorkTab(val label: String) {
 }
 
 @Composable
-fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null) {
+fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null) {
     val state by viewModel.state.collectAsState()
     if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
     LaunchedEffect(notificationRoute, state.restrictedRecoveryState) {
         if (!state.restrictedRecoveryState && notificationRoute != null) nav.navigate(notificationRoute) { launchSingleTop = true }
+    }
+    val context = LocalContext.current
+    LaunchedEffect(incomingWorkPackage, state.restrictedRecoveryState) {
+        if (!state.restrictedRecoveryState && incomingWorkPackage != null && context.teamRole() == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
     }
     NavHost(
         navController = nav,
@@ -289,7 +294,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             LaunchedEffect(Unit) { viewModel.loadCalendarSettings() }
             DetailScaffold("Calendar integration", nav) { padding -> CalendarSettingsScreen(state, padding, viewModel) }
         }
-        composable("dispatch/settings") { DetailScaffold("Coordinator tools",nav){DispatchSettings(it,nav)} }
+        composable("dispatch/settings") { DetailScaffold("Team role settings",nav){DispatchSettings(it,nav)} }
         composable("dispatch/identity") { DetailScaffold("Technician identity",nav){TechnicianIdentityScreen(it)} }
         composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
         composable("dispatch/teams") { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} }
@@ -297,7 +302,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("dispatch/visit/new") { DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,state.businessDate)} }
         composable("dispatch/visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch visit",nav){DispatchVisitEditorScreen(it,nav,id,state.businessDate)} }
         composable("dispatch/export-review") { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Review export",nav){DispatchExportReviewScreen(it,nav,ids)} }
-        composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel)} }
+        composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel,incomingWorkPackage)} }
         composable("business-profile") {
             LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }
             DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) }
@@ -389,7 +394,6 @@ private fun RootScaffold(nav: NavHostController, selected: RootDestination, cont
                 actions = {
                     TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
                     TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
-                    if(selected==RootDestination.WORK) WorkMoreMenu(nav)
                 },
             )
             }
@@ -414,18 +418,6 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
             }
         }
     }, content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } }) }
-}
-
-@Composable
-private fun WorkMoreMenu(nav:NavHostController) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Box {
-        ServiceLoopIconAction("More Work actions",{expanded=true},Modifier.testTag("work-more-actions")) { ServiceLoopIcon(ServiceLoopIcons.More,null,Modifier.size(ServiceLoopUiTokens.Size.icon)) }
-        DropdownMenu(expanded,onDismissRequest={expanded=false}) {
-            DropdownMenuItem({Text("History")},{expanded=false;nav.navigate("history/global")},leadingIcon={ServiceLoopIcon(ServiceLoopIcons.History,null,Modifier.size(ServiceLoopUiTokens.Size.icon))},modifier=Modifier.testTag("work-more-history"))
-            DropdownMenuItem({Text("Import work package")},{expanded=false;nav.navigate("dispatch/import")},leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Backup,null,Modifier.size(ServiceLoopUiTokens.Size.icon))},modifier=Modifier.testTag("work-more-import"))
-        }
-    }
 }
 
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
@@ -873,9 +865,9 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
 @Composable
 private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.Work){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Coordinator tools",leadingIcon=ServiceLoopIcons.Customers){nav.navigate("dispatch/settings")} }
+        item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.InspectionTemplates){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole){nav.navigate("dispatch/settings")} }
         item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar){nav.navigate("calendar")} }
-        item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+        item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
     }
 }
 
@@ -910,7 +902,7 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
     }
     LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Local reminders", style = MaterialTheme.typography.titleLarge); Text("${state.reminderRuntimeState.label}. Reminders may be delayed. Work lists remain the source of truth."); Text("Work summaries channel: ${if(state.reminderRuntimeState.summariesChannelEnabled) "available" else "blocked"}"); Text("Appointment reminders channel: ${if(state.reminderRuntimeState.appointmentsChannelEnabled) "available" else "blocked"}"); state.reminderRuntimeState.schedulingError?.let { Text("Scheduling error: $it", color = MaterialTheme.colorScheme.error) }; Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(requested, ::toggleDelivery, modifier = Modifier.testTag("reminder-delivery")); Text("Request local reminders") }; if (changed && requested) Text("Android permission changes are external and are not undone by Cancel.", style = MaterialTheme.typography.bodySmall) }
-        item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); FlowRow(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) { java.time.DayOfWeek.entries.forEach { day -> FilterChip(draft.includes(day), { draft = draft.copy(summaryDaysMask = draft.summaryDaysMask xor (1 shl (day.value - 1))) }, { Text(day.name.take(2),softWrap=false) }, modifier = Modifier.width(IntrinsicSize.Max).testTag("summary-day-${day.name.lowercase()}")) } }; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
+        item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); SummaryDayChoices(draft){draft=it}; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
         item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(0,7,14,30).map{it to "$it days"},draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
         item { Text("Summary content", fontWeight = FontWeight.Bold); ReminderToggle("Due services", draft.includeDueServices) { draft = draft.copy(includeDueServices = it) }; ReminderToggle("Visits", draft.includeVisits) { draft = draft.copy(includeVisits = it) }; ReminderToggle("Follow-ups", draft.includeFollowUps) { draft = draft.copy(includeFollowUps = it) }; ReminderToggle("Unfinished visits", draft.includeUnfinishedVisits) { draft = draft.copy(includeUnfinishedVisits = it) }; ReminderToggle("Backup reminder", draft.includeBackupReminder) { draft = draft.copy(includeBackupReminder = it) } }
         item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopChoiceGroup(listOf(120 to "2 hours",1440 to "1 day"),draft.defaultAppointmentLeadMinutes,{draft=draft.copy(defaultAppointmentLeadMinutes=it)}) }
@@ -921,6 +913,24 @@ private fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, viewM
 
 @Composable
 private fun ReminderToggle(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, onChecked); Text(label) }
+
+@Composable
+private fun SummaryDayChoices(value: ReminderPreferences, onChanged: (ReminderPreferences) -> Unit) {
+    val days = java.time.DayOfWeek.entries
+    @Composable fun RowScope.Day(day: java.time.DayOfWeek) = FilterChip(
+        selected = value.includes(day),
+        onClick = { onChanged(value.copy(summaryDaysMask = value.summaryDaysMask xor (1 shl (day.value - 1)))) },
+        label = { Text(day.name.take(2), softWrap = false) },
+        modifier = Modifier.weight(1f).heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("summary-day-${day.name.lowercase()}"),
+    )
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("summary-days")) {
+        if (maxWidth >= 350.dp) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { days.forEach { Day(it) } }
+        else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.take(4).forEach { Day(it) } }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { days.drop(4).forEach { Day(it) } }
+        }
+    }
+}
 
 @Composable
 private fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveStatus, padding: PaddingValues, viewModel: ServiceLoopViewModel) {

@@ -162,8 +162,8 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithText("Calendar", substring = true).performClick()
         composeRule.onNodeWithTag("calendar-settings").assertIsDisplayed()
         pressBack()
-        composeRule.onNodeWithText("Coordinator tools").performClick()
-        composeRule.onNodeWithTag("coordinator-tools-switch").assertIsDisplayed()
+        composeRule.onNodeWithText("Team role settings").performClick()
+        composeRule.onNodeWithTag("team-role-settings").assertIsDisplayed()
         pressBack()
         pressBack()
 

@@ -30,6 +30,7 @@ object ServiceLoopIcons {
     @DrawableRes val History = R.drawable.ic_sl_history
     @DrawableRes val Home = R.drawable.ic_sl_home
     @DrawableRes val Info = R.drawable.ic_sl_info
+    @DrawableRes val InspectionTemplates = R.drawable.ic_sl_inspection_templates
     @DrawableRes val LocalSaved = R.drawable.ic_sl_local_saved
     @DrawableRes val Lock = R.drawable.ic_sl_lock
     @DrawableRes val Mail = R.drawable.ic_sl_mail
@@ -45,6 +46,7 @@ object ServiceLoopIcons {
     @DrawableRes val Share = R.drawable.ic_sl_share
     @DrawableRes val Site = R.drawable.ic_sl_site
     @DrawableRes val Sms = R.drawable.ic_sl_sms
+    @DrawableRes val TeamRole = R.drawable.ic_sl_team_role
     @DrawableRes val Time = R.drawable.ic_sl_time
     @DrawableRes val Warning = R.drawable.ic_sl_warning
     @DrawableRes val Work = R.drawable.ic_sl_work

@@ -25,7 +25,7 @@ class ReminderSettingsUiTest {
         val viewModel = ServiceLoopViewModel(repository) {}
         compose.setContent { ServiceLoopApp(viewModel) }
         compose.onNodeWithText("Settings").performClick()
-        compose.onNode(hasText("Reminders · Off", substring = true)).performClick()
+        compose.onNodeWithText("Reminders").performClick()
         compose.onNodeWithTag("reminder-settings").assertIsDisplayed()
         compose.onNodeWithTag("due-horizon-14").assertIsDisplayed()
         java.time.DayOfWeek.entries.forEach { compose.onNodeWithTag("summary-day-${it.name.lowercase()}").performClick() }
