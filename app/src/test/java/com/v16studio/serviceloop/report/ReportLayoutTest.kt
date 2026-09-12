@@ -36,7 +36,35 @@ class ReportLayoutTest {
         assertTrue(pages.size > 2)
         assertTrue(pages.all { it.contentHeight <= FixedServiceRecordPdf.CONTENT_HEIGHT })
         assertTrue(pages.flatMap { it.lines }.all { FixedServiceRecordPdf.measuredWidth(it) <= FixedServiceRecordPdf.CONTENT_WIDTH + 0.01f })
-        assertFalse(pages.any { it.lines.lastOrNull()?.style == FixedServiceRecordPdf.LineStyle.SECTION })
+        assertFalse(pages.any { it.lines.lastOrNull()?.style in setOf(FixedServiceRecordPdf.LineStyle.SECTION, FixedServiceRecordPdf.LineStyle.SUBSECTION, FixedServiceRecordPdf.LineStyle.TABLE_HEADER) })
+    }
+
+    @Test fun workItemSubsectionsAndTableHeadersKeepFollowingContentOnTheSamePage() {
+        val pages = FixedServiceRecordPdf.layout(report((1..40).map { number -> line(number, "Maker Model Serial-$number", "Routine work") }))
+
+        assertTrue(pages.size > 2)
+        pages.forEach { page ->
+            page.lines.forEachIndexed { index, current ->
+                when (current.style) {
+                    FixedServiceRecordPdf.LineStyle.SUBSECTION -> assertTrue(index + 1 < page.lines.size)
+                    FixedServiceRecordPdf.LineStyle.TABLE_HEADER -> assertTrue(index + 1 < page.lines.size && page.lines[index + 1].style == FixedServiceRecordPdf.LineStyle.TABLE_ROW)
+                    else -> Unit
+                }
+            }
+        }
+        val checklistPage = pages.first { page -> page.lines.any { it.text == "Inspection checklist" } }
+        val checklistIndex = checklistPage.lines.indexOfFirst { it.text == "Inspection checklist" }
+        assertTrue(checklistIndex + 1 < checklistPage.lines.size)
+        assertEquals(FixedServiceRecordPdf.LineStyle.TABLE_HEADER, checklistPage.lines[checklistIndex + 1].style)
+    }
+
+    @Test fun longChecklistStillSpansPagesAndKeepsEveryPageWithinFooterBoundary() {
+        val checklist = (1..120).map { position -> PublicChecklistItem(position, "Check $position", "STATUS", null, true, "OK", null, null) }
+        val pages = FixedServiceRecordPdf.layout(report(listOf(line(1, "Pump", "Routine work").copy(checklist = checklist))))
+
+        assertTrue(pages.size > 2)
+        assertTrue(pages.all { it.contentHeight <= FixedServiceRecordPdf.CONTENT_HEIGHT })
+        assertTrue(pages.flatMap { it.lines }.count { it.style == FixedServiceRecordPdf.LineStyle.TABLE_ROW } >= 120)
     }
 
     @Test fun customerReportUsesOnlyShortTechnicianReference() {

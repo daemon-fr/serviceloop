@@ -27,8 +27,10 @@ data class InspectionTemplateImportEntry(
 )
 
 data class InspectionTemplateImportPreview(val value: InspectionTemplateTransfer, val entries: List<InspectionTemplateImportEntry>) {
-    val canImport: Boolean get() = entries.any { it.classification == InspectionTemplateImportClassification.NEW || it.classification == InspectionTemplateImportClassification.EXACT_EXISTING }
-    fun canImport(createSeparate: Set<String>): Boolean = entries.any { it.classification != InspectionTemplateImportClassification.CONFLICT || it.transfer.reference in createSeparate }
+    val canImport: Boolean get() = entries.isNotEmpty() && entries.all { it.classification != InspectionTemplateImportClassification.CONFLICT }
+    fun canImport(createSeparate: Set<String>): Boolean = entries.isNotEmpty() && entries.all { entry ->
+        entry.classification != InspectionTemplateImportClassification.CONFLICT || entry.transfer.reference in createSeparate
+    }
 }
 
 data class InspectionTemplateImportResult(

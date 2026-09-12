@@ -12,6 +12,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -58,5 +60,53 @@ class InspectionTemplateExchangeTest {
         assertTrue(retry.importedReferences.isEmpty())
         assertEquals(listOf(changed.templates.single().reference), retry.exactReferences)
         assertEquals(2, database.serviceLoopDao().reusableTemplates().size)
+    }
+
+    @Test
+    fun multipleConflictsRequireEveryCreateSeparateDecision() = runTest {
+        val preview = twoConflictPreview()
+        val references = preview.entries.map { it.transfer.reference }
+
+        assertFalse(preview.canImport(emptySet()))
+        assertFalse(preview.canImport(setOf(references.first())))
+        assertTrue(preview.canImport(references.toSet()))
+    }
+
+    @Test
+    fun importingMultipleConflictsCreatesBothAndRetryIsExact() = runTest {
+        val preview = twoConflictPreview()
+        val references = preview.entries.map { it.transfer.reference }
+        val result = exchange.import(preview, references.toSet())
+
+        assertEquals(2, result.importedReferences.size)
+        assertEquals(2, result.createdSeparateReferences.size)
+        assertEquals(4, database.serviceLoopDao().reusableTemplates().size)
+
+        val retryPreview = exchange.preview(InspectionTemplateCodec.encode(preview.value))
+        assertTrue(retryPreview.entries.all { it.classification == InspectionTemplateImportClassification.EXACT_EXISTING })
+        val retry = exchange.import(retryPreview)
+        assertTrue(retry.importedReferences.isEmpty())
+        assertEquals(references, retry.exactReferences)
+        assertEquals(4, database.serviceLoopDao().reusableTemplates().size)
+    }
+
+    @Test
+    fun unresolvedMultipleConflictImportFailsBeforeAnyTemplateIsPersisted() = runTest {
+        val preview = twoConflictPreview()
+        val references = preview.entries.map { it.transfer.reference }
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking { exchange.import(preview, setOf(references.first())) }
+        }
+
+        assertTrue(failure.message.orEmpty().contains("Resolve inspection template conflicts"))
+        assertEquals(2, database.serviceLoopDao().reusableTemplates().size)
+    }
+
+    private suspend fun twoConflictPreview(): InspectionTemplateImportPreview {
+        val first = repository.createTemplate("Safety checks", listOf(TemplateItemDraft("Guard intact", "STATUS", required = true)))
+        val second = repository.createTemplate("Pressure checks", listOf(TemplateItemDraft("Pressure recorded", "NUMBER", "bar", true)))
+        val exported = exchange.export(setOf(first, second))
+        val changed = exported.copy(templates = exported.templates.map { it.copy(name = "${it.name} received") })
+        return exchange.preview(InspectionTemplateCodec.encode(changed))
     }
 }
