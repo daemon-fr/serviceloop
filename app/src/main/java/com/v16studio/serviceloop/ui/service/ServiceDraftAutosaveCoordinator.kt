@@ -5,6 +5,7 @@ import com.v16studio.serviceloop.data.isFiniteSignedDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -232,14 +233,16 @@ class ServiceDraftAutosaveCoordinator(
         synchronized(stateLock) { latestChoices[fieldId] }?.let { choice -> immediateChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved) }
     }
 
-    fun cancel(fieldId: ServiceDraftFieldId) {
-        synchronized(stateLock) {
+    suspend fun cancelAndJoin(fieldId: ServiceDraftFieldId) {
+        val job = synchronized(stateLock) {
+            val removedJob = jobs.remove(fieldId)
             versions.remove(fieldId)
-            jobs.remove(fieldId)?.cancel()
             latestOperations.remove(fieldId)
             latestChoices.remove(fieldId)
             savedAt.remove(fieldId)
+            removedJob
         }
+        job?.cancelAndJoin()
         _states.update { current -> current - fieldId }
     }
 

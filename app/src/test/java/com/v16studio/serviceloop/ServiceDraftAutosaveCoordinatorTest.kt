@@ -19,7 +19,12 @@ import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -159,6 +164,27 @@ class ServiceDraftAutosaveCoordinatorTest {
         assertEquals(ServiceDraftFieldState.Clean(10L), coordinator.states.value[field])
     }
 
+    @Test fun cancelAndJoinPreventsLateRawBufferRewriteAfterCallerClearsIt() = runTest {
+        val repository = BlockingBufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE)
+
+        coordinator.scheduleRaw(field, "2026-12-05", ServiceDraftValidators.isoDate())
+        repository.writeEntered.await()
+
+        val cancellation = launch { coordinator.cancelAndJoin(field) }
+        runCurrent()
+        assertTrue(cancellation.isActive)
+
+        repository.releaseWrite.complete(Unit)
+        cancellation.join()
+        repository.clearWorkingInputBuffer(field.workItemId, field.fieldKey)
+        advanceUntilIdle()
+
+        assertTrue(repository.buffers.isEmpty())
+        assertTrue(coordinator.states.value[field] == null)
+    }
+
     private class BufferRepository : ServiceLoopRepository {
         val buffers = mutableMapOf<ServiceDraftFieldId, String>()
         val rawWrites = mutableListOf<String>()
@@ -190,5 +216,33 @@ class ServiceDraftAutosaveCoordinatorTest {
             .filterKeys { it.workItemId == workItemId }
             .mapKeys { it.key.fieldKey }
         override suspend fun serviceDraftWorkItemIds(visitId: String): List<String> = listOf("work-1")
+    }
+
+    private class BlockingBufferRepository : ServiceLoopRepository {
+        val writeEntered = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        val buffers = mutableMapOf<ServiceDraftFieldId, String>()
+
+        override suspend fun home(): HomeSummary = error("unused")
+        override suspend fun equipment(id: String): EquipmentDetail? = error("unused")
+        override suspend fun equipmentList(): List<EquipmentSummary> = error("unused")
+        override suspend fun customerList(): List<CustomerSummary> = error("unused")
+        override suspend fun inspection(workItemId: String): InspectionDraft? = error("unused")
+        override suspend fun completionLines(visitId: String): List<CompletionLine> = error("unused")
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long = error("unused")
+
+        override suspend fun saveWorkingInputBuffer(workItemId: String, fieldKey: String, rawValue: String): Long {
+            writeEntered.complete(Unit)
+            withContext(NonCancellable) {
+                releaseWrite.await()
+                buffers[ServiceDraftFieldId(workItemId, fieldKey)] = rawValue
+            }
+            return 1L
+        }
+
+        override suspend fun clearWorkingInputBuffer(workItemId: String, fieldKey: String): Long {
+            buffers.remove(ServiceDraftFieldId(workItemId, fieldKey))
+            return 2L
+        }
     }
 }

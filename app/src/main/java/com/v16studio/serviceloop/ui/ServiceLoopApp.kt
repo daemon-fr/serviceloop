@@ -114,6 +114,7 @@ import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
+import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
 import com.v16studio.serviceloop.domain.RecordVersionSummary
@@ -738,14 +739,15 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
             Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
         }
         item {
-            var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
+            val initialWork = draft.rawInputs[ServiceDraftFieldKeys.WORK] ?: draft.workPerformed
+            var work by rememberSaveable(draft.workItemId, initialWork) { mutableStateOf(initialWork) }
             Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             LongTextEditor(work, { work = it; viewModel.scheduleWorkText(draft.workItemId, it) }, "Public work performed", false)
             ServiceLoopPrimaryButton("Save work performed",{ viewModel.savePublicWork(draft.workItemId, work) },enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth())
             LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
         }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
-         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(draft.workItemId, question, saveStatus is SaveStatus.Saving, viewModel) }
+         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(draft.workItemId, draft.rawInputs, question, saveStatus is SaveStatus.Saving, viewModel) }
         item {
             StatusChip(if (draft.checklistComplete) "Inspection complete" else "Inspection needs attention", urgency = !draft.checklistComplete); Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}")
             if (draft.issueMissingDescription.isNotEmpty()) Text("Issue findings need public descriptions before this inspection is complete.", style = MaterialTheme.typography.bodyMedium)
@@ -767,9 +769,17 @@ internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSo
 }
 
 @Composable
-private fun QuestionBlock(workItemId: String, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    var issueBuffer by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.issueFoundReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.ISSUE_FOUND }.orEmpty()) }
-    var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}") { mutableStateOf(question.notApplicableReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.NOT_APPLICABLE }.orEmpty()) }
+private fun QuestionBlock(workItemId: String, rawInputs: Map<String, String>, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    val initialIssue = rawInputs[ServiceDraftFieldKeys.questionIssue(question.snapshotItemId)]
+        ?: question.issueFoundReasonDraft
+        ?: question.reason.takeIf { question.disposition == ResponseDisposition.ISSUE_FOUND }
+        ?: ""
+    val initialNotApplicable = rawInputs[ServiceDraftFieldKeys.questionNotApplicable(question.snapshotItemId)]
+        ?: question.notApplicableReasonDraft
+        ?: question.reason.takeIf { question.disposition == ResponseDisposition.NOT_APPLICABLE }
+        ?: ""
+    var issueBuffer by rememberSaveable(question.snapshotItemId, initialIssue) { mutableStateOf(initialIssue) }
+    var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}", initialNotApplicable) { mutableStateOf(initialNotApplicable) }
     AccentCard {
         Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
         Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
@@ -778,7 +788,7 @@ private fun QuestionBlock(workItemId: String, question: InspectionQuestion, savi
             "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
                 Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, value) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
             }
-            else -> ValueQuestion(workItemId, question, saving, viewModel)
+            else -> ValueQuestion(workItemId, rawInputs, question, saving, viewModel)
         }
         if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
             InlineFindingEditor(workItemId, question, issueBuffer, { issueBuffer = it; viewModel.scheduleIssueDescription(workItemId, question.snapshotItemId, it) }, saving, viewModel)
@@ -812,8 +822,12 @@ private fun NotApplicableEditor(workItemId: String, question: InspectionQuestion
 }
 
 @Composable
-private fun ValueQuestion(workItemId: String, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    var value by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
+private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+    val initialValue = rawInputs[ServiceDraftFieldKeys.questionValue(question.snapshotItemId)]
+        ?: question.textValue
+        ?: question.numberValue
+        ?: ""
+    var value by rememberSaveable(question.snapshotItemId, initialValue) { mutableStateOf(initialValue) }
     val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
     OutlinedTextField(value = value, onValueChange = { value = it; viewModel.scheduleQuestionValue(workItemId, question.snapshotItemId, it) }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

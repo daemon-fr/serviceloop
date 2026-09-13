@@ -253,14 +253,15 @@ class ServiceLoopViewModel(
                 ServiceDraftFieldKeys.OVERRIDE_DATE -> scheduleRecurrenceOverrideDate(draft.workItemId, rawValue)
                 ServiceDraftFieldKeys.OVERRIDE_REASON -> scheduleRecurrenceOverrideReason(draft.workItemId, rawValue)
                 else -> {
-                    val parts = fieldKey.split(':', limit = 3)
-                    val question = parts.takeIf { it.size == 3 && it[0] == "question" && it[1].isNotBlank() }
-                        ?.let { pieces -> draft.questions.firstOrNull { it.snapshotItemId == pieces[1] } }
+                    val parsed = ServiceDraftFieldKeys.parseQuestionField(fieldKey)
+                    val question = parsed?.let { parsedField ->
+                        draft.questions.firstOrNull { it.snapshotItemId == parsedField.snapshotItemId }
+                    }
                     when {
                         question == null -> unsupportedFieldFound = true
-                        parts[2] == "value" -> scheduleQuestionValue(draft.workItemId, parts[1], rawValue)
-                        parts[2] == "issue" -> scheduleIssueDescription(draft.workItemId, parts[1], rawValue)
-                        parts[2] == "na" -> scheduleNotApplicableReason(draft.workItemId, parts[1], rawValue)
+                        parsed?.kind == ServiceDraftFieldKeys.QuestionFieldKind.VALUE -> scheduleQuestionValue(draft.workItemId, parsed.snapshotItemId, rawValue)
+                        parsed?.kind == ServiceDraftFieldKeys.QuestionFieldKind.ISSUE -> scheduleIssueDescription(draft.workItemId, parsed.snapshotItemId, rawValue)
+                        parsed?.kind == ServiceDraftFieldKeys.QuestionFieldKind.NOT_APPLICABLE -> scheduleNotApplicableReason(draft.workItemId, parsed.snapshotItemId, rawValue)
                         else -> unsupportedFieldFound = true
                     }
                 }
@@ -618,14 +619,18 @@ class ServiceLoopViewModel(
             _state.update { it.copy(error = "Override reason is required") }
             return
         }
-        serviceDraftAutosaveCoordinator.cancel(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE))
-        serviceDraftAutosaveCoordinator.cancel(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON))
         val request = issueRequest("completion")
         val saveContext = issueRequest("draftSaveContext")
         val lastSaved = _state.value.saveStatus.lastSavedCheckpoint()
         _state.update { current -> if (current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
         viewModelScope.launch {
             try {
+                serviceDraftAutosaveCoordinator.cancelAndJoin(
+                    ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE),
+                )
+                serviceDraftAutosaveCoordinator.cancelAndJoin(
+                    ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON),
+                )
                 val savedAt = repository.saveCompletionDraft(workItemId, line.outcome, true, line.notPerformedReason, date, false, reason)
                 var cleanupFailure: Exception? = null
                 listOf(ServiceDraftFieldKeys.OVERRIDE_DATE, ServiceDraftFieldKeys.OVERRIDE_REASON).forEach { fieldKey ->
