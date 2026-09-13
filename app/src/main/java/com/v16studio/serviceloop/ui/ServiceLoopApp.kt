@@ -106,6 +106,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.CustomerSummary
+import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.EquipmentDetail
 import com.v16studio.serviceloop.domain.EquipmentSummary
 import com.v16studio.serviceloop.domain.FulfillmentEligibility
@@ -252,14 +253,14 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadEquipment(id) }
             DetailScaffold("Equipment", nav) { padding ->
-                ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav, state.businessDate, state.home?.dueSoonHorizonDays ?: 14) } }
+                ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav, state.businessDate, state.home?.dueSoonHorizonDays ?: 14, viewModel) } }
             }
         }
         composable("customer/new") { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } }
         composable("customer/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Customer",nav){CustomerDetailScreen(state.customer,it,nav,viewModel)} }
         composable("customer/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Edit customer",nav){CustomerEditorScreen(state.customer,it,state,viewModel,nav)} }
         composable("site/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId"); DetailScaffold("Add site",nav){SiteEditorScreen(id,null,it,state,viewModel,nav)} }
-        composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav)} }
+        composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav,viewModel)} }
         composable("site/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Edit site",nav){SiteEditorScreen(null,state.site,it,state,viewModel,nav)} }
         composable("equipment/new/{siteId}") { entry -> val id=entry.arguments?.getString("siteId"); DetailScaffold("Add equipment",nav){EquipmentEditorScreen(id,null,it,state,viewModel,nav)} }
         composable("equipment/select-site") { LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Choose equipment site",nav){EquipmentSiteSelectorScreen(state.visitSites,it,nav)} }
@@ -272,8 +273,8 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
         composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
         composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id)}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
-        composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
-        composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
+         composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreenB026(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
+         composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreenB026(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
         composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }
         composable("follow-up/list") { LaunchedEffect(Unit){viewModel.loadFollowUps()}; DetailScaffold("Follow-ups",nav){FollowUpListScreen(state.followUps,it,nav)} }
         composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
@@ -299,6 +300,11 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("settings") {
             LaunchedEffect(Unit) { viewModel.loadReminderSettings() }
             DetailScaffold("Settings", nav) { padding -> SettingsScreen(state, padding, nav, appearanceController) }
+        }
+        composable("work/{workItemId}/link-equipment") { entry ->
+            val id = entry.arguments?.getString("workItemId").orEmpty()
+            LaunchedEffect(id) { viewModel.loadEquipmentLinkContext(id) }
+            DetailScaffold("Link equipment", nav) { padding -> EquipmentLinkScreen(id, state.equipmentLinkContext, padding, state, viewModel, nav) }
         }
         composable("appearance") {
             DetailScaffold("Appearance", nav) { padding -> AppearanceSettingsScreen(padding, appearanceController) }
@@ -667,25 +673,39 @@ internal fun FollowUpsWorkScreen(
 @Composable
 private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
+    var showOneTime by rememberSaveable { mutableStateOf(false) }
     val colors = LocalServiceLoopTokens.current
+    val visibleCustomers = customers.filter { showOneTime || it.customerType == CustomerType.STANDARD }
+    val visibleSites = sites.filter { showOneTime || it.customerType == CustomerType.STANDARD }
+    val visibleEquipment = equipment.filter { showOneTime || it.customerType == CustomerType.STANDARD }
     LazyColumn(contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}) } }
         item { Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
+        item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
         item {
             when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-equipment-from-register")); else -> Unit }
         }
         when (tab) {
             "CUSTOMERS" -> {
-            if (customers.isEmpty()) item { Text("Add a customer to begin.", Modifier.padding(horizontal = 16.dp)) }
-            items(customers) { item -> ServiceLoopEntityRecord(item.name,item.reference,"${item.siteCount} site · ${item.equipmentCount} equipment", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("customer/${item.id}")} }
+                if (visibleCustomers.isEmpty()) item { Text(if (customers.isEmpty()) "Add a customer to begin." else "No standard customers match this filter.", Modifier.padding(horizontal = 16.dp)) }
+                items(visibleCustomers) { item ->
+                    val metadata = buildString { if (item.customerType == CustomerType.ONE_TIME) append("One-time · "); append("${item.siteCount} site · ${item.equipmentCount} equipment") }
+                    ServiceLoopEntityRecord(item.name, item.reference, metadata, modifier = Modifier.padding(horizontal = 16.dp)) { nav.navigate("customer/${item.id}") }
+                }
             }
             "SITES" -> {
-                if (sites.isEmpty()) item { Text("No sites yet.", Modifier.padding(horizontal = 16.dp)) }
-                items(sites) { item -> ServiceLoopEntityRecord("${item.reference} · ${item.name}",item.customerName,"${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("site/${item.id}")} }
+                if (visibleSites.isEmpty()) item { Text(if (sites.isEmpty()) "No sites yet." else "No standard customer sites match this filter.", Modifier.padding(horizontal = 16.dp)) }
+                items(visibleSites) { item ->
+                    val metadata = buildString { if (item.customerType == CustomerType.ONE_TIME) append("One-time · "); append("${item.address.ifBlank { "No address" }} · ${item.equipmentCount} equipment") }
+                    ServiceLoopEntityRecord("${item.reference} · ${item.name}", item.customerName, metadata, modifier = Modifier.padding(horizontal = 16.dp)) { nav.navigate("site/${item.id}") }
+                }
             }
             else -> {
-            if (equipment.isEmpty()) item { Text("Add an equipment item to begin.", Modifier.padding(horizontal = 16.dp)) }
-            items(equipment) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}","${item.customerName} · ${item.siteName}","Next due ${item.nearestDueDate ?: "not scheduled"}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("equipment/${item.id}")} }
+                if (visibleEquipment.isEmpty()) item { Text(if (equipment.isEmpty()) "Add an equipment item to begin." else "No standard customer equipment matches this filter.", Modifier.padding(horizontal = 16.dp)) }
+                items(visibleEquipment) { item ->
+                    val metadata = buildString { if (item.customerType == CustomerType.ONE_TIME) append("One-time · "); append("Next due ${item.nearestDueDate ?: "not scheduled"}") }
+                    ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}", "${item.customerName} · ${item.siteName}", metadata, modifier = Modifier.padding(horizontal = 16.dp)) { nav.navigate("equipment/${item.id}") }
+                }
             }
         }
     }
@@ -702,7 +722,7 @@ internal fun workRoute(tab: WorkTab, filter: String? = null): String =
     }
 
 @Composable
-private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int) {
+private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int, viewModel: ServiceLoopViewModel) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text(detail.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -710,6 +730,11 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
             Text(if (detail.makeModel.isBlank()) "Make/model not supplied" else detail.makeModel)
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("equipment-customer-link"))
+                ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("equipment-site-link"), enabled = detail.siteId.isNotBlank())
+            }
+            if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                 Text("Private equipment note",style=ServiceLoopUiTokens.Type.label)
                 Text("PRIVATE · Not included in customer report",style=ServiceLoopUiTokens.Type.meta,color=LocalServiceLoopTokens.current.textSecondary)
@@ -722,7 +747,15 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
             val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
             ServiceLoopEntityRecord("${plan.reference} · ${plan.name}",plan.interval,"Due ${plan.dueDate} · $dueLabel",plan.state){nav.navigate("plan/${plan.id}")}
         }
-        item { Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }; ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) } }
+        item {
+            if (detail.customerType == CustomerType.ONE_TIME) {
+                Text("Recurring service requires a Standard customer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { viewModel.makeCustomerStandard(detail.customerId) { nav.navigate("plan/new/${detail.id}") } }, modifier = Modifier.fillMaxWidth().testTag("make-standard-and-add-plan")) { Text("Make Standard and add service plan") }
+            } else {
+                Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }
+            }
+            ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) }
+        }
     }
 }
 
@@ -734,9 +767,10 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
     if (saveStatus is SaveStatus.Failed) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { SaveStateBanner(saveStatus) }
     LazyColumn(Modifier.weight(1f).testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text(serviceLoopSubjectLabel(draft.subjectType, draft.equipmentName, draft.equipmentReference, draft.equipmentDescription), style = MaterialTheme.typography.titleMedium)
-            Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
-            if (saveStatus !is SaveStatus.Failed) SaveStateBanner(saveStatus)
+             Text(serviceLoopSubjectLabel(draft.subjectType, draft.equipmentName, draft.equipmentReference, draft.equipmentDescription), style = MaterialTheme.typography.titleMedium)
+             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
+             if (draft.subjectType == WorkSubjectType.EQUIPMENT && draft.equipmentId == null) ServiceLoopSecondaryButton("Link equipment", { nav.navigate("work/${draft.workItemId}/link-equipment") }, Modifier.fillMaxWidth().testTag("link-equipment"))
+             if (saveStatus !is SaveStatus.Failed) SaveStateBanner(saveStatus)
             Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
         }
         item {

@@ -71,8 +71,13 @@ interface ServiceLoopRepository {
     suspend fun createTemplate(name: String, items: List<TemplateItemDraft>): String = error("Template editor unavailable")
     suspend fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>): Long = error("Template editor unavailable")
     suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
-    suspend fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
-    suspend fun addOneOffWork(visitId: String, equipmentId: String, name: String): String = error("One-off work unavailable")
+    suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    suspend fun addAdHocWork(visitId: String, input: AdHocWorkInput): String = error("Ad-hoc work unavailable")
+    suspend fun makeCustomerStandard(customerId: String): Long = error("Customer promotion unavailable")
+    suspend fun equipmentLinkContext(workItemId: String): EquipmentLinkContext = error("Equipment linking unavailable")
+    suspend fun linkWorkItemEquipment(workItemId: String, equipmentId: String): Long = error("Equipment linking unavailable")
+    suspend fun createAndLinkEquipment(workItemId: String, input: EquipmentInput): String = error("Equipment linking unavailable")
     suspend fun startVisit(id: String): Long = error("Visit unavailable")
     suspend fun rescheduleVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?, reason: String): Long = error("Visit unavailable")
     suspend fun cancelVisit(id: String, reason: String): Long = error("Visit unavailable")
@@ -386,29 +391,289 @@ class RoomServiceLoopRepository(
         return@withTransaction id
     }
 
-    override suspend fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
-        require(planIds.isNotEmpty() || !oneOffName.isNullOrBlank()) { "Select planned work or add one-off work" }
-        if (planIds.isNotEmpty()) {
-            val selectedSiteIds = planIds.distinct().map { planId -> dao.plan(planId)?.let { plan -> dao.equipment(plan.equipmentId)?.siteId } ?: error("Service plan no longer exists") }.distinct()
-            require(selectedSiteIds == listOf(siteId)) { "All planned work must belong to the selected site" }
-        }
-        val visitId = if (planIds.isNotEmpty()) {
-            createVisit(planIds, state, serviceDate, scheduledAtEpochMillis)
-        } else {
-            require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); LocalDate.parse(serviceDate)
-            val site = dao.site(siteId) ?: error("Site no longer exists"); val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
-            writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val id = UUID.randomUUID().toString(); val profile = dao.businessProfile()
-            dao.insertVisits(listOf(WorkingVisitEntity(id, reference("V", dao.visitCount() + 1), customer.id, site.id, serviceDate, customer.name, site.name, site.address, if(state=="HISTORICAL") "WORKING" else state, now, customer.reference, site.reference, profile?.businessName, profile?.technicianName, profile?.phone, profile?.email, profile?.postalAddress, profile?.zoneId, scheduledAtEpochMillis, scheduledAtEpochMillis?.let { businessTime.zoneId.id } ?: profile?.zoneId)))
-            id
-        }
-        if (!oneOffName.isNullOrBlank()) addOneOffWork(visitId, oneOffEquipmentId ?: error("Choose equipment for one-off work"), oneOffName)
-        return@withTransaction visitId
+    override suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
+        writeGate.beforeWrite()
+        return database.withTransaction { createVisitForSiteInTransaction(siteId, planIds, adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = true) }
     }
 
-    override suspend fun addOneOffWork(visitId: String, equipmentId: String, name: String): String {
-        require(name.trim().isNotEmpty() && name.length <= 200)
-        writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(visitId)?:error("Visit no longer exists"); require(visit.state in setOf("BOOKED","WORKING")){"Visit no longer accepts work"}; val eq=dao.equipment(equipmentId)?:error("Equipment no longer exists"); require(eq.siteId==visit.siteId){"Equipment must belong to this visit site"}; dao.insertWorkItems(listOf(WorkItemEntity(id, visitId, eq.id, null, null, null, eq.name, eq.reference, name.trim(), null, null, null, null, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, ""))); dao.touchVisit(visitId, now) }; return id
+    override suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
+        validateOneTimeVisitInput(oneTime)
+        require(adHocWork.isNotEmpty()) { "Add at least one task" }
+        require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
+        LocalDate.parse(serviceDate)
+        writeGate.beforeWrite()
+        return database.withTransaction {
+            val customerId = UUID.randomUUID().toString()
+            val siteId = UUID.randomUUID().toString()
+            val customerName = oneTime.customerName.trim()
+            val address = clean(oneTime.address)
+            val siteName = oneTime.locationLabel.trim().ifBlank { address ?: customerName }
+            dao.insertCustomers(listOf(CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customerName, phone = clean(oneTime.phone), email = clean(oneTime.email), customerType = CustomerType.ONE_TIME.code)))
+            dao.insertSites(listOf(SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), siteName, address, null, isDefault = true)))
+            createVisitForSiteInTransaction(siteId, emptyList(), adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = false)
+        }
     }
+
+    override suspend fun addAdHocWork(visitId: String, input: AdHocWorkInput): String {
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        return database.withTransaction {
+            val visit = dao.visit(visitId) ?: error("Visit no longer exists")
+            require(visit.state in setOf("BOOKED", "WORKING")) { "Visit no longer accepts work" }
+            require(dispatchDao.visitBindingForLocalVisit(visitId) == null) { "Dispatched visits cannot add local tasks in this version" }
+            val normalized = validateAdHocInput(input, visit.siteId, allowKnownEquipment = true)
+            val workItemId = insertAdHocWorkInTransaction(visitId, normalized, now)
+            dao.touchVisit(visitId, now)
+            workItemId
+        }
+    }
+
+    override suspend fun makeCustomerStandard(customerId: String): Long {
+        val customer = dao.customer(customerId) ?: error("Customer no longer exists")
+        if (CustomerType.fromCode(customer.customerType) == CustomerType.STANDARD) return businessTime.instant().toEpochMilli()
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val current = dao.customer(customerId) ?: error("Customer no longer exists")
+            require(CustomerType.fromCode(current.customerType) == CustomerType.ONE_TIME) { "Customer type cannot be changed" }
+            dao.updateCustomer(current.copy(customerType = CustomerType.STANDARD.code))
+        }
+        return now
+    }
+
+    override suspend fun equipmentLinkContext(workItemId: String): EquipmentLinkContext = database.withTransaction {
+        val item = validateLinkableWorkItem(workItemId)
+        val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
+        val site = dao.site(visit.siteId) ?: error("Site no longer exists")
+        EquipmentLinkContext(item.id, visit.id, site.id, site.name, dao.equipmentForSite(site.id).filter { it.state == "ACTIVE" }.map { equipmentSummary(it, site, dao.customer(site.customerId)!!) })
+    }
+
+    override suspend fun linkWorkItemEquipment(workItemId: String, equipmentId: String): Long {
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = validateLinkableWorkItem(workItemId)
+            val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
+            val equipment = dao.equipment(equipmentId) ?: error("Equipment no longer exists")
+            require(equipment.state == "ACTIVE") { "Equipment is not active" }
+            require(equipment.siteId == visit.siteId) { "Equipment must belong to this visit site" }
+            val updated = item.copy(
+                equipmentId = equipment.id,
+                equipmentNameSnapshot = equipment.name,
+                equipmentReferenceSnapshot = equipment.reference,
+                equipmentIdentifierSnapshot = equipment.technicianIdentifier,
+                equipmentMakeSnapshot = equipment.make,
+                equipmentModelSnapshot = equipment.model,
+                equipmentSerialSnapshot = equipment.serialNumber,
+                equipmentDescriptionSnapshot = null,
+            )
+            WorkSubjectValidator.validateWorkItem(updated, CustomerType.fromCode(dao.customer(visit.customerId)?.customerType ?: error("Customer no longer exists")))
+            dao.updateWorkItem(updated)
+            dao.touchVisit(visit.id, now)
+        }
+        return now
+    }
+
+    override suspend fun createAndLinkEquipment(workItemId: String, input: EquipmentInput): String {
+        validateEquipment(input)
+        writeGate.beforeWrite()
+        return database.withTransaction {
+            val item = validateLinkableWorkItem(workItemId)
+            val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
+            val site = dao.site(visit.siteId) ?: error("Site no longer exists")
+            val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
+            val equipmentId = UUID.randomUUID().toString()
+            val equipment = EquipmentEntity(equipmentId, site.id, reference("EQ", dao.equipmentCount() + 1), clean(input.technicianIdentifier), input.name.trim(), clean(input.make), clean(input.model), clean(input.serialNumber), clean(input.privateNote))
+            dao.insertEquipment(listOf(equipment))
+            val updated = item.copy(
+                equipmentId = equipment.id,
+                equipmentNameSnapshot = equipment.name,
+                equipmentReferenceSnapshot = equipment.reference,
+                equipmentIdentifierSnapshot = equipment.technicianIdentifier,
+                equipmentMakeSnapshot = equipment.make,
+                equipmentModelSnapshot = equipment.model,
+                equipmentSerialSnapshot = equipment.serialNumber,
+                equipmentDescriptionSnapshot = null,
+            )
+            WorkSubjectValidator.validateWorkItem(updated, CustomerType.fromCode(customer.customerType))
+            dao.updateWorkItem(updated)
+            dao.touchVisit(visit.id, businessTime.instant().toEpochMilli())
+            equipmentId
+        }
+    }
+
+    private suspend fun createVisitForSiteInTransaction(
+        siteId: String,
+        planIds: List<String>,
+        adHocWork: List<AdHocWorkInput>,
+        state: String,
+        serviceDate: String,
+        scheduledAtEpochMillis: Long?,
+        allowKnownEquipment: Boolean,
+    ): String {
+        require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
+        LocalDate.parse(serviceDate)
+        require(planIds.isNotEmpty() || adHocWork.isNotEmpty()) { "Select planned work or add a task" }
+        val site = dao.site(siteId) ?: error("Site no longer exists")
+        val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
+        val plans = planIds.distinct().map { planId -> dao.plan(planId) ?: error("Service plan no longer exists") }
+        val planEquipment = plans.map { plan -> dao.equipment(plan.equipmentId) ?: error("Equipment no longer exists") }
+        require(planEquipment.all { it.siteId == site.id }) { "All planned work must belong to the selected site" }
+        if (plans.isNotEmpty()) require(CustomerType.fromCode(customer.customerType) == CustomerType.STANDARD) { "Recurring service requires a Standard customer" }
+        val obligations = plans.map { plan ->
+            require(plan.state == "ACTIVE") { "A selected obligation is no longer current" }
+            val obligation = dao.obligation(plan.currentObligationId ?: error("Plan has no current obligation")) ?: error("Current obligation missing")
+            require(obligation.consumedAtEpochMillis == null && dao.claimForObligation(obligation.id) == null) { "A selected obligation is no longer current" }
+            obligation
+        }
+        val normalizedAdHoc = adHocWork.map { validateAdHocInput(it, site.id, allowKnownEquipment) }
+        val now = businessTime.instant().toEpochMilli()
+        val historical = state == "HISTORICAL"
+        val profile = dao.businessProfile()
+        val visitId = UUID.randomUUID().toString()
+        dao.insertVisits(listOf(WorkingVisitEntity(
+            id = visitId,
+            reference = reference("V", dao.visitCount() + 1),
+            customerId = customer.id,
+            siteId = site.id,
+            actualServiceDate = serviceDate,
+            customerNameSnapshot = customer.name,
+            siteNameSnapshot = site.name,
+            siteAddressSnapshot = site.address,
+            state = if (historical) "WORKING" else state,
+            modifiedAtEpochMillis = now,
+            customerReferenceSnapshot = customer.reference,
+            siteReferenceSnapshot = site.reference,
+            reportBusinessNameSnapshot = profile?.businessName,
+            reportTechnicianNameSnapshot = profile?.technicianName,
+            reportPhoneSnapshot = profile?.phone,
+            reportEmailSnapshot = profile?.email,
+            reportPostalAddressSnapshot = profile?.postalAddress,
+            reportZoneIdSnapshot = profile?.zoneId,
+            scheduledAtEpochMillis = scheduledAtEpochMillis,
+            appointmentZoneId = if (scheduledAtEpochMillis != null) businessTime.zoneId.id else profile?.zoneId,
+        )))
+        plans.forEachIndexed { index, plan ->
+            val equipment = planEquipment[index]
+            val obligation = obligations[index]
+            if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, visitId, now))
+            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, visitId, plan.id, now)
+            val workId = UUID.randomUUID().toString()
+            val item = WorkItemEntity(
+                id = workId,
+                visitId = visitId,
+                equipmentId = equipment.id,
+                servicePlanId = plan.id,
+                capturedObligationId = obligation.id.takeUnless { historical },
+                templateSnapshotId = snapshotId,
+                equipmentNameSnapshot = equipment.name,
+                equipmentReferenceSnapshot = equipment.reference,
+                serviceNameSnapshot = plan.name,
+                planReferenceSnapshot = plan.reference,
+                dueDateSnapshot = obligation.dueDate,
+                intervalCountSnapshot = plan.intervalCount,
+                intervalUnitSnapshot = plan.intervalUnit,
+                checklistReviewed = false,
+                outcome = null,
+                fulfillsCurrentObligation = false,
+                equipmentIdentifierSnapshot = equipment.technicianIdentifier,
+                equipmentMakeSnapshot = equipment.make,
+                equipmentModelSnapshot = equipment.model,
+                equipmentSerialSnapshot = equipment.serialNumber,
+            )
+            WorkSubjectValidator.validateWorkItem(item, CustomerType.fromCode(customer.customerType), plan.equipmentId)
+            dao.insertWorkItems(listOf(item))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, "")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
+        }
+        normalizedAdHoc.forEach { input -> insertAdHocWorkInTransaction(visitId, input, now) }
+        return visitId
+    }
+
+    private suspend fun insertAdHocWorkInTransaction(visitId: String, input: AdHocWorkInput, now: Long): String {
+        val visit = dao.visit(visitId) ?: error("Visit no longer exists")
+        val equipment = input.equipmentId?.let { dao.equipment(it) }
+        val workId = UUID.randomUUID().toString()
+        val item = WorkItemEntity(
+            id = workId,
+            visitId = visitId,
+            equipmentId = equipment?.id,
+            servicePlanId = null,
+            capturedObligationId = null,
+            templateSnapshotId = captureTemplateSnapshot(input.reusableTemplateId, visitId, workId, now),
+            equipmentNameSnapshot = equipment?.name,
+            equipmentReferenceSnapshot = equipment?.reference,
+            serviceNameSnapshot = input.taskName,
+            planReferenceSnapshot = null,
+            dueDateSnapshot = null,
+            intervalCountSnapshot = null,
+            intervalUnitSnapshot = null,
+            checklistReviewed = false,
+            outcome = null,
+            fulfillsCurrentObligation = false,
+            equipmentIdentifierSnapshot = equipment?.technicianIdentifier,
+            equipmentMakeSnapshot = equipment?.make,
+            equipmentModelSnapshot = equipment?.model,
+            equipmentSerialSnapshot = equipment?.serialNumber,
+            subjectType = input.subjectType.code,
+            equipmentDescriptionSnapshot = input.equipmentDescription.takeIf { it.isNotBlank() }.takeUnless { equipment != null },
+        )
+        WorkSubjectValidator.validateWorkItem(item, CustomerType.fromCode(dao.customer(visit.customerId)?.customerType ?: error("Customer no longer exists")))
+        dao.insertWorkItems(listOf(item))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, "")))
+        dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
+        return workId
+    }
+
+    private suspend fun validateAdHocInput(input: AdHocWorkInput, targetSiteId: String, allowKnownEquipment: Boolean): AdHocWorkInput {
+        val taskName = input.taskName.trim()
+        require(taskName.isNotBlank()) { "Task name is required" }
+        require(taskName.length <= 200) { "Task name must be 200 characters or fewer" }
+        val description = input.equipmentDescription.trim()
+        input.reusableTemplateId?.let { templateId ->
+            val template = dao.reusableTemplate(templateId)
+            require(template?.state == "ACTIVE") { "Template is unavailable" }
+        }
+        when (input.subjectType) {
+            WorkSubjectType.SITE -> {
+                require(input.equipmentId == null) { "SITE work cannot reference Equipment" }
+                require(description.isEmpty()) { "SITE work cannot have an Equipment description" }
+            }
+            WorkSubjectType.EQUIPMENT -> {
+                if (input.equipmentId != null) {
+                    require(allowKnownEquipment) { "One-time work cannot select registered Equipment" }
+                    val equipment = dao.equipment(input.equipmentId) ?: error("Equipment no longer exists")
+                    require(equipment.state == "ACTIVE") { "Equipment is not active" }
+                    require(equipment.siteId == targetSiteId) { "Equipment must belong to this visit site" }
+                    require(description.isEmpty()) { "Known Equipment work cannot have an unidentified description" }
+                } else {
+                    require(description.length <= 500) { "Equipment description must be 500 characters or fewer" }
+                }
+            }
+        }
+        return input.copy(taskName = taskName, equipmentDescription = description)
+    }
+
+    private fun validateOneTimeVisitInput(input: OneTimeVisitInput) {
+        require(input.customerName.trim().isNotBlank()) { "Customer name is required" }
+        require(input.customerName.trim().length <= 200) { "Customer name must be 200 characters or fewer" }
+        require(input.phone.trim().length <= 100) { "Phone must be 100 characters or fewer" }
+        require(input.email.trim().length <= 320) { "Email must be 320 characters or fewer" }
+        require(input.locationLabel.trim().length <= 200) { "Location label must be 200 characters or fewer" }
+        require(input.address.trim().length <= 500) { "Address must be 500 characters or fewer" }
+    }
+
+    private suspend fun validateLinkableWorkItem(workItemId: String): WorkItemEntity {
+        val item = dao.workItem(workItemId) ?: error("Work item no longer exists")
+        val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
+        require(visit.state == "WORKING") { "Equipment can be linked only while the visit is Working" }
+        require(WorkSubjectType.fromCode(item.subjectType) == WorkSubjectType.EQUIPMENT && item.equipmentId == null && item.servicePlanId == null) { "This task is not awaiting equipment identification" }
+        WorkSubjectValidator.validateWorkItem(item, CustomerType.fromCode(dao.customer(visit.customerId)?.customerType ?: error("Customer no longer exists")))
+        return item
+    }
+
+    private suspend fun equipmentSummary(equipment: EquipmentEntity, site: SiteEntity, customer: CustomerEntity): EquipmentSummary =
+        EquipmentSummary(equipment.id, equipment.name, equipment.reference, equipment.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(equipment.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, CustomerType.fromCode(customer.customerType))
 
     override suspend fun startVisit(id: String): Long { writeGate.beforeWrite(); return database.withTransaction {
         val visit = dao.visit(id) ?: error("Visit no longer exists"); require(visit.state == "BOOKED") { "Only a booked visit can be started" }
@@ -431,12 +696,16 @@ class RoomServiceLoopRepository(
             WorkSubjectValidator.validateWorkItem(item, CustomerType.fromCode(customer.customerType), plan?.equipmentId)
             val eq=item.equipmentId?.let { dao.equipment(it) ?: error("Equipment missing") }
             if (eq != null) require(eq.siteId==visit.siteId)
-            val existingSnapshot=item.templateSnapshotId?.let { snapshotId -> dao.templateSnapshot(snapshotId) }
-            val currentRevision=plan?.reusableTemplateId?.let { templateId -> dao.reusableTemplate(templateId)?.let { master -> dao.reusableTemplateRevision(master.currentRevisionId) } }
-            val preserveSnapshot=existingSnapshot?.takeIf { snapshot ->
-                snapshot.sourceTemplateId==null || (snapshot.sourceTemplateId==plan?.reusableTemplateId && snapshot.revision==currentRevision?.revisionNumber && snapshot.templateName==currentRevision?.nameSnapshot)
-            }?.id
-            val snapshot=preserveSnapshot ?: plan?.let{captureTemplateSnapshot(it.reusableTemplateId,id,it.id,now)}
+            val snapshot = if (plan == null) {
+                item.templateSnapshotId
+            } else {
+                val existingSnapshot = item.templateSnapshotId?.let { snapshotId -> dao.templateSnapshot(snapshotId) }
+                val currentRevision = plan.reusableTemplateId?.let { templateId -> dao.reusableTemplate(templateId)?.let { master -> dao.reusableTemplateRevision(master.currentRevisionId) } }
+                val preserveSnapshot = existingSnapshot?.takeIf { snapshot ->
+                    snapshot.sourceTemplateId == null || (snapshot.sourceTemplateId == plan.reusableTemplateId && snapshot.revision == currentRevision?.revisionNumber && snapshot.templateName == currentRevision.nameSnapshot)
+                }?.id
+                preserveSnapshot ?: captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
+            }
             if (eq != null) {
                 check(dao.refreshWorkItemSnapshot(item.id,snapshot,eq.name,eq.reference,eq.technicianIdentifier,eq.make,eq.model,eq.serialNumber,plan?.name ?: item.serviceNameSnapshot,plan?.reference,plan?.currentDueDate,item.intervalCountSnapshot?.let{plan?.intervalCount},item.intervalUnitSnapshot?.let{plan?.intervalUnit})==1)
             }
@@ -515,7 +784,7 @@ class RoomServiceLoopRepository(
     override suspend fun equipment(id: String): EquipmentDetail? {
         val equipment=dao.equipment(id)?:return null; val site=dao.site(equipment.siteId)?:return null; val customer=dao.customer(site.customerId)?:return null
         return EquipmentDetail(equipment.id,equipment.name,equipment.reference,equipment.technicianIdentifier,listOfNotNull(equipment.make,equipment.model).joinToString(" "),equipment.serialNumber,site.name,customer.name,
-            dao.plansForEquipment(id).map { EquipmentPlan(it.id,it.name,it.reference,"Every ${it.intervalCount} ${it.intervalUnit.lowercase()}",it.currentDueDate,it.state,it.currentObligationId,LocalDate.parse(it.currentDueDate).isBefore(businessTime.today())) },dao.workingItemId(id),equipment.make.orEmpty(),equipment.model.orEmpty(),equipment.privateNotes.orEmpty(),equipment.state)
+            dao.plansForEquipment(id).map { EquipmentPlan(it.id,it.name,it.reference,"Every ${it.intervalCount} ${it.intervalUnit.lowercase()}",it.currentDueDate,it.state,it.currentObligationId,LocalDate.parse(it.currentDueDate).isBefore(businessTime.today())) },dao.workingItemId(id),equipment.make.orEmpty(),equipment.model.orEmpty(),equipment.privateNotes.orEmpty(),equipment.state,customer.id,CustomerType.fromCode(customer.customerType),site.id)
     }
 
     override suspend fun inspection(workItemId: String): InspectionDraft? {
@@ -957,6 +1226,7 @@ class RoomServiceLoopRepository(
 
     private suspend fun captureTemplateSnapshot(templateId: String?, visitId: String, planId: String, now: Long): String? {
         val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
+        require(master.state == "ACTIVE") { "Template is unavailable" }
         val revision = dao.reusableTemplateRevision(master.currentRevisionId) ?: error("Template revision missing")
         val revisionItems=dao.reusableTemplateItems(revision.id)
         val content = DispatchInspectionSnapshot("", revision.nameSnapshot, master.reference, revision.revisionNumber, revisionItems.map { item -> DispatchInspectionItem(item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance) })

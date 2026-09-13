@@ -21,3 +21,27 @@ enum class WorkSubjectType(val code: String) {
             ?: error("Unknown WorkSubjectType: $value")
     }
 }
+
+data class AdHocWorkInput(
+    val taskName: String,
+    val subjectType: WorkSubjectType,
+    val equipmentId: String? = null,
+    val equipmentDescription: String = "",
+    val reusableTemplateId: String? = null,
+)
+
+data class OneTimeVisitInput(
+    val customerName: String,
+    val phone: String = "",
+    val email: String = "",
+    val locationLabel: String = "",
+    val address: String = "",
+)
+
+data class EquipmentLinkContext(
+    val workItemId: String,
+    val visitId: String,
+    val siteId: String,
+    val siteName: String,
+    val equipment: List<EquipmentSummary>,
+)

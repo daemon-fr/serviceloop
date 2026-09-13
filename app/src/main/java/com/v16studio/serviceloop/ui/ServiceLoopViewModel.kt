@@ -84,6 +84,7 @@ data class UiState(
     val visitSites: List<VisitSiteOption> = emptyList(),
     val templates: List<TemplateSummary> = emptyList(),
     val template: TemplateDetail? = null,
+    val equipmentLinkContext: EquipmentLinkContext? = null,
     val visit: VisitDetail? = null,
     val followUps: List<FollowUpDetail> = emptyList(),
     val followUp: FollowUpDetail? = null,
@@ -308,7 +309,7 @@ class ServiceLoopViewModel(
     }
     fun loadVisitSetup() {
         val request = issueRequest("visitSetup")
-        launchLoad { val sites = repository.visitSites(); if (isCurrent(request)) _state.update { it.copy(visitSites = sites) } }
+        launchLoad { val sites = repository.visitSites(); val templates = repository.templates(); if (isCurrent(request)) _state.update { it.copy(visitSites = sites, templates = templates) } }
     }
 
     private fun observeDueServices() {
@@ -367,7 +368,8 @@ class ServiceLoopViewModel(
             val visit = repository.visit(id)
             val site = visit?.let { repository.site(it.siteId) }
             val calendarState = calendarCoordinator?.visitState(id)
-            if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, visitCalendarState = calendarState) }
+            val templates = repository.templates()
+            if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState) }
         }
     }
     fun loadFollowUps() { val request=issueRequest("followUps"); launchLoad { val values = repository.followUps(); if(isCurrent(request)) _state.update { it.copy(followUps = values) } } }
@@ -458,7 +460,9 @@ class ServiceLoopViewModel(
     fun createTemplate(name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.createTemplate(name, items) }, onSuccess)
     fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.reviseTemplate(id, name, items); id }, onSuccess)
     fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)
-    fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, oneOffEquipmentId, oneOffName, state, date, scheduledAt) }, onSuccess)
+    fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, adHocWork, state, date, scheduledAt) }, onSuccess)
+    fun createOneTimeVisit(input: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createOneTimeVisit(input, adHocWork, state, date, scheduledAt) }, onSuccess)
+    fun makeCustomerStandard(customerId: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.makeCustomerStandard(customerId); customerId }) { id -> refreshRootDataNonBlocking(); loadCustomer(id); onSuccess(id) }
     fun startVisit(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.startVisit(id); id }, onSuccess)
     fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) {
         if (_state.value.operationInProgress) return
@@ -477,7 +481,13 @@ class ServiceLoopViewModel(
     }
     fun cancelVisit(id: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.cancelVisit(id, reason); id }, onSuccess)
     fun restoreVisit(id: String, date: String, onSuccess: (String) -> Unit) = runOperation({ repository.restoreVisit(id, date); id }, onSuccess)
-    fun addOneOff(visitId: String, equipmentId: String, name: String) = runOperation({ repository.addOneOffWork(visitId, equipmentId, name) }) { loadVisit(visitId) }
+    fun addAdHocWork(visitId: String, input: AdHocWorkInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.addAdHocWork(visitId, input) }) { workItemId -> loadVisit(visitId); onSuccess(workItemId) }
+    fun loadEquipmentLinkContext(workItemId: String) {
+        val request = issueRequest("equipmentLinkContext")
+        launchLoad { val value = repository.equipmentLinkContext(workItemId); if (isCurrent(request)) _state.update { it.copy(equipmentLinkContext = value) } }
+    }
+    fun linkWorkItemEquipment(workItemId: String, equipmentId: String, onSuccess: () -> Unit = {}) = runOperation({ repository.linkWorkItemEquipment(workItemId, equipmentId); workItemId }) { id -> loadInspection(id); onSuccess() }
+    fun createAndLinkEquipment(workItemId: String, input: EquipmentInput, onSuccess: () -> Unit = {}) = runOperation({ repository.createAndLinkEquipment(workItemId, input); workItemId }) { id -> loadInspection(id); onSuccess() }
     fun addPart(workItemId: String, description: String, quantity: String, unit: String) = runOperation({ repository.addPart(workItemId, description, quantity, unit) }) { loadFieldEvidence(workItemId) }
     fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { loadFieldEvidence(workItemId) }
     fun reportOperationFailure(message:String) { _state.update { it.copy(operationInProgress=false,error=message,operationMessage=null) } }

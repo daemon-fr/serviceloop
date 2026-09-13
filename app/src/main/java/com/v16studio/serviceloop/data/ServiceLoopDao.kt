@@ -141,6 +141,7 @@ interface ServiceLoopDao {
     @Update suspend fun updateCustomer(value: CustomerEntity)
     @Update suspend fun updateSite(value: SiteEntity)
     @Update suspend fun updateEquipment(value: EquipmentEntity)
+    @Update suspend fun updateWorkItem(value: WorkItemEntity)
     @Update suspend fun updatePlan(value: ServicePlanEntity)
     @Update suspend fun updateVisit(value: WorkingVisitEntity)
     @Update suspend fun updateFollowUp(value: FollowUpEntity)
@@ -267,7 +268,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_responses WHERE workItemId=:workItemId")
     suspend fun responses(workItemId: String): List<WorkingResponseEntity>
 
-    @Query("SELECT * FROM work_items WHERE visitId=:visitId ORDER BY id")
+    @Query("SELECT * FROM work_items WHERE visitId=:visitId ORDER BY rowid")
     suspend fun visitWorkItems(visitId: String): List<WorkItemEntity>
 
     @Query("SELECT * FROM working_visits WHERE state='WORKING' ORDER BY modifiedAtEpochMillis DESC LIMIT 1")
@@ -301,14 +302,14 @@ interface ServiceLoopDao {
                END actualServiceDate,
                v.state,
                f.id finalRecordId,
-               (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.id LIMIT 1) resumeWorkItemId
+                (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.rowid LIMIT 1) resumeWorkItemId
         FROM working_visits v
         LEFT JOIN final_records f ON f.visitId=v.id
         ORDER BY actualServiceDate DESC, v.reference
     """)
     suspend fun visits(): List<VisitSummaryRow>
 
-    @Query("SELECT id FROM work_items WHERE visitId=:visitId ORDER BY id LIMIT 1")
+    @Query("SELECT id FROM work_items WHERE visitId=:visitId ORDER BY rowid LIMIT 1")
     suspend fun firstWorkItemId(visitId: String): String?
 
     @Query("SELECT wi.id FROM work_items wi JOIN working_visits v ON v.id=wi.visitId WHERE wi.equipmentId=:equipmentId AND v.state='WORKING' ORDER BY v.modifiedAtEpochMillis DESC LIMIT 1")

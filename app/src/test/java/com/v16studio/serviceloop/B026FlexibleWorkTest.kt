@@ -49,6 +49,210 @@ class B026FlexibleWorkTest {
         assertEquals(beforePlans, db.serviceLoopDao().planCount())
     }
 
+    @Test fun oneTimeVisitCreatesItsOwnCustomerSiteAndLocalTasksAtomically() = runTest {
+        val beforeCustomers = db.serviceLoopDao().customerCount()
+        val beforeSites = db.serviceLoopDao().siteCount()
+        val beforeVisits = db.serviceLoopDao().visitCount()
+        val visitId = repo.createOneTimeVisit(
+            OneTimeVisitInput("Walk-in customer", phone = "123", locationLabel = "Boiler room", address = "Service address"),
+            listOf(
+                AdHocWorkInput("Inspect room", WorkSubjectType.SITE),
+                AdHocWorkInput("Identify pump", WorkSubjectType.EQUIPMENT, equipmentDescription = "Blue pump beside the heater"),
+            ),
+            "BOOKED",
+            "2026-09-06",
+        )
+
+        val visit = db.serviceLoopDao().visit(visitId)!!
+        val customer = db.serviceLoopDao().customer(visit.customerId)!!
+        val site = db.serviceLoopDao().site(visit.siteId)!!
+        val work = db.serviceLoopDao().visitWorkItems(visitId)
+        assertEquals(CustomerType.ONE_TIME.code, customer.customerType)
+        assertEquals(customer.id, site.customerId)
+        assertEquals("Boiler room", site.name)
+        assertEquals(listOf("Inspect room", "Identify pump"), work.map { it.serviceNameSnapshot })
+        assertTrue(work.all { it.servicePlanId == null && it.capturedObligationId == null })
+        assertEquals(beforeCustomers + 1, db.serviceLoopDao().customerCount())
+        assertEquals(beforeSites + 1, db.serviceLoopDao().siteCount())
+        assertEquals(beforeVisits + 1, db.serviceLoopDao().visitCount())
+    }
+
+    @Test fun oneTimeSiteNameUsesAddressThenCustomerFallback() = runTest {
+        val withAddress = repo.createOneTimeVisit(OneTimeVisitInput("Ion Popescu", address = "Strada Exemplu 10"), listOf(AdHocWorkInput("Inspect", WorkSubjectType.SITE)), "BOOKED", "2026-09-06")
+        val withoutAddress = repo.createOneTimeVisit(OneTimeVisitInput("Ion Popescu"), listOf(AdHocWorkInput("Inspect", WorkSubjectType.SITE)), "BOOKED", "2026-09-07")
+        assertEquals("Strada Exemplu 10", db.serviceLoopDao().site(db.serviceLoopDao().visit(withAddress)!!.siteId)!!.name)
+        assertEquals("Ion Popescu", db.serviceLoopDao().site(db.serviceLoopDao().visit(withoutAddress)!!.siteId)!!.name)
+    }
+
+    @Test fun invalidOneTimeTaskRollsBackCustomerSiteAndVisit() = runTest {
+        val beforeCustomers = db.serviceLoopDao().customerCount()
+        val beforeSites = db.serviceLoopDao().siteCount()
+        val beforeVisits = db.serviceLoopDao().visitCount()
+        val beforeSnapshots = db.serviceLoopDao().templateSnapshotCount()
+        val beforeChecklistItems = db.serviceLoopDao().checklistSnapshotItemCount()
+        val failure = runCatching {
+            repo.createOneTimeVisit(
+                OneTimeVisitInput("Rollback customer"),
+                listOf(AdHocWorkInput("Valid", WorkSubjectType.SITE), AdHocWorkInput("Invalid", WorkSubjectType.SITE, equipmentDescription = "not allowed")),
+                "BOOKED",
+                "2026-09-06",
+            )
+        }.exceptionOrNull()
+        assertEquals("SITE work cannot have an Equipment description", failure?.message)
+        assertEquals(beforeCustomers, db.serviceLoopDao().customerCount())
+        assertEquals(beforeSites, db.serviceLoopDao().siteCount())
+        assertEquals(beforeVisits, db.serviceLoopDao().visitCount())
+        assertEquals(beforeSnapshots, db.serviceLoopDao().templateSnapshotCount())
+        assertEquals(beforeChecklistItems, db.serviceLoopDao().checklistSnapshotItemCount())
+    }
+
+    @Test fun repeatedOneTimeVisitsRemainIndependent() = runTest {
+        val first = repo.createOneTimeVisit(OneTimeVisitInput("Same customer"), listOf(AdHocWorkInput("First", WorkSubjectType.SITE)), "BOOKED", "2026-09-06")
+        val second = repo.createOneTimeVisit(OneTimeVisitInput("Same customer"), listOf(AdHocWorkInput("Second", WorkSubjectType.SITE)), "BOOKED", "2026-09-07")
+        assertTrue(first != second)
+        val firstVisit = db.serviceLoopDao().visit(first)!!
+        val secondVisit = db.serviceLoopDao().visit(second)!!
+        assertTrue(firstVisit.customerId != secondVisit.customerId)
+        assertEquals("First", db.serviceLoopDao().visitWorkItems(first).single().serviceNameSnapshot)
+        assertEquals("Second", db.serviceLoopDao().visitWorkItems(second).single().serviceNameSnapshot)
+    }
+
+    @Test fun adHocTemplateIsSnapshottedAtCreationAndNotReplacedOnStart() = runTest {
+        val ids = seedBranch()
+        val templateId = repo.createTemplate("Initial checklist", listOf(TemplateItemDraft("Pressure", "NUMBER", "bar", required = true)))
+        val visitId = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Inspect", WorkSubjectType.EQUIPMENT, ids.equipment, reusableTemplateId = templateId)), "BOOKED", "2026-09-06")
+        val before = db.serviceLoopDao().visitWorkItems(visitId).single()
+        val beforeSnapshot = db.serviceLoopDao().templateSnapshot(before.templateSnapshotId!!)
+        repo.reviseTemplate(templateId, "Changed checklist", listOf(TemplateItemDraft("Temperature", "NUMBER", "C")))
+        repo.startVisit(visitId)
+        val after = db.serviceLoopDao().visitWorkItems(visitId).single()
+        assertEquals(before.templateSnapshotId, after.templateSnapshotId)
+        assertEquals("Initial checklist", beforeSnapshot?.templateName)
+        assertEquals(beforeSnapshot, db.serviceLoopDao().templateSnapshot(after.templateSnapshotId!!))
+    }
+
+    @Test fun adHocCreationRejectsCrossSiteEquipmentBeforeVisitExists() = runTest {
+        val source = seedBranch()
+        val destination = seedOneTimeBranch()
+        val beforeVisits = db.serviceLoopDao().visitCount()
+        val failure = runCatching {
+            repo.createVisitForSite(source.site, emptyList(), listOf(AdHocWorkInput("Wrong machine", WorkSubjectType.EQUIPMENT, destination.equipment)), "BOOKED", "2026-09-06")
+        }.exceptionOrNull()
+        assertEquals("Equipment must belong to this visit site", failure?.message)
+        assertEquals(beforeVisits, db.serviceLoopDao().visitCount())
+    }
+
+    @Test fun oneTimeSiteCanReceiveLaterAdHocVisitWithoutDuplicatingItsBranch() = runTest {
+        val ids = seedOneTimeBranch()
+        val beforeCustomers = db.serviceLoopDao().customerCount()
+        val beforeSites = db.serviceLoopDao().siteCount()
+        val visitId = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Return visit", WorkSubjectType.SITE)), "BOOKED", "2026-09-07")
+        assertEquals(beforeCustomers, db.serviceLoopDao().customerCount())
+        assertEquals(beforeSites, db.serviceLoopDao().siteCount())
+        assertEquals(CustomerType.ONE_TIME.code, db.serviceLoopDao().customer(ids.customer)!!.customerType)
+        assertEquals(ids.site, db.serviceLoopDao().visit(visitId)!!.siteId)
+    }
+
+    @Test fun mixedStandardVisitKeepsPlanClaimSeparateFromAdHocWorkAndPreservesOrder() = runTest {
+        val ids = seedBranch()
+        val planId = repo.createPlan(ids.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01"))
+        val visitId = repo.createVisitForSite(
+            ids.site,
+            listOf(planId),
+            listOf(
+                AdHocWorkInput("Inspect area", WorkSubjectType.SITE),
+                AdHocWorkInput("Check motor", WorkSubjectType.EQUIPMENT, ids.equipment),
+                AdHocWorkInput("Identify loose unit", WorkSubjectType.EQUIPMENT, equipmentDescription = "Loose unit by the door"),
+            ),
+            "WORKING",
+            "2026-09-05",
+        )
+        val work = db.serviceLoopDao().visitWorkItems(visitId)
+        assertEquals(4, work.size)
+        assertEquals(listOf("Annual", "Inspect area", "Check motor", "Identify loose unit"), work.map { it.serviceNameSnapshot })
+        assertEquals(1, work.count { it.capturedObligationId != null })
+        assertTrue(work.drop(1).all { it.servicePlanId == null && it.capturedObligationId == null })
+        assertEquals(WorkSubjectType.SITE.code, work[1].subjectType)
+        assertEquals(ids.equipment, work[2].equipmentId)
+        assertEquals("Loose unit by the door", work[3].equipmentDescriptionSnapshot)
+    }
+
+    @Test fun recurringBookedTemplateStillRefreshesAtStart() = runTest {
+        val ids = seedBranch()
+        val templateId = repo.createTemplate("Recurring r1", listOf(TemplateItemDraft("Pressure", "NUMBER")))
+        val planId = repo.createPlan(ids.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01", reusableTemplateId = templateId))
+        val visitId = repo.createVisitForSite(ids.site, listOf(planId), emptyList(), "BOOKED", "2026-09-06")
+        repo.reviseTemplate(templateId, "Recurring r2", listOf(TemplateItemDraft("Temperature", "NUMBER")))
+        repo.startVisit(visitId)
+        val snapshotId = db.serviceLoopDao().visitWorkItems(visitId).single().templateSnapshotId!!
+        assertEquals(2, db.serviceLoopDao().templateSnapshot(snapshotId)!!.revision)
+        assertEquals("Recurring r2", db.serviceLoopDao().templateSnapshot(snapshotId)!!.templateName)
+    }
+
+    @Test fun addAdHocWorkSupportsAllSubjectsForLocalBookedVisit() = runTest {
+        val ids = seedBranch()
+        val visitId = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Initial", WorkSubjectType.SITE)), "BOOKED", "2026-09-06")
+        repo.addAdHocWork(visitId, AdHocWorkInput("Known", WorkSubjectType.EQUIPMENT, ids.equipment))
+        repo.addAdHocWork(visitId, AdHocWorkInput("Unknown", WorkSubjectType.EQUIPMENT, equipmentDescription = "Unregistered unit"))
+        val work = db.serviceLoopDao().visitWorkItems(visitId)
+        assertEquals(listOf("Initial", "Known", "Unknown"), work.map { it.serviceNameSnapshot })
+        assertNull(work[0].equipmentId)
+        assertEquals(ids.equipment, work[1].equipmentId)
+        assertEquals("Unregistered unit", work[2].equipmentDescriptionSnapshot)
+    }
+
+    @Test fun promotionEnablesAPlanOnExistingEquipment() = runTest {
+        val ids = seedOneTimeBranch()
+        repo.makeCustomerStandard(ids.customer)
+        val planId = repo.createPlan(ids.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01"))
+        assertEquals(ids.equipment, db.serviceLoopDao().plan(planId)!!.equipmentId)
+    }
+
+    @Test fun linkRestrictionsRejectSiteAndAlreadyKnownTasks() = runTest {
+        val ids = seedBranch()
+        val siteVisit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Site task", WorkSubjectType.SITE)), "WORKING", "2026-09-05")
+        val siteWork = db.serviceLoopDao().visitWorkItems(siteVisit).single().id
+        assertEquals("This task is not awaiting equipment identification", runCatching { repo.linkWorkItemEquipment(siteWork, ids.equipment) }.exceptionOrNull()?.message)
+        val knownVisit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Known task", WorkSubjectType.EQUIPMENT, ids.equipment)), "WORKING", "2026-09-05")
+        val knownWork = db.serviceLoopDao().visitWorkItems(knownVisit).single().id
+        assertEquals("This task is not awaiting equipment identification", runCatching { repo.linkWorkItemEquipment(knownWork, ids.equipment) }.exceptionOrNull()?.message)
+    }
+
+    @Test fun oneTimeCustomerPromotionIsInPlaceAndIdempotent() = runTest {
+        val ids = seedOneTimeBranch()
+        assertEquals(CustomerType.ONE_TIME.code, db.serviceLoopDao().customer(ids.customer)!!.customerType)
+        repo.makeCustomerStandard(ids.customer)
+        val promoted = db.serviceLoopDao().customer(ids.customer)!!
+        assertEquals(CustomerType.STANDARD.code, promoted.customerType)
+        repo.makeCustomerStandard(ids.customer)
+        assertEquals(promoted.id, db.serviceLoopDao().customer(ids.customer)!!.id)
+        assertEquals(ids.site, db.serviceLoopDao().site(ids.site)!!.id)
+    }
+
+    @Test fun equipmentLinkIsWorkingOnlyAndKeepsSiteBoundary() = runTest {
+        val ids = seedBranch()
+        val other = seedOneTimeBranch()
+        val visitId = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Identify unit", WorkSubjectType.EQUIPMENT, equipmentDescription = "Unregistered unit")), "BOOKED", "2026-09-06")
+        val workId = db.serviceLoopDao().visitWorkItems(visitId).single().id
+        assertEquals("Equipment can be linked only while the visit is Working", runCatching { repo.linkWorkItemEquipment(workId, ids.equipment) }.exceptionOrNull()?.message)
+        repo.startVisit(visitId)
+        val context = repo.equipmentLinkContext(workId)
+        assertTrue(context.equipment.any { it.id == ids.equipment })
+        assertEquals("Equipment must belong to this visit site", runCatching { repo.linkWorkItemEquipment(workId, other.equipment) }.exceptionOrNull()?.message)
+        repo.linkWorkItemEquipment(workId, ids.equipment)
+        assertEquals(ids.equipment, db.serviceLoopDao().workItem(workId)!!.equipmentId)
+    }
+
+    @Test fun creatingAndLinkingEquipmentAddsItToTheVisitSite() = runTest {
+        val ids = seedOneTimeBranch()
+        val visitId = repo.createOneTimeVisit(OneTimeVisitInput("One-time"), listOf(AdHocWorkInput("Identify new unit", WorkSubjectType.EQUIPMENT, equipmentDescription = "New unit")), "WORKING", "2026-09-05")
+        val workId = db.serviceLoopDao().visitWorkItems(visitId).single().id
+        val equipmentId = repo.createAndLinkEquipment(workId, EquipmentInput("New unit", make = "Maker", model = "Model"))
+        assertEquals(equipmentId, db.serviceLoopDao().workItem(workId)!!.equipmentId)
+        assertEquals(db.serviceLoopDao().visit(visitId)!!.siteId, db.serviceLoopDao().equipment(equipmentId)!!.siteId)
+        assertEquals(equipmentId, repo.equipment(equipmentId)!!.id)
+    }
+
     @Test fun updatePlanDefensivelyRejectsOneTimeOwnerWithoutMutation() = runTest {
         val ids = seedBranch(); val plan = repo.createPlan(ids.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01")); val before = db.serviceLoopDao().plan(plan)!!
         db.serviceLoopDao().updateCustomer(db.serviceLoopDao().customer(ids.customer)!!.copy(customerType = CustomerType.ONE_TIME.code))

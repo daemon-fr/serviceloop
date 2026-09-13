@@ -177,7 +177,7 @@ class DailyOperationsIntegrityTest {
     }
 
     @Test fun oneOffOnlyCancelledVisitRestoresWithoutClaims() = runTest {
-        val ids=foundation(); val visit=repo.createVisitForSite(ids.site,emptyList(),ids.equipment,"Emergency","BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")
+        val ids=foundation(); val visit=repo.createVisitForSite(ids.site,emptyList(),listOf(AdHocWorkInput("Emergency",WorkSubjectType.EQUIPMENT,ids.equipment)),"BOOKED","2026-09-06",1); repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")
         assertEquals("BOOKED",repo.visit(visit)!!.state); assertTrue(db.serviceLoopDao().visitWorkItems(visit).all{it.capturedObligationId==null})
     }
 
@@ -211,7 +211,7 @@ class DailyOperationsIntegrityTest {
     }
 
     @Test fun visitSetupCanPersistAOneOffOnlyVisitAtOneChosenSite() = runTest {
-        val ids=foundation(); val visit=repo.createVisitForSite(ids.site,emptyList(),ids.equipment,"Emergency diagnosis","WORKING","2026-09-05")
+        val ids=foundation(); val visit=repo.createVisitForSite(ids.site,emptyList(),listOf(AdHocWorkInput("Emergency diagnosis",WorkSubjectType.EQUIPMENT,ids.equipment)),"WORKING","2026-09-05")
         val line=repo.visit(visit)!!.lines.single(); assertEquals("Emergency diagnosis",line.serviceName); assertNull(line.dueDate); assertEquals(0,repo.dueServices().count{it.claimedVisitId==visit})
     }
 

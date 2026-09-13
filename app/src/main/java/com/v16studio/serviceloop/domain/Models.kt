@@ -64,6 +64,9 @@ data class EquipmentDetail(
     val model: String = "",
     val privateNote: String = "",
     val state: String = "ACTIVE",
+    val customerId: String = "",
+    val customerType: CustomerType = CustomerType.STANDARD,
+    val siteId: String = "",
 )
 
 enum class ResponseDisposition {
