@@ -273,8 +273,8 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
         composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
         composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id)}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
-         composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreenB026(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
-         composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreenB026(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
+         composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
+          composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
         composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }
         composable("follow-up/list") { LaunchedEffect(Unit){viewModel.loadFollowUps()}; DetailScaffold("Follow-ups",nav){FollowUpListScreen(state.followUps,it,nav)} }
         composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
@@ -671,7 +671,7 @@ internal fun FollowUpsWorkScreen(
 }
 
 @Composable
-private fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
+internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
     var showOneTime by rememberSaveable { mutableStateOf(false) }
     val colors = LocalServiceLoopTokens.current
@@ -722,7 +722,7 @@ internal fun workRoute(tab: WorkTab, filter: String? = null): String =
     }
 
 @Composable
-private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int, viewModel: ServiceLoopViewModel) {
+internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int, viewModel: ServiceLoopViewModel) {
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text(detail.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -939,8 +939,8 @@ private fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostC
     val appearanceMode by appearancePreferences.mode.collectAsState()
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("App"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
-        item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.InspectionTemplates){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole){nav.navigate("dispatch/settings")} }
-        item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar){nav.navigate("calendar")} }
+        item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Inspection templates",leadingIcon=ServiceLoopIcons.InspectionTemplates){nav.navigate("template/list")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole,modifier=Modifier.testTag("settings-team-role")){nav.navigate("dispatch/settings")} }
+        item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")} }
         item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
     }
 }

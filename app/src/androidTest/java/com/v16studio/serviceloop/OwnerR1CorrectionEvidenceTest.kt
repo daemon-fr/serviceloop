@@ -90,7 +90,7 @@ class OwnerR1CorrectionEvidenceTest {
             },
             Proof("08b", "responsive-follow-up-filters", "work?tab=FOLLOW_UPS") {
                 compose.onNodeWithTag("root-work").assertIsDisplayed()
-                compose.onNodeWithText("Closed").assertIsDisplayed()
+                compose.onNodeWithText("FU-001", substring = true).assertIsDisplayed()
             },
             Proof("09", "history-sort", "history/global") { vm ->
                 assertTrue(vm.state.value.history.isNotEmpty())
@@ -101,7 +101,7 @@ class OwnerR1CorrectionEvidenceTest {
             Proof("10", "due-services-settled", "work?tab=DUE_SERVICES") { vm ->
                 assertTrue(vm.state.value.dueServicesReady)
                 assertTrue(vm.state.value.dueServices.isNotEmpty())
-                compose.onNodeWithText("Upcoming").assertIsDisplayed()
+                compose.onNodeWithTag("due-date-selector").assertIsDisplayed()
                 compose.onNodeWithText("Reading due services").assertDoesNotExist()
             },
             Proof("11", "create-visit-settled", "visit/new") { vm ->

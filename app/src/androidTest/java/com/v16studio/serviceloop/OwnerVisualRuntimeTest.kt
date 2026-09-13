@@ -24,7 +24,6 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.activity.compose.setContent
 import androidx.room.Room
-import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
@@ -64,9 +63,11 @@ class OwnerVisualRuntimeTest {
         }
         composeRule.onNodeWithText("Work").performClick()
         composeRule.onNodeWithText("Visits").performClick()
+        composeRule.onNodeWithTag("visit-date-selector").performClick()
+        composeRule.onNodeWithTag("visit-date-selector-option-all").performClick()
         composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("V-001", substring = true))
         composeRule.onNodeWithText("V-001", substring = true).performClick()
-        composeRule.onNodeWithText("V-001 · Completed").assertIsDisplayed()
+        composeRule.onNodeWithText("V-001 · Finalized").assertIsDisplayed()
         captureRenderedEvidence("final-record")
 
         composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))
@@ -146,26 +147,28 @@ class OwnerVisualRuntimeTest {
         }
         composeRule.onNodeWithText("Work").performClick()
         composeRule.onNodeWithText("Visits").performClick()
-        composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("History"))
+        composeRule.onNodeWithTag("work-visits-list").assertIsDisplayed()
+        composeRule.onNodeWithText("Settings").performClick()
         composeRule.onNodeWithText("History").performClick()
         composeRule.onNodeWithTag("history-list").assertIsDisplayed()
-        pressBack()
+        goBack()
+        goBack()
         composeRule.onNodeWithText("Register").performClick()
         composeRule.onNodeWithTag("root-customers").assertIsDisplayed()
         composeRule.onNodeWithText("Home").performClick()
         composeRule.onNodeWithTag("root-home").assertIsDisplayed()
 
         composeRule.onNodeWithText("Settings").performClick()
-        composeRule.onNodeWithText("Reminders", substring = true).performClick()
+        composeRule.onNodeWithTag("settings-reminders").performClick()
         composeRule.onNodeWithTag("reminder-settings").assertIsDisplayed()
-        pressBack()
-        composeRule.onNodeWithText("Calendar", substring = true).performClick()
+        goBack()
+        composeRule.onNodeWithTag("settings-calendar").performClick()
         composeRule.onNodeWithTag("calendar-settings").assertIsDisplayed()
-        pressBack()
-        composeRule.onNodeWithText("Team role settings").performClick()
+        goBack()
+        composeRule.onNodeWithTag("settings-team-role").performClick()
         composeRule.onNodeWithTag("team-role-settings").assertIsDisplayed()
-        pressBack()
-        pressBack()
+        goBack()
+        goBack()
 
         if (composeRule.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isNotEmpty()) {
             composeRule.onNodeWithText("Outbox").performClick()
@@ -222,27 +225,27 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
 
-        composeRule.onNodeWithTag("response-check-belt-OK").performClick()
+        composeRule.onNodeWithTag("response-check-belt-OK", useUnmergedTree = true).performClick()
         composeRule.onAllNodesWithTag("long-text-public-finding-description", useUnmergedTree = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("Discard saved response detail?").assertCountEquals(0)
 
-        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE").performClick()
-        val naField=composeRule.onNodeWithTag("not-applicable-reason-check-belt")
+        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE", useUnmergedTree = true).performClick()
+        val naField=composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true)
         naField.performTextInput("Guard unavailable")
         composeRule.onNodeWithTag("not-applicable-save-check-belt").performClick()
-        composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
+        composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
         restored.performTextInput("; local unsaved note")
-        composeRule.onNodeWithTag("response-check-belt-OK").performClick()
-        composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND").performClick()
+        composeRule.onNodeWithTag("response-check-belt-OK", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("local unsaved note", substring = true)
-        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE").performClick()
-        composeRule.onNodeWithTag("not-applicable-reason-check-belt").assertTextContains("Guard unavailable")
+        composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true).assertTextContains("Guard unavailable")
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
         val valueField=composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
-        composeRule.onNodeWithTag("not-applicable-check-note").performClick()
-        composeRule.onNodeWithTag("not-applicable-reason-check-note").performTextInput("Cabinet isolated")
+        composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).performTextInput("Cabinet isolated")
         composeRule.onNodeWithTag("not-applicable-save-check-note").performClick()
         valueField.assertTextContains("Initial cabinet note")
         composeRule.onNodeWithTag("value-save-check-note").performClick()
@@ -252,11 +255,15 @@ class OwnerVisualRuntimeTest {
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
         composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
-        composeRule.onNodeWithTag("not-applicable-check-note").performClick()
-        composeRule.onNodeWithTag("not-applicable-reason-check-note").assertTextContains("Cabinet isolated")
+        composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).assertTextContains("Cabinet isolated")
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
         composeRule.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Parts and photographs").assertIsDisplayed()
         database.close()
+    }
+
+    private fun goBack() {
+        composeRule.runOnUiThread { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
     }
 }

@@ -243,6 +243,51 @@ class B026FlexibleWorkTest {
         assertEquals(ids.equipment, db.serviceLoopDao().workItem(workId)!!.equipmentId)
     }
 
+    @Test fun linkingEquipmentPreservesEveryWorkingDraftAndHistoryRow() = runTest {
+        val ids = seedBranch()
+        val workId = seedRichWorkingUnidentifiedWork("preserve-existing", ids)
+        val beforeItem = db.serviceLoopDao().workItem(workId)!!
+        val beforeVisit = db.serviceLoopDao().visit(beforeItem.visitId)!!
+        val beforePublic = db.serviceLoopDao().publicDraft(workId)!!
+        val beforePrivate = db.serviceLoopDao().privateDraft(workId)!!
+        val beforeBuffers = db.serviceLoopDao().workingInputBuffers(workId)
+        val beforeResponses = db.serviceLoopDao().responses(workId)
+        val beforeParts = db.serviceLoopDao().parts(workId)
+        val beforeAttachments = db.serviceLoopDao().workItemAttachments(workId)
+        val attachmentBytes = beforeAttachments.map { File(root, it.storedRelativePath).readBytes() }
+
+        repo.linkWorkItemEquipment(workId, ids.equipment)
+
+        val afterItem = db.serviceLoopDao().workItem(workId)!!
+        assertEquals(beforeItem.id, afterItem.id)
+        assertEquals(beforeVisit.id, db.serviceLoopDao().visit(afterItem.visitId)!!.id)
+        assertEquals(beforeItem.visitId, afterItem.visitId)
+        assertEquals(beforeItem.serviceNameSnapshot, afterItem.serviceNameSnapshot)
+        assertEquals(beforeItem.templateSnapshotId, afterItem.templateSnapshotId)
+        assertEquals(beforePublic, db.serviceLoopDao().publicDraft(workId))
+        assertEquals(beforePrivate, db.serviceLoopDao().privateDraft(workId))
+        assertEquals(beforeBuffers, db.serviceLoopDao().workingInputBuffers(workId))
+        assertEquals(beforeResponses, db.serviceLoopDao().responses(workId))
+        assertEquals(beforeParts, db.serviceLoopDao().parts(workId))
+        assertEquals(beforeAttachments, db.serviceLoopDao().workItemAttachments(workId))
+        assertEquals(attachmentBytes.single().toList(), afterItem.let { db.serviceLoopDao().workItemAttachments(workId).single().let { attachment -> File(root, attachment.storedRelativePath).readBytes().toList() } })
+        assertEquals(ids.equipment, afterItem.equipmentId)
+        val equipment = db.serviceLoopDao().equipment(ids.equipment)!!
+        assertEquals(equipment.name, afterItem.equipmentNameSnapshot)
+        assertEquals(equipment.reference, afterItem.equipmentReferenceSnapshot)
+        assertEquals(equipment.technicianIdentifier, afterItem.equipmentIdentifierSnapshot)
+        assertEquals(equipment.make, afterItem.equipmentMakeSnapshot)
+        assertEquals(equipment.model, afterItem.equipmentModelSnapshot)
+        assertEquals(equipment.serialNumber, afterItem.equipmentSerialSnapshot)
+        assertNull(afterItem.equipmentDescriptionSnapshot)
+        assertEquals(beforeItem.outcome, afterItem.outcome)
+        assertEquals(beforeItem.notPerformedReason, afterItem.notPerformedReason)
+        assertEquals(beforeItem.fulfillsCurrentObligation, afterItem.fulfillsCurrentObligation)
+        assertEquals(beforeItem.confirmedNextDueDate, afterItem.confirmedNextDueDate)
+        assertEquals(beforeItem.nextDueDateCalculated, afterItem.nextDueDateCalculated)
+        assertEquals(beforeItem.nextDueOverrideReason, afterItem.nextDueOverrideReason)
+    }
+
     @Test fun creatingAndLinkingEquipmentAddsItToTheVisitSite() = runTest {
         val ids = seedOneTimeBranch()
         val visitId = repo.createOneTimeVisit(OneTimeVisitInput("One-time"), listOf(AdHocWorkInput("Identify new unit", WorkSubjectType.EQUIPMENT, equipmentDescription = "New unit")), "WORKING", "2026-09-05")
@@ -251,6 +296,38 @@ class B026FlexibleWorkTest {
         assertEquals(equipmentId, db.serviceLoopDao().workItem(workId)!!.equipmentId)
         assertEquals(db.serviceLoopDao().visit(visitId)!!.siteId, db.serviceLoopDao().equipment(equipmentId)!!.siteId)
         assertEquals(equipmentId, repo.equipment(equipmentId)!!.id)
+    }
+
+    @Test fun creatingAndLinkingEquipmentPreservesWorkingDraftIdentity() = runTest {
+        val ids = seedBranch()
+        val workId = seedRichWorkingUnidentifiedWork("preserve-created", ids)
+        val beforeItem = db.serviceLoopDao().workItem(workId)!!
+        val beforePublic = db.serviceLoopDao().publicDraft(workId)!!
+        val beforePrivate = db.serviceLoopDao().privateDraft(workId)!!
+        val beforeBuffers = db.serviceLoopDao().workingInputBuffers(workId)
+        val beforeResponses = db.serviceLoopDao().responses(workId)
+        val beforeParts = db.serviceLoopDao().parts(workId)
+        val beforeAttachments = db.serviceLoopDao().workItemAttachments(workId)
+
+        val equipmentId = repo.createAndLinkEquipment(workId, EquipmentInput("New linked unit", make = "Maker", model = "Model", serialNumber = "SN-2"))
+
+        val afterItem = db.serviceLoopDao().workItem(workId)!!
+        assertEquals(beforeItem.id, afterItem.id)
+        assertEquals(beforeItem.visitId, afterItem.visitId)
+        assertEquals(beforeItem.serviceNameSnapshot, afterItem.serviceNameSnapshot)
+        assertEquals(beforeItem.templateSnapshotId, afterItem.templateSnapshotId)
+        assertEquals(beforePublic, db.serviceLoopDao().publicDraft(workId))
+        assertEquals(beforePrivate, db.serviceLoopDao().privateDraft(workId))
+        assertEquals(beforeBuffers, db.serviceLoopDao().workingInputBuffers(workId))
+        assertEquals(beforeResponses, db.serviceLoopDao().responses(workId))
+        assertEquals(beforeParts, db.serviceLoopDao().parts(workId))
+        assertEquals(beforeAttachments, db.serviceLoopDao().workItemAttachments(workId))
+        assertEquals(equipmentId, afterItem.equipmentId)
+        assertEquals("New linked unit", afterItem.equipmentNameSnapshot)
+        assertEquals("SN-2", afterItem.equipmentSerialSnapshot)
+        assertNull(afterItem.equipmentDescriptionSnapshot)
+        assertEquals(0, db.serviceLoopDao().plansForEquipment(equipmentId).size)
+        assertEquals(db.serviceLoopDao().visit(afterItem.visitId)!!.siteId, db.serviceLoopDao().equipment(equipmentId)!!.siteId)
     }
 
     @Test fun updatePlanDefensivelyRejectsOneTimeOwnerWithoutMutation() = runTest {
@@ -389,6 +466,27 @@ class B026FlexibleWorkTest {
     private suspend fun seedVisit(id: String, branch: Branch): String {
         db.serviceLoopDao().insertVisits(listOf(WorkingVisitEntity(id, "V-$id", branch.customer, branch.site, "2026-09-05", "Customer", "Site", null, "WORKING", 1, "CU-1", "ST-1", "Business", "Technician", null, null, null, "Europe/Bucharest")))
         return id
+    }
+
+    private suspend fun seedRichWorkingUnidentifiedWork(idSuffix: String, branch: Branch): String {
+        val visitId = seedVisit("visit-$idSuffix", branch)
+        val workId = "work-$idSuffix"
+        db.serviceLoopDao().insertTemplateSnapshots(listOf(TemplateSnapshotEntity("snapshot-$idSuffix", null, "Immutable checklist", 1, time.instant().toEpochMilli())))
+        db.serviceLoopDao().insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-$idSuffix", "snapshot-$idSuffix", 0, "Pressure", "NUMBER", "bar", true, "Private guidance")))
+        db.serviceLoopDao().insertWorkItems(listOf(WorkItemEntity(workId, visitId, null, null, null, "snapshot-$idSuffix", null, null, "Identify pump", null, null, null, null, true, "NOT_PERFORMED", false, notPerformedReason = "Awaiting access", subjectType = WorkSubjectType.EQUIPMENT.code, equipmentDescriptionSnapshot = "Blue pump beside heater")))
+        db.serviceLoopDao().insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, "")))
+        db.serviceLoopDao().insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
+        repo.savePublicWork(workId, "Public work draft")
+        repo.savePrivateNote(workId, "Private draft")
+        repo.saveWorkingInputBuffer(workId, ServiceDraftFieldKeys.WORK, "raw public draft")
+        repo.saveWorkingInputBuffer(workId, ServiceDraftFieldKeys.PRIVATE, "raw private draft")
+        repo.saveResponse(workId, "check-$idSuffix", ResponseDisposition.VALUE, "12.5", null)
+        repo.addPart(workId, "Seal", "2", "pcs")
+        val attachmentId = "attachment-$idSuffix"
+        val relativePath = "attachments/$attachmentId/original.bin"
+        File(root, relativePath).apply { parentFile?.mkdirs(); writeBytes(byteArrayOf(1, 2, 3, 5, 8)) }
+        db.serviceLoopDao().insertAttachments(listOf(AttachmentEntity(attachmentId, "WORK_ITEM", workId, relativePath, "hash-$idSuffix", "evidence.bin", "application/octet-stream", false, "PRESENT", 5, "Attachment metadata")))
+        return workId
     }
 
     private suspend fun seedWork(visit: String, branch: Branch, subject: WorkSubjectType, id: String = "work-$visit", equipmentId: String? = null, description: String? = null): String {

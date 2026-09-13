@@ -33,6 +33,8 @@ Directory CSV adds `customer_type` with exact enum values. Records exports inclu
 The local B026B slice is implemented without accounts, sync, dispatch, invoicing, or backend services:
 
 - New Visit supports Existing customer/site and One-time customer modes. One-time visits atomically create one `ONE_TIME` customer, one default site, and one or more local tasks; retrying creates a separate visit and does not reuse a previous customer.
+- An existing `ONE_TIME` customer/site may already have registered Equipment, so its local ad-hoc work can use known Equipment. A newly quick-created one-time branch starts without registered Equipment; its first tasks can use the site or an unidentified equipment description.
+- Existing-site selection and changing the selected site use the same deliberate discovery rule: a blank query shows Standard sites, while a nonblank matching query may reveal a matching one-time site.
 - Existing visits can add local tasks while `BOOKED` or `WORKING`, including `SITE`, known `EQUIPMENT`, and unidentified equipment-description subjects. Planned services remain separate, current, and claim-safe.
 - Reusable checklist templates are selected per local task. Ad-hoc task templates are snapshotted when the task is created; starting a booked visit does not replace that snapshot. Recurring plan snapshots retain their existing start-time refresh rules.
 - Working unidentified equipment tasks expose a same-site equipment picker and an add-equipment form. Linking existing equipment or creating and linking equipment is transactional, same-site constrained, and unavailable outside `WORKING` visits or for tasks that are not awaiting equipment identification.

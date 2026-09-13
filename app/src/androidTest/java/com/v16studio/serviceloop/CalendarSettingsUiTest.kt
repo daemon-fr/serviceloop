@@ -13,7 +13,7 @@ class CalendarSettingsUiTest {
 
     @Test fun settingsShowsTruthfulNonDestructiveCalendarState(){
         compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Calendar ·",substring=true).performClick()
+        compose.onNodeWithText("Calendar").performClick()
         compose.onNodeWithTag("calendar-settings").assertIsDisplayed()
         compose.onNodeWithText("ServiceLoop remains the source of truth.",substring=true).assertIsDisplayed()
         compose.onNodeWithTag("calendar-status").assertIsDisplayed()
