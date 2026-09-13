@@ -5,10 +5,11 @@ data class CustomerDetail(
     val phone: String, val email: String, val privateNote: String,
     val sites: List<SiteSummary>, val equipment: List<EquipmentSummary>, val openFollowUps: List<FollowUpDetail>,
     val recentContacts: List<ContactNoteDetail>, val state: String = "ACTIVE",
+    val customerType: CustomerType = CustomerType.STANDARD,
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)
-data class SiteRegisterSummary(val id: String, val reference: String, val name: String, val customerName: String, val address: String, val equipmentCount: Int)
+data class SiteRegisterSummary(val id: String, val reference: String, val name: String, val customerName: String, val address: String, val equipmentCount: Int, val customerType: CustomerType = CustomerType.STANDARD)
 
 data class VisitSiteOption(
     val id: String,
@@ -16,6 +17,7 @@ data class VisitSiteOption(
     val name: String,
     val customerName: String,
     val equipment: List<EquipmentSummary>,
+    val customerType: CustomerType = CustomerType.STANDARD,
 )
 
 data class SiteDetail(
@@ -24,6 +26,7 @@ data class SiteDetail(
     val email: String, val privateAccessNote: String, val isDefault: Boolean,
     val equipment: List<EquipmentSummary>, val state: String = "ACTIVE",
     val customerContactName: String = "", val customerPhone: String = "", val customerEmail: String = "",
+    val customerType: CustomerType = CustomerType.STANDARD,
 ) {
     val usesCustomerContact: Boolean get() = contactName.isBlank() && phone.isBlank() && email.isBlank()
     val effectiveContactName: String get() = if (usesCustomerContact) customerContactName else contactName
@@ -56,8 +59,19 @@ data class VisitDetail(
     val serviceDate: String, val scheduledAtEpochMillis: Long?, val appointmentZoneId: String?,
     val lines: List<VisitLine>, val cancellationReason: String?, val cancellationOrigin: String? = null,
     val appointmentReminderLeadMinutes: Int? = null,
+    val customerType: CustomerType = CustomerType.STANDARD,
 )
-data class VisitLine(val workItemId: String, val equipmentName: String, val equipmentReference: String, val serviceName: String, val dueDate: String?, val outcome: String?)
+data class VisitLine(
+    val workItemId: String,
+    val equipmentName: String?,
+    val equipmentReference: String?,
+    val serviceName: String,
+    val dueDate: String?,
+    val outcome: String?,
+    val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
+    val equipmentId: String? = null,
+    val equipmentDescription: String? = null,
+)
 
 data class PartEntry(val id: String, val description: String, val quantity: String, val unit: String)
 data class PhotoEntry(val id: String, val relativePath: String, val mimeType: String, val byteSize: Long, val includedInReport: Boolean, val caption: String?)
@@ -73,7 +87,7 @@ data class FollowUpInput(val type: String, val title: String, val dueDate: Strin
 data class ContactNoteDetail(val id: String, val reference: String, val channel: String, val occurredAtEpochMillis: Long, val outcome: String, val privateNote: String, val enteredInError: Boolean, val errorReason: String? = null)
 data class ContactNoteInput(val customerId: String, val siteId: String? = null, val equipmentId: String? = null, val channel: String, val outcome: String, val privateNote: String = "")
 
-data class SearchTarget(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
+data class SearchTarget(val type: String, val id: String, val reference: String, val title: String, val subtitle: String, val customerType: CustomerType = CustomerType.STANDARD)
 
 /**
  * The one technician-side Visit lifecycle. Persisted legacy spellings are

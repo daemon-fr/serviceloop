@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -48,7 +48,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -324,6 +324,56 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("UPDATE work_items SET fulfillsCurrentObligation=NULL WHERE outcome IS NULL OR (outcome='PERFORMED' AND fulfillsCurrentObligation=0)")
                 db.execSQL("UPDATE work_items SET fulfillsCurrentObligation=0 WHERE outcome IN ('PARTLY_PERFORMED','NOT_PERFORMED')")
                 db.execSQL("UPDATE work_items SET confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE fulfillsCurrentObligation IS NULL OR fulfillsCurrentObligation=0")
+                configureStage4Tracking(db)
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customers ADD COLUMN customerType TEXT NOT NULL DEFAULT 'STANDARD'")
+                db.execSQL("PRAGMA foreign_keys=OFF")
+
+                db.execSQL("ALTER TABLE service_plans RENAME TO service_plans_b026_old")
+                db.execSQL("CREATE TABLE service_plans (id TEXT NOT NULL, equipmentId TEXT, reference TEXT NOT NULL, name TEXT NOT NULL, intervalCount INTEGER NOT NULL, intervalUnit TEXT NOT NULL, currentDueDate TEXT NOT NULL, state TEXT NOT NULL, currentObligationId TEXT, lastCountedCompletionDate TEXT, lastCountedRevisionId TEXT, reusableTemplateId TEXT, PRIMARY KEY(id), FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("INSERT INTO service_plans (id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId,lastCountedCompletionDate,lastCountedRevisionId,reusableTemplateId) SELECT id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId,lastCountedCompletionDate,lastCountedRevisionId,reusableTemplateId FROM service_plans_b026_old")
+                db.execSQL("DROP TABLE service_plans_b026_old")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_service_plans_equipmentId ON service_plans(equipmentId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_service_plans_reference ON service_plans(reference)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_service_plans_currentObligationId ON service_plans(currentObligationId)")
+
+                db.execSQL("ALTER TABLE work_items RENAME TO work_items_b026_old")
+                db.execSQL("CREATE TABLE work_items (id TEXT NOT NULL, visitId TEXT NOT NULL, equipmentId TEXT, servicePlanId TEXT, capturedObligationId TEXT, templateSnapshotId TEXT, equipmentNameSnapshot TEXT, equipmentReferenceSnapshot TEXT, serviceNameSnapshot TEXT NOT NULL, planReferenceSnapshot TEXT, dueDateSnapshot TEXT, intervalCountSnapshot INTEGER, intervalUnitSnapshot TEXT, checklistReviewed INTEGER NOT NULL, outcome TEXT, fulfillsCurrentObligation INTEGER, notPerformedReason TEXT, confirmedNextDueDate TEXT, nextDueDateCalculated INTEGER, nextDueOverrideReason TEXT, equipmentIdentifierSnapshot TEXT, equipmentMakeSnapshot TEXT, equipmentModelSnapshot TEXT, equipmentSerialSnapshot TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescriptionSnapshot TEXT, PRIMARY KEY(id), FOREIGN KEY(visitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(servicePlanId) REFERENCES service_plans(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(capturedObligationId) REFERENCES service_obligations(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(templateSnapshotId) REFERENCES template_snapshots(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("INSERT INTO work_items (id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,subjectType,equipmentDescriptionSnapshot) SELECT id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,'EQUIPMENT',NULL FROM work_items_b026_old")
+                db.execSQL("DROP TABLE work_items_b026_old")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_visitId ON work_items(visitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_equipmentId ON work_items(equipmentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_servicePlanId ON work_items(servicePlanId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_capturedObligationId ON work_items(capturedObligationId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_templateSnapshotId ON work_items(templateSnapshotId)")
+
+                db.execSQL("ALTER TABLE final_work_items RENAME TO final_work_items_b026_old")
+                db.execSQL("CREATE TABLE final_work_items (id TEXT NOT NULL, revisionId TEXT NOT NULL, position INTEGER NOT NULL, sourceWorkItemId TEXT NOT NULL, equipmentId TEXT, equipmentName TEXT, equipmentReference TEXT, equipmentIdentifier TEXT, equipmentMake TEXT, equipmentModel TEXT, equipmentSerial TEXT, serviceName TEXT NOT NULL, planId TEXT, planReference TEXT, outcome TEXT NOT NULL, publicWorkNote TEXT, notPerformedReason TEXT, fulfilledObligation INTEGER NOT NULL, oldDueDate TEXT, nextDueDate TEXT, intervalCount INTEGER, intervalUnit TEXT, capturedObligationId TEXT, privateInternalNote TEXT, nextDueDateCalculated INTEGER, nextDueOverrideReason TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescription TEXT, PRIMARY KEY(id), FOREIGN KEY(revisionId) REFERENCES final_record_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("INSERT INTO final_work_items (id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,subjectType,equipmentDescription) SELECT id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,'EQUIPMENT',NULL FROM final_work_items_b026_old")
+                db.execSQL("DROP TABLE final_work_items_b026_old")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_final_work_items_revisionId ON final_work_items(revisionId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_final_work_items_revisionId_position ON final_work_items(revisionId,position)")
+
+                db.execSQL("ALTER TABLE dispatch_outbox_items RENAME TO dispatch_outbox_items_b026_old")
+                db.execSQL("CREATE TABLE dispatch_outbox_items (dispatchItemId TEXT NOT NULL, dispatchVisitId TEXT NOT NULL, position INTEGER NOT NULL, equipmentId TEXT, taskName TEXT NOT NULL, servicePlanReference TEXT, dueDateSnapshot TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescription TEXT, PRIMARY KEY(dispatchItemId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_outbox_visits(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("INSERT INTO dispatch_outbox_items (dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,subjectType,equipmentDescription) SELECT dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,'EQUIPMENT',NULL FROM dispatch_outbox_items_b026_old")
+                db.execSQL("DROP TABLE dispatch_outbox_items_b026_old")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId ON dispatch_outbox_items(dispatchVisitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_equipmentId ON dispatch_outbox_items(equipmentId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId_position ON dispatch_outbox_items(dispatchVisitId,position)")
+
+                db.execSQL("ALTER TABLE dispatch_item_bindings RENAME TO dispatch_item_bindings_b026_old")
+                db.execSQL("CREATE TABLE dispatch_item_bindings (dispatchVisitId TEXT NOT NULL, dispatchItemId TEXT NOT NULL, localWorkItemId TEXT, equipmentReferenceSnapshot TEXT, taskNameSnapshot TEXT NOT NULL, servicePlanReferenceSnapshot TEXT, dueDateSnapshot TEXT, assignedTechniciansJson TEXT NOT NULL, assignmentMeaning TEXT NOT NULL, localRole TEXT NOT NULL, documentationDisposition TEXT NOT NULL, deferredToTechnicianId TEXT, deferredToName TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescriptionSnapshot TEXT, PRIMARY KEY(dispatchVisitId,dispatchItemId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_visit_bindings(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(localWorkItemId) REFERENCES work_items(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                db.execSQL("INSERT INTO dispatch_item_bindings (dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,subjectType,equipmentDescriptionSnapshot) SELECT dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,'EQUIPMENT',NULL FROM dispatch_item_bindings_b026_old")
+                db.execSQL("DROP TABLE dispatch_item_bindings_b026_old")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_item_bindings_dispatchVisitId ON dispatch_item_bindings(dispatchVisitId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_item_bindings_localWorkItemId ON dispatch_item_bindings(localWorkItemId)")
+
+                db.execSQL("PRAGMA foreign_keys=ON")
                 configureStage4Tracking(db)
             }
         }

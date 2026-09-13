@@ -371,12 +371,12 @@ class DailyOperationsIntegrityTest {
 
     @Test fun recordsPackageContainsAdoptedReadableOwnershipTables() = runTest {
         val ids=foundation(); finalizedRecord(ids); val bytes=repo.recordsCsvPackage(true,false,true,ids.customer); val contents=linkedMapOf<String,ByteArray>(); java.util.zip.ZipInputStream(bytes.inputStream()).use { zip -> while(true){ val entry=zip.nextEntry?:break; contents[entry.name]=zip.readBytes() } }
-        val expected=listOf("README.txt","customers.csv","sites.csv","equipment.csv","service_plans.csv","visits.csv","work_items.csv","service_records.csv","checklist_answers.csv","findings.csv","parts.csv","followups.csv","contact_notes.csv","changes.csv","history.csv","report_index.csv","attachment_index.csv")
+        val expected=listOf("README.txt","customers.csv","sites.csv","equipment.csv","service_plans.csv","visits.csv","work_items.csv","service_records.csv","final_work_items.csv","checklist_answers.csv","findings.csv","parts.csv","followups.csv","contact_notes.csv","changes.csv","history.csv","report_index.csv","attachment_index.csv")
         assertEquals(expected,contents.keys.toList())
         val readme=contents.getValue("README.txt").toString(Charsets.UTF_8)
         assertTrue(readme.contains("ServiceLoop records export")); assertTrue(readme.contains("Generated with ServiceLoop")); assertTrue(readme.contains("Generated: 2026-09-05T10:00:00Z")); assertTrue(readme.contains("Scope: customer CU-001")); assertTrue(readme.contains("Include inactive: yes")); assertTrue(readme.contains("Include private data: no")); assertTrue(readme.contains("Include previous revisions: yes"))
         val listed=readme.lineSequence().dropWhile { it != "Files:" }.drop(1).takeWhile { it.startsWith("- ") }.map { it.removePrefix("- ") }.toList(); assertEquals(expected,listed)
-        assertEquals("\"customer_id\",\"reference\",\"name\",\"contact_name\",\"phone\",\"email\",\"state\",\"private_note\"",contents.getValue("customers.csv").toString(Charsets.UTF_8).lineSequence().first())
+        assertEquals("\"customer_id\",\"reference\",\"customer_type\",\"name\",\"contact_name\",\"phone\",\"email\",\"state\",\"private_note\"",contents.getValue("customers.csv").toString(Charsets.UTF_8).lineSequence().first())
         contents.filterKeys { it.endsWith(".csv") }.values.forEach { csv -> assertFalse(csv.toString(Charsets.UTF_8).contains("Generated with ServiceLoop")) }
     }
 

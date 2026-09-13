@@ -174,7 +174,7 @@ object FixedServiceRecordPdf {
                 page.canvas.drawColor(Color.WHITE)
                 drawHeader(page.canvas, model)
                 page.canvas.drawText("Photographic evidence", LEFT, TOP + LineStyle.SECTION.textSize + 3f, paint(LineStyle.SECTION))
-                val contextLines = wrap(RawLine("${line.equipmentReference} · ${line.equipmentName}", LineStyle.SUBSECTION))
+                val contextLines = wrap(RawLine(subjectLabel(line), LineStyle.SUBSECTION))
                 contextLines.take(2).forEachIndexed { index, context -> page.canvas.drawText(context.text, LEFT, TOP + 31f + index * context.height, paint(LineStyle.SUBSECTION)) }
                 val caption = "Photograph ${photoIndex + 1}${photo.caption?.let { ": $it" }.orEmpty()}${if (photo.addedInCorrection) " · Added in correction ${photo.addedAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty()}" else ""}"
                 val captionLines = wrap(RawLine(caption, LineStyle.BODY))
@@ -248,8 +248,10 @@ object FixedServiceRecordPdf {
             raw += RawLine("Technician reference: ${dispatch.documentingTechnicianId.take(8)}", LineStyle.META)
         }
         model.lines.forEach { line ->
-            raw += RawLine("${line.position.toString().padStart(2, '0')} · ${line.equipmentReference} · ${line.equipmentName}", LineStyle.SUBSECTION)
-            raw += RawLine("Equipment identification: ${line.equipmentIdentification}", LineStyle.BODY)
+            raw += RawLine(subjectLabel(line), LineStyle.SUBSECTION)
+            if (line.subjectType == com.v16studio.serviceloop.domain.WorkSubjectType.EQUIPMENT && line.equipmentReference != null) {
+                raw += RawLine("Equipment identification: ${line.equipmentIdentification.orEmpty()}", LineStyle.BODY)
+            }
             raw += RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY)
             val outcomeStyle = if (line.outcome == "NOT_PERFORMED" || line.outcome == "PARTLY_PERFORMED") LineStyle.ALERT else LineStyle.BODY
             raw += RawLine("Outcome: ${line.outcome.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }}", outcomeStyle)
@@ -279,6 +281,12 @@ object FixedServiceRecordPdf {
             }
         }
         return raw.filter { it.text.isNotBlank() }.flatMap(::wrap)
+    }
+
+    private fun subjectLabel(line: com.v16studio.serviceloop.domain.PublicWorkLine): String = when {
+        line.subjectType == com.v16studio.serviceloop.domain.WorkSubjectType.SITE -> "${line.position.toString().padStart(2, '0')} · Site task"
+        line.equipmentReference == null -> line.equipmentDescription?.trim().takeIf { !it.isNullOrBlank() }?.let { "${line.position.toString().padStart(2, '0')} · $it" } ?: line.position.toString().padStart(2, '0')
+        else -> "${line.position.toString().padStart(2, '0')} · ${line.equipmentReference.orEmpty()} · ${line.equipmentName.orEmpty()}"
     }
 
     private fun wrap(raw: RawLine): List<ReportDrawLine> {

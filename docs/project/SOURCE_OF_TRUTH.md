@@ -100,4 +100,4 @@ This is a **functional freeze**, not a claim that the current interface/copy is 
 4. **Pilot findings / final hardening.**
 5. **Release preparation and submission.**
 
-Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining validation boundaries. Read milestone coverage files and the Dispatch reference for detailed verification evidence.
+Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining validation boundaries. Read milestone coverage files, the Dispatch reference, and `B026_FLEXIBLE_AD_HOC_WORK_AND_ONE_TIME_CUSTOMERS.md` for the B026A persistence/output boundary and detailed semantics.

@@ -16,6 +16,7 @@ data class CustomerEntity(
     val email: String? = null,
     val privateNote: String? = null,
     @ColumnInfo(defaultValue = "'ACTIVE'") val state: String = "ACTIVE",
+    @ColumnInfo(defaultValue = "'STANDARD'") val customerType: String = "STANDARD",
 )
 
 @Entity(
@@ -62,7 +63,7 @@ data class EquipmentEntity(
 )
 data class ServicePlanEntity(
     @PrimaryKey val id: String,
-    val equipmentId: String,
+    val equipmentId: String?,
     val reference: String,
     val name: String,
     val intervalCount: Int,
@@ -167,12 +168,12 @@ data class WorkingVisitEntity(
 data class WorkItemEntity(
     @PrimaryKey val id: String,
     val visitId: String,
-    val equipmentId: String,
+    val equipmentId: String?,
     val servicePlanId: String?,
     val capturedObligationId: String?,
     val templateSnapshotId: String?,
-    val equipmentNameSnapshot: String,
-    val equipmentReferenceSnapshot: String,
+    val equipmentNameSnapshot: String?,
+    val equipmentReferenceSnapshot: String?,
     val serviceNameSnapshot: String,
     val planReferenceSnapshot: String?,
     val dueDateSnapshot: String?,
@@ -189,6 +190,8 @@ data class WorkItemEntity(
     val equipmentMakeSnapshot: String? = null,
     val equipmentModelSnapshot: String? = null,
     val equipmentSerialSnapshot: String? = null,
+    @ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
+    val equipmentDescriptionSnapshot: String? = null,
 )
 
 @Entity(tableName = "business_profiles")
@@ -259,9 +262,9 @@ data class FinalWorkItemEntity(
     val revisionId: String,
     val position: Int,
     val sourceWorkItemId: String,
-    val equipmentId: String,
-    val equipmentName: String,
-    val equipmentReference: String,
+    val equipmentId: String?,
+    val equipmentName: String?,
+    val equipmentReference: String?,
     val equipmentIdentifier: String?,
     val equipmentMake: String?,
     val equipmentModel: String?,
@@ -281,6 +284,8 @@ data class FinalWorkItemEntity(
     val privateInternalNote: String?,
     val nextDueDateCalculated: Boolean? = null,
     val nextDueOverrideReason: String? = null,
+    @ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
+    val equipmentDescription: String? = null,
 )
 
 @Entity(

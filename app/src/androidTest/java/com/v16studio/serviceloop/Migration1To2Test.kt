@@ -39,7 +39,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO service_plans(id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId) VALUES('plan-1','equipment-1','P-1','Plan',3,'MONTHS','2026-09-01','ACTIVE',NULL)")
             old.version = 1
         }
-         val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2, ServiceLoopDatabase.MIGRATION_2_3, ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2, ServiceLoopDatabase.MIGRATION_2_3, ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14, ServiceLoopDatabase.MIGRATION_14_15).build()
         try {
             val dao = migrated.serviceLoopDao()
             kotlinx.coroutines.runBlocking {
@@ -77,7 +77,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO report_renditions VALUES('rr','rev',1,3,'reports/r/rr.pdf','hash',65369,1,'READY','ORIGINAL',NULL)")
             old.version = 2
         }
-         val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_2_3, ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_2_3, ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14, ServiceLoopDatabase.MIGRATION_14_15).build()
         try { kotlinx.coroutines.runBlocking {
             val dao = migrated.serviceLoopDao(); val visit = dao.visit("v")!!; val work = dao.workItem("w")!!; val revision = dao.finalRevision("rev")!!
             assertEquals("CU-9", visit.customerReferenceSnapshot); assertEquals("ST-9", visit.siteReferenceSnapshot)
@@ -104,7 +104,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO work_items(id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation) VALUES('w','v','e','p','o',NULL,'Preserved equipment','EQ-1','Plan','P-1','2026-12-05',3,'MONTHS',0,NULL,0)")
             old.version=3
         }
-         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14).build()
+         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_3_4, ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14, ServiceLoopDatabase.MIGRATION_14_15).build()
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("2026-12-05",dao.plan("p")!!.currentDueDate); assertEquals("v",dao.dueServices().single().claimedVisitId); assertEquals("ACTIVE",dao.customer("c")!!.state); assertEquals("PRIVATE_ACCESS",dao.site("s")!!.privateAccessNotes) } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
@@ -119,7 +119,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO customers(id,reference,name,state) VALUES('c4','CU-4','Version four customer','ACTIVE')")
             old.version=4
         }
-         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14).build()
+         val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_4_5, ServiceLoopDatabase.MIGRATION_5_6, ServiceLoopDatabase.MIGRATION_6_7, ServiceLoopDatabase.MIGRATION_7_8, ServiceLoopDatabase.MIGRATION_8_9, ServiceLoopDatabase.MIGRATION_9_10, ServiceLoopDatabase.MIGRATION_10_11, ServiceLoopDatabase.MIGRATION_11_12, ServiceLoopDatabase.MIGRATION_12_13, ServiceLoopDatabase.MIGRATION_13_14, ServiceLoopDatabase.MIGRATION_14_15).build()
         try { kotlinx.coroutines.runBlocking { val dao=migrated.serviceLoopDao(); assertEquals("Version four customer",dao.customer("c4")!!.name); assertEquals(0,dao.correctionDrafts().size); assertEquals(32,dao.recoveryMetadata()!!.datasetId.length) } } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
@@ -136,7 +136,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO recovery_metadata(id,datasetId,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary','dataset-five',7,0,0)")
             old.version=5
         }
-        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_5_6,ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_5_6,ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14,ServiceLoopDatabase.MIGRATION_14_15).build()
         try {
             kotlinx.coroutines.runBlocking {
                 assertEquals("Version five customer",migrated.serviceLoopDao().customer("c5")!!.name)
@@ -176,7 +176,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary','dataset-six',1,3,7,0,0)")
             old.version=6
         }
-        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14,ServiceLoopDatabase.MIGRATION_14_15).build()
         try {
             kotlinx.coroutines.runBlocking {
                 val dao=migrated.serviceLoopDao();val dispatch=migrated.dispatchDao();val identity=dispatch.technicianIdentity()!!
@@ -192,7 +192,7 @@ class Migration1To2Test {
 
     @Test fun everyRetainedSchemaMigratesToCurrentSchemaWithIdentityAndForeignKeysIntact() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
-        for(version in 1..10){context.deleteDatabase(dbName);val schema=JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/$version.json").bufferedReader().use{it.readText()}).getJSONObject("database");SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName),null).use{old->val entities=schema.getJSONArray("entities");for(i in 0 until entities.length()){val entity=entities.getJSONObject(i);val table=entity.getString("tableName");old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table));entity.optJSONArray("indices")?.let{indices->for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table))}};old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')");old.version=version};val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2,ServiceLoopDatabase.MIGRATION_2_3,ServiceLoopDatabase.MIGRATION_3_4,ServiceLoopDatabase.MIGRATION_4_5,ServiceLoopDatabase.MIGRATION_5_6,ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14).build();try{kotlinx.coroutines.runBlocking{assertEquals(if(version<7) "primary" else null,migrated.dispatchDao().technicianIdentity()?.id);assertNull(migrated.dispatchDao().outboxVisits().firstOrNull()?.concludedAtEpochMillis);assertEquals(14,migrated.serviceLoopDao().reminderPreferences()?.dueSoonHorizonDays)};migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}}finally{migrated.close();context.deleteDatabase(dbName)}}
+        for(version in 1..10){context.deleteDatabase(dbName);val schema=JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/$version.json").bufferedReader().use{it.readText()}).getJSONObject("database");SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName),null).use{old->val entities=schema.getJSONArray("entities");for(i in 0 until entities.length()){val entity=entities.getJSONObject(i);val table=entity.getString("tableName");old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table));entity.optJSONArray("indices")?.let{indices->for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table))}};old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')");old.version=version};val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_1_2,ServiceLoopDatabase.MIGRATION_2_3,ServiceLoopDatabase.MIGRATION_3_4,ServiceLoopDatabase.MIGRATION_4_5,ServiceLoopDatabase.MIGRATION_5_6,ServiceLoopDatabase.MIGRATION_6_7,ServiceLoopDatabase.MIGRATION_7_8,ServiceLoopDatabase.MIGRATION_8_9,ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14,ServiceLoopDatabase.MIGRATION_14_15).build();try{kotlinx.coroutines.runBlocking{assertEquals(if(version<7) "primary" else null,migrated.dispatchDao().technicianIdentity()?.id);assertNull(migrated.dispatchDao().outboxVisits().firstOrNull()?.concludedAtEpochMillis);assertEquals(14,migrated.serviceLoopDao().reminderPreferences()?.dueSoonHorizonDays)};migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}}finally{migrated.close();context.deleteDatabase(dbName)}}
     }
 
     @Test fun migrationThirteenToFourteenAddsBuffersAndNormalizesCompletionDecision() {
@@ -217,7 +217,7 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO work_items(id,visitId,equipmentId,servicePlanId,capturedObligationId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason) VALUES('w-null','v','e','p','o','Equipment','EQ-14','Service',0,NULL,1,'2026-12-05',1,NULL),('w-zero','v','e','p','o','Equipment','EQ-14','Service',0,'PERFORMED',0,'2026-12-05',1,NULL),('w-part','v','e','p','o','Equipment','EQ-14','Service',0,'PARTLY_PERFORMED',1,'2026-12-05',1,'legacy'),('w-not','v','e','p','o','Equipment','EQ-14','Service',0,'NOT_PERFORMED',1,'2026-12-05',1,'legacy'),('w-true','v','e','p','o','Equipment','EQ-14','Service',0,'PERFORMED',1,'2026-12-05',1,NULL)")
             old.version = 13
         }
-        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_13_14, ServiceLoopDatabase.MIGRATION_14_15).build()
         try {
             kotlinx.coroutines.runBlocking {
                 val dao = migrated.serviceLoopDao()
@@ -235,18 +235,63 @@ class Migration1To2Test {
         } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
+    @Test fun migrationFourteenToFifteenAddsB026DefaultsAndPreservesForeignKeys() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        context.deleteDatabase(dbName)
+        val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/14.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i); val table = entity.getString("tableName")
+                old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                entity.optJSONArray("indices")?.let { indices -> for (j in 0 until indices.length()) old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}", table)) }
+            }
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers(id,reference,name) VALUES('c','CU-15','Customer')")
+            old.execSQL("INSERT INTO sites(id,customerId,reference,name) VALUES('s','c','ST-15','Site')")
+            old.execSQL("INSERT INTO equipment(id,siteId,reference,name) VALUES('e','s','EQ-15','Equipment')")
+            old.execSQL("INSERT INTO working_visits(id,reference,customerId,siteId,actualServiceDate,customerNameSnapshot,siteNameSnapshot,state,modifiedAtEpochMillis) VALUES('v','V-15','c','s','2026-09-05','Customer','Site','WORKING',1)")
+            old.execSQL("INSERT INTO work_items(id,visitId,equipmentId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation) VALUES('w','v','e','Equipment','EQ-15','Service',0,NULL,NULL)")
+            old.execSQL("INSERT INTO final_records(id,visitId,currentRevisionId,createdAtEpochMillis) VALUES('r','v','rev',1)")
+            old.execSQL("INSERT INTO final_record_revisions(id,recordId,revisionNumber,visitReference,actualServiceDate,recordedAtEpochMillis,customerName,siteName,businessName,technicianName,businessZoneId) VALUES('rev','r',1,'V-15','2026-09-05',1,'Customer','Site','Business','Tech','Europe/Bucharest')")
+            old.execSQL("INSERT INTO final_work_items(id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,serviceName,outcome,fulfilledObligation) VALUES('fw','rev',1,'w','e','Equipment','EQ-15','Service','PERFORMED',0)")
+            old.execSQL("INSERT INTO dispatch_outbox_visits(dispatchVisitId,siteId,serviceDate,appointmentZoneId,createdAtEpochMillis,modifiedAtEpochMillis) VALUES('dv','s','2026-09-06','Europe/Bucharest',1,1)")
+            old.execSQL("INSERT INTO dispatch_outbox_items(dispatchItemId,dispatchVisitId,position,equipmentId,taskName) VALUES('di','dv',0,'e','Service')")
+            old.execSQL("INSERT INTO dispatch_visit_bindings(dispatchVisitId,localVisitId,appliedGeneration,packageId,senderLabel,participantSnapshotJson,leaderIdsJson,teamSnapshotJson,appliedMaterialHash,controlledFingerprint,importedAtEpochMillis,updatedAtEpochMillis) VALUES('dv','v',1,'pkg','Sender','[]','[]','[]','hash','fingerprint',1,1)")
+            old.execSQL("INSERT INTO dispatch_item_bindings(dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition) VALUES('dv','di','w','EQ-15','Service','[]','EVERYONE','ASSIGNED','PENDING')")
+            old.version = 14
+        }
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, dbName).addMigrations(ServiceLoopDatabase.MIGRATION_14_15).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                assertEquals("STANDARD", migrated.serviceLoopDao().customer("c")!!.customerType)
+                assertEquals("EQUIPMENT", migrated.serviceLoopDao().workItem("w")!!.subjectType)
+                assertNull(migrated.serviceLoopDao().workItem("w")!!.equipmentDescriptionSnapshot)
+                assertEquals("EQUIPMENT", migrated.serviceLoopDao().finalWorkItems("rev").single().subjectType)
+                assertNull(migrated.serviceLoopDao().finalWorkItems("rev").single().equipmentDescription)
+                assertEquals("EQUIPMENT", migrated.dispatchDao().outboxItems("dv").single().subjectType)
+                assertNull(migrated.dispatchDao().outboxItems("dv").single().equipmentDescription)
+                assertEquals("EQUIPMENT", migrated.dispatchDao().itemBindings("dv").single().subjectType)
+                assertNull(migrated.dispatchDao().itemBindings("dv").single().equipmentDescriptionSnapshot)
+                assertEquals("EQ-15", migrated.dispatchDao().itemBindings("dv").single().equipmentReferenceSnapshot)
+            }
+            migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        } finally { migrated.close(); context.deleteDatabase(dbName) }
+    }
+
     @Test fun migrationNineToTenBackfillsOnlyActiveModeReasonDraft() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext;context.deleteDatabase(dbName)
         val schema=JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/9.json").bufferedReader().use{it.readText()}).getJSONObject("database")
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName),null).use{old->val entities=schema.getJSONArray("entities");for(i in 0 until entities.length()){val entity=entities.getJSONObject(i);val table=entity.getString("tableName");old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table));entity.optJSONArray("indices")?.let{indices->for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table))}};old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')");old.execSQL("INSERT INTO working_responses(id,workItemId,checklistItemSnapshotId,disposition,textValue,numberValue,reason,modifiedAtEpochMillis) VALUES('issue','w','q1','ISSUE_FOUND',NULL,NULL,'Belt frayed',1),('na','w','q2','NOT_APPLICABLE',NULL,NULL,'Access impossible',1),('ok','w','q3','OK',NULL,NULL,NULL,1)");old.version=9}
-        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_9_10,ServiceLoopDatabase.MIGRATION_10_11,ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14,ServiceLoopDatabase.MIGRATION_14_15).build()
         try{migrated.openHelper.readableDatabase.query("SELECT id,issueFoundReasonDraft,notApplicableReasonDraft FROM working_responses ORDER BY id").use{cursor->val values=mutableMapOf<String,Pair<String?,String?>>();while(cursor.moveToNext())values[cursor.getString(0)]=cursor.getString(1) to cursor.getString(2);assertEquals(null to "Access impossible",values["na"]);assertEquals(null to null,values["ok"]);assertEquals("Belt frayed" to null,values["issue"])};migrated.openHelper.writableDatabase.execSQL("DELETE FROM working_responses");migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}}finally{migrated.close();context.deleteDatabase(dbName)}
     }
     @Test fun migrationElevenToTwelveNormalizesVisitLifecycleAndAddsCancellationColumns() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext;context.deleteDatabase(dbName)
         val schema=JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/11.json").bufferedReader().use{it.readText()}).getJSONObject("database")
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName),null).use{old->val entities=schema.getJSONArray("entities");for(i in 0 until entities.length()){val entity=entities.getJSONObject(i);val table=entity.getString("tableName");old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}",table));entity.optJSONArray("indices")?.let{indices->for(j in 0 until indices.length())old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}",table))}};old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')");old.execSQL("INSERT INTO customers(id,reference,name) VALUES('c','CU-12','Customer')");old.execSQL("INSERT INTO sites(id,customerId,reference,name) VALUES('s','c','ST-12','Site')");old.execSQL("INSERT INTO working_visits(id,reference,customerId,siteId,actualServiceDate,customerNameSnapshot,siteNameSnapshot,state,modifiedAtEpochMillis) VALUES('v-final','V-FINAL','c','s','2026-09-10','Customer','Site','FINALIZED',1),('v-part','V-PART','c','s','2026-09-10','Customer','Site','PARTICIPATION_COMPLETE',2),('v-cancel','V-CANCEL','c','s','2026-09-10','Customer','Site','CANCELLED',3),('v-withdraw','V-WITHDRAW','c','s','2026-09-10','Customer','Site','DISPATCH_WITHDRAWN',4)");old.version=11}
-        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14).build()
+        val migrated=Room.databaseBuilder(context,ServiceLoopDatabase::class.java,dbName).addMigrations(ServiceLoopDatabase.MIGRATION_11_12,ServiceLoopDatabase.MIGRATION_12_13,ServiceLoopDatabase.MIGRATION_13_14,ServiceLoopDatabase.MIGRATION_14_15).build()
         try{kotlinx.coroutines.runBlocking{val dao=migrated.serviceLoopDao();assertEquals("COMPLETED",dao.visit("v-final")!!.state);assertEquals("COMPLETED",dao.visit("v-part")!!.state);assertEquals("CANCELED",dao.visit("v-cancel")!!.state);assertEquals("CANCELED",dao.visit("v-withdraw")!!.state)};migrated.openHelper.readableDatabase.query("PRAGMA table_info(working_visits)").use{cursor->val columns=mutableSetOf<String>();while(cursor.moveToNext())columns+=cursor.getString(cursor.getColumnIndexOrThrow("name"));assertTrue("cancellationOrigin" in columns)};migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use{assertEquals(0,it.count)}}finally{migrated.close();context.deleteDatabase(dbName)}
     }
 }

@@ -43,7 +43,7 @@ data class CorrectionWorkDraft(
     val id: String,
     val sourceFinalWorkItemId: String,
     val position: Int,
-    val equipmentName: String,
+    val equipmentName: String?,
     val serviceName: String,
     val outcome: String,
     val publicWorkNote: String,
@@ -56,6 +56,8 @@ data class CorrectionWorkDraft(
     val photos: List<CorrectionPhotoDraft> = emptyList(),
     val nextDueDateCalculated: Boolean? = null,
     val nextDueOverrideReason: String = "",
+    val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
+    val equipmentDescription: String? = null,
 )
 
 data class CorrectionDraft(

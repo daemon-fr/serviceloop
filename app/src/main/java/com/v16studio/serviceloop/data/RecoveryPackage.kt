@@ -7,7 +7,9 @@ import android.util.Base64
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.BackupInspection
 import com.v16studio.serviceloop.domain.BackupResult
+import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.ReminderPreferences
+import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -212,6 +214,7 @@ class RecoveryPackage(
     private fun validateDatabase(root: JSONObject) {
         normalizeLegacyReminderState(root)
         normalizeWorkingInputBuffers(root)
+        normalizeB026State(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -223,6 +226,7 @@ class RecoveryPackage(
         }
         fun ids(table: String, column: String = "id") = tableRows(root, table).map { it.getString(column) }.toSet()
         val customers = ids("customers"); val sites = ids("sites"); val equipment = ids("equipment"); val plans = ids("service_plans")
+        tableRows(root, "customers").forEach { CustomerType.fromCode(it.getString("customerType")) }
         require(tableRows(root, "sites").all { it.getString("customerId") in customers })
         require(tableRows(root, "equipment").all { it.getString("siteId") in sites })
         require(tableRows(root, "service_plans").all { it.getString("equipmentId") in equipment })
@@ -235,6 +239,13 @@ class RecoveryPackage(
             val current = plan.optString("currentObligationId").takeIf { it.isNotBlank() }
             (current == null && plan.getString("state") != "ACTIVE") || (current != null && obligations[current]?.getString("planId") == plan.getString("id") && obligations[current]?.getString("dueDate") == plan.getString("currentDueDate"))
         }) { "A service plan has an invalid current obligation" }
+        val siteCustomers = tableRows(root, "sites").associate { it.getString("id") to it.getString("customerId") }
+        val equipmentSites = tableRows(root, "equipment").associate { it.getString("id") to it.getString("siteId") }
+        require(tableRows(root, "service_plans").all { plan ->
+            val customerId = equipmentSites[plan.getString("equipmentId")]?.let(siteCustomers::get)
+            tableRows(root, "customers").firstOrNull { it.getString("id") == customerId }?.getString("customerType") == CustomerType.STANDARD.code
+        }) { "Recurring service requires a Standard customer" }
+        validateB026Rows(root, equipment, plans)
         val templateRevisions = tableRows(root, "reusable_template_revisions").associateBy { it.getString("id") }
         require(tableRows(root, "reusable_templates").all { template -> templateRevisions[template.getString("currentRevisionId")]?.getString("templateId") == template.getString("id") }) { "A reusable template has an invalid current revision" }
         require(tableRows(root, "correction_drafts").all { draft -> revisions[draft.getString("baseRevisionId")]?.getString("recordId") == draft.getString("recordId") }) { "A correction base revision does not belong to its record" }
@@ -352,6 +363,69 @@ class RecoveryPackage(
         }
         root.put("tables", normalized)
     }
+
+    /** B026 backups predate typed customers and flexible work subjects. Legacy rows are known Equipment work. */
+    private fun normalizeB026State(root: JSONObject) {
+        tableRows(root, "customers").forEach { row -> if (!row.has("customerType") || row.isNull("customerType")) row.put("customerType", CustomerType.STANDARD.code) }
+        tableRows(root, "work_items").forEach { row ->
+            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
+            if (!row.has("equipmentDescriptionSnapshot")) row.put("equipmentDescriptionSnapshot", JSONObject.NULL)
+        }
+        tableRows(root, "final_work_items").forEach { row ->
+            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
+            if (!row.has("equipmentDescription")) row.put("equipmentDescription", JSONObject.NULL)
+        }
+        tableRows(root, "dispatch_outbox_items").forEach { row ->
+            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
+            if (!row.has("equipmentDescription")) row.put("equipmentDescription", JSONObject.NULL)
+        }
+        tableRows(root, "dispatch_item_bindings").forEach { row ->
+            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
+            if (!row.has("equipmentDescriptionSnapshot")) row.put("equipmentDescriptionSnapshot", JSONObject.NULL)
+        }
+    }
+
+    private fun validateB026Rows(root: JSONObject, equipmentIds: Set<String>, planIds: Set<String>) {
+        tableRows(root, "work_items").forEach { row ->
+            val subject = WorkSubjectType.fromCode(row.getString("subjectType"))
+            val equipmentId = nullableString(row, "equipmentId")
+            val description = nullableString(row, "equipmentDescriptionSnapshot")
+            when (subject) {
+                WorkSubjectType.SITE -> require(equipmentId == null && nullableString(row, "equipmentNameSnapshot") == null && nullableString(row, "equipmentReferenceSnapshot") == null && nullableString(row, "equipmentIdentifierSnapshot") == null && nullableString(row, "equipmentMakeSnapshot") == null && nullableString(row, "equipmentModelSnapshot") == null && nullableString(row, "equipmentSerialSnapshot") == null && description == null && nullableString(row, "servicePlanId") == null && nullableString(row, "capturedObligationId") == null && row.optInt("fulfillsCurrentObligation", 0) == 0) { "SITE work item has Equipment-only data" }
+                WorkSubjectType.EQUIPMENT -> if (equipmentId == null) {
+                    require(nullableString(row, "equipmentNameSnapshot") == null && nullableString(row, "equipmentReferenceSnapshot") == null && nullableString(row, "equipmentIdentifierSnapshot") == null && nullableString(row, "equipmentMakeSnapshot") == null && nullableString(row, "equipmentModelSnapshot") == null && nullableString(row, "equipmentSerialSnapshot") == null && nullableString(row, "servicePlanId") == null && nullableString(row, "capturedObligationId") == null && row.optInt("fulfillsCurrentObligation", 0) == 0 && (description == null || description.trim().length <= 500)) { "Unidentified Equipment work item is invalid" }
+                } else {
+                    require(equipmentId in equipmentIds && nullableString(row, "equipmentNameSnapshot")?.isNotBlank() == true && nullableString(row, "equipmentReferenceSnapshot")?.isNotBlank() == true && description == null) { "Known Equipment work item is invalid" }
+                }
+            }
+        }
+        tableRows(root, "final_work_items").forEach { row ->
+            val subject = WorkSubjectType.fromCode(row.getString("subjectType"))
+            val equipmentId = nullableString(row, "equipmentId")
+            val description = nullableString(row, "equipmentDescription")
+            when (subject) {
+                WorkSubjectType.SITE -> require(equipmentId == null && nullableString(row, "equipmentName") == null && nullableString(row, "equipmentReference") == null && nullableString(row, "equipmentIdentifier") == null && nullableString(row, "equipmentMake") == null && nullableString(row, "equipmentModel") == null && nullableString(row, "equipmentSerial") == null && description == null && nullableString(row, "planId") == null && nullableString(row, "capturedObligationId") == null) { "SITE final work item has Equipment-only data" }
+                WorkSubjectType.EQUIPMENT -> if (equipmentId == null) {
+                    require(nullableString(row, "equipmentName") == null && nullableString(row, "equipmentReference") == null && nullableString(row, "equipmentIdentifier") == null && nullableString(row, "equipmentMake") == null && nullableString(row, "equipmentModel") == null && nullableString(row, "equipmentSerial") == null && nullableString(row, "planId") == null && nullableString(row, "capturedObligationId") == null && (description == null || description.trim().length <= 500)) { "Unidentified Equipment final work item is invalid" }
+                } else {
+                    require(equipmentId in equipmentIds && nullableString(row, "equipmentName")?.isNotBlank() == true && nullableString(row, "equipmentReference")?.isNotBlank() == true && description == null) { "Known Equipment final work item is invalid" }
+                }
+            }
+        }
+        tableRows(root, "dispatch_outbox_items").forEach { row ->
+            val subject = WorkSubjectType.fromCode(row.getString("subjectType"))
+            val equipmentId = nullableString(row, "equipmentId")
+            val description = nullableString(row, "equipmentDescription")
+            require(subject == WorkSubjectType.SITE && equipmentId == null && description == null || subject == WorkSubjectType.EQUIPMENT && (equipmentId == null || equipmentId in equipmentIds) && (description == null || description.trim().length <= 500)) { "Dispatch work item is invalid" }
+        }
+        tableRows(root, "dispatch_item_bindings").forEach { row ->
+            val subject = WorkSubjectType.fromCode(row.getString("subjectType"))
+            val description = nullableString(row, "equipmentDescriptionSnapshot")
+            require(subject == WorkSubjectType.SITE && nullableString(row, "equipmentReferenceSnapshot") == null && description == null || subject == WorkSubjectType.EQUIPMENT && (description == null || description.trim().length <= 500)) { "Dispatch binding work item is invalid" }
+        }
+    }
+
+    private fun nullableString(row: JSONObject, key: String): String? = if (!row.has(key) || row.isNull(key)) null else row.optString(key).trim().takeIf { it.isNotEmpty() }
 
     private fun defaultReminderRow() = JSONObject()
         .put("id", "primary").put("dailySummaryEnabled", 1).put("summaryHour", 8).put("summaryMinute", 0)
@@ -506,8 +580,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 14
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 15
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000

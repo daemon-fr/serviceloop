@@ -127,6 +127,7 @@ import com.v16studio.serviceloop.domain.FollowUpDateFilter
 import com.v16studio.serviceloop.domain.FollowUpStatusFilter
 import com.v16studio.serviceloop.domain.VisitDateFilter
 import com.v16studio.serviceloop.domain.VisitStatusFilter
+import com.v16studio.serviceloop.domain.WorkSubjectType
 import com.v16studio.serviceloop.domain.filterFollowUps
 import com.v16studio.serviceloop.domain.filterVisits
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
@@ -733,7 +734,7 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
     if (saveStatus is SaveStatus.Failed) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { SaveStateBanner(saveStatus) }
     LazyColumn(Modifier.weight(1f).testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text("${draft.equipmentReference} · ${draft.equipmentName}", style = MaterialTheme.typography.titleMedium)
+            Text(serviceLoopSubjectLabel(draft.subjectType, draft.equipmentName, draft.equipmentReference, draft.equipmentDescription), style = MaterialTheme.typography.titleMedium)
             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
             if (saveStatus !is SaveStatus.Failed) SaveStateBanner(saveStatus)
             Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
@@ -853,7 +854,7 @@ private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>,
 @Composable
 private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     AccentCard {
-        Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.labelLarge)
+        Text(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription), style = MaterialTheme.typography.labelLarge)
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
         Text("Outcome", style = MaterialTheme.typography.labelLarge)
         listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
@@ -1032,7 +1033,7 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<R
     var voidReason by rememberSaveable(report.recordId) { mutableStateOf("") }
     LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}"); report.publicNote?.let { Text("Record note: $it") } }
-        items(report.lines) { line -> AccentCard { Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> ReportPhotoThumbnail(photo, index, context) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
+        items(report.lines) { line -> AccentCard { Text(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription), style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> ReportPhotoThumbnail(photo, index, context) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
         if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
@@ -1087,8 +1088,8 @@ private fun StructuredReportText(detail: FinalRecordDetail) {
             Text("Job ${it.managerReference ?: it.dispatchVisitId} · Generation ${it.generation}\nDocumented by ${it.documentingTechnicianName}\nTechnician reference ${it.documentingTechnicianId.take(8)}")
         }
         r.lines.forEach { line ->
-            Text("${line.equipmentReference} · ${line.equipmentName}", style = MaterialTheme.typography.titleMedium)
-            Text(line.equipmentIdentification)
+            Text(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription), style = MaterialTheme.typography.titleMedium)
+            Text(line.equipmentIdentification.orEmpty())
             Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName} — ${line.outcome.replace('_', ' ')}")
             line.publicWorkNote?.let { Text(it) }
             line.notPerformedReason?.let { Text("Reason: $it") }
@@ -1143,6 +1144,13 @@ private fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTime
 private fun formatRecordedOn(epochMillis: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMillis))
 
 private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())
+
+internal fun serviceLoopSubjectLabel(subjectType: WorkSubjectType, equipmentName: String?, equipmentReference: String?, equipmentDescription: String?): String = when {
+    subjectType == WorkSubjectType.SITE -> "Site task"
+    equipmentReference != null -> "${equipmentReference} · ${equipmentName.orEmpty()}"
+    !equipmentDescription.isNullOrBlank() -> equipmentDescription.trim()
+    else -> "Equipment not specified"
+}
 
 private fun dueEffect(line: com.v16studio.serviceloop.domain.PublicWorkLine): String = when {
     line.historyOnly -> "Recurring historical work · History only — no current due-date effect"

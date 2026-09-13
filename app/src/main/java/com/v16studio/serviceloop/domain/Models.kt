@@ -26,6 +26,7 @@ data class EquipmentSummary(
     val siteName: String,
     val customerName: String,
     val nearestDueDate: String?,
+    val customerType: CustomerType = CustomerType.STANDARD,
 )
 
 data class CustomerSummary(
@@ -34,6 +35,7 @@ data class CustomerSummary(
     val reference: String,
     val siteCount: Int,
     val equipmentCount: Int,
+    val customerType: CustomerType = CustomerType.STANDARD,
 )
 
 data class EquipmentPlan(
@@ -90,8 +92,8 @@ data class InspectionDraft(
     val visitId: String,
     val visitReference: String,
     val siteName: String,
-    val equipmentName: String,
-    val equipmentReference: String,
+    val equipmentName: String?,
+    val equipmentReference: String?,
     val serviceName: String,
     val dueDate: String?,
     val interval: String?,
@@ -109,6 +111,9 @@ data class InspectionDraft(
     val issueMissingDescription: List<String> = emptyList(),
     val invalidExplicitAnswers: List<String> = emptyList(),
     val rawInputs: Map<String, String> = emptyMap(),
+    val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
+    val equipmentId: String? = null,
+    val equipmentDescription: String? = null,
 )
 
 data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String? = null)
@@ -127,8 +132,8 @@ data class BusinessProfile(
 
 data class CompletionLine(
     val workItemId: String,
-    val equipmentName: String,
-    val equipmentReference: String,
+    val equipmentName: String?,
+    val equipmentReference: String?,
     val serviceName: String,
     val outcome: String?,
     val fulfillmentEligibility: FulfillmentEligibility,
@@ -144,6 +149,9 @@ data class CompletionLine(
     val nextDueOverrideReason: String? = null,
     val blockers: List<CompletionBlocker> = emptyList(),
     val checklistComplete: Boolean = true,
+    val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
+    val equipmentId: String? = null,
+    val equipmentDescription: String? = null,
 )
 
 enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_INCOMPLETE, FINDING_DESCRIPTION, NEXT_DUE }
@@ -172,9 +180,9 @@ data class PublicChecklistItem(
 
 data class PublicWorkLine(
     val position: Int,
-    val equipmentName: String,
-    val equipmentReference: String,
-    val equipmentIdentification: String,
+    val equipmentName: String?,
+    val equipmentReference: String?,
+    val equipmentIdentification: String?,
     val serviceName: String,
     val outcome: String,
     val publicWorkNote: String?,
@@ -191,6 +199,8 @@ data class PublicWorkLine(
     val dispatchItemId: String? = null,
     val dispatchAssignment: String? = null,
     val dispatchDocumentationRole: String? = null,
+    val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
+    val equipmentDescription: String? = null,
 )
 
 data class PublicPart(val description: String, val quantity: String, val unit: String)

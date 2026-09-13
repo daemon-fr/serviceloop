@@ -155,3 +155,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Eligible true fulfillment calculates the next due date immediately from actual service date and captured interval. A different confirmed date is a deliberate override requiring a nonblank reason; there is no separate second confirmation of the calculated date.
 - Response mutation recomputes derived completeness in the same transaction and clears an obsolete true fulfillment and due fields when the current inspection becomes incomplete. Finalization recomputes directly and flushes draft work before creating final history.
 - This amendment supersedes only the manual checklist-review authority and the separate second confirmation of a calculated next due date. It does not supersede outcome/fulfillment separation, immutable snapshots, B-014 Working response drafts, recurrence safeguards, finalization, correction/history, or the existing B-009/B-010 inline editing decisions.
+
+## B-026A — Flexible ad-hoc work and one-time customer foundation
+
+- Customers now carry strict `STANDARD` or `ONE_TIME` identity; existing creation/import paths remain `STANDARD` until the separately scoped B026B UI.
+- Working/final work subjects are strict `SITE` or `EQUIPMENT`. Known Equipment freezes identity snapshots; unidentified Equipment may carry only a trimmed <=500-character description; SITE and unidentified work cannot carry recurring plan/obligation effects.
+- Recurring plans remain Equipment-backed and Standard-customer-only. Room schema v15, recovery compatibility 9–15, current CSV projections, history grouping, and public-report omission rules preserve this meaning. Current `.slwork` v4 remains field-stable and rejects future-shaped flexible dispatch rows on export.
+- B026A contains the persistence/domain/output foundation only. B026B customer/work-entry UI is not authorized by this amendment.

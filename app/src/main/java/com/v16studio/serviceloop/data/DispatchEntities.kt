@@ -89,10 +89,12 @@ data class DispatchOutboxItemEntity(
     @androidx.room.PrimaryKey val dispatchItemId: String,
     val dispatchVisitId: String,
     val position: Int,
-    val equipmentId: String,
+    val equipmentId: String?,
     val taskName: String,
     val servicePlanReference: String?,
     val dueDateSnapshot: String?,
+    @androidx.room.ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
+    val equipmentDescription: String? = null,
 )
 
 @Entity(
@@ -141,7 +143,7 @@ data class DispatchItemBindingEntity(
     val dispatchVisitId: String,
     val dispatchItemId: String,
     val localWorkItemId: String?,
-    val equipmentReferenceSnapshot: String,
+    val equipmentReferenceSnapshot: String?,
     val taskNameSnapshot: String,
     val servicePlanReferenceSnapshot: String?,
     val dueDateSnapshot: String?,
@@ -151,6 +153,8 @@ data class DispatchItemBindingEntity(
     val documentationDisposition: String,
     val deferredToTechnicianId: String? = null,
     val deferredToName: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
+    val equipmentDescriptionSnapshot: String? = null,
 )
 
 @Entity(

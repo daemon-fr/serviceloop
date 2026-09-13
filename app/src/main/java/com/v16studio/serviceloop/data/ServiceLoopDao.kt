@@ -34,8 +34,8 @@ data class InspectionRow(
     val visitId: String,
     val visitReference: String,
     val siteNameSnapshot: String,
-    val equipmentNameSnapshot: String,
-    val equipmentReferenceSnapshot: String,
+    val equipmentNameSnapshot: String?,
+    val equipmentReferenceSnapshot: String?,
     val serviceNameSnapshot: String,
     val dueDateSnapshot: String?,
     val intervalCountSnapshot: Int?,
@@ -47,6 +47,9 @@ data class InspectionRow(
     val workPerformed: String,
     val privateInternalNote: String,
     val modifiedAtEpochMillis: Long,
+    val subjectType: String,
+    val equipmentId: String?,
+    val equipmentDescriptionSnapshot: String?,
 )
 
 data class EquipmentSummaryRow(
@@ -65,6 +68,7 @@ data class CustomerSummaryRow(
     val reference: String,
     val siteCount: Int,
     val equipmentCount: Int,
+    val customerType: String,
 )
 
 data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String?)
@@ -76,9 +80,9 @@ data class DueServiceRow(
     val customerId: String, val customerName: String, val claimedVisitId: String?,
 )
 
-data class SearchRow(val type: String, val id: String, val reference: String, val title: String, val subtitle: String)
+data class SearchRow(val type: String, val id: String, val reference: String, val title: String, val subtitle: String, val customerType: String)
 
-    data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String, val address: String?)
+    data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String, val address: String?, val customerType: String)
 
 @Dao
 interface ServiceLoopDao {
@@ -164,7 +168,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM report_renditions ORDER BY generatedAtEpochMillis, id") suspend fun allReportRenditions(): List<ReportRenditionEntity>
     @Query("SELECT * FROM final_record_revisions WHERE recordId=:recordId ORDER BY revisionNumber") suspend fun finalRevisions(recordId: String): List<FinalRecordRevisionEntity>
     @Query("SELECT * FROM sites WHERE customerId=:customerId ORDER BY isDefault DESC, name, reference") suspend fun sitesForCustomer(customerId: String): List<SiteEntity>
-    @Query("SELECT s.id, s.reference, s.name, c.name customerName, s.address FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
+    @Query("SELECT s.id, s.reference, s.name, c.name customerName, s.address, c.customerType FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
     @Query("SELECT * FROM equipment WHERE siteId=:siteId ORDER BY name, reference") suspend fun equipmentForSite(siteId: String): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans WHERE equipmentId=:equipmentId ORDER BY currentDueDate, reference") suspend fun plansForEquipment(equipmentId: String): List<ServicePlanEntity>
     @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
@@ -242,11 +246,12 @@ interface ServiceLoopDao {
     suspend fun equipmentPlans(equipmentId: String): List<EquipmentPlanRow>
 
     @Query("""
-        SELECT wi.id workItemId, wi.visitId, v.reference visitReference, v.siteNameSnapshot,
-               wi.equipmentNameSnapshot, wi.equipmentReferenceSnapshot, wi.serviceNameSnapshot,
-               wi.dueDateSnapshot, wi.intervalCountSnapshot, wi.intervalUnitSnapshot,
-               wi.templateSnapshotId, wi.checklistReviewed, wi.outcome, wi.fulfillsCurrentObligation,
-               pub.workPerformed, priv.internalNote privateInternalNote, v.modifiedAtEpochMillis
+         SELECT wi.id workItemId, wi.visitId, v.reference visitReference, v.siteNameSnapshot,
+                wi.equipmentNameSnapshot, wi.equipmentReferenceSnapshot, wi.serviceNameSnapshot,
+                wi.dueDateSnapshot, wi.intervalCountSnapshot, wi.intervalUnitSnapshot,
+                wi.templateSnapshotId, wi.checklistReviewed, wi.outcome, wi.fulfillsCurrentObligation,
+                pub.workPerformed, priv.internalNote privateInternalNote, v.modifiedAtEpochMillis,
+                wi.subjectType, wi.equipmentId, wi.equipmentDescriptionSnapshot
         FROM work_items wi JOIN working_visits v ON v.id=wi.visitId
         JOIN work_item_public_drafts pub ON pub.workItemId=wi.id
         JOIN work_item_private_drafts priv ON priv.workItemId=wi.id
@@ -314,7 +319,7 @@ interface ServiceLoopDao {
     suspend fun dueFollowUpCount(today: String): Int
 
     @Query("""
-        SELECT e.id, e.name, e.reference, e.technicianIdentifier, s.name siteName, c.name customerName,
+         SELECT e.id, e.name, e.reference, e.technicianIdentifier, s.name siteName, c.name customerName,
                MIN(CASE WHEN p.state='ACTIVE' THEN p.currentDueDate ELSE NULL END) nearestDueDate
         FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId
         LEFT JOIN service_plans p ON p.equipmentId=e.id
@@ -323,7 +328,7 @@ interface ServiceLoopDao {
     suspend fun equipmentList(): List<EquipmentSummaryRow>
 
     @Query("""
-        SELECT c.id, c.name, c.reference, COUNT(DISTINCT s.id) siteCount, COUNT(DISTINCT e.id) equipmentCount
+         SELECT c.id, c.name, c.reference, COUNT(DISTINCT s.id) siteCount, COUNT(DISTINCT e.id) equipmentCount, c.customerType
         FROM customers c LEFT JOIN sites s ON s.customerId=c.id LEFT JOIN equipment e ON e.siteId=s.id
         GROUP BY c.id ORDER BY c.name
     """)
@@ -356,12 +361,12 @@ interface ServiceLoopDao {
     fun observeDueServices(): Flow<List<DueServiceRow>>
 
     @Query("""
-        SELECT 'CUSTOMER' type, id, reference, name title, COALESCE(contactName,'') subtitle FROM customers WHERE name LIKE :pattern OR reference LIKE :pattern OR COALESCE(contactName,'') LIKE :pattern
-        UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
-        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern OR COALESCE(e.make,'') LIKE :pattern OR COALESCE(e.model,'') LIKE :pattern
-        UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name FROM service_plans p JOIN equipment e ON e.id=p.equipmentId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
-        UNION ALL SELECT CASE WHEN v.state='COMPLETED' AND f.id IS NOT NULL THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, v.state FROM working_visits v LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
-        UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, fu.state FROM follow_ups fu WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
+        SELECT 'CUSTOMER' type, c.id, c.reference, c.name title, COALESCE(c.contactName,'') subtitle, c.customerType FROM customers c WHERE c.name LIKE :pattern OR c.reference LIKE :pattern OR COALESCE(c.contactName,'') LIKE :pattern
+        UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name, c.customerType FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
+        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name, c.customerType FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern OR COALESCE(e.make,'') LIKE :pattern OR COALESCE(e.model,'') LIKE :pattern
+        UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name, c.customerType FROM service_plans p JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
+        UNION ALL SELECT CASE WHEN v.state='COMPLETED' AND f.id IS NOT NULL THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, v.state, c.customerType FROM working_visits v JOIN customers c ON c.id=v.customerId LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
+        UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, fu.state, c.customerType FROM follow_ups fu JOIN customers c ON c.id=fu.customerId WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
         ORDER BY reference, title
     """)
     suspend fun search(pattern: String): List<SearchRow>
