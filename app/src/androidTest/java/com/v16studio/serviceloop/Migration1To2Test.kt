@@ -235,7 +235,7 @@ class Migration1To2Test {
         } finally { migrated.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun migrationFourteenToFifteenAddsB026DefaultsAndPreservesForeignKeys() {
+    @Test fun migrationFourteenToFifteenPreservesMandatoryServicePlanEquipmentAndB026Defaults() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         context.deleteDatabase(dbName)
         val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/14.json").bufferedReader().use { it.readText() }).getJSONObject("database")
@@ -251,6 +251,8 @@ class Migration1To2Test {
             old.execSQL("INSERT INTO customers(id,reference,name) VALUES('c','CU-15','Customer')")
             old.execSQL("INSERT INTO sites(id,customerId,reference,name) VALUES('s','c','ST-15','Site')")
             old.execSQL("INSERT INTO equipment(id,siteId,reference,name) VALUES('e','s','EQ-15','Equipment')")
+            old.execSQL("INSERT INTO service_plans(id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId) VALUES('p','e','P-15','Annual service',1,'YEARS','2026-09-01','ACTIVE','o')")
+            old.execSQL("INSERT INTO service_obligations(id,planId,sequence,dueDate,createdAtEpochMillis) VALUES('o','p',4,'2026-09-01',1)")
             old.execSQL("INSERT INTO working_visits(id,reference,customerId,siteId,actualServiceDate,customerNameSnapshot,siteNameSnapshot,state,modifiedAtEpochMillis) VALUES('v','V-15','c','s','2026-09-05','Customer','Site','WORKING',1)")
             old.execSQL("INSERT INTO work_items(id,visitId,equipmentId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation) VALUES('w','v','e','Equipment','EQ-15','Service',0,NULL,NULL)")
             old.execSQL("INSERT INTO final_records(id,visitId,currentRevisionId,createdAtEpochMillis) VALUES('r','v','rev',1)")
@@ -266,6 +268,9 @@ class Migration1To2Test {
         try {
             kotlinx.coroutines.runBlocking {
                 assertEquals("STANDARD", migrated.serviceLoopDao().customer("c")!!.customerType)
+                val plan = migrated.serviceLoopDao().plan("p")!!
+                assertEquals("p", plan.id); assertEquals("e", plan.equipmentId); assertEquals("P-15", plan.reference)
+                assertEquals(1, plan.intervalCount); assertEquals("YEARS", plan.intervalUnit); assertEquals("2026-09-01", plan.currentDueDate); assertEquals("o", plan.currentObligationId)
                 assertEquals("EQUIPMENT", migrated.serviceLoopDao().workItem("w")!!.subjectType)
                 assertNull(migrated.serviceLoopDao().workItem("w")!!.equipmentDescriptionSnapshot)
                 assertEquals("EQUIPMENT", migrated.serviceLoopDao().finalWorkItems("rev").single().subjectType)
@@ -276,6 +281,12 @@ class Migration1To2Test {
                 assertNull(migrated.dispatchDao().itemBindings("dv").single().equipmentDescriptionSnapshot)
                 assertEquals("EQ-15", migrated.dispatchDao().itemBindings("dv").single().equipmentReferenceSnapshot)
             }
+            var servicePlanEquipmentNotNull = -1
+            migrated.openHelper.readableDatabase.query("PRAGMA table_info(service_plans)").use { cursor ->
+                while (cursor.moveToNext()) if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "equipmentId") servicePlanEquipmentNotNull = cursor.getInt(cursor.getColumnIndexOrThrow("notnull"))
+            }
+            assertEquals(1, servicePlanEquipmentNotNull)
+            assertTrue(runCatching { migrated.openHelper.writableDatabase.execSQL("INSERT INTO service_plans(id,equipmentId,reference,name,intervalCount,intervalUnit,currentDueDate,state,currentObligationId) VALUES('null-plan',NULL,'P-NULL','Null plan',1,'YEARS','2026-09-05','ACTIVE',NULL)") }.isFailure)
             migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
         } finally { migrated.close(); context.deleteDatabase(dbName) }
     }

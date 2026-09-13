@@ -117,6 +117,36 @@ class ReportLayoutTest {
         assertTrue(text.contains("Documented by: John"));assertTrue(text.contains("Technician reference: 12345678"));assertFalse(text.contains(fullId));assertFalse(text.contains("Dispatch item:"));assertTrue(text.contains("Inspection checklist"));assertTrue(text.contains("Findings & follow-up"))
     }
 
+    @Test fun flexibleSubjectsRenderOnlyTheRelevantEquipmentContent() {
+        val site = PublicWorkLine(
+            position = 1, equipmentName = null, equipmentReference = null, equipmentIdentification = null,
+            serviceName = "General premises inspection", outcome = "PERFORMED", publicWorkNote = null,
+            notPerformedReason = null, fulfilledObligation = false, oldDueDate = null, nextDueDate = null,
+            checklist = emptyList(), subjectType = com.v16studio.serviceloop.domain.WorkSubjectType.SITE,
+        )
+        val unidentified = site.copy(
+            position = 2, serviceName = "Ad-hoc equipment inspection",
+            subjectType = com.v16studio.serviceloop.domain.WorkSubjectType.EQUIPMENT,
+            equipmentDescription = "Copy machine beside back-office desk",
+        )
+        val known = site.copy(
+            position = 3, serviceName = "Known equipment service",
+            subjectType = com.v16studio.serviceloop.domain.WorkSubjectType.EQUIPMENT,
+            equipmentName = "Copy machine", equipmentReference = "EQ-7", equipmentIdentification = "ID-7",
+        )
+
+        val siteText = FixedServiceRecordPdf.layout(report(listOf(site))).flatMap { it.lines }.joinToString("\n") { it.text }
+        val unidentifiedText = FixedServiceRecordPdf.layout(report(listOf(unidentified))).flatMap { it.lines }.joinToString("\n") { it.text }
+        val knownText = FixedServiceRecordPdf.layout(report(listOf(known))).flatMap { it.lines }.joinToString("\n") { it.text }
+
+        assertTrue(siteText.contains("Service: General premises inspection"))
+        assertFalse(siteText.contains("null")); assertFalse(siteText.contains("Equipment identification:")); assertFalse(siteText.contains("EQ-")); assertFalse(siteText.contains("Equipment "))
+        assertTrue(unidentifiedText.contains("Copy machine beside back-office desk"))
+        assertTrue(unidentifiedText.contains("Service: Ad-hoc equipment inspection"))
+        assertFalse(unidentifiedText.contains("null")); assertFalse(unidentifiedText.contains("Equipment identification:")); assertFalse(unidentifiedText.contains("EQ-"))
+        assertTrue(knownText.contains("EQ-7 · Copy machine")); assertTrue(knownText.contains("Equipment identification: ID-7")); assertTrue(knownText.contains("Service: Known equipment service")); assertFalse(knownText.contains("null"))
+    }
+
     private fun report(lines: List<PublicWorkLine>) = PublicReportModel(
         "record", "revision", 1, "V-LAYOUT", "2026-09-05", 1,
         "Service Business", "Technician", "service@example.invalid", "Customer", "Site", "Address", lines, "CU-1", "ST-1",

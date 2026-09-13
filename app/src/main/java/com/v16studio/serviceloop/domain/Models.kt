@@ -26,7 +26,7 @@ data class EquipmentSummary(
     val siteName: String,
     val customerName: String,
     val nearestDueDate: String?,
-    val customerType: CustomerType = CustomerType.STANDARD,
+    val customerType: CustomerType,
 )
 
 data class CustomerSummary(

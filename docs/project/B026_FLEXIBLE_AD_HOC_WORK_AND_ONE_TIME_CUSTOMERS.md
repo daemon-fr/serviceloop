@@ -16,7 +16,9 @@ Recurring plans remain Equipment-backed and may only belong to `STANDARD` custom
 
 ## Persistence and recovery
 
-Room is schema v15. `MIGRATION_14_15` adds the customer type and rebuilds the five affected tables while preserving legacy rows as Standard customers and known Equipment work. The migration finishes with an explicit foreign-key check. Recovery format v2 remains unchanged; schema versions 9–15 are accepted, and old backups receive only the B026A default columns during validation.
+Room is schema v15. `MIGRATION_14_15` adds the customer type and rebuilds only the tables whose B026A flexible-subject columns require it, preserving legacy rows as Standard customers and known Equipment work. `service_plans` is retained with its existing mandatory Equipment foreign key. The migration finishes with an explicit foreign-key check. Recovery format v2 remains unchanged; schema versions 9–15 are accepted, and old backups receive only the B026A default columns during validation.
+
+ServicePlan.equipmentId remains mandatory: every recurring ServicePlan belongs to real Equipment. Flexible subject nullability belongs to WorkItem, FinalWorkItem, and Dispatch work, not ServicePlan. Moving Equipment with any ServicePlans to a ONE_TIME Customer is rejected; Equipment with no ServicePlans may belong to a ONE_TIME Customer.
 
 `.slwork` remains current format v4 and intentionally has no B026A fields. Current v4 import creates Standard customers and known Equipment rows. Export refuses future-shaped flexible dispatch rows with `Flexible dispatch work requires the current dispatch format`.
 

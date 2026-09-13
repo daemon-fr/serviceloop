@@ -2,6 +2,7 @@ package com.v16studio.serviceloop
 
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.CompletionLine
+import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.CustomerSummary
 import com.v16studio.serviceloop.domain.EquipmentDetail
 import com.v16studio.serviceloop.domain.EquipmentSummary
@@ -439,7 +440,7 @@ class StateSemanticsTest {
         override suspend fun equipment(id: String): EquipmentDetail? = null
         override suspend fun equipmentList(): List<EquipmentSummary> {
             equipmentReads++
-            return listOf(EquipmentSummary("equipment-1", "Machine", "EQ-1", null, "Site", "Customer", null))
+            return listOf(EquipmentSummary("equipment-1", "Machine", "EQ-1", null, "Site", "Customer", null, CustomerType.STANDARD))
         }
         override suspend fun customerList(): List<CustomerSummary> {
             customerReads++

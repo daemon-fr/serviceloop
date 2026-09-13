@@ -63,7 +63,7 @@ data class EquipmentEntity(
 )
 data class ServicePlanEntity(
     @PrimaryKey val id: String,
-    val equipmentId: String?,
+    val equipmentId: String,
     val reference: String,
     val name: String,
     val intervalCount: Int,

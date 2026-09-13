@@ -188,7 +188,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, VisitLifecycleState.normalize(it.state), it.finalRecordId, it.resumeWorkItemId) }
-    override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate) }
+    override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate, CustomerType.fromCode(it.customerType)) }
     override suspend fun customerList() = dao.customerList().map { CustomerSummary(it.id, it.name, it.reference, it.siteCount, it.equipmentCount, CustomerType.fromCode(it.customerType)) }
     override suspend fun siteList() = dao.activeVisitSites().map { site -> SiteRegisterSummary(site.id, site.reference, site.name, site.customerName, site.address.orEmpty(), dao.equipmentForSite(site.id).size, CustomerType.fromCode(site.customerType)) }
 
@@ -196,7 +196,8 @@ class RoomServiceLoopRepository(
         val customer = dao.customer(id) ?: return null
         val siteEntities = dao.sitesForCustomer(id)
         val sites = siteEntities.map { site -> SiteSummary(site.id, site.reference, site.name, site.address.orEmpty(), dao.equipmentForSite(site.id).size, site.isDefault) }
-        val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }) } }
+        val customerType = CustomerType.fromCode(customer.customerType)
+        val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, customerType) } }
         val followUps = dao.followUpsForCustomer(id).filter { it.state == "OPEN" }.map { followUpDetail(it) }
         val contacts = dao.contactNotesForCustomer(id).take(5).map { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
         return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts, customer.state, CustomerType.fromCode(customer.customerType))
@@ -205,8 +206,9 @@ class RoomServiceLoopRepository(
     override suspend fun site(id: String): SiteDetail? {
         val site = dao.site(id) ?: return null
         val customer = dao.customer(site.customerId) ?: return null
+        val customerType = CustomerType.fromCode(customer.customerType)
         val equipment = dao.equipmentForSite(id).map { item ->
-            EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate })
+            EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, customerType)
         }
         return SiteDetail(site.id, customer.id, customer.name, site.reference, site.name, site.address.orEmpty(), site.contactName.orEmpty(), site.phone.orEmpty(), site.email.orEmpty(), site.privateAccessNotes.orEmpty(), site.isDefault, equipment, site.state, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), CustomerType.fromCode(customer.customerType))
     }
@@ -242,14 +244,14 @@ class RoomServiceLoopRepository(
             site.name,
             site.customerName,
              dao.equipmentForSite(site.id).filter { it.state == "ACTIVE" }.map { item ->
-                EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, site.customerName, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate })
+                EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, site.customerName, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, CustomerType.fromCode(site.customerType))
              },
              CustomerType.fromCode(site.customerType),
         )
     }
 
     override suspend fun plan(id: String): PlanDetail? {
-        val plan = dao.plan(id) ?: return null; val equipment = dao.equipment(plan.equipmentId ?: return null) ?: return null
+        val plan = dao.plan(id) ?: return null; val equipment = dao.equipment(plan.equipmentId) ?: return null
         return PlanDetail(plan.id, equipment.id, equipment.name, plan.reference, plan.name, plan.intervalCount, plan.intervalUnit, plan.currentDueDate, plan.state, plan.reusableTemplateId)
     }
 
@@ -345,7 +347,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun updatePlan(id: String, input: PlanInput): Long {
-        validatePlan(input); val old = dao.plan(id) ?: error("Plan no longer exists"); val oldEquipment = dao.equipment(old.equipmentId ?: error("Recurring service requires an Equipment")) ?: error("Equipment no longer exists"); val oldSite = dao.site(oldEquipment.siteId) ?: error("Site no longer exists"); val oldCustomer = dao.customer(oldSite.customerId) ?: error("Customer no longer exists")
+        validatePlan(input); val old = dao.plan(id) ?: error("Plan no longer exists"); val oldEquipment = dao.equipment(old.equipmentId) ?: error("Equipment no longer exists"); val oldSite = dao.site(oldEquipment.siteId) ?: error("Site no longer exists"); val oldCustomer = dao.customer(oldSite.customerId) ?: error("Customer no longer exists")
         require(CustomerType.fromCode(oldCustomer.customerType) == CustomerType.STANDARD) { "Recurring service requires a Standard customer" }
         val obligation = old.currentObligationId?.let { dao.obligation(it) } ?: error("Current obligation missing")
         input.reusableTemplateId?.let { require(dao.reusableTemplate(it)?.state == "ACTIVE") { "Template is unavailable" } }
@@ -368,7 +370,7 @@ class RoomServiceLoopRepository(
     override suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
         require(planIds.isNotEmpty()) { "Select at least one due service" }; require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); LocalDate.parse(serviceDate)
         val historical = state == "HISTORICAL"
-        val plans = planIds.distinct().map { dao.plan(it) ?: error("Service plan no longer exists") }; val equipment = plans.map { dao.equipment(it.equipmentId ?: error("Recurring service requires an Equipment")) ?: error("Equipment no longer exists") }; val sites = equipment.map { it.siteId }.distinct(); require(sites.size == 1) { "One visit can contain work at one site only" }
+        val plans = planIds.distinct().map { dao.plan(it) ?: error("Service plan no longer exists") }; val equipment = plans.map { dao.equipment(it.equipmentId) ?: error("Equipment no longer exists") }; val sites = equipment.map { it.siteId }.distinct(); require(sites.size == 1) { "One visit can contain work at one site only" }
         val site = dao.site(sites.single()) ?: error("Site no longer exists"); val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
         require(CustomerType.fromCode(customer.customerType) == CustomerType.STANDARD) { "Recurring service requires a Standard customer" }
         val obligations = plans.map { plan -> dao.obligation(plan.currentObligationId ?: error("Plan has no current obligation")) ?: error("Current obligation missing") }
@@ -387,7 +389,7 @@ class RoomServiceLoopRepository(
     override suspend fun createVisitForSite(siteId: String, planIds: List<String>, oneOffEquipmentId: String?, oneOffName: String?, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
         require(planIds.isNotEmpty() || !oneOffName.isNullOrBlank()) { "Select planned work or add one-off work" }
         if (planIds.isNotEmpty()) {
-            val selectedSiteIds = planIds.distinct().map { planId -> dao.plan(planId)?.let { plan -> dao.equipment(plan.equipmentId ?: error("Recurring service requires an Equipment"))?.siteId } ?: error("Service plan no longer exists") }.distinct()
+            val selectedSiteIds = planIds.distinct().map { planId -> dao.plan(planId)?.let { plan -> dao.equipment(plan.equipmentId)?.siteId } ?: error("Service plan no longer exists") }.distinct()
             require(selectedSiteIds == listOf(siteId)) { "All planned work must belong to the selected site" }
         }
         val visitId = if (planIds.isNotEmpty()) {

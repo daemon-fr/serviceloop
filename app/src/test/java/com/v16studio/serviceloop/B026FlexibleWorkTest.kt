@@ -8,6 +8,7 @@ import com.v16studio.serviceloop.domain.*
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -56,6 +57,46 @@ class B026FlexibleWorkTest {
         assertEquals(before, db.serviceLoopDao().plan(plan))
     }
 
+    @Test fun equipmentSummariesCarryTheirOwningCustomerTypeAcrossAllProjections() = runTest {
+        val ids = seedOneTimeBranch()
+
+        assertEquals(CustomerType.ONE_TIME, repo.equipmentList().single { it.id == ids.equipment }.customerType)
+        assertEquals(CustomerType.ONE_TIME, repo.customer(ids.customer)!!.equipment.single().customerType)
+        assertEquals(CustomerType.ONE_TIME, repo.site(ids.site)!!.equipment.single().customerType)
+        val visitSite = repo.visitSites().single { it.id == ids.site }
+        assertEquals(CustomerType.ONE_TIME, visitSite.customerType)
+        assertEquals(CustomerType.ONE_TIME, visitSite.equipment.single().customerType)
+    }
+
+    @Test fun equipmentWithPlansCannotMoveToOneTimeCustomerWithoutAnyMutation() = runTest {
+        val source = seedBranch()
+        val planId = repo.createPlan(source.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01"))
+        val beforePlan = db.serviceLoopDao().plan(planId)!!
+        val beforeObligation = db.serviceLoopDao().obligation(beforePlan.currentObligationId!!)!!
+        val destination = seedOneTimeBranch()
+
+        assertEquals(CustomerType.ONE_TIME, repo.moveReview(source.equipment).destinations.single { it.id == destination.site }.customerType)
+        val failure = runCatching { repo.moveEquipment(source.equipment, destination.site, "2026-09-05", "Not allowed", acknowledged = true) }.exceptionOrNull()
+
+        assertEquals("Recurring service requires a Standard customer", failure?.message)
+        assertEquals(source.site, db.serviceLoopDao().equipment(source.equipment)!!.siteId)
+        assertEquals(beforePlan, db.serviceLoopDao().plan(planId))
+        assertEquals(beforeObligation, db.serviceLoopDao().obligation(beforeObligation.id))
+        assertEquals(0, db.serviceLoopDao().equipmentMoveCount(source.equipment))
+        assertTrue(db.serviceLoopDao().allChangeEntries().none { it.subjectId == source.equipment && it.changeType in setOf("MOVE", "MOVE_IN") })
+    }
+
+    @Test fun equipmentWithoutPlansMayMoveToOneTimeCustomer() = runTest {
+        val source = seedBranch()
+        val destination = seedOneTimeBranch()
+
+        assertTrue(repo.moveEquipment(source.equipment, destination.site, "2026-09-05", "Ad-hoc move", acknowledged = true))
+
+        assertEquals(destination.site, db.serviceLoopDao().equipment(source.equipment)!!.siteId)
+        assertEquals(1, db.serviceLoopDao().equipmentMoveCount(source.equipment))
+        assertEquals(2, db.serviceLoopDao().allChangeEntries().count { it.subjectId == source.equipment && it.changeType in setOf("MOVE", "MOVE_IN") })
+    }
+
     @Test fun siteAndUnidentifiedEquipmentFinalizeWithoutRecurrenceOrFakeEquipment() = runTest {
         val siteIds = seedBranch(); val siteVisit = seedVisit("site-visit", siteIds); val siteWork = seedWork(siteVisit, siteIds, WorkSubjectType.SITE)
         val siteRecord = finalize(siteVisit, siteWork); val siteFinal = db.serviceLoopDao().finalWorkItems(db.serviceLoopDao().finalRecord(siteRecord)!!.currentRevisionId).single()
@@ -94,7 +135,24 @@ class B026FlexibleWorkTest {
 
     @Test fun directoryAndRecordsExportsCarryB026Truth() = runTest {
         val ids = seedBranch(); db.serviceLoopDao().updateCustomer(db.serviceLoopDao().customer(ids.customer)!!.copy(customerType = CustomerType.ONE_TIME.code)); val directory = repo.directoryCsv(true, false).toString(Charsets.UTF_8); assertTrue(directory.lineSequence().first().contains("customer_type")); assertTrue(directory.contains("\"ONE_TIME\"")); assertEquals(0, repo.validateDirectoryCsv(directory.toByteArray()).errors)
-        val visit = seedVisit("csv-visit", ids); val work = seedWork(visit, ids, WorkSubjectType.EQUIPMENT, description = "Unregistered unit"); val record = finalize(visit, work); val bytes = repo.recordsCsvPackage(true, false, true, ids.customer); assertTrue(bytes.isNotEmpty()); assertNotNull(repo.finalRecord(record));
+        val visit = seedVisit("csv-visit", ids)
+        val siteWork = seedWork(visit, ids, WorkSubjectType.SITE, id = "csv-site")
+        val unknownWork = seedWork(visit, ids, WorkSubjectType.EQUIPMENT, id = "csv-unknown", description = "Unregistered unit")
+        val knownWork = seedWork(visit, ids, WorkSubjectType.EQUIPMENT, id = "csv-known", equipmentId = ids.equipment)
+        listOf(siteWork, unknownWork, knownWork).forEach { work -> repo.savePublicWork(work, "Completed $work"); repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null) }
+        db.serviceLoopDao().upsertBusinessProfile(BusinessProfileEntity(businessName = "Business", technicianName = "Technician", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 1))
+        val record = (repo.finalizeVisit(visit) as FinalizeResult.Success).recordId
+        val bytes = repo.recordsCsvPackage(true, false, true, ids.customer)
+        val workRows = csvRows(bytes, "work_items.csv")
+        val finalRows = csvRows(bytes, "final_work_items.csv")
+        assertCsvSubject(workRows, "SITE", equipmentId = "", equipmentDescription = "")
+        assertCsvSubject(workRows, "EQUIPMENT", equipmentId = "", equipmentDescription = "Unregistered unit")
+        assertCsvSubject(workRows, "EQUIPMENT", equipmentId = ids.equipment, equipmentDescription = "")
+        assertCsvSubject(finalRows, "SITE", equipmentId = "", equipmentDescription = "")
+        assertCsvSubject(finalRows, "EQUIPMENT", equipmentId = "", equipmentDescription = "Unregistered unit")
+        assertCsvSubject(finalRows, "EQUIPMENT", equipmentId = ids.equipment, equipmentDescription = "")
+        assertTrue(finalRows.single { it["equipment_id"] == ids.equipment }["equipment_reference"] == "EQ-1")
+        assertNotNull(repo.finalRecord(record))
     }
 
     @Test fun currentRecoveryRoundTripPreservesOneTimeAndFlexibleFinalSubjects() = runTest {
@@ -117,6 +175,13 @@ class B026FlexibleWorkTest {
         return Branch("c", "s", "e")
     }
 
+    private suspend fun seedOneTimeBranch(): Branch {
+        db.serviceLoopDao().insertCustomers(listOf(CustomerEntity("one-time-c", "CU-OT", "One-time Customer", customerType = CustomerType.ONE_TIME.code)))
+        db.serviceLoopDao().insertSites(listOf(SiteEntity("one-time-s", "one-time-c", "ST-OT", "One-time Site", null, null, isDefault = true)))
+        db.serviceLoopDao().insertEquipment(listOf(EquipmentEntity("one-time-e", "one-time-s", "EQ-OT", "ID-OT", "One-time Equipment", "Maker", "Model", "Serial", null)))
+        return Branch("one-time-c", "one-time-s", "one-time-e")
+    }
+
     private suspend fun seedVisit(id: String, branch: Branch): String {
         db.serviceLoopDao().insertVisits(listOf(WorkingVisitEntity(id, "V-$id", branch.customer, branch.site, "2026-09-05", "Customer", "Site", null, "WORKING", 1, "CU-1", "ST-1", "Business", "Technician", null, null, null, "Europe/Bucharest")))
         return id
@@ -134,5 +199,23 @@ class B026FlexibleWorkTest {
         repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
         db.serviceLoopDao().upsertBusinessProfile(BusinessProfileEntity(businessName = "Business", technicianName = "Technician", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 1))
         return when (val result = repo.finalizeVisit(visit)) { is FinalizeResult.Success -> result.recordId; is FinalizeResult.Blocked -> error("Finalize blocked: ${result.message}") }
+    }
+
+    private fun assertCsvSubject(rows: List<Map<String, String>>, subjectType: String, equipmentId: String, equipmentDescription: String) {
+        assertTrue(rows.any { it["subject_type"] == subjectType && it["equipment_id"] == equipmentId && it["equipment_description"] == equipmentDescription })
+    }
+
+    private fun csvRows(bytes: ByteArray, entryName: String): List<Map<String, String>> {
+        val lines = zipEntry(bytes, entryName).lineSequence().filter(String::isNotBlank).map { line -> line.removePrefix("\"").removeSuffix("\"").split("\",\"") }.toList()
+        val headers = lines.first()
+        return lines.drop(1).map { values -> headers.zip(values).toMap() }
+    }
+
+    private fun zipEntry(bytes: ByteArray, entryName: String): String = ZipInputStream(bytes.inputStream()).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            if (entry.name == entryName) return zip.readBytes().toString(Charsets.UTF_8)
+        }
+        error("ZIP entry missing: $entryName")
     }
 }

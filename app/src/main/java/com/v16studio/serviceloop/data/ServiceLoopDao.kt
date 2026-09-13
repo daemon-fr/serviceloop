@@ -60,6 +60,7 @@ data class EquipmentSummaryRow(
     val siteName: String,
     val customerName: String,
     val nearestDueDate: String?,
+    val customerType: String,
 )
 
 data class CustomerSummaryRow(
@@ -171,6 +172,7 @@ interface ServiceLoopDao {
     @Query("SELECT s.id, s.reference, s.name, c.name customerName, s.address, c.customerType FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
     @Query("SELECT * FROM equipment WHERE siteId=:siteId ORDER BY name, reference") suspend fun equipmentForSite(siteId: String): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans WHERE equipmentId=:equipmentId ORDER BY currentDueDate, reference") suspend fun plansForEquipment(equipmentId: String): List<ServicePlanEntity>
+    @Query("SELECT COUNT(*) FROM equipment_moves WHERE equipmentId=:equipmentId") suspend fun equipmentMoveCount(equipmentId: String): Int
     @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUps(): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups WHERE id=:id") suspend fun followUp(id: String): FollowUpEntity?
@@ -320,7 +322,8 @@ interface ServiceLoopDao {
 
     @Query("""
          SELECT e.id, e.name, e.reference, e.technicianIdentifier, s.name siteName, c.name customerName,
-               MIN(CASE WHEN p.state='ACTIVE' THEN p.currentDueDate ELSE NULL END) nearestDueDate
+               MIN(CASE WHEN p.state='ACTIVE' THEN p.currentDueDate ELSE NULL END) nearestDueDate,
+               c.customerType
         FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId
         LEFT JOIN service_plans p ON p.equipmentId=e.id
         GROUP BY e.id ORDER BY e.name

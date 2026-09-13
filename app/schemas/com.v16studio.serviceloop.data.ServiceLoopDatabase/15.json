@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 15,
-    "identityHash": "db9de796833d1047aeabb9f1402d0000",
+    "identityHash": "65386aedb47a8e2cd042f29e718e0001",
     "entities": [
       {
         "tableName": "customers",
@@ -290,7 +290,7 @@
       },
       {
         "tableName": "service_plans",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `equipmentId` TEXT, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `intervalCount` INTEGER NOT NULL, `intervalUnit` TEXT NOT NULL, `currentDueDate` TEXT NOT NULL, `state` TEXT NOT NULL, `currentObligationId` TEXT, `lastCountedCompletionDate` TEXT, `lastCountedRevisionId` TEXT, `reusableTemplateId` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `equipmentId` TEXT NOT NULL, `reference` TEXT NOT NULL, `name` TEXT NOT NULL, `intervalCount` INTEGER NOT NULL, `intervalUnit` TEXT NOT NULL, `currentDueDate` TEXT NOT NULL, `state` TEXT NOT NULL, `currentObligationId` TEXT, `lastCountedCompletionDate` TEXT, `lastCountedRevisionId` TEXT, `reusableTemplateId` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`equipmentId`) REFERENCES `equipment`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -301,7 +301,8 @@
           {
             "fieldPath": "equipmentId",
             "columnName": "equipmentId",
-            "affinity": "TEXT"
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
             "fieldPath": "reference",
@@ -4939,7 +4940,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'db9de796833d1047aeabb9f1402d0000')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '65386aedb47a8e2cd042f29e718e0001')"
     ]
   }
 }
