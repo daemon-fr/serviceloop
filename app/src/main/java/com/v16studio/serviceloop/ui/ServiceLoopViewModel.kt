@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
 
 sealed interface DueServicesProjection {
@@ -238,6 +239,35 @@ class ServiceLoopViewModel(
                 inspection = draft,
                 saveStatus = draft?.let { SaveStatus.Saved(it.modifiedAtEpochMillis) } ?: SaveStatus.Idle,
             ) }
+            draft?.let(::reconcilePersistedServiceDrafts)
+        }
+    }
+
+    private fun reconcilePersistedServiceDrafts(draft: InspectionDraft) {
+        var unsupportedFieldFound = false
+        draft.rawInputs.forEach { (fieldKey, rawValue) ->
+            when (fieldKey) {
+                ServiceDraftFieldKeys.WORK -> scheduleWorkText(draft.workItemId, rawValue)
+                ServiceDraftFieldKeys.PRIVATE -> schedulePrivateText(draft.workItemId, rawValue)
+                ServiceDraftFieldKeys.NOT_PERFORMED_REASON -> scheduleNotPerformedReason(draft.workItemId, draft.visitId, rawValue)
+                ServiceDraftFieldKeys.OVERRIDE_DATE -> scheduleRecurrenceOverrideDate(draft.workItemId, rawValue)
+                ServiceDraftFieldKeys.OVERRIDE_REASON -> scheduleRecurrenceOverrideReason(draft.workItemId, rawValue)
+                else -> {
+                    val parts = fieldKey.split(':', limit = 3)
+                    val question = parts.takeIf { it.size == 3 && it[0] == "question" && it[1].isNotBlank() }
+                        ?.let { pieces -> draft.questions.firstOrNull { it.snapshotItemId == pieces[1] } }
+                    when {
+                        question == null -> unsupportedFieldFound = true
+                        parts[2] == "value" -> scheduleQuestionValue(draft.workItemId, parts[1], rawValue)
+                        parts[2] == "issue" -> scheduleIssueDescription(draft.workItemId, parts[1], rawValue)
+                        parts[2] == "na" -> scheduleNotApplicableReason(draft.workItemId, parts[1], rawValue)
+                        else -> unsupportedFieldFound = true
+                    }
+                }
+            }
+        }
+        if (unsupportedFieldFound) _state.update { current ->
+            if (current.inspection?.workItemId == draft.workItemId) current.copy(contentRefreshError = "A saved service edit could not be restored") else current
         }
     }
     fun focusInspection(kind: CompletionBlockerKind, questionId: String?) { _state.update { it.copy(inspectionFocus = InspectionFocus(kind, questionId)) } }
@@ -580,16 +610,64 @@ class ServiceLoopViewModel(
 
     fun applyRecurrenceOverride(workItemId: String, visitId: String, date: String, reason: String) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
-        val writer: suspend (String) -> Long = {
-            repository.saveCompletionDraft(workItemId, line.outcome, true, line.notPerformedReason, date, false, reason)
+        if (runCatching { LocalDate.parse(date.trim()) }.isFailure) {
+            _state.update { it.copy(error = "Enter a date as YYYY-MM-DD") }
+            return
         }
-        serviceDraftAutosaveCoordinator.saveTextNow(
-            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), date, ServiceDraftValidators.isoDate(), writer,
-            onSaved = { loadCompletion(visitId) },
-        )
-        serviceDraftAutosaveCoordinator.saveTextNow(
-            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON), reason, ServiceDraftValidators.requiredText("Override reason"), writer,
-        )
+        if (reason.trim().isBlank()) {
+            _state.update { it.copy(error = "Override reason is required") }
+            return
+        }
+        serviceDraftAutosaveCoordinator.cancel(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE))
+        serviceDraftAutosaveCoordinator.cancel(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON))
+        val request = issueRequest("completion")
+        val saveContext = issueRequest("draftSaveContext")
+        val lastSaved = _state.value.saveStatus.lastSavedCheckpoint()
+        _state.update { current -> if (current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
+        viewModelScope.launch {
+            try {
+                val savedAt = repository.saveCompletionDraft(workItemId, line.outcome, true, line.notPerformedReason, date, false, reason)
+                var cleanupFailure: Exception? = null
+                listOf(ServiceDraftFieldKeys.OVERRIDE_DATE, ServiceDraftFieldKeys.OVERRIDE_REASON).forEach { fieldKey ->
+                    try {
+                        repository.clearWorkingInputBuffer(workItemId, fieldKey)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (cleanupFailure == null) cleanupFailure = failure
+                    }
+                }
+                try {
+                    val lines = repository.completionLines(visitId)
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                        if (current.completionVisitId == visitId) current.copy(
+                            completionLines = lines,
+                            saveStatus = SaveStatus.Saved(savedAt),
+                            contentRefreshError = cleanupFailure?.let { "Saved, but service draft cleanup needs attention: ${it.message ?: "cleanup failed"}" },
+                        ) else current
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                        if (current.completionVisitId == visitId) current.copy(
+                            saveStatus = SaveStatus.Saved(savedAt),
+                            contentRefreshError = cleanupFailure?.let { "Saved, but service draft cleanup needs attention: ${it.message ?: "cleanup failed"}" }
+                                ?: "Saved, but the screen could not refresh: ${failure.message ?: "refresh failed"}",
+                        ) else current
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                    if (current.completionVisitId == visitId) current.copy(
+                        saveStatus = SaveStatus.Failed(failure.message ?: "Override not saved", lastSaved),
+                        error = failure.message ?: "Override not saved",
+                    ) else current
+                }
+            }
+        }
     }
 
     suspend fun flushServiceDraft(workItemId: String): ServiceDraftFlushResult = serviceDraftAutosaveCoordinator.flush(workItemId)

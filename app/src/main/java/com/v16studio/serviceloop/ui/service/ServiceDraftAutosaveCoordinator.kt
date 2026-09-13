@@ -48,8 +48,8 @@ object ServiceDraftValidators {
         if (raw.trim().isNotEmpty()) ServiceDraftValidation() else ServiceDraftValidation("$label is required")
     }
 
-    fun issueDescription(): (String) -> ServiceDraftValidation = requiredText("Issue description")
-    fun notApplicableReason(): (String) -> ServiceDraftValidation = requiredText("Not applicable reason")
+    fun issueDescription(): (String) -> ServiceDraftValidation = alwaysValid()
+    fun notApplicableReason(): (String) -> ServiceDraftValidation = alwaysValid()
     fun notPerformedReason(): (String) -> ServiceDraftValidation = { raw ->
         if (raw.trim().isNotEmpty()) ServiceDraftValidation() else ServiceDraftValidation("Not performed reason is required")
     }
@@ -179,7 +179,16 @@ class ServiceDraftAutosaveCoordinator(
     }
 
     suspend fun flush(workItemId: String): ServiceDraftFlushResult {
-        val relevant = synchronized(stateLock) { versions.keys.filter { it.workItemId == workItemId }.toSet() }
+        val persisted = repository.workingInputBuffers(workItemId)
+            .mapKeys { (fieldKey, _) -> ServiceDraftFieldId(workItemId, fieldKey) }
+        val tracked = synchronized(stateLock) { versions.keys.filter { it.workItemId == workItemId }.toSet() }
+        val relevant = tracked + persisted.keys
+        persisted.forEach { (fieldId, rawValue) ->
+            val hasCurrentOperation = synchronized(stateLock) {
+                latestOperations.containsKey(fieldId) || latestChoices.containsKey(fieldId)
+            }
+            if (!hasCurrentOperation) setState(fieldId, ServiceDraftFieldState.Pending(rawValue))
+        }
         val waitingJobs = mutableListOf<Job>()
         val immediateJobs = relevant.mapNotNull { fieldId ->
             val operation = synchronized(stateLock) { latestOperations[fieldId] } ?: return@mapNotNull null
@@ -221,6 +230,17 @@ class ServiceDraftAutosaveCoordinator(
             return
         }
         synchronized(stateLock) { latestChoices[fieldId] }?.let { choice -> immediateChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved) }
+    }
+
+    fun cancel(fieldId: ServiceDraftFieldId) {
+        synchronized(stateLock) {
+            versions.remove(fieldId)
+            jobs.remove(fieldId)?.cancel()
+            latestOperations.remove(fieldId)
+            latestChoices.remove(fieldId)
+            savedAt.remove(fieldId)
+        }
+        _states.update { current -> current - fieldId }
     }
 
     private suspend fun persistText(fieldId: ServiceDraftFieldId, version: Long, operation: TextOperation, immediate: Boolean) {

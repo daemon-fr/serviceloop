@@ -84,6 +84,20 @@ class ServiceDraftAutosaveCoordinatorTest {
         assertEquals(ServiceDraftFieldState.Failed("kept", "disk unavailable", null), coordinator.states.value[failed])
     }
 
+    @Test fun freshCoordinatorFlushDiscoversPersistedRawBufferAndLeavesItPending() = runTest {
+        val repository = BufferRepository()
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.WORK)
+        repository.buffers[field] = "recovered raw edit"
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+
+        val result = coordinator.flush("work-1")
+
+        assertFalse(result.success)
+        assertTrue(field in result.pendingFields)
+        assertEquals(ServiceDraftFieldState.Pending("recovered raw edit"), coordinator.states.value[field])
+        assertEquals("recovered raw edit", repository.buffers[field])
+    }
+
     @Test fun immediateChoiceDoesNotCreateAWorkingInputBuffer() = runTest {
         val repository = BufferRepository()
         val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
@@ -97,10 +111,60 @@ class ServiceDraftAutosaveCoordinatorTest {
         assertEquals(ServiceDraftFieldState.Clean(7L), coordinator.states.value[field])
     }
 
+    @Test fun blankIssueDescriptionPersistsClearAndLeavesChecklistIncomplete() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionIssue("q1"))
+        repository.canonicalValues[field] = "Old"
+        repository.preservedDrafts[field] = "Old"
+
+        coordinator.scheduleText(field, "", ServiceDraftValidators.issueDescription()) { value ->
+            if (value.trim().isBlank()) {
+                repository.canonicalValues.remove(field)
+                repository.preservedDrafts.remove(field)
+                repository.checklistComplete = false
+            }
+            9L
+        }
+        advanceUntilIdle()
+
+        assertEquals(null, repository.canonicalValues[field])
+        assertEquals(null, repository.preservedDrafts[field])
+        assertTrue(repository.buffers.isEmpty())
+        assertFalse(repository.checklistComplete)
+        assertEquals(ServiceDraftFieldState.Clean(9L), coordinator.states.value[field])
+    }
+
+    @Test fun blankNotApplicableReasonPersistsClearAndLeavesChecklistIncomplete() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionNotApplicable("q1"))
+        repository.canonicalValues[field] = "Old"
+        repository.preservedDrafts[field] = "Old"
+
+        coordinator.scheduleText(field, "", ServiceDraftValidators.notApplicableReason()) { value ->
+            if (value.trim().isBlank()) {
+                repository.canonicalValues.remove(field)
+                repository.preservedDrafts.remove(field)
+                repository.checklistComplete = false
+            }
+            10L
+        }
+        advanceUntilIdle()
+
+        assertEquals(null, repository.canonicalValues[field])
+        assertEquals(null, repository.preservedDrafts[field])
+        assertTrue(repository.buffers.isEmpty())
+        assertFalse(repository.checklistComplete)
+        assertEquals(ServiceDraftFieldState.Clean(10L), coordinator.states.value[field])
+    }
+
     private class BufferRepository : ServiceLoopRepository {
         val buffers = mutableMapOf<ServiceDraftFieldId, String>()
         val rawWrites = mutableListOf<String>()
         val canonicalValues = mutableMapOf<ServiceDraftFieldId, String>()
+        val preservedDrafts = mutableMapOf<ServiceDraftFieldId, String>()
+        var checklistComplete = true
         private var timestamp = 0L
 
         fun canonical(field: ServiceDraftFieldId, value: String) { canonicalValues[field] = value }
@@ -122,6 +186,9 @@ class ServiceDraftAutosaveCoordinatorTest {
             buffers.remove(ServiceDraftFieldId(workItemId, fieldKey))
             return ++timestamp
         }
+        override suspend fun workingInputBuffers(workItemId: String): Map<String, String> = buffers
+            .filterKeys { it.workItemId == workItemId }
+            .mapKeys { it.key.fieldKey }
         override suspend fun serviceDraftWorkItemIds(visitId: String): List<String> = listOf("work-1")
     }
 }

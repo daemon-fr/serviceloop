@@ -19,9 +19,12 @@ import com.v16studio.serviceloop.data.WorkItemPrivateDraftEntity
 import com.v16studio.serviceloop.data.WorkItemPublicDraftEntity
 import com.v16studio.serviceloop.data.WorkingResponseEntity
 import com.v16studio.serviceloop.data.WorkingVisitEntity
+import com.v16studio.serviceloop.data.WorkingInputBufferEntity
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.FinalizeResult
 import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.ResponseDisposition
+import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.test.runTest
@@ -155,6 +158,48 @@ class PersistenceIntegrityTest {
         question = repository.inspection("work-1")!!.questions.single()
         assertEquals("Access impossible", question.reason)
         assertEquals("Belt frayed", question.issueFoundReasonDraft)
+    }
+
+    @Test fun deliberatelyClearedIssueReasonDoesNotResurrectAfterDispositionSwitching() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "Old")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, null)
+
+        val question = repository.inspection("work-1")!!.questions.single()
+        assertEquals(null, question.reason)
+        assertEquals(null, question.issueFoundReasonDraft)
+        assertFalse(repository.checklistCompleteness("work-1").complete)
+    }
+
+    @Test fun deliberatelyClearedNotApplicableReasonDoesNotResurrectAfterDispositionSwitching() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "Old")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "")
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, null)
+
+        val question = repository.inspection("work-1")!!.questions.single()
+        assertEquals(null, question.reason)
+        assertEquals(null, question.notApplicableReasonDraft)
+        assertFalse(repository.checklistCompleteness("work-1").complete)
+    }
+
+    @Test fun finalizationBlocksDocumentedWorkWithOrphanedRawBufferWithoutAutosaveCoordinator() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        database.serviceLoopDao().upsertWorkingInputBuffer(
+            WorkingInputBufferEntity("work-1", ServiceDraftFieldKeys.WORK, "orphaned raw edit", time.instant().toEpochMilli()),
+        )
+
+        val result = repository.finalizeVisit("visit-1")
+
+        assertEquals(FinalizeResult.Blocked("Unsaved service edits need attention"), result)
+        assertEquals("orphaned raw edit", repository.workingInputBuffers("work-1").getValue(ServiceDraftFieldKeys.WORK))
+        assertEquals(null, database.serviceLoopDao().finalRecordForVisit("visit-1"))
     }
 
     @Test fun inactiveDraftsDoNotLeakIntoOkFinalSnapshot() = runTest {

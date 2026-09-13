@@ -844,6 +844,7 @@ class RoomServiceLoopRepository(
         if (dispatchBinding != null && dispatchItems.any { it.localRole == "ASSIGNED" && it.documentationDisposition == "PENDING" }) return@withTransaction FinalizeResult.Blocked("Choose who will document each assigned dispatch item")
         val documentedIds = dispatchItems.filter { it.documentationDisposition == "DOCUMENT_LOCAL" }.mapNotNull { it.localWorkItemId }.toSet()
         val items = dao.visitWorkItems(visitId).filter { dispatchBinding == null || it.id in documentedIds }; if (items.isEmpty()) return@withTransaction FinalizeResult.Blocked("Choose at least one dispatch item to document locally")
+        if (items.any { dao.workingInputBuffers(it.id).isNotEmpty() }) return@withTransaction FinalizeResult.Blocked("Unsaved service edits need attention")
         data class Prepared(val item: WorkItemEntity, val work: String, val privateNote: String, val plan: ServicePlanEntity?, val oldObligation: ServiceObligationEntity?, val nextDue: String?)
         val prepared = mutableListOf<Prepared>()
         for (item in items) {

@@ -9,8 +9,10 @@ Customer → site → equipment → service plan → due work/arrangements → w
 ## Adopted foundation
 
 - Working facts are saved continuously through durable raw input buffers plus canonical repository writes. Raw buffers are separate from canonical facts and are never copied into final history or reports.
+- Restored raw buffers remain authoritative unsaved Working edit state until the field-aware ViewModel/coordinator reconciles them; an unregistered durable buffer cannot be treated as clean.
 - Inspection completeness is derived from the current immutable checklist snapshot and active Working responses. The legacy `checklistReviewed` Room field remains a compatibility/cache field only.
 - Issue-found descriptions and Not-applicable reasons retain inactive Working drafts without leaking them into active or final output. Private guidance remains technician-only.
+- Blank Issue-found and Not-applicable descriptions are valid persistence operations that clear the active and preserved reason, while the resulting inspection remains incomplete.
 - Outcome and current-obligation fulfillment are separate decisions. Fulfillment is tri-state while unresolved; only an explicit true decision advances a current recurring obligation.
 - A true eligible fulfillment calculates the next due date immediately from the actual service date and captured interval. A different date requires an explicit override reason.
 - Response changes recompute inspection completeness and invalidate an obsolete true fulfillment atomically when the current inspection is no longer complete.
@@ -18,7 +20,7 @@ Customer → site → equipment → service plan → due work/arrangements → w
 
 ## Storage and recovery
 
-Room schema 14 adds exactly one `working_input_buffers` table keyed by `(workItemId, fieldKey)` with a cascading WorkItem foreign key. Migration 13→14 normalizes legacy fulfillment and due-date combinations without rewriting Final* history. Portable backup/recovery preserves the table and inserts an empty table for older supported packages without inferring rows.
+Room schema 14 adds exactly one `working_input_buffers` table keyed by `(workItemId, fieldKey)` with a cascading WorkItem foreign key. Migration 13→14 normalizes legacy fulfillment and due-date combinations without rewriting Final* history. Portable backup/recovery preserves the table and inserts an empty table for older supported packages without inferring rows. Finalization is conservatively blocked for every documented WorkItem with any unresolved durable raw input buffer; those buffers are retained for reconciliation.
 
 ## Scope boundary
 
