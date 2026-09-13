@@ -146,3 +146,12 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - `BusinessProfile.technicianName` is the authoritative actual report identity. Dispatch identity retains its stable installation ID and an optional team designation/badge as separate data; the Member screen does not edit the actual report name.
 - Work packages carry immutable inspection snapshots at package level and bind imported work to local immutable snapshots. Reusable template edits never rewrite issued Visit/report meaning.
 - Output producers, public/private boundaries, provenance, and acknowledgement semantics are recorded in `docs/project/B013_OUTPUT_ARTIFACT_MATRIX.md`.
+
+## B-025 — Service Flow Redesign Bundle 1 foundation
+
+- Bundle 1 adopts durable Working service-flow autosave foundations: raw edit buffers are stored separately from canonical facts, writes are versioned against stale async work, and raw buffers never become final history/report content.
+- Inspection completeness is derived from the current immutable checklist snapshot and active Working responses. `checklistReviewed` remains Room compatibility/cache state only; manual “Mark checklist reviewed” is no longer the authority for readiness.
+- Outcome and current-obligation fulfillment are separate. Fulfillment is nullable until an eligible technician decision is explicit; only true fulfillment advances the captured current obligation. PARTLY/NOT outcomes cannot fulfill.
+- Eligible true fulfillment calculates the next due date immediately from actual service date and captured interval. A different confirmed date is a deliberate override requiring a nonblank reason; there is no separate second confirmation of the calculated date.
+- Response mutation recomputes derived completeness in the same transaction and clears an obsolete true fulfillment and due fields when the current inspection becomes incomplete. Finalization recomputes directly and flushes draft work before creating final history.
+- This amendment supersedes only the manual checklist-review authority and the separate second confirmation of a calculated next due date. It does not supersede outcome/fulfillment separation, immutable snapshots, B-014 Working response drafts, recurrence safeguards, finalization, correction/history, or the existing B-009/B-010 inline editing decisions.

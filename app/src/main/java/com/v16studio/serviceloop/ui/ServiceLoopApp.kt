@@ -727,7 +727,7 @@ private fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bus
 @Composable
 internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     val listState = rememberLazyListState()
-    LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_REVIEW -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
+    LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_INCOMPLETE -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
     Column(Modifier.fillMaxSize()) {
     if (saveStatus is SaveStatus.Failed) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { SaveStateBanner(saveStatus) }
     LazyColumn(Modifier.weight(1f).testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -740,18 +740,16 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
         item {
             var work by rememberSaveable(draft.workItemId, draft.workPerformed) { mutableStateOf(draft.workPerformed) }
             Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            LongTextEditor(work, { work = it }, "Public work performed", false)
+            LongTextEditor(work, { work = it; viewModel.scheduleWorkText(draft.workItemId, it) }, "Public work performed", false)
             ServiceLoopPrimaryButton("Save work performed",{ viewModel.savePublicWork(draft.workItemId, work) },enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth())
             LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
         }
         item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
-        items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(question, saveStatus is SaveStatus.Saving, viewModel) }
+         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(draft.workItemId, question, saveStatus is SaveStatus.Saving, viewModel) }
         item {
-            val required = draft.questions.count { it.required }; val complete = draft.questions.count { q -> q.required && when(q.responseType) { "STATUS" -> q.disposition != ResponseDisposition.NOT_CHECKED && !(q.disposition in setOf(ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE) && q.reason.isNullOrBlank()); "NUMBER" -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) && !(q.disposition == ResponseDisposition.VALUE && !signedDecimal(q.numberValue.orEmpty())); else -> q.disposition != ResponseDisposition.UNANSWERED && !(q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank()) } }
-            val missingFinding = draft.questions.any { it.disposition == ResponseDisposition.ISSUE_FOUND && it.reason.isNullOrBlank() }
-            StatusChip(if (draft.checklistReviewed) "Reviewed" else "Needs review", urgency = false); Text("Required complete $complete of $required")
-            ServiceLoopPrimaryButton("Mark checklist reviewed",{ viewModel.markChecklistReviewed(draft.workItemId) },enabled = !draft.checklistReviewed && complete == required && !missingFinding && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mark checklist reviewed" })
-            Text("Reviewed describes the checklist workflow, not equipment safety or obligation fulfillment.", style = MaterialTheme.typography.bodyMedium)
+            StatusChip(if (draft.checklistComplete) "Inspection complete" else "Inspection needs attention", urgency = !draft.checklistComplete); Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}")
+            if (draft.issueMissingDescription.isNotEmpty()) Text("Issue findings need public descriptions before this inspection is complete.", style = MaterialTheme.typography.bodyMedium)
+            Text("Inspection completeness is derived from the saved snapshot answers.", style = MaterialTheme.typography.bodyMedium)
         }
         item { ServiceLoopActionStack { ServiceLoopSecondaryButton("Parts and photographs",{ nav.navigate("field/${draft.workItemId}") },modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")); ServiceLoopPrimaryButton("Review completion",{ nav.navigate("review/${draft.visitId}") },modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) } }
     }
@@ -769,29 +767,30 @@ internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSo
 }
 
 @Composable
-private fun QuestionBlock(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun QuestionBlock(workItemId: String, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     var issueBuffer by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.issueFoundReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.ISSUE_FOUND }.orEmpty()) }
     var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}") { mutableStateOf(question.notApplicableReasonDraft ?: question.reason.takeIf { question.disposition == ResponseDisposition.NOT_APPLICABLE }.orEmpty()) }
     AccentCard {
         Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
         Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
+        question.privateGuidance?.takeIf { it.isNotBlank() }?.let { guidance -> Text("Technician guidance: $guidance", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         when (question.responseType) {
             "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
-                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.requestResponseChange(question.snapshotItemId, value) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
+                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, value) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
             }
-            else -> ValueQuestion(question, saving, viewModel)
+            else -> ValueQuestion(workItemId, question, saving, viewModel)
         }
         if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
-            InlineFindingEditor(question, issueBuffer, { issueBuffer = it }, saving, viewModel)
+            InlineFindingEditor(workItemId, question, issueBuffer, { issueBuffer = it; viewModel.scheduleIssueDescription(workItemId, question.snapshotItemId, it) }, saving, viewModel)
         }
         if (question.disposition == ResponseDisposition.NOT_APPLICABLE) {
-            NotApplicableEditor(question, notApplicableBuffer, { notApplicableBuffer = it }, saving, viewModel)
+            NotApplicableEditor(workItemId, question, notApplicableBuffer, { notApplicableBuffer = it; viewModel.scheduleNotApplicableReason(workItemId, question.snapshotItemId, it) }, saving, viewModel)
         }
     }
 }
 
 @Composable
-private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun InlineFindingEditor(workItemId: String, question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
     val changed = text.trim() != question.reason.orEmpty()
     Surface(color = LocalServiceLoopTokens.current.warningContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -807,16 +806,16 @@ private fun InlineFindingEditor(question: InspectionQuestion, text: String, onTe
 }
 
 @Composable
-private fun NotApplicableEditor(question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun NotApplicableEditor(workItemId: String, question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
     ServiceLoopLongTextEditor(text, onTextChange, "Not applicable reason", private = false, enabled = !saving, fieldTestTag = "not-applicable-reason-${question.snapshotItemId}")
     ServiceLoopPrimaryButton("Save reason",{ viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}"))
 }
 
 @Composable
-private fun ValueQuestion(question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
+private fun ValueQuestion(workItemId: String, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
     var value by rememberSaveable(question.snapshotItemId) { mutableStateOf(question.textValue ?: question.numberValue.orEmpty()) }
     val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
-    OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
+    OutlinedTextField(value = value, onValueChange = { value = it; viewModel.scheduleQuestionValue(workItemId, question.snapshotItemId, it) }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).fillMaxHeight().testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
         OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight().testTag("not-applicable-${question.snapshotItemId}")) { Text("Not applicable") }
@@ -844,45 +843,44 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
         Text("Outcome", style = MaterialTheme.typography.labelLarge)
         listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
-            Row(Modifier.fillMaxWidth().testTag("outcome-${line.workItemId}-$value").selectable(line.outcome == value, enabled = !saving) { viewModel.saveCompletion(line.workItemId, value, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason, visitId) }.semantics { contentDescription = "Outcome $label" }, verticalAlignment = Alignment.CenterVertically) { RadioButton(line.outcome == value, null); Text(label) }
+            Row(Modifier.fillMaxWidth().testTag("outcome-${line.workItemId}-$value").selectable(line.outcome == value, enabled = !saving) { viewModel.chooseOutcome(line.workItemId, visitId, value) }.semantics { contentDescription = "Outcome $label" }, verticalAlignment = Alignment.CenterVertically) { RadioButton(line.outcome == value, null); Text(label) }
         }
         if (line.outcome == "NOT_PERFORMED") {
             var reason by rememberSaveable(line.workItemId, line.notPerformedReason) { mutableStateOf(line.notPerformedReason.orEmpty()) }
-            OutlinedTextField(reason, { reason = it }, label = { Text("Not performed reason") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(reason, { reason = it; viewModel.scheduleNotPerformedReason(line.workItemId, visitId, it) }, label = { Text("Not performed reason") }, enabled = !saving, modifier = Modifier.fillMaxWidth())
             Button(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, false, reason, null, null, null, visitId) }, enabled = !saving && reason.isNotBlank() && reason != line.notPerformedReason, modifier = Modifier.fillMaxWidth()) { Text("Save reason") }
         }
         when (line.fulfillmentEligibility) {
-            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation, enabled = !saving, onCheckedChange = { viewModel.saveCompletion(line.workItemId, line.outcome, it, line.notPerformedReason, null, null, null, visitId) }, modifier = Modifier.testTag("fulfills-${line.workItemId}")); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
+            FulfillmentEligibility.ELIGIBLE -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Fulfills current obligation" }) { Checkbox(checked = line.fulfillsCurrentObligation == true, enabled = !saving, onCheckedChange = { viewModel.chooseFulfillment(line.workItemId, visitId, it) }, modifier = Modifier.testTag("fulfills-${line.workItemId}")); Column { Text("Fulfills current obligation", fontWeight = FontWeight.Medium); Text(if (line.fulfillsCurrentObligation == true) "Explicitly selected" else "Eligible, not selected — outstanding obligation is preserved", style = MaterialTheme.typography.bodySmall) } }
             FulfillmentEligibility.HISTORY_ONLY -> Text("Recurring historical work · History only — no current obligation will be fulfilled.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("Fulfillment unavailable — one-off work has no recurring obligation to fulfill.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("Fulfillment unavailable — ${line.outcome?.replace('_', ' ')?.lowercase()} work cannot fulfill the current obligation.", style = MaterialTheme.typography.bodyMedium)
-            FulfillmentEligibility.CHECKLIST_NOT_REVIEWED -> Text("Fulfillment unavailable — review the assigned checklist first.", style = MaterialTheme.typography.bodyMedium)
+            FulfillmentEligibility.CHECKLIST_INCOMPLETE -> Text("Fulfillment unavailable — complete the assigned inspection first.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.PLAN_INELIGIBLE -> Text("Fulfillment unavailable — this plan is no longer active.", style = MaterialTheme.typography.bodyMedium)
             FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.", style = MaterialTheme.typography.bodyMedium)
         }
         when {
             line.fulfillmentEligibility == FulfillmentEligibility.HISTORY_ONLY -> Text("History only — current recurring due date is unchanged")
             line.fulfillmentEligibility == FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date changes")
-            line.fulfillsCurrentObligation && line.dueDate != null && line.proposedNextDueDate != null -> Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}")
-            line.fulfillsCurrentObligation -> Text("Recurring due-date proposal unavailable", color = LocalServiceLoopColors.current.urgencyInk)
+            line.fulfillsCurrentObligation == true && line.dueDate != null && line.proposedNextDueDate != null -> Text("Due before ${line.dueDate} → Proposed next due ${line.proposedNextDueDate}")
+            line.fulfillsCurrentObligation == true -> Text("Recurring due-date proposal unavailable", color = LocalServiceLoopColors.current.urgencyInk)
             line.dueDate != null -> Text("Remains due ${line.dueDate}", color = LocalServiceLoopColors.current.urgencyInk)
             else -> Text("Current recurring obligation remains outstanding", color = LocalServiceLoopColors.current.urgencyInk)
         }
-        if (line.fulfillsCurrentObligation && line.calculatedNextDueDate != null) {
+        if (line.fulfillsCurrentObligation == true && line.calculatedNextDueDate != null) {
             Text("Calculated next due ${line.calculatedNextDueDate}")
-            Button(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, line.calculatedNextDueDate, true, null, visitId) }, enabled = !saving && line.confirmedNextDueDate != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Use calculated date" }) { Text("Use calculated date") }
             var date by rememberSaveable(line.workItemId, line.confirmedNextDueDate) { mutableStateOf(line.confirmedNextDueDate.orEmpty()) }
             var overrideReason by rememberSaveable(line.workItemId, line.nextDueOverrideReason) { mutableStateOf(line.nextDueOverrideReason.orEmpty()) }
-            OutlinedTextField(date, { date = it }, label = { Text("Override next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(overrideReason, { overrideReason = it }, label = { Text("Override reason") }, modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = { viewModel.saveCompletion(line.workItemId, line.outcome, true, line.notPerformedReason, date, false, overrideReason, visitId) }, enabled = !saving && date.isNotBlank() && overrideReason.isNotBlank() && date != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Override next due" }) { Text("Save override") }
+            OutlinedTextField(date, { date = it; viewModel.scheduleRecurrenceOverrideDate(line.workItemId, it) }, label = { Text("Override next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(overrideReason, { overrideReason = it; viewModel.scheduleRecurrenceOverrideReason(line.workItemId, it) }, label = { Text("Override reason") }, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = { viewModel.applyRecurrenceOverride(line.workItemId, visitId, date, overrideReason) }, enabled = !saving && date.isNotBlank() && overrideReason.isNotBlank() && date != line.calculatedNextDueDate, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Override next due" }) { Text("Save override") }
         }
         line.blockers.forEach { blocker ->
-            val actionable = blocker.kind in setOf(CompletionBlockerKind.WORK_PERFORMED, CompletionBlockerKind.CHECKLIST_REVIEW, CompletionBlockerKind.FINDING_DESCRIPTION)
+            val actionable = blocker.kind in setOf(CompletionBlockerKind.WORK_PERFORMED, CompletionBlockerKind.CHECKLIST_INCOMPLETE, CompletionBlockerKind.FINDING_DESCRIPTION)
             if (actionable) TextButton(onClick = { viewModel.focusInspection(blocker.kind, blocker.questionId); nav.navigate("inspection/${line.workItemId}") }, modifier = Modifier.fillMaxWidth().testTag("completion-blocker-${line.workItemId}-${blocker.kind}-${blocker.questionId.orEmpty()}")) { Text(blocker.message, color = MaterialTheme.colorScheme.error) }
             else Text(blocker.message, color = MaterialTheme.colorScheme.error)
         }
-        if (line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && !line.checklistReviewed) Text("Checklist incomplete — unrecorded items will remain explicit in the final record.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && !line.checklistComplete) Text("Inspection incomplete — unrecorded items will remain explicit in the final record.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed, style = MaterialTheme.typography.bodyMedium)
     }
 }

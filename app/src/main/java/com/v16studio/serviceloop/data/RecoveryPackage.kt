@@ -211,6 +211,7 @@ class RecoveryPackage(
 
     private fun validateDatabase(root: JSONObject) {
         normalizeLegacyReminderState(root)
+        normalizeWorkingInputBuffers(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -333,6 +334,21 @@ class RecoveryPackage(
                 normalized.put(JSONObject().put("name", "reminder_preferences").put("rows", JSONArray().put(defaultReminderRow())))
             }
             normalized.put(table)
+        }
+        root.put("tables", normalized)
+    }
+
+    /** v9-v13 backups predate durable raw Service edit buffers. Do not infer any rows. */
+    private fun normalizeWorkingInputBuffers(root: JSONObject) {
+        val tables = root.getJSONArray("tables")
+        if ((0 until tables.length()).any { tables.getJSONObject(it).getString("name") == "working_input_buffers" }) return
+        val normalized = JSONArray()
+        for (index in 0 until tables.length()) {
+            val table = tables.getJSONObject(index)
+            normalized.put(table)
+            if (table.getString("name") == "work_item_private_drafts") {
+                normalized.put(JSONObject().put("name", "working_input_buffers").put("rows", JSONArray()))
+            }
         }
         root.put("tables", normalized)
     }
@@ -490,8 +506,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 13
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 14
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -503,7 +519,7 @@ class RecoveryPackage(
         val TABLE_ORDER = listOf(
             "customers", "sites", "equipment", "service_plans", "service_obligations",
             "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items",
-            "work_item_public_drafts", "work_item_private_drafts", "working_responses", "attachments",
+            "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments",
             "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items",
             "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions",
             "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims",

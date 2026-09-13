@@ -466,7 +466,7 @@ class StateSemanticsTest {
         override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = 200L
         override suspend fun savePublicWork(workItemId: String, text: String): Long { written = true; return 200 }
         override suspend fun markChecklistReviewed(workItemId: String): Long { written = true; return 200 }
-        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long { written = true; return 200 }
+        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long { written = true; return 200 }
         override suspend fun saveBusinessProfile(profile: BusinessProfile): Long { if (failProfileWrite) error("profile write failed"); written = true; return 200 }
     }
 

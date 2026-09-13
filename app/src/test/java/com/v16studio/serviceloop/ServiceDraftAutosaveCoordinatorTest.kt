@@ -1,0 +1,127 @@
+package com.v16studio.serviceloop
+
+import com.v16studio.serviceloop.data.ServiceLoopRepository
+import com.v16studio.serviceloop.domain.BusinessProfile
+import com.v16studio.serviceloop.domain.CompletionLine
+import com.v16studio.serviceloop.domain.CustomerDetail
+import com.v16studio.serviceloop.domain.CustomerSummary
+import com.v16studio.serviceloop.domain.EquipmentDetail
+import com.v16studio.serviceloop.domain.EquipmentSummary
+import com.v16studio.serviceloop.domain.HomeSummary
+import com.v16studio.serviceloop.domain.InspectionDraft
+import com.v16studio.serviceloop.domain.ResponseDisposition
+import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
+import com.v16studio.serviceloop.domain.SiteRegisterSummary
+import com.v16studio.serviceloop.domain.SiteDetail
+import com.v16studio.serviceloop.domain.VisitSummary
+import com.v16studio.serviceloop.ui.service.ServiceDraftAutosaveCoordinator
+import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
+import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
+import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+class ServiceDraftAutosaveCoordinatorTest {
+    @Test fun validTextDebouncesWritesCanonicalTrimAndClearsRawBuffer() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.WORK)
+
+        coordinator.scheduleText(field, "  completed work  ", ServiceDraftValidators.alwaysValid()) { value -> repository.canonical(field, value.trim()); 42L }
+        advanceUntilIdle()
+
+        assertEquals(listOf("  completed work  "), repository.rawWrites)
+        assertEquals("completed work", repository.canonicalValues[field])
+        assertFalse(repository.buffers.containsKey(field))
+        assertEquals(ServiceDraftFieldState.Clean(42L), coordinator.states.value[field])
+    }
+
+    @Test fun invalidTextIsDurableRawInputAndNeverCallsCanonicalWriter() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionValue("q1"))
+
+        coordinator.scheduleText(field, "12.", ServiceDraftValidators.number()) { error("must not write") }
+        advanceUntilIdle()
+
+        assertEquals("12.", repository.buffers[field])
+        assertTrue(repository.canonicalValues.isEmpty())
+        assertEquals(ServiceDraftFieldState.Invalid("12.", "Enter a complete number"), coordinator.states.value[field])
+    }
+
+    @Test fun latestVersionWinsAndOldWriterCannotClearNewerBuffer() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.WORK)
+
+        coordinator.scheduleText(field, "old") { value -> repository.canonical(field, value); 1L }
+        coordinator.scheduleText(field, "new") { value -> repository.canonical(field, value); 2L }
+        advanceUntilIdle()
+
+        assertEquals("new", repository.canonicalValues[field])
+        assertFalse(repository.buffers.containsKey(field))
+        assertEquals(ServiceDraftFieldState.Clean(2L), coordinator.states.value[field])
+    }
+
+    @Test fun flushLeavesInvalidAndFailedFieldsVisible() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val invalid = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionValue("q1"))
+        val failed = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.WORK)
+        coordinator.scheduleText(invalid, "-", ServiceDraftValidators.number()) { error("must not write") }
+        coordinator.scheduleText(failed, "kept") { error("disk unavailable") }
+        val result = coordinator.flush("work-1")
+
+        assertFalse(result.success)
+        assertTrue(invalid in result.invalidFields)
+        assertTrue(failed in result.failedFields)
+        assertEquals("kept", repository.buffers[failed])
+        assertEquals(ServiceDraftFieldState.Failed("kept", "disk unavailable", null), coordinator.states.value[failed])
+    }
+
+    @Test fun immediateChoiceDoesNotCreateAWorkingInputBuffer() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", "response:q1")
+
+        coordinator.immediateChoice(field, "OK") { value -> repository.canonical(field, value); 7L }
+        advanceUntilIdle()
+
+        assertTrue(repository.buffers.isEmpty())
+        assertEquals("OK", repository.canonicalValues[field])
+        assertEquals(ServiceDraftFieldState.Clean(7L), coordinator.states.value[field])
+    }
+
+    private class BufferRepository : ServiceLoopRepository {
+        val buffers = mutableMapOf<ServiceDraftFieldId, String>()
+        val rawWrites = mutableListOf<String>()
+        val canonicalValues = mutableMapOf<ServiceDraftFieldId, String>()
+        private var timestamp = 0L
+
+        fun canonical(field: ServiceDraftFieldId, value: String) { canonicalValues[field] = value }
+
+        override suspend fun home(): HomeSummary = error("unused")
+        override suspend fun equipment(id: String): EquipmentDetail? = error("unused")
+        override suspend fun equipmentList(): List<EquipmentSummary> = error("unused")
+        override suspend fun customerList(): List<CustomerSummary> = error("unused")
+        override suspend fun siteList(): List<SiteRegisterSummary> = error("unused")
+        override suspend fun inspection(workItemId: String): InspectionDraft? = error("unused")
+        override suspend fun completionLines(visitId: String): List<CompletionLine> = error("unused")
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long = error("unused")
+        override suspend fun saveWorkingInputBuffer(workItemId: String, fieldKey: String, rawValue: String): Long {
+            rawWrites += rawValue
+            buffers[ServiceDraftFieldId(workItemId, fieldKey)] = rawValue
+            return ++timestamp
+        }
+        override suspend fun clearWorkingInputBuffer(workItemId: String, fieldKey: String): Long {
+            buffers.remove(ServiceDraftFieldId(workItemId, fieldKey))
+            return ++timestamp
+        }
+        override suspend fun serviceDraftWorkItemIds(visitId: String): List<String> = listOf("work-1")
+    }
+}

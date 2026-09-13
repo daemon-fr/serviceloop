@@ -336,6 +336,19 @@ data class WorkItemPublicDraftEntity(@PrimaryKey val workItemId: String, val wor
 data class WorkItemPrivateDraftEntity(@PrimaryKey val workItemId: String, val internalNote: String)
 
 @Entity(
+    tableName = "working_input_buffers",
+    foreignKeys = [ForeignKey(WorkItemEntity::class, ["id"], ["workItemId"], onDelete = ForeignKey.CASCADE)],
+    primaryKeys = ["workItemId", "fieldKey"],
+    indices = [Index("workItemId")],
+)
+data class WorkingInputBufferEntity(
+    val workItemId: String,
+    val fieldKey: String,
+    val rawValue: String,
+    val modifiedAtEpochMillis: Long,
+)
+
+@Entity(
     tableName = "working_responses",
     foreignKeys = [
         ForeignKey(WorkItemEntity::class, ["id"], ["workItemId"], onDelete = ForeignKey.CASCADE),

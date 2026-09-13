@@ -95,6 +95,11 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPrivateDrafts(values: List<WorkItemPrivateDraftEntity>)
     @Query("SELECT * FROM work_item_public_drafts WHERE workItemId=:workItemId") suspend fun publicDraft(workItemId: String): WorkItemPublicDraftEntity?
     @Query("SELECT * FROM work_item_private_drafts WHERE workItemId=:workItemId") suspend fun privateDraft(workItemId: String): WorkItemPrivateDraftEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertWorkingInputBuffer(value: WorkingInputBufferEntity)
+    @Query("SELECT * FROM working_input_buffers WHERE workItemId=:workItemId AND fieldKey=:fieldKey") suspend fun workingInputBuffer(workItemId: String, fieldKey: String): WorkingInputBufferEntity?
+    @Query("SELECT * FROM working_input_buffers WHERE workItemId=:workItemId ORDER BY fieldKey") suspend fun workingInputBuffers(workItemId: String): List<WorkingInputBufferEntity>
+    @Query("DELETE FROM working_input_buffers WHERE workItemId=:workItemId AND fieldKey=:fieldKey") suspend fun deleteWorkingInputBuffer(workItemId: String, fieldKey: String): Int
+    @Query("DELETE FROM working_input_buffers WHERE workItemId=:workItemId") suspend fun deleteWorkingInputBuffers(workItemId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertResponses(values: List<WorkingResponseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAttachments(values: List<AttachmentEntity>)
     @Query("DELETE FROM attachments WHERE id=:id") suspend fun deleteAttachment(id: String): Int
@@ -423,7 +428,10 @@ interface ServiceLoopDao {
     suspend fun updateChecklistReviewed(workItemId: String, reviewed: Boolean): Int
 
     @Query("UPDATE work_items SET outcome=:outcome, fulfillsCurrentObligation=:fulfills, notPerformedReason=:reason, confirmedNextDueDate=:nextDue, nextDueDateCalculated=:calculated, nextDueOverrideReason=:overrideReason WHERE id=:workItemId")
-    suspend fun updateCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Int
+    suspend fun updateCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Int
+
+    @Query("UPDATE work_items SET fulfillsCurrentObligation=NULL, confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE id=:workItemId")
+    suspend fun invalidateFulfillment(workItemId: String): Int
 
     @Query("UPDATE working_visits SET reportBusinessNameSnapshot=:businessName, reportTechnicianNameSnapshot=:technicianName, reportPhoneSnapshot=:phone, reportEmailSnapshot=:email, reportPostalAddressSnapshot=:address, reportZoneIdSnapshot=:zoneId, modifiedAtEpochMillis=:modified WHERE id=:visitId AND state='WORKING'")
     suspend fun updateVisitReportIdentity(visitId: String, businessName: String, technicianName: String, phone: String?, email: String?, address: String?, zoneId: String, modified: Long): Int
@@ -466,10 +474,15 @@ interface ServiceLoopDao {
     @Query("UPDATE service_plans SET currentDueDate=:dueDate, lastCountedCompletionDate=:completionDate, lastCountedRevisionId=:revisionId WHERE id=:planId AND lastCountedRevisionId=:expectedRevisionId") suspend fun reconcileLatestPlan(planId: String, expectedRevisionId: String, dueDate: String, completionDate: String?, revisionId: String?): Int
 
     @Transaction
-    suspend fun persistResponse(response: WorkingResponseEntity, visitId: String, invalidateReview: Boolean = true) {
+    suspend fun persistResponse(response: WorkingResponseEntity, visitId: String) {
         val changed = updateResponse(response.id, response.disposition, response.textValue, response.numberValue, response.reason, response.modifiedAtEpochMillis, response.issueFoundReasonDraft, response.notApplicableReasonDraft)
         if (changed == 0) upsertResponses(listOf(response))
-        if (invalidateReview) updateChecklistReviewed(response.workItemId, false)
+        val item = workItem(response.workItemId) ?: error("Working item no longer exists")
+        val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(checklistItems(snapshotId), responses(response.workItemId)) }
+        updateChecklistReviewed(response.workItemId, completeness?.complete ?: false)
+        if (item.outcome == "PERFORMED" && item.fulfillsCurrentObligation == true && completeness?.complete != true) {
+            invalidateFulfillment(response.workItemId)
+        }
         touchVisit(visitId, response.modifiedAtEpochMillis)
     }
 }

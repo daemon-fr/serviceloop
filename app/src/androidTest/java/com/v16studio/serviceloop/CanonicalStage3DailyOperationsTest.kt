@@ -146,8 +146,6 @@ class CanonicalStage3DailyOperationsTest {
         compose.onNodeWithTag("finding-save-$questionId").assertIsEnabled().performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.responses(workId).single().reason?.contains("Guard needs adjustment")==true}}
         hideKeyboard()
-        compose.waitUntil(15_000){runCatching{compose.onNodeWithContentDescription("Mark checklist reviewed").assertIsEnabled()}.isSuccess}
-        compose.onNodeWithContentDescription("Mark checklist reviewed").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(15_000){runBlocking{dao.workItem(workId)!!.checklistReviewed}}
         compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
         compose.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
@@ -164,7 +162,6 @@ class CanonicalStage3DailyOperationsTest {
         compose.onNodeWithContentDescription("Outcome Performed").performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.workItem(workId)!!.outcome=="PERFORMED"}}
         compose.onNodeWithTag("fulfills-$workId").performClick()
-        compose.onNodeWithText("Use calculated date").performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.workItem(workId)!!.confirmedNextDueDate!=null}}
         compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag("finalize-record"))
         compose.onNodeWithTag("finalize-record").performClick()

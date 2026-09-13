@@ -191,8 +191,8 @@ class PersistenceIntegrityTest {
         seedFoundation()
         val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").single()
         assertEquals("PERFORMED", line.outcome)
-        assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
-        assertFalse(line.fulfillsCurrentObligation)
+        assertEquals(FulfillmentEligibility.CHECKLIST_INCOMPLETE, line.fulfillmentEligibility)
+        assertFalse(line.fulfillsCurrentObligation == true)
         assertEquals("2026-09-01", line.dueDate)
         assertEquals(null, line.proposedNextDueDate)
     }
@@ -206,11 +206,11 @@ class PersistenceIntegrityTest {
         val lines = RoomServiceLoopRepository(database, time).completionLines("visit-1").associateBy { it.workItemId }
         listOf("work-partial", "work-not-performed").forEach { id ->
             assertEquals(FulfillmentEligibility.OUTCOME_INELIGIBLE, lines.getValue(id).fulfillmentEligibility)
-            assertFalse(lines.getValue(id).fulfillsCurrentObligation)
+            assertFalse(lines.getValue(id).fulfillsCurrentObligation == true)
             assertEquals(null, lines.getValue(id).proposedNextDueDate)
         }
-        assertEquals(FulfillmentEligibility.CHECKLIST_NOT_REVIEWED, lines.getValue("work-unreviewed").fulfillmentEligibility)
-        assertFalse(lines.getValue("work-unreviewed").fulfillsCurrentObligation)
+        assertEquals(FulfillmentEligibility.CHECKLIST_INCOMPLETE, lines.getValue("work-unreviewed").fulfillmentEligibility)
+        assertFalse(lines.getValue("work-unreviewed").fulfillsCurrentObligation == true)
         assertEquals(null, lines.getValue("work-unreviewed").proposedNextDueDate)
     }
 
@@ -220,7 +220,7 @@ class PersistenceIntegrityTest {
 
         val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").first { it.workItemId == "work-fulfilled" }
         assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
-        assertTrue(line.fulfillsCurrentObligation)
+        assertTrue(line.fulfillsCurrentObligation == true)
         assertEquals("2026-12-05", line.proposedNextDueDate)
     }
 
@@ -233,7 +233,7 @@ class PersistenceIntegrityTest {
         listOf("work-one-off", "work-one-off-stale").forEach { id ->
             val line = lines.getValue(id)
             assertEquals(FulfillmentEligibility.NO_CURRENT_OBLIGATION, line.fulfillmentEligibility)
-            assertFalse(line.fulfillsCurrentObligation)
+            assertFalse(line.fulfillsCurrentObligation == true)
             assertEquals(null, line.proposedNextDueDate)
         }
     }

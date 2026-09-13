@@ -112,7 +112,7 @@ class DailyOperationsIntegrityTest {
         val visit=repo.createVisit(listOf(ids.plan),"HISTORICAL","2026-08-01"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!
         assertNull(repo.dueServices().single().claimedVisitId); assertNull(db.serviceLoopDao().workItem(work)!!.capturedObligationId)
         repo.savePublicWork(work,"Historical annual service"); repo.saveCompletionDraft(work,"PERFORMED",true,null,"2027-08-01",true,null)
-        assertEquals(FulfillmentEligibility.HISTORY_ONLY,repo.completionLines(visit).single().fulfillmentEligibility); assertFalse(repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertEquals(FulfillmentEligibility.HISTORY_ONLY,repo.completionLines(visit).single().fulfillmentEligibility); assertFalse(repo.completionLines(visit).single().fulfillsCurrentObligation == true)
         val record=repo.finalRecord((repo.finalizeVisit(visit) as FinalizeResult.Success).recordId)!!; val after=db.serviceLoopDao().plan(ids.plan)!!
         assertEquals(before.currentObligationId,after.currentObligationId); assertEquals(before.currentDueDate,after.currentDueDate); assertTrue(record.public.lines.single().historyOnly)
     }

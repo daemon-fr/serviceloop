@@ -82,6 +82,7 @@ data class InspectionQuestion(
     val reason: String?,
     val issueFoundReasonDraft: String? = null,
     val notApplicableReasonDraft: String? = null,
+    val privateGuidance: String? = null,
 )
 
 data class InspectionDraft(
@@ -102,6 +103,12 @@ data class InspectionDraft(
     val fulfillsCurrentObligation: Boolean?,
     val modifiedAtEpochMillis: Long,
     val questions: List<InspectionQuestion>,
+    val checklistComplete: Boolean = false,
+    val requiredComplete: Int = 0,
+    val requiredTotal: Int = 0,
+    val issueMissingDescription: List<String> = emptyList(),
+    val invalidExplicitAnswers: List<String> = emptyList(),
+    val rawInputs: Map<String, String> = emptyMap(),
 )
 
 data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String? = null)
@@ -125,7 +132,7 @@ data class CompletionLine(
     val serviceName: String,
     val outcome: String?,
     val fulfillmentEligibility: FulfillmentEligibility,
-    val fulfillsCurrentObligation: Boolean,
+    val fulfillsCurrentObligation: Boolean?,
     val dueDate: String?,
     val proposedNextDueDate: String?,
     val workPerformed: String,
@@ -136,9 +143,10 @@ data class CompletionLine(
     val nextDueDateCalculated: Boolean? = null,
     val nextDueOverrideReason: String? = null,
     val blockers: List<CompletionBlocker> = emptyList(),
+    val checklistComplete: Boolean = true,
 )
 
-enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_REVIEW, FINDING_DESCRIPTION, NEXT_DUE }
+enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_INCOMPLETE, FINDING_DESCRIPTION, NEXT_DUE }
 data class CompletionBlocker(val kind: CompletionBlockerKind, val message: String, val questionId: String? = null, val questionLabel: String? = null)
 
 enum class FulfillmentEligibility {
@@ -146,7 +154,7 @@ enum class FulfillmentEligibility {
     HISTORY_ONLY,
     NO_CURRENT_OBLIGATION,
     OUTCOME_INELIGIBLE,
-    CHECKLIST_NOT_REVIEWED,
+    CHECKLIST_INCOMPLETE,
     PLAN_INELIGIBLE,
     CURRENT_OBLIGATION_CHANGED,
 }

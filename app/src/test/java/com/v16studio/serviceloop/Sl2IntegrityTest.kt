@@ -52,7 +52,7 @@ class Sl2IntegrityTest {
         repository.markChecklistReviewed("work-1")
         assertTrue(repository.inspection("work-1")!!.checklistReviewed)
         repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
-        assertFalse(repository.inspection("work-1")!!.checklistReviewed)
+        assertTrue(repository.inspection("work-1")!!.checklistReviewed)
     }
 
     @Test fun fulfilledFinalizationIsAtomicIdempotentAndSnapshotBased() = runTest {
@@ -71,7 +71,7 @@ class Sl2IntegrityTest {
         seed(); val dao = db.serviceLoopDao(); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
         dao.insertObligations(listOf(ServiceObligationEntity("obligation-2", "plan-1", 2, "2026-10-01", 2))); dao.setCurrentObligationForTest("plan-1", "obligation-2")
         val projection = repo().completionLines("visit-1").single()
-        assertEquals(FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED, projection.fulfillmentEligibility); assertFalse(projection.fulfillsCurrentObligation); assertNull(projection.proposedNextDueDate); assertNull(projection.confirmedNextDueDate)
+        assertEquals(FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED, projection.fulfillmentEligibility); assertFalse(projection.fulfillsCurrentObligation == true); assertNull(projection.proposedNextDueDate); assertNull(projection.confirmedNextDueDate)
         val result = repo().finalizeVisit("visit-1") as FinalizeResult.Blocked
         assertTrue(result.message.contains("obligation changed")); assertEquals(0, dao.finalRecordCount()); assertNull(dao.obligation("obligation-1")!!.consumedAtEpochMillis); assertNull(dao.obligation("obligation-2")!!.consumedAtEpochMillis); assertEquals("WORKING", dao.visit("visit-1")!!.state)
     }

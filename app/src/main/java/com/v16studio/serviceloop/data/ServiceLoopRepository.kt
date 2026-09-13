@@ -25,15 +25,22 @@ interface ServiceLoopRepository {
     suspend fun siteList(): List<SiteRegisterSummary> = emptyList()
     suspend fun inspection(workItemId: String): InspectionDraft?
     suspend fun completionLines(visitId: String): List<CompletionLine>
+    suspend fun checklistCompleteness(workItemId: String): ChecklistCompleteness = error("Checklist unavailable")
     suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long
+    suspend fun saveWorkingInputBuffer(workItemId: String, fieldKey: String, rawValue: String): Long = error("Working input buffer unavailable")
+    suspend fun clearWorkingInputBuffer(workItemId: String, fieldKey: String): Long = error("Working input buffer unavailable")
+    suspend fun workingInputBuffers(workItemId: String): Map<String, String> = emptyMap()
+    suspend fun serviceDraftWorkItemIds(visitId: String): List<String> = emptyList()
     suspend fun visits(): List<VisitSummary> = emptyList()
     suspend fun businessProfile(): BusinessProfile? = null
     suspend fun visitReportIdentity(visitId: String): BusinessProfile? = null
     suspend fun refreshVisitReportIdentity(visitId: String): Long = error("Visit report identity unavailable")
     suspend fun saveBusinessProfile(profile: BusinessProfile): Long = error("Business profile unavailable")
     suspend fun savePublicWork(workItemId: String, text: String): Long = error("Work note unavailable")
+    suspend fun savePrivateNote(workItemId: String, text: String): Long = error("Private note unavailable")
+    @Deprecated("Checklist completeness is derived from the current snapshot and responses")
     suspend fun markChecklistReviewed(workItemId: String): Long = error("Checklist review unavailable")
-    suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long = error("Completion draft unavailable")
+    suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long = error("Completion draft unavailable")
     suspend fun finalizeVisit(visitId: String): FinalizeResult = FinalizeResult.Blocked("Finalization unavailable")
     suspend fun finalRecord(recordId: String): FinalRecordDetail? = null
     suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String? = null): FinalRecordDetail? = null
@@ -497,10 +504,55 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun inspection(workItemId: String): InspectionDraft? {
-        val row = dao.inspection(workItemId) ?: return null; val items = row.templateSnapshotId?.let { dao.checklistItems(it) }.orEmpty(); val responses = dao.responses(workItemId).associateBy { it.checklistItemSnapshotId }
-        return InspectionDraft(row.workItemId, row.visitId, row.visitReference, row.siteNameSnapshot, row.equipmentNameSnapshot, row.equipmentReferenceSnapshot, row.serviceNameSnapshot, row.dueDateSnapshot,
-            row.intervalCountSnapshot?.let { "Every $it ${row.intervalUnitSnapshot?.lowercase()}" }, row.templateSnapshotId?.let { dao.templateSnapshot(it)?.revision }, row.workPerformed, row.privateInternalNote, row.checklistReviewed, row.outcome, row.fulfillsCurrentObligation, row.modifiedAtEpochMillis,
-            items.map { item -> val response = responses[item.id]; InspectionQuestion(response?.id ?: stableId("response", workItemId, item.id), item.id, item.position, item.label, item.responseType, item.unit, item.required, response?.disposition?.let(ResponseDisposition::valueOf) ?: if (item.responseType == "STATUS") ResponseDisposition.NOT_CHECKED else ResponseDisposition.UNANSWERED, response?.textValue, response?.numberValue, response?.reason, response?.issueFoundReasonDraft, response?.notApplicableReasonDraft) })
+        val row = dao.inspection(workItemId) ?: return null
+        val items = row.templateSnapshotId?.let { dao.checklistItems(it) }.orEmpty()
+        val responseRows = dao.responses(workItemId)
+        val responses = responseRows.associateBy { it.checklistItemSnapshotId }
+        val completeness = checklistCompleteness(items, responseRows)
+        val rawInputs = dao.workingInputBuffers(workItemId).associate { it.fieldKey to it.rawValue }
+        return InspectionDraft(
+            workItemId = row.workItemId,
+            visitId = row.visitId,
+            visitReference = row.visitReference,
+            siteName = row.siteNameSnapshot,
+            equipmentName = row.equipmentNameSnapshot,
+            equipmentReference = row.equipmentReferenceSnapshot,
+            serviceName = row.serviceNameSnapshot,
+            dueDate = row.dueDateSnapshot,
+            interval = row.intervalCountSnapshot?.let { "Every $it ${row.intervalUnitSnapshot?.lowercase()}" },
+            templateRevision = row.templateSnapshotId?.let { dao.templateSnapshot(it)?.revision },
+            workPerformed = row.workPerformed,
+            privateInternalNote = row.privateInternalNote,
+            checklistReviewed = row.checklistReviewed,
+            outcome = row.outcome,
+            fulfillsCurrentObligation = row.fulfillsCurrentObligation,
+            modifiedAtEpochMillis = row.modifiedAtEpochMillis,
+            questions = items.map { item ->
+                val response = responses[item.id]
+                InspectionQuestion(
+                    responseId = response?.id ?: stableId("response", workItemId, item.id),
+                    snapshotItemId = item.id,
+                    position = item.position,
+                    label = item.label,
+                    responseType = item.responseType,
+                    unit = item.unit,
+                    required = item.required,
+                    disposition = response?.disposition?.let(ResponseDisposition::valueOf) ?: if (item.responseType == "STATUS") ResponseDisposition.NOT_CHECKED else ResponseDisposition.UNANSWERED,
+                    textValue = response?.textValue,
+                    numberValue = response?.numberValue,
+                    reason = response?.reason,
+                    issueFoundReasonDraft = response?.issueFoundReasonDraft,
+                    notApplicableReasonDraft = response?.notApplicableReasonDraft,
+                    privateGuidance = item.privateGuidance,
+                )
+            },
+            checklistComplete = completeness.complete,
+            requiredComplete = completeness.requiredComplete,
+            requiredTotal = completeness.requiredTotal,
+            issueMissingDescription = completeness.issueMissingDescription,
+            invalidExplicitAnswers = completeness.invalidExplicitAnswers,
+            rawInputs = rawInputs,
+        )
     }
 
     override suspend fun completionLines(visitId: String): List<CompletionLine> {
@@ -510,33 +562,71 @@ class RoomServiceLoopRepository(
         return dao.visitWorkItems(visitId).filter { documentIds == null || it.id in documentIds }.map { item ->
             val plan = item.servicePlanId?.let { dao.plan(it) }
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
-            val eligibility = when {
-                item.servicePlanId == null -> FulfillmentEligibility.NO_CURRENT_OBLIGATION
-                item.capturedObligationId == null -> FulfillmentEligibility.HISTORY_ONLY
-                plan == null || plan.state != "ACTIVE" -> FulfillmentEligibility.PLAN_INELIGIBLE
-                item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
-                item.templateSnapshotId != null && !item.checklistReviewed -> FulfillmentEligibility.CHECKLIST_NOT_REVIEWED
-                obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null || plan.currentObligationId != item.capturedObligationId -> FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED
-                else -> FulfillmentEligibility.ELIGIBLE
+            val completeness = item.templateSnapshotId?.let { checklistCompleteness(dao.checklistItems(it), dao.responses(item.id)) }
+            val eligibility = fulfillmentEligibility(item, plan, obligation, completeness)
+            val projectedFulfills = when {
+                item.outcome == "PARTLY_PERFORMED" || item.outcome == "NOT_PERFORMED" -> false
+                item.servicePlanId == null || item.capturedObligationId == null -> false
+                item.outcome == null -> null
+                eligibility == FulfillmentEligibility.ELIGIBLE -> item.fulfillsCurrentObligation
+                else -> null
             }
-            val fulfills = eligibility == FulfillmentEligibility.ELIGIBLE && item.fulfillsCurrentObligation == true
-            val calculated = if (fulfills && item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) RecurrenceCalculator.nextDate(LocalDate.parse(visit.actualServiceDate), item.intervalCountSnapshot, item.intervalUnitSnapshot).toString() else null
-            val public = dao.inspection(item.id)?.workPerformed.orEmpty()
-            val questions = item.templateSnapshotId?.let { snapshot ->
-                val answers = dao.responses(item.id).associateBy { it.checklistItemSnapshotId }
-                dao.checklistItems(snapshot).map { it to answers[it.id] }
-            }.orEmpty()
-            val missingFindings = questions.filter { (_, answer) -> answer?.disposition == "ISSUE_FOUND" && answer.reason.isNullOrBlank() }
+            val calculated = if (eligibility == FulfillmentEligibility.ELIGIBLE && item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) {
+                RecurrenceCalculator.nextDate(LocalDate.parse(visit.actualServiceDate), item.intervalCountSnapshot, item.intervalUnitSnapshot).toString()
+            } else null
+            val public = dao.publicDraft(item.id)?.workPerformed.orEmpty()
             val blockers = buildList {
                 if (item.outcome == null) add(CompletionBlocker(CompletionBlockerKind.OUTCOME, "Choose an outcome"))
                 if ((item.outcome == "PERFORMED" || item.outcome == "PARTLY_PERFORMED") && public.isBlank()) add(CompletionBlocker(CompletionBlockerKind.WORK_PERFORMED, "Work performed is required"))
                 if (item.outcome == "NOT_PERFORMED" && item.notPerformedReason.isNullOrBlank()) add(CompletionBlocker(CompletionBlockerKind.NOT_PERFORMED_REASON, "Reason is required"))
-                if (item.outcome == "PERFORMED" && item.templateSnapshotId != null && !item.checklistReviewed) add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_REVIEW, "Checklist needs review"))
-                missingFindings.forEach { (question, _) -> add(CompletionBlocker(CompletionBlockerKind.FINDING_DESCRIPTION, "${question.label}: Issue found needs a public description", question.id, question.label)) }
-                if (fulfills && item.confirmedNextDueDate == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Confirm the next due date"))
+                completeness?.let { result ->
+                    if (result.complete.not() && item.outcome == "PERFORMED") add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_INCOMPLETE, "Inspection needs attention"))
+                    result.issueMissingDescription.forEach { questionId ->
+                        val question = item.templateSnapshotId?.let { snapshot -> dao.checklistItems(snapshot).firstOrNull { it.id == questionId } }
+                        add(CompletionBlocker(CompletionBlockerKind.FINDING_DESCRIPTION, "${question?.label ?: questionId}: Issue found needs a public description", questionId, question?.label))
+                    }
+                    if (result.invalidExplicitAnswers.any { it !in result.issueMissingDescription }) add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_INCOMPLETE, "A saved inspection answer is invalid — review it before finalizing"))
+                }
+                if (eligibility == FulfillmentEligibility.ELIGIBLE && projectedFulfills == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Choose whether this completes the due service"))
+                if (projectedFulfills == true && item.confirmedNextDueDate == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Confirm the next due date"))
             }
-            CompletionLine(item.id, item.equipmentNameSnapshot, item.equipmentReferenceSnapshot, item.serviceNameSnapshot, item.outcome, eligibility, fulfills, item.dueDateSnapshot, calculated, public, item.checklistReviewed, item.notPerformedReason, calculated, item.confirmedNextDueDate.takeIf { fulfills }, item.nextDueDateCalculated.takeIf { fulfills }, item.nextDueOverrideReason.takeIf { fulfills }, blockers)
+            CompletionLine(
+                workItemId = item.id,
+                equipmentName = item.equipmentNameSnapshot,
+                equipmentReference = item.equipmentReferenceSnapshot,
+                serviceName = item.serviceNameSnapshot,
+                outcome = item.outcome,
+                fulfillmentEligibility = eligibility,
+                fulfillsCurrentObligation = projectedFulfills,
+                dueDate = item.dueDateSnapshot,
+                proposedNextDueDate = calculated,
+                workPerformed = public,
+                checklistReviewed = item.checklistReviewed,
+                notPerformedReason = item.notPerformedReason,
+                calculatedNextDueDate = calculated,
+                confirmedNextDueDate = item.confirmedNextDueDate.takeIf { projectedFulfills == true },
+                nextDueDateCalculated = item.nextDueDateCalculated.takeIf { projectedFulfills == true },
+                nextDueOverrideReason = item.nextDueOverrideReason.takeIf { projectedFulfills == true },
+                blockers = blockers,
+                checklistComplete = completeness?.complete ?: true,
+            )
         }
+    }
+
+    private suspend fun fulfillmentEligibility(
+        item: WorkItemEntity,
+        plan: ServicePlanEntity?,
+        obligation: ServiceObligationEntity?,
+        completeness: ChecklistCompleteness?,
+    ): FulfillmentEligibility = when {
+        item.servicePlanId == null -> FulfillmentEligibility.NO_CURRENT_OBLIGATION
+        item.capturedObligationId == null -> FulfillmentEligibility.HISTORY_ONLY
+        item.outcome == null -> FulfillmentEligibility.OUTCOME_INELIGIBLE
+        item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
+        plan == null || plan.state != "ACTIVE" -> FulfillmentEligibility.PLAN_INELIGIBLE
+        obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null || plan.currentObligationId != item.capturedObligationId -> FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED
+        completeness?.complete == false -> FulfillmentEligibility.CHECKLIST_INCOMPLETE
+        else -> FulfillmentEligibility.ELIGIBLE
     }
 
     override suspend fun businessProfile(): BusinessProfile? = dao.businessProfile()?.let { BusinessProfile(it.businessName, it.technicianName, it.phone.orEmpty(), it.email.orEmpty(), it.postalAddress.orEmpty(), it.zoneId, it.modifiedAtEpochMillis) }
@@ -598,38 +688,129 @@ class RoomServiceLoopRepository(
         return businessTime.instant().toEpochMilli()
     }
 
+    override suspend fun checklistCompleteness(workItemId: String): ChecklistCompleteness {
+        val item = dao.workItem(workItemId) ?: error("Working item no longer exists")
+        val snapshotId = item.templateSnapshotId ?: return ChecklistCompleteness(true, 0, 0, emptyList(), emptyList())
+        return checklistCompleteness(dao.checklistItems(snapshotId), dao.responses(workItemId))
+    }
+
+    override suspend fun serviceDraftWorkItemIds(visitId: String): List<String> = dao.visitWorkItems(visitId).map { it.id }
+
+    override suspend fun workingInputBuffers(workItemId: String): Map<String, String> =
+        dao.workingInputBuffers(workItemId).associate { it.fieldKey to it.rawValue }
+
+    override suspend fun saveWorkingInputBuffer(workItemId: String, fieldKey: String, rawValue: String): Long {
+        require(ServiceDraftFieldKeys.isSupported(fieldKey)) { "Unsupported service draft field" }
+        require(rawValue.length <= 10_000) { "Service draft input is too long" }
+        val item = workingItem(workItemId)
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            workingItem(workItemId)
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity(workItemId, fieldKey, rawValue, now))
+            dao.touchVisit(item.visitId, now)
+        }
+        return now
+    }
+
+    override suspend fun clearWorkingInputBuffer(workItemId: String, fieldKey: String): Long {
+        require(ServiceDraftFieldKeys.isSupported(fieldKey)) { "Unsupported service draft field" }
+        val item = dao.workItem(workItemId) ?: error("Work item no longer exists")
+        val existing = dao.workingInputBuffer(workItemId, fieldKey) ?: return dao.visit(item.visitId)?.modifiedAtEpochMillis ?: error("Visit no longer exists")
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            if (dao.deleteWorkingInputBuffer(workItemId, fieldKey) == 1) dao.touchVisit(item.visitId, now)
+        }
+        return now
+    }
+
     override suspend fun savePublicWork(workItemId: String, text: String): Long {
         val row = dao.inspection(workItemId) ?: error("Working item no longer exists"); val normalizedText = text.trim()
         if(row.workPerformed==normalizedText) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); check(dao.updatePublicWork(workItemId, normalizedText) == 1); dao.touchVisit(item.visitId, now) }; return now
     }
 
-    override suspend fun markChecklistReviewed(workItemId: String): Long {
-        val draft = inspection(workItemId) ?: error("Working item no longer exists")
-        val invalid = draft.questions.filter { q ->
-            (q.disposition == ResponseDisposition.ISSUE_FOUND && q.reason.isNullOrBlank()) ||
-                (q.required && when (q.responseType) {
-                    "STATUS" -> q.disposition == ResponseDisposition.NOT_CHECKED || (q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank())
-                    "NUMBER" -> q.disposition == ResponseDisposition.UNANSWERED || (q.disposition == ResponseDisposition.VALUE && !isFiniteSignedDecimal(q.numberValue.orEmpty())) || (q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank())
-                    else -> q.disposition == ResponseDisposition.UNANSWERED || (q.disposition == ResponseDisposition.VALUE && q.textValue.isNullOrBlank()) || (q.disposition == ResponseDisposition.NOT_APPLICABLE && q.reason.isNullOrBlank())
-                })
+    override suspend fun savePrivateNote(workItemId: String, text: String): Long {
+        val row = dao.privateDraft(workItemId) ?: error("Working item no longer exists")
+        val normalizedText = text.trim()
+        require(normalizedText.length <= 5_000) { "Private note is too long" }
+        if (row.internalNote == normalizedText) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            dispatchDao.updatePrivateDraftNote(workItemId, normalizedText)
+            dao.touchVisit(item.visitId, now)
         }
-        require(invalid.isEmpty()) { "${invalid.size} required checklist item(s) need attention" }
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); check(dao.updateChecklistReviewed(workItemId, true) == 1); dao.touchVisit(item.visitId, now) }; return now
+        return now
     }
 
-    override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
+    @Deprecated("Checklist completeness is derived from the current snapshot and responses")
+    override suspend fun markChecklistReviewed(workItemId: String): Long {
+        val completeness = checklistCompleteness(workItemId)
+        require(completeness.complete) { "Inspection needs attention" }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.updateChecklistReviewed(workItemId, true) == 1)
+            dao.touchVisit(item.visitId, now)
+        }
+        return now
+    }
+
+    override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
         require(outcome == null || outcome in setOf("PERFORMED", "PARTLY_PERFORMED", "NOT_PERFORMED"))
-        val item = dao.workItem(workItemId) ?: error("Working item no longer exists"); val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
-        val eligible = outcome == "PERFORMED" && item.servicePlanId != null && item.capturedObligationId != null && (item.templateSnapshotId == null || item.checklistReviewed); val effectiveFulfills = fulfills && eligible
-        val calculatedDate = if (effectiveFulfills && item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) RecurrenceCalculator.nextDate(LocalDate.parse(visit.actualServiceDate), item.intervalCountSnapshot, item.intervalUnitSnapshot).toString() else null
-        val chosen = nextDue?.takeIf { effectiveFulfills }; if (chosen != null) require(LocalDate.parse(chosen).isAfter(LocalDate.parse(visit.actualServiceDate))) { "Next due must be after the service date" }
+        val item = dao.workItem(workItemId) ?: error("Working item no longer exists")
+        val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
+        val plan = item.servicePlanId?.let { dao.plan(it) }
+        val obligation = item.capturedObligationId?.let { dao.obligation(it) }
+        val completeness = item.templateSnapshotId?.let { checklistCompleteness(dao.checklistItems(it), dao.responses(workItemId)) }
+        val candidate = item.copy(outcome = outcome)
+        val eligibility = fulfillmentEligibility(candidate, plan, obligation, completeness)
         val normalizedReason = reason?.trim()?.ifBlank { null }?.takeIf { outcome == "NOT_PERFORMED" }
-        val derivedCalculated = chosen?.let { it == calculatedDate }
-        val normalizedOverride = overrideReason?.trim()?.ifBlank { null }?.takeIf { chosen != null && derivedCalculated == false }
-        if (chosen != null && derivedCalculated == false) require(normalizedOverride != null) { "Override reason is required" }
-        if(item.outcome==outcome&&item.fulfillsCurrentObligation==effectiveFulfills&&item.notPerformedReason==normalizedReason&&item.confirmedNextDueDate==chosen&&item.nextDueDateCalculated==derivedCalculated&&item.nextDueOverrideReason==normalizedOverride) return database.withTransaction { workingItem(workItemId); dao.visit(item.visitId)?.modifiedAtEpochMillis ?: error("Visit no longer exists") }
-        writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val current=workingItem(workItemId); check(dao.updateCompletionDraft(workItemId, outcome, effectiveFulfills, normalizedReason, chosen, derivedCalculated, normalizedOverride) == 1); dao.touchVisit(current.visitId, now) }; return now
+        val actual = LocalDate.parse(visit.actualServiceDate)
+        val transitionedToPerformed = item.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && outcome == "PERFORMED"
+        var normalizedFulfills: Boolean? = when (outcome) {
+            null, "PARTLY_PERFORMED", "NOT_PERFORMED" -> if (outcome == "NOT_PERFORMED") false else null
+            "PERFORMED" -> if (transitionedToPerformed) null else if (eligibility == FulfillmentEligibility.ELIGIBLE) fulfills else null
+            else -> null
+        }
+        var normalizedNextDue: String? = null
+        var normalizedCalculated: Boolean? = null
+        var normalizedOverrideReason: String? = null
+        if (outcome == "PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE && normalizedFulfills == true) {
+            val intervalCount = item.intervalCountSnapshot ?: error("Review the confirmed next due date")
+            val intervalUnit = item.intervalUnitSnapshot ?: error("Review the confirmed next due date")
+            val calculatedDate = RecurrenceCalculator.nextDate(actual, intervalCount, intervalUnit).toString()
+            val suppliedDate = nextDue?.trim()?.ifBlank { null }
+            if (suppliedDate == null || suppliedDate == calculatedDate) {
+                normalizedNextDue = calculatedDate
+                normalizedCalculated = true
+            } else {
+                require(calculated == false) { "Manual override must be marked explicitly" }
+                val parsed = runCatching { LocalDate.parse(suppliedDate) }.getOrElse { throw IllegalArgumentException("Next due must be a valid date") }
+                require(parsed.isAfter(actual)) { "Next due must be after the service date" }
+                normalizedOverrideReason = overrideReason?.trim()?.ifBlank { null }
+                require(!normalizedOverrideReason.isNullOrBlank()) { "Override reason is required" }
+                normalizedNextDue = suppliedDate
+                normalizedCalculated = false
+            }
+        } else if (outcome == "PARTLY_PERFORMED" || outcome == "NOT_PERFORMED") {
+            normalizedFulfills = false
+        }
+        if (item.outcome == outcome && item.fulfillsCurrentObligation == normalizedFulfills && item.notPerformedReason == normalizedReason && item.confirmedNextDueDate == normalizedNextDue && item.nextDueDateCalculated == normalizedCalculated && item.nextDueOverrideReason == normalizedOverrideReason) {
+            return item.visitId.let { dao.visit(it)?.modifiedAtEpochMillis ?: error("Visit no longer exists") }
+        }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val current = workingItem(workItemId)
+            check(dao.updateCompletionDraft(workItemId, outcome, normalizedFulfills, normalizedReason, normalizedNextDue, normalizedCalculated, normalizedOverrideReason) == 1)
+            dao.touchVisit(current.visitId, now)
+        }
+        return now
     }
 
     override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long {
@@ -637,15 +818,15 @@ class RoomServiceLoopRepository(
         val existing = dao.responses(workItemId).firstOrNull { it.checklistItemSnapshotId == questionId }
         val normalizedValue = value?.trim()?.takeIf { disposition == ResponseDisposition.VALUE }
         val suppliedReason = reason?.trim()?.ifBlank { null }
-        val normalizedReason = when (disposition) { ResponseDisposition.ISSUE_FOUND -> suppliedReason ?: existing?.issueFoundReasonDraft; ResponseDisposition.NOT_APPLICABLE -> suppliedReason ?: existing?.notApplicableReasonDraft; else -> null }
+        val normalizedReason = when (disposition) { ResponseDisposition.ISSUE_FOUND -> if (reason != null) suppliedReason else existing?.issueFoundReasonDraft; ResponseDisposition.NOT_APPLICABLE -> if (reason != null) suppliedReason else existing?.notApplicableReasonDraft; else -> null }
         val allowed = if (item.responseType == "STATUS") setOf(ResponseDisposition.OK, ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.NOT_CHECKED) else setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.VALUE)
         require(disposition in allowed)
         if (disposition == ResponseDisposition.VALUE) require(!normalizedValue.isNullOrBlank())
         if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) require(isFiniteSignedDecimal(normalizedValue!!)) { "Enter a signed decimal number, for example -12.5" }
         val textDraft = if (item.responseType == "TEXT" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.textValue
         val numberDraft = if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.numberValue
-        val issueDraft = if (disposition == ResponseDisposition.ISSUE_FOUND && suppliedReason != null) suppliedReason else existing?.issueFoundReasonDraft
-        val notApplicableDraft = if (disposition == ResponseDisposition.NOT_APPLICABLE && suppliedReason != null) suppliedReason else existing?.notApplicableReasonDraft
+        val issueDraft = if (disposition == ResponseDisposition.ISSUE_FOUND && reason != null) suppliedReason else existing?.issueFoundReasonDraft
+        val notApplicableDraft = if (disposition == ResponseDisposition.NOT_APPLICABLE && reason != null) suppliedReason else existing?.notApplicableReasonDraft
         if(existing!=null&&existing.disposition==disposition.name&&existing.textValue==textDraft&&existing.numberValue==numberDraft&&existing.reason==normalizedReason&&existing.issueFoundReasonDraft==issueDraft&&existing.notApplicableReasonDraft==notApplicableDraft) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
         writeGate.beforeWrite()
         val now = businessTime.instant().toEpochMilli()
@@ -673,21 +854,21 @@ class RoomServiceLoopRepository(
             }
             if (outcome in setOf("PERFORMED", "PARTLY_PERFORMED") && row.workPerformed.isBlank()) return@withTransaction FinalizeResult.Blocked("Work performed is required for $outcome work")
             if (outcome == "NOT_PERFORMED" && item.notPerformedReason.isNullOrBlank()) return@withTransaction FinalizeResult.Blocked("Reason is required for Not performed work")
-            if (item.templateSnapshotId != null) {
-                val answers = dao.responses(item.id).associateBy { it.checklistItemSnapshotId }
-                val questions = dao.checklistItems(item.templateSnapshotId)
-                if (questions.any { q -> answers[q.id]?.let { it.disposition == "ISSUE_FOUND" && it.reason.isNullOrBlank() } == true }) return@withTransaction FinalizeResult.Blocked("Issue found needs a public description")
-                if (questions.any { q -> !isValidExplicitAnswer(q, answers[q.id]) }) return@withTransaction FinalizeResult.Blocked("A saved checklist answer is invalid — review it before finalizing")
-                if (outcome == "PERFORMED") {
-                    if (!item.checklistReviewed) return@withTransaction FinalizeResult.Blocked("Checklist needs review")
-                    val invalid = questions.any { q -> q.required && !isCompleteChecklistAnswer(q, answers[q.id]) }
-                    if (invalid) return@withTransaction FinalizeResult.Blocked("Checklist needs review")
-                }
+            val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(dao.checklistItems(snapshotId), dao.responses(item.id)) }
+            if (completeness != null) {
+                if (completeness.issueMissingDescription.isNotEmpty()) return@withTransaction FinalizeResult.Blocked("Issue found needs a public description")
+                if (completeness.invalidExplicitAnswers.any { it !in completeness.issueMissingDescription }) return@withTransaction FinalizeResult.Blocked("A saved inspection answer is invalid — review it before finalizing")
+                if (outcome == "PERFORMED" && !completeness.complete) return@withTransaction FinalizeResult.Blocked("Inspection needs attention")
             }
-            val plan = item.servicePlanId?.let { dao.plan(it) }; val obligation = item.capturedObligationId?.let { dao.obligation(it) }; val fulfills = item.fulfillsCurrentObligation == true
-            if (fulfills) {
-                if (outcome != "PERFORMED" || plan == null || plan.state != "ACTIVE" || plan.currentObligationId != item.capturedObligationId || obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null) return@withTransaction FinalizeResult.Blocked("Current service obligation changed — review this line before finalizing")
-                val actual = LocalDate.parse(visit.actualServiceDate); if (plan.lastCountedCompletionDate?.let(LocalDate::parse)?.let { !actual.isAfter(it) } == true) return@withTransaction FinalizeResult.Blocked("Service date must be after the latest counted completion")
+            val plan = item.servicePlanId?.let { dao.plan(it) }
+            val obligation = item.capturedObligationId?.let { dao.obligation(it) }
+            val eligibility = fulfillmentEligibility(item, plan, obligation, completeness)
+            val fulfills = item.fulfillsCurrentObligation
+            if (fulfills == true && eligibility != FulfillmentEligibility.ELIGIBLE) return@withTransaction FinalizeResult.Blocked("Current service obligation changed — review this line before finalizing")
+            if (eligibility == FulfillmentEligibility.ELIGIBLE && fulfills == null) return@withTransaction FinalizeResult.Blocked("Choose whether this completes the due service")
+            if (fulfills == true) {
+                val eligiblePlan = plan ?: return@withTransaction FinalizeResult.Blocked("Current service obligation changed — review this line before finalizing")
+                val actual = LocalDate.parse(visit.actualServiceDate); if (eligiblePlan.lastCountedCompletionDate?.let(LocalDate::parse)?.let { !actual.isAfter(it) } == true) return@withTransaction FinalizeResult.Blocked("Service date must be after the latest counted completion")
                 val next = item.confirmedNextDueDate ?: return@withTransaction FinalizeResult.Blocked("Confirm the next due date before finalizing"); if (!LocalDate.parse(next).isAfter(actual)) return@withTransaction FinalizeResult.Blocked("Next due must be after the service date")
                 val calculatedNext = RecurrenceCalculator.nextDate(actual, item.intervalCountSnapshot ?: return@withTransaction FinalizeResult.Blocked("Review the confirmed next due date"), item.intervalUnitSnapshot ?: return@withTransaction FinalizeResult.Blocked("Review the confirmed next due date")).toString()
                 if (item.nextDueDateCalculated != (next == calculatedNext) || (next == calculatedNext && item.nextDueOverrideReason != null) || (next != calculatedNext && item.nextDueOverrideReason.isNullOrBlank())) return@withTransaction FinalizeResult.Blocked("Review the confirmed next due date")
@@ -767,26 +948,4 @@ class RoomServiceLoopRepository(
         return snapshotId
     }
 
-    private fun isFiniteSignedDecimal(value: String): Boolean = SIGNED_DECIMAL.matches(value.trim()) && runCatching { BigDecimal(value.trim()) }.isSuccess
-
-    private fun isCompleteChecklistAnswer(question: ChecklistItemSnapshotEntity, answer: WorkingResponseEntity?): Boolean {
-        answer ?: return false
-        return when (question.responseType) {
-            "STATUS" -> when (answer.disposition) { "OK" -> true; "ISSUE_FOUND", "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); else -> false }
-            "NUMBER" -> when (answer.disposition) { "VALUE" -> isFiniteSignedDecimal(answer.numberValue.orEmpty()); "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); else -> false }
-            else -> when (answer.disposition) { "VALUE" -> !answer.textValue.isNullOrBlank(); "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); else -> false }
-        }
-    }
-
-    private fun isValidExplicitAnswer(question: ChecklistItemSnapshotEntity, answer: WorkingResponseEntity?): Boolean {
-        answer ?: return true
-        return when (question.responseType) {
-            "STATUS" -> when (answer.disposition) { "OK", "NOT_CHECKED" -> true; "ISSUE_FOUND", "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); else -> false }
-            "TEXT" -> when (answer.disposition) { "VALUE" -> !answer.textValue.isNullOrBlank(); "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); "UNANSWERED" -> true; else -> false }
-            "NUMBER" -> when (answer.disposition) { "VALUE" -> isFiniteSignedDecimal(answer.numberValue.orEmpty()); "NOT_APPLICABLE" -> !answer.reason.isNullOrBlank(); "UNANSWERED" -> true; else -> false }
-            else -> false
-        }
-    }
-
-    private companion object { val SIGNED_DECIMAL = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$") }
 }

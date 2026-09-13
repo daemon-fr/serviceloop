@@ -73,7 +73,6 @@ class CompletionUiSemanticTest {
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
         compose.onNodeWithTag("fulfills-w").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.fulfillsCurrentObligation == true }
-        compose.onNodeWithContentDescription("Use calculated date").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-05" }
         compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag("finalize-record"))
         compose.onNodeWithTag("finalize-record").performClick()
@@ -95,15 +94,17 @@ class CompletionUiSemanticTest {
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithText("Visits").performClick()
-        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI · Completed",substring=true))
-        compose.onNodeWithText("V-UI · Completed · 2026-09-05\nSite").performClick()
+        compose.onNodeWithTag("visit-date-selector").performClick()
+        compose.onNodeWithTag("visit-date-selector-option-all").performClick()
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI"))
+        compose.onNodeWithText("V-UI").performClick()
         compose.waitUntil(5_000){compose.onAllNodesWithText("Recorded on", substring = true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
         compose.onNodeWithText("View report text").performScrollTo().performClick()
-        compose.waitUntil(5_000){compose.onAllNodesWithTag("report-text-view").fetchSemanticsNodes().isNotEmpty()}
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("report-view-tabs").fetchSemanticsNodes().isNotEmpty()}
         compose.waitUntil(5_000){compose.onAllNodesWithText("File missing",substring=true).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("File missing", substring = true).assertIsDisplayed()
-        compose.onNodeWithTag("report-text-view").assertIsSelected()
+        compose.onNodeWithTag("content-tab-Text view").assertIsSelected()
         compose.onNodeWithText("Service record V-UI · Revision 1").assertIsDisplayed()
         compose.onNodeWithTag("share-pdf").assertIsNotEnabled()
     }
@@ -130,8 +131,7 @@ class CompletionUiSemanticTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-        compose.onNodeWithText("Work").performClick(); compose.onNodeWithText("Visits").performClick()
-        compose.onNodeWithTag("work-visits-list").performScrollToNode(hasText("History")); compose.onNodeWithText("History").performClick()
+        compose.onNodeWithText("Settings").performClick(); compose.onNodeWithText("History").performClick()
         compose.onNodeWithTag("history-from").performTextReplacement("not-a-date"); compose.onNodeWithText("Use YYYY-MM-DD").assertIsDisplayed()
         compose.onNodeWithTag("history-from").performTextReplacement("2026-09-10"); compose.onNodeWithTag("history-to").performTextReplacement("2026-09-01")
         compose.onNodeWithText("From must not be after To").assertIsDisplayed(); compose.onNodeWithText("To must not be before From").assertIsDisplayed()

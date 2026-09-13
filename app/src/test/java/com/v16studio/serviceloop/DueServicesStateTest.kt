@@ -362,7 +362,7 @@ class DueServicesStateTest {
         val saveEntered = CompletableDeferred<Unit>()
         val saveRelease = CompletableDeferred<Unit>()
         override suspend fun inspection(workItemId: String) = InspectionDraft(workItemId,"visit-$workItemId","V-$workItemId","Site","Machine","EQ-$workItemId","Service",null,null,null,"","",false,null,null,200,emptyList())
-        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
+        override suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long {
             saveEntered.complete(Unit); saveRelease.await(); return 300
         }
     }

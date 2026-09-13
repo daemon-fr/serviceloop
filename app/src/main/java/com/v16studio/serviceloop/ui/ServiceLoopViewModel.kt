@@ -25,6 +25,13 @@ import com.v16studio.serviceloop.calendar.CalendarCoordinator
 import com.v16studio.serviceloop.calendar.CalendarRuntimeState
 import com.v16studio.serviceloop.calendar.VisitCalendarState
 import com.v16studio.serviceloop.calendar.WritableCalendar
+import com.v16studio.serviceloop.ui.service.ServiceDraftAutosaveCoordinator
+import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
+import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
+import com.v16studio.serviceloop.ui.service.ServiceDraftFlushResult
+import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
+import com.v16studio.serviceloop.ui.service.ServiceDraftValidation
+import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -132,6 +139,8 @@ class ServiceLoopViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(UiState(restrictedRecoveryState = restrictedRecoveryState, businessDate = businessDateSignal?.tokens?.value?.date ?: java.time.LocalDate.now(), businessZoneId = businessDateSignal?.tokens?.value?.zoneId?.id ?: java.time.ZoneId.systemDefault().id))
     val state: StateFlow<UiState> = _state.asStateFlow()
+    private val serviceDraftAutosaveCoordinator = ServiceDraftAutosaveCoordinator(repository, viewModelScope)
+    val serviceDraftStates: StateFlow<Map<ServiceDraftFieldId, ServiceDraftFieldState>> = serviceDraftAutosaveCoordinator.states
     private var rootRefreshJob: Job? = null
     private var searchJob: Job? = null
     private var dueServicesJob: Job? = null
@@ -507,6 +516,86 @@ class ServiceLoopViewModel(
     fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) { advanceDatasetGeneration(); runOperation({ reminderCoordinator?.resetForDatasetReplacement(); calendarCoordinator?.resetForDatasetReplacement(); repository.erase(acknowledged, confirmation); true }) { onSuccess() } }
     fun consumeFinalizedNavigation() { _state.update { it.copy(finalizedRecordId = null) } }
 
+    fun scheduleWorkText(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.WORK), rawValue, ServiceDraftValidators.alwaysValid(),
+    ) { value -> repository.savePublicWork(workItemId, value) }
+
+    fun schedulePrivateText(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.PRIVATE), rawValue, ServiceDraftValidators.privateNote(),
+    ) { value -> repository.savePrivateNote(workItemId, value) }
+
+    fun scheduleQuestionValue(workItemId: String, questionId: String, rawValue: String) {
+        val question = _state.value.inspection?.takeIf { it.workItemId == workItemId }?.questions?.firstOrNull { it.snapshotItemId == questionId } ?: return
+        val validator = if (question.responseType == "NUMBER") ServiceDraftValidators.number() else ServiceDraftValidators.requiredText("Response")
+        serviceDraftAutosaveCoordinator.scheduleText(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)), rawValue, validator) { value ->
+            repository.saveResponse(workItemId, questionId, ResponseDisposition.VALUE, value, null)
+        }
+    }
+
+    fun scheduleIssueDescription(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionIssue(questionId)), rawValue, ServiceDraftValidators.issueDescription(),
+    ) { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value) }
+
+    fun scheduleNotApplicableReason(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionNotApplicable(questionId)), rawValue, ServiceDraftValidators.notApplicableReason(),
+    ) { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value) }
+
+    fun scheduleNotPerformedReason(workItemId: String, visitId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.NOT_PERFORMED_REASON), rawValue, ServiceDraftValidators.alwaysValid(),
+    ) { value -> repository.saveCompletionDraft(workItemId, "NOT_PERFORMED", false, value, null, null, null) }
+
+    fun scheduleRecurrenceOverrideDate(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleRaw(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), rawValue, ServiceDraftValidators.isoDate(),
+    )
+
+    fun scheduleRecurrenceOverrideReason(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleRaw(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON), rawValue, ServiceDraftValidators.requiredText("Override reason"),
+    )
+
+    fun chooseResponse(workItemId: String, questionId: String, disposition: ResponseDisposition) {
+        serviceDraftAutosaveCoordinator.immediateChoice(
+            ServiceDraftFieldId(workItemId, "response:$questionId"), disposition.name,
+            writer = { repository.saveResponse(workItemId, questionId, disposition, null, null) },
+            onSaved = { loadInspection(workItemId) },
+        )
+    }
+
+    fun chooseOutcome(workItemId: String, visitId: String, outcome: String) {
+        val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        serviceDraftAutosaveCoordinator.immediateChoice(
+            ServiceDraftFieldId(workItemId, "result:outcome"), outcome,
+            writer = { repository.saveCompletionDraft(workItemId, outcome, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
+            onSaved = { loadCompletion(visitId) },
+        )
+    }
+
+    fun chooseFulfillment(workItemId: String, visitId: String, fulfills: Boolean) {
+        val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        serviceDraftAutosaveCoordinator.immediateChoice(
+            ServiceDraftFieldId(workItemId, "result:fulfillment"), fulfills.toString(),
+            writer = { repository.saveCompletionDraft(workItemId, line.outcome, fulfills, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
+            onSaved = { loadCompletion(visitId) },
+        )
+    }
+
+    fun applyRecurrenceOverride(workItemId: String, visitId: String, date: String, reason: String) {
+        val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        val writer: suspend (String) -> Long = {
+            repository.saveCompletionDraft(workItemId, line.outcome, true, line.notPerformedReason, date, false, reason)
+        }
+        serviceDraftAutosaveCoordinator.saveTextNow(
+            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), date, ServiceDraftValidators.isoDate(), writer,
+            onSaved = { loadCompletion(visitId) },
+        )
+        serviceDraftAutosaveCoordinator.saveTextNow(
+            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON), reason, ServiceDraftValidators.requiredText("Override reason"), writer,
+        )
+    }
+
+    suspend fun flushServiceDraft(workItemId: String): ServiceDraftFlushResult = serviceDraftAutosaveCoordinator.flush(workItemId)
+    suspend fun flushVisitDraft(visitId: String): ServiceDraftFlushResult = serviceDraftAutosaveCoordinator.flushVisit(visitId)
+    fun retryServiceDraft(fieldId: ServiceDraftFieldId) = serviceDraftAutosaveCoordinator.retry(fieldId)
+
     fun savePublicWork(workItemId: String, text: String) = persistInspectionDraft(workItemId) { repository.savePublicWork(workItemId, text) }
     fun markChecklistReviewed(workItemId: String) = persistInspectionDraft(workItemId) { repository.markChecklistReviewed(workItemId) }
     fun saveBusinessProfile(profile: BusinessProfile) {
@@ -524,7 +613,7 @@ class ServiceLoopViewModel(
         }
     }
     fun refreshVisitReportIdentity(visitId: String) = persistCompletionDraft(visitId,{ repository.refreshVisitReportIdentity(visitId) }) { val value=repository.visitReportIdentity(visitId); { current -> current.copy(visitReportIdentity=value) } }
-    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistCompletionDraft(visitId,{
+    fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistCompletionDraft(visitId,{
         repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason)
     }) { val values=repository.completionLines(visitId); { current -> current.copy(completionLines=values) } }
 
@@ -536,6 +625,16 @@ class ServiceLoopViewModel(
         _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = true, error = null) else current }
         viewModelScope.launch {
             try {
+                val flushed = serviceDraftAutosaveCoordinator.flushVisit(visitId)
+                if (!flushed.success) {
+                    val details = buildList {
+                        if (flushed.pendingFields.isNotEmpty()) add("${flushed.pendingFields.size} pending")
+                        if (flushed.invalidFields.isNotEmpty()) add("${flushed.invalidFields.size} invalid")
+                        if (flushed.failedFields.isNotEmpty()) add("${flushed.failedFields.size} failed")
+                    }.joinToString(", ")
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.completionVisitId == visitId) current.copy(finalizing = false, error = "Save inspection fields before finalizing${details.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()}") else current }
+                    return@launch
+                }
                 when (val result = repository.finalizeVisit(visitId)) {
                     is FinalizeResult.Success -> {
                         if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, finalizedRecordId = result.recordId) else current }

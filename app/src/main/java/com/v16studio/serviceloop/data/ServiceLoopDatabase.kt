@@ -14,6 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateSnapshotEntity::class, ChecklistItemSnapshotEntity::class,
         WorkingVisitEntity::class, WorkItemEntity::class,
         WorkItemPublicDraftEntity::class, WorkItemPrivateDraftEntity::class,
+        WorkingInputBufferEntity::class,
         WorkingResponseEntity::class, AttachmentEntity::class,
         FollowUpEntity::class,
         BusinessProfileEntity::class, FinalRecordEntity::class,
@@ -35,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -47,7 +48,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -312,6 +313,21 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS working_input_buffers (workItemId TEXT NOT NULL, fieldKey TEXT NOT NULL, rawValue TEXT NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL, PRIMARY KEY(workItemId, fieldKey), FOREIGN KEY(workItemId) REFERENCES work_items(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_working_input_buffers_workItemId ON working_input_buffers(workItemId)")
+
+                // Room v13 stored the new Working choices as a boolean. A false
+                // Performed value could still be the untouched default, so only
+                // explicit partial/unperformed outcomes retain a false decision.
+                db.execSQL("UPDATE work_items SET fulfillsCurrentObligation=NULL WHERE outcome IS NULL OR (outcome='PERFORMED' AND fulfillsCurrentObligation=0)")
+                db.execSQL("UPDATE work_items SET fulfillsCurrentObligation=0 WHERE outcome IN ('PARTLY_PERFORMED','NOT_PERFORMED')")
+                db.execSQL("UPDATE work_items SET confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE fulfillsCurrentObligation IS NULL OR fulfillsCurrentObligation=0")
+                configureStage4Tracking(db)
+            }
+        }
+
         private fun configureReminderDefaults(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,180)")
         }
@@ -322,7 +338,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
 
         internal fun configureStage4Tracking(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
-            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "reminder_preferences")
+            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "reminder_preferences")
             val existing = mutableSetOf<String>()
             db.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor -> while (cursor.moveToNext()) existing += cursor.getString(0) }
             tracked.filter { it in existing }.forEach { table ->
