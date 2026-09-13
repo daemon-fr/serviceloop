@@ -46,3 +46,7 @@ This pass does not implement v4 because it requires coordinated codec, canonical
 ## B-013 settings presentation consolidation
 
 The role settings surface presents the three choices as combined labels: `Solo (I work alone)`, `Member (I work in a team)`, and `Coordinator (I oversee teams)`. `Send report copies to (optional)` follows the role explanation. Member embeds the existing device-local Technician identity content in the same settings surface; Solo and Coordinator keep that content hidden. The standalone identity route is retired because it has no remaining production caller.
+
+## Historical format note
+
+The v4 package recommendation in this document was implemented in the prior B026 work and is now superseded by B026C Dispatch v5. The immutable inspection-snapshot, generation, material-hash, recipient-scoping, and non-editable-master-data principles remain authoritative in the v5 transport.
