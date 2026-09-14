@@ -239,6 +239,154 @@ class DailyOperationsIntegrityTest {
         assertEquals("2.5", line.parts.single().quantity); assertEquals(1, line.photos.size); assertEquals("Filter housing", line.photos.single().caption); assertFalse(record.public.toString().contains("PRIVATE_PHOTO")); assertTrue(File(root, line.photos.single().relativePath).isFile)
     }
 
+    @Test fun untouchedRecurringAndAdHocServicesStayNotStartedAndNewRowsAreUnresolved() = runTest {
+        val ids = foundation()
+        val recurringVisit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val recurring = db.serviceLoopDao().firstWorkItemId(recurringVisit)!!
+        assertNull(db.serviceLoopDao().workItem(recurring)!!.fulfillsCurrentObligation)
+        assertEquals(ServiceEntryStatus.NOT_STARTED, repo.serviceVisitProgress(recurringVisit).items.single().status)
+
+        val adHocVisit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("One-off repair", WorkSubjectType.SITE)), "WORKING", "2026-09-05")
+        val adHoc = db.serviceLoopDao().firstWorkItemId(adHocVisit)!!
+        assertNull(db.serviceLoopDao().workItem(adHoc)!!.fulfillsCurrentObligation)
+        assertEquals(ServiceEntryStatus.NOT_STARTED, repo.serviceVisitProgress(adHocVisit).items.single().status)
+    }
+
+    @Test fun legacyFalseWithoutOutcomeDoesNotCreateActivityOrResumePriority() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisitForSite(
+            ids.site,
+            emptyList(),
+            listOf(AdHocWorkInput("Untouched first", WorkSubjectType.SITE), AdHocWorkInput("Legacy row", WorkSubjectType.SITE)),
+            "WORKING",
+            "2026-09-05",
+        )
+        val items = db.serviceLoopDao().visitWorkItems(visit)
+        db.serviceLoopDao().updateWorkItem(items[1].copy(outcome = null, fulfillsCurrentObligation = false))
+
+        val progress = repo.serviceVisitProgress(visit)
+        assertEquals(listOf(ServiceEntryStatus.NOT_STARTED, ServiceEntryStatus.NOT_STARTED), progress.items.map { it.status })
+        assertEquals(items[0].id, progress.preferredResumeItem()?.workItemId)
+    }
+
+    @Test fun performedReadinessStillRequiresChecklistAndFulfillmentButUsesCanonicalBlockers() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate("Required inspection", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val question = repo.inspection(work)!!.questions.single()
+        repo.savePublicWork(work, "Checked the machine")
+        repo.saveCompletionDraft(work, "PERFORMED", null, null, null, null, null)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
+
+        repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.OK, null, null)
+        repo.saveCompletionDraft(work, "PERFORMED", null, null, null, null, null)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.NEXT_DUE })
+
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
+
+        repo.saveCompletionDraft(work, "PERFORMED", true, null, null, null, null)
+        val ready = repo.completionLines(visit).single()
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        assertEquals(true, ready.fulfillsCurrentObligation)
+        assertEquals("2027-09-05", ready.confirmedNextDueDate)
+    }
+
+    @Test fun partlyPerformedIsReadyWithoutBlanketChecklistGateAndNeedsWorkWhenMissing() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate("Optional for partial", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.savePublicWork(work, "Partly serviced")
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
+        assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
+
+        repo.savePublicWork(work, "")
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+    }
+
+    @Test fun partlyPerformedAttentionBlockersRemainVisible() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate("Finding inspection", listOf(TemplateItemDraft("Guard", "STATUS", required = false)))
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val question = repo.inspection(work)!!.questions.single()
+        repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, null, null)
+        repo.savePublicWork(work, "Partly serviced")
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, repo.serviceVisitProgress(visit).items.single().status)
+        assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.FINDING_DESCRIPTION })
+    }
+
+    @Test fun invalidExplicitAnswerBlocksPartlyAndNotPerformedReadiness() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate("Text inspection", listOf(TemplateItemDraft("Reading", "TEXT", required = false)))
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val question = repo.inspection(work)!!.questions.single()
+        db.serviceLoopDao().persistResponse(WorkingResponseEntity("invalid", work, question.snapshotItemId, "OK", null, null, null, 1), visit)
+        repo.savePublicWork(work, "Outcome documented")
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, repo.serviceVisitProgress(visit).items.single().status)
+        assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
+
+        val secondVisit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Not performed", WorkSubjectType.SITE)), "WORKING", "2026-09-05")
+        val secondWork = db.serviceLoopDao().firstWorkItemId(secondVisit)!!
+        val secondItem = db.serviceLoopDao().workItem(secondWork)!!
+        val snapshot = TemplateSnapshotEntity("snapshot-invalid-not", null, "Ad hoc text inspection", 1, 1)
+        db.serviceLoopDao().insertTemplateSnapshots(listOf(snapshot))
+        db.serviceLoopDao().insertChecklistItems(listOf(ChecklistItemSnapshotEntity("question-invalid-not", snapshot.id, 1, "Reading", "TEXT", null, false, null)))
+        db.serviceLoopDao().updateWorkItem(secondItem.copy(templateSnapshotId = snapshot.id))
+        db.serviceLoopDao().persistResponse(WorkingResponseEntity("invalid-not", secondWork, "question-invalid-not", "OK", null, null, null, 1), secondVisit)
+        repo.saveCompletionDraft(secondWork, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, repo.serviceVisitProgress(secondVisit).items.single().status)
+        assertTrue(repo.completionLines(secondVisit).single().blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
+    }
+
+    @Test fun notPerformedIsReadyWithReasonWithoutChecklistGateAndStaysDue() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate("Optional for not performed", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.saveCompletionDraft(work, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
+        assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
+
+        repo.saveCompletionDraft(work, "NOT_PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+    }
+
+    @Test fun nextServiceSkipsReadyPartlyAndNotPerformedButKeepsUntouchedCandidate() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Partly", WorkSubjectType.SITE), AdHocWorkInput("Untouched", WorkSubjectType.SITE)), "WORKING", "2026-09-05")
+        val first = db.serviceLoopDao().visitWorkItems(visit).first().id
+        val second = db.serviceLoopDao().visitWorkItems(visit).last().id
+        repo.savePublicWork(first, "Partly serviced")
+        repo.saveCompletionDraft(first, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(second, repo.serviceVisitProgress(visit).nextService(first)?.workItemId)
+
+        val secondVisit = repo.createVisitForSite(ids.site, emptyList(), listOf(AdHocWorkInput("Not performed", WorkSubjectType.SITE), AdHocWorkInput("Untouched", WorkSubjectType.SITE)), "WORKING", "2026-09-05")
+        val notPerformed = db.serviceLoopDao().visitWorkItems(secondVisit).first().id
+        val untouched = db.serviceLoopDao().visitWorkItems(secondVisit).last().id
+        repo.saveCompletionDraft(notPerformed, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertEquals(untouched, repo.serviceVisitProgress(secondVisit).nextService(notPerformed)?.workItemId)
+    }
+
     @Test fun savedPrivateNoteIsReadByFreshRepositoryWhileVisitRemainsWorking() = runTest {
         val ids = foundation()
         val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")

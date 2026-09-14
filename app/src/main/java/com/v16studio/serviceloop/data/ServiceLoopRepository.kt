@@ -427,7 +427,7 @@ class RoomServiceLoopRepository(
             val eq = equipment[index]; val obligation = obligations[index]
             if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, id, now))
             val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
-            val workId = UUID.randomUUID().toString(); dao.insertWorkItems(listOf(WorkItemEntity(workId, id, eq.id, plan.id, if (historical) null else obligation.id, snapshotId, eq.name, eq.reference, plan.name, plan.reference, obligation.dueDate, plan.intervalCount, plan.intervalUnit, false, null, false, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
+            val workId = UUID.randomUUID().toString(); dao.insertWorkItems(listOf(WorkItemEntity(workId, id, eq.id, plan.id, if (historical) null else obligation.id, snapshotId, eq.name, eq.reference, plan.name, plan.reference, obligation.dueDate, plan.intervalCount, plan.intervalUnit, false, null, null, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
         }
         return@withTransaction id
     }
@@ -616,7 +616,7 @@ class RoomServiceLoopRepository(
                 intervalUnitSnapshot = plan.intervalUnit,
                 checklistReviewed = false,
                 outcome = null,
-                fulfillsCurrentObligation = false,
+                fulfillsCurrentObligation = null,
                 equipmentIdentifierSnapshot = equipment.technicianIdentifier,
                 equipmentMakeSnapshot = equipment.make,
                 equipmentModelSnapshot = equipment.model,
@@ -651,7 +651,7 @@ class RoomServiceLoopRepository(
             intervalUnitSnapshot = null,
             checklistReviewed = false,
             outcome = null,
-            fulfillsCurrentObligation = false,
+            fulfillsCurrentObligation = null,
             equipmentIdentifierSnapshot = equipment?.technicianIdentifier,
             equipmentMakeSnapshot = equipment?.make,
             equipmentModelSnapshot = equipment?.model,
@@ -991,12 +991,11 @@ class RoomServiceLoopRepository(
             val privateNote = dao.privateDraft(item.id)?.internalNote.orEmpty()
             val hasActivity = publicWork.isNotBlank() || privateNote.isNotBlank() || responses.isNotEmpty() ||
                 rawInputs.isNotEmpty() || dispatchDao.partCount(item.id) > 0 || dispatchDao.attachmentCount(item.id) > 0 ||
-                item.outcome != null || item.fulfillsCurrentObligation != null || item.notPerformedReason.isNullOrBlank().not() ||
+                item.outcome != null || item.notPerformedReason.isNullOrBlank().not() ||
                 item.confirmedNextDueDate != null || item.nextDueDateCalculated != null || item.nextDueOverrideReason != null
             val completion = completionByItem[item.id]
             val status = serviceEntryStatus(
                 hasActivity = hasActivity,
-                checklistComplete = completeness?.complete != false,
                 hasUnresolvedRawBuffer = rawInputs.isNotEmpty(),
                 hasMissingIssueDescription = completeness?.issueMissingDescription.orEmpty().isNotEmpty(),
                 hasInvalidExplicitAnswer = completeness?.invalidExplicitAnswers.orEmpty().isNotEmpty(),

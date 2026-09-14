@@ -1076,10 +1076,9 @@ class ServiceLoopViewModel(
 private fun progressFallback(draft: InspectionDraft): VisitServiceProgress {
     val hasActivity = draft.workPerformed.isNotBlank() || draft.privateInternalNote.isNotBlank() ||
         draft.questions.any { it.disposition !in setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_CHECKED) } ||
-        draft.rawInputs.isNotEmpty() || draft.outcome != null || draft.fulfillsCurrentObligation != null
+        draft.rawInputs.isNotEmpty() || draft.outcome != null
     val status = serviceEntryStatus(
         hasActivity = hasActivity,
-        checklistComplete = draft.checklistComplete,
         hasUnresolvedRawBuffer = draft.rawInputs.isNotEmpty(),
         hasMissingIssueDescription = draft.issueMissingDescription.isNotEmpty(),
         hasInvalidExplicitAnswer = draft.invalidExplicitAnswers.isNotEmpty(),

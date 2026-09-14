@@ -106,6 +106,15 @@ class ServiceWorkspaceCoreUiTest {
     }
 
     @Test
+    fun legacyFalseFulfillmentDoesNotShowUntouchedServiceAsInProgress() {
+        render(draft().copy(fulfillsCurrentObligation = false))
+
+        compose.onNodeWithTag("show-services").performClick()
+        compose.onNodeWithText("Not started").assertIsDisplayed()
+        compose.onAllNodesWithText("In progress").assertCountEquals(0)
+    }
+
+    @Test
     fun pendingDispatchServiceIsReadOnlyAndPointsToVisitAssignment() {
         val draft = draft()
         val progress = VisitServiceProgress(

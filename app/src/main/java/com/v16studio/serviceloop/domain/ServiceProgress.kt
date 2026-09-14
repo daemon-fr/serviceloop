@@ -28,7 +28,6 @@ fun serviceDocumentationMode(localRole: String?, documentationDisposition: Strin
 
 fun serviceEntryStatus(
     hasActivity: Boolean,
-    checklistComplete: Boolean,
     hasUnresolvedRawBuffer: Boolean = false,
     hasMissingIssueDescription: Boolean = false,
     hasInvalidExplicitAnswer: Boolean = false,
@@ -36,7 +35,7 @@ fun serviceEntryStatus(
 ): ServiceEntryStatus = when {
     !hasActivity -> ServiceEntryStatus.NOT_STARTED
     hasUnresolvedRawBuffer || hasMissingIssueDescription || hasInvalidExplicitAnswer -> ServiceEntryStatus.NEEDS_ATTENTION
-    checklistComplete && completionReady -> ServiceEntryStatus.READY
+    completionReady -> ServiceEntryStatus.READY
     else -> ServiceEntryStatus.IN_PROGRESS
 }
 

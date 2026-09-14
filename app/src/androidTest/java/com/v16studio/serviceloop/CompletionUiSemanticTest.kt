@@ -179,6 +179,41 @@ class CompletionUiSemanticTest {
         }
     }
 
+    @Test fun partlyAndNotPerformedServicesCanVisiblyReachReadyWithIncompleteChecklist() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("progress-template", null, "Optional inspection", 1, 1)))
+            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("progress-question", "progress-template", 1, "Optional check", "STATUS", null, true, null)))
+            dao.updateWorkItem(dao.workItem("w")!!.copy(templateSnapshotId = "progress-template"))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time)
+        runBlocking {
+            repository.savePublicWork("w", "Partly serviced")
+            repository.saveCompletionDraft("w", "PARTLY_PERFORMED", false, null, null, null, null)
+            org.junit.Assert.assertEquals(
+                com.v16studio.serviceloop.domain.ServiceEntryStatus.READY,
+                repository.serviceVisitProgress("v").items.single().status,
+            )
+        }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
+        compose.onNodeWithText("Ready for review").assertIsDisplayed()
+        compose.onAllNodesWithText("In progress").assertCountEquals(0)
+
+        runBlocking {
+            repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+            org.junit.Assert.assertEquals(
+                com.v16studio.serviceloop.domain.ServiceEntryStatus.READY,
+                repository.serviceVisitProgress("v").items.single().status,
+            )
+        }
+        viewModel.loadVisit("v")
+        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
+        compose.onNodeWithText("Ready for review").assertIsDisplayed()
+    }
+
     @Test fun inlinePhotoDetailsPersistAndRemovalRequiresConfirmation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }

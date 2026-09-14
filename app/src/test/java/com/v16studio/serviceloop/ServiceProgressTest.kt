@@ -57,14 +57,13 @@ class ServiceProgressTest {
         assertSame(unknownA, grouped.groupFor("unknown-a")?.items?.single())
     }
 
-    @Test fun entryStatusKeepsStartedNoChecklistSeparateFromNotStarted() {
-        assertEquals(ServiceEntryStatus.NOT_STARTED, serviceEntryStatus(hasActivity = false, checklistComplete = true))
-        assertEquals(ServiceEntryStatus.IN_PROGRESS, serviceEntryStatus(hasActivity = true, checklistComplete = true))
-        assertEquals(ServiceEntryStatus.READY, serviceEntryStatus(hasActivity = true, checklistComplete = true, completionReady = true))
-        assertEquals(ServiceEntryStatus.IN_PROGRESS, serviceEntryStatus(hasActivity = true, checklistComplete = false, completionReady = true))
-        assertEquals(ServiceEntryStatus.IN_PROGRESS, serviceEntryStatus(hasActivity = true, checklistComplete = false))
-        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, serviceEntryStatus(hasActivity = true, checklistComplete = true, hasUnresolvedRawBuffer = true))
-        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, serviceEntryStatus(hasActivity = true, checklistComplete = true, hasMissingIssueDescription = true))
+    @Test fun entryStatusUsesActivityAttentionAndCanonicalReadiness() {
+        assertEquals(ServiceEntryStatus.NOT_STARTED, serviceEntryStatus(hasActivity = false, completionReady = true))
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, serviceEntryStatus(hasActivity = true))
+        assertEquals(ServiceEntryStatus.READY, serviceEntryStatus(hasActivity = true, completionReady = true))
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, serviceEntryStatus(hasActivity = true, hasUnresolvedRawBuffer = true))
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, serviceEntryStatus(hasActivity = true, hasMissingIssueDescription = true))
+        assertEquals(ServiceEntryStatus.NEEDS_ATTENTION, serviceEntryStatus(hasActivity = true, hasInvalidExplicitAnswer = true, completionReady = true))
     }
 
     @Test fun documentationModeNeverInfersLocalEditingForHandedOffWork() {
