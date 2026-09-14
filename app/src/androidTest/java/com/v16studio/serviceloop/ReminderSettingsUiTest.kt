@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -51,6 +53,26 @@ class ReminderSettingsUiTest {
         compose.onNodeWithTag("summary-day-monday").performClick()
         compose.onNodeWithTag("reminder-settings").performScrollToNode(hasTestTag("save-reminders"))
         compose.onNodeWithTag("save-reminders").assertIsEnabled()
+    }
+
+    @Test fun dueHorizonUsesCompactSingleRowRadioPresets() {
+        val repository = FakeRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Reminders").performClick()
+
+        val tags = listOf("due-horizon-1", "due-horizon-7", "due-horizon-14", "due-horizon-30")
+        tags.forEach { compose.onNodeWithTag(it).assertIsDisplayed() }
+        compose.onNodeWithTag("due-horizon-14").assertIsSelected()
+        compose.onNodeWithTag("due-horizon-1").assertIsNotSelected()
+        val settingsWidth = compose.onNodeWithTag("reminder-settings").fetchSemanticsNode().boundsInRoot.width
+        val bounds = tags.map { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
+        assertTrue(bounds.all { it.width < settingsWidth / 2f })
+        assertTrue(bounds.map { it.top }.distinct().size == 1)
+
+        compose.onNodeWithTag("due-horizon-7").performClick().assertIsSelected()
+        compose.onNodeWithTag("due-horizon-14").assertIsNotSelected()
     }
 
     private class FakeRepository : ServiceLoopRepository {

@@ -278,6 +278,11 @@ The Work-list Visit summary projection uses that durable `STARTED.oldServiceDate
 - App > Appearance persists System default, Light, or Dark locally and applies immediately to the root theme. System default is the initial mode.
 - The brand strip draws one 1dp full-width neutral line on the Service side and one 1dp full-width teal line on the Loop side, with black/white neutral contrast by theme and no alpha overlay or duplicate line.
 
+### Owner correction — compact presets and Team identity cleanup (2026-09-15)
+
+- Descriptive value selections remain full-width framed rows; compact numeric/time/unit presets use the separate compact framed pill family with responsive wrapping and radio semantics.
+- Team role Member identity now presents the Technician ID directly after its explanation, followed by the designation field, without duplicating report-name/profile information.
+
 ### Owner correction R5 — Service completion semantics and Review copy
 
 - Service completion is one outcome card immediately after the checklist. `Performed` automatically fulfills an eligible captured current recurring obligation and shows the normal next due date; it does not ask a second fulfillment question. `Partly performed` shows the dependent `Does this complete the due service?` choice with no default, while `Not performed` requires a reason and remains due. One-off, history-only, stale, inactive, and otherwise ineligible lines do not expose recurring controls.

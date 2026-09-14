@@ -65,14 +65,14 @@ class DispatchCoordinatorUiTest {
     @Test fun coordinatorWorkspaceMovesFromSettingsToReactiveHomeActions(){
         compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
         compose.onNodeWithTag("root-nav-home").assertIsDisplayed();compose.onNodeWithTag("root-nav-work").assertIsDisplayed();compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
-        compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-coordinator").performClick()
-        compose.onNodeWithText("Coordinator tools are available from Home.").assertIsDisplayed();compose.onNodeWithText("Technicians").assertDoesNotExist();compose.onNodeWithText("Teams and leaders").assertDoesNotExist();compose.onNodeWithText("Dispatch outbox").assertDoesNotExist()
+        compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-COORDINATOR").performClick()
+        compose.onNode(hasText("Coordinator tools are available from Home.", substring = true)).assertIsDisplayed();compose.onNodeWithText("Technicians").assertDoesNotExist();compose.onNodeWithText("Teams and leaders").assertDoesNotExist();compose.onNodeWithText("Dispatch outbox").assertDoesNotExist()
         compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed();capture("root-home","dispatch-home-coordinator.png")
         compose.onNodeWithText("Technicians").performClick();compose.onNodeWithTag("dispatch-technicians").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Teams").performClick();compose.onNodeWithTag("dispatch-teams").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Outbox").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.onNodeWithTag("dispatch-new-visit").performClick();compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed()
         compose.onNodeWithTag("dispatch-save-visit").assertIsEnabled().performClick();compose.onNodeWithText("Choose a Site.").assertIsDisplayed()
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-optional-details"));compose.onNodeWithTag("dispatch-optional-details").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-manager-reference"));compose.onNodeWithTag("dispatch-manager-reference").performTextInput("unsaved");compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed();compose.onNodeWithText("Keep editing").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard changes").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-solo").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-optional-details"));compose.onNodeWithTag("dispatch-optional-details").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-manager-reference"));compose.onNodeWithTag("dispatch-manager-reference").performTextInput("unsaved");compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed();compose.onNodeWithText("Keep editing").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard changes").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-SOLO").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
     }
 
     @Test fun memberSeesImportOnHomeAndHistoryLivesInSettingsData(){
@@ -81,7 +81,7 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithText("History",useUnmergedTree=true).assertIsDisplayed()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithTag("team-role-MEMBER").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithTag("member-import-work-package").assertIsDisplayed()
@@ -90,10 +90,40 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
     }
 
+    @Test fun memberIdentityShowsPersistedIdBeforeDesignationWithoutReportNameSection(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("technician-id-value").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Technician identity").assertIsDisplayed()
+        compose.onNodeWithText("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.").assertIsDisplayed()
+        compose.onNodeWithTag("technician-id-value").assertIsDisplayed()
+        compose.onNodeWithTag("technician-designation").assertIsDisplayed()
+        compose.onNodeWithText("Actual report name").assertDoesNotExist()
+        compose.onNodeWithTag("technician-report-name").assertDoesNotExist()
+        compose.onNodeWithTag("open-business-report-identity").assertDoesNotExist()
+        val idBounds = compose.onNodeWithTag("technician-id-value").fetchSemanticsNode().boundsInRoot
+        val designationBounds = compose.onNodeWithTag("technician-designation").fetchSemanticsNode().boundsInRoot
+        assertTrue(idBounds.bottom <= designationBounds.top)
+    }
+
+    @Test fun coordinatorRoleUsesOneHelperParagraphAndNormalGaps(){
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("team-role-COORDINATOR").performClick()
+        val role = compose.onNodeWithTag("team-role-COORDINATOR").fetchSemanticsNode().boundsInRoot
+        val helper = compose.onNodeWithTag("team-role-helper").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("team-role-settings").performScrollToNode(hasTestTag("team-role-office-email"))
+        val email = compose.onNodeWithTag("team-role-office-email").fetchSemanticsNode().boundsInRoot
+        compose.onNode(hasText("Roles only control local file-based workflows. No account, synchronization, or shared database is created. Coordinator tools are available from Home.", substring = true)).assertIsDisplayed()
+        assertTrue(helper.top >= role.bottom)
+        assertTrue(email.top >= helper.bottom)
+    }
+
     @Test fun memberExternalPackageOpensImportReview(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithTag("team-role-MEMBER").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit() }
@@ -106,7 +136,7 @@ class DispatchCoordinatorUiTest {
     @Test fun soloExternalPackageShowsRoleExplanationWithoutImport(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithTag("team-role-SOLO").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
@@ -118,13 +148,13 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithText("Import work package").assertDoesNotExist()
         compose.onNodeWithTag("external-package-open-role").performClick()
         compose.onNodeWithTag("team-role-settings").assertIsDisplayed()
-        compose.onNodeWithTag("team-role-member").assertIsDisplayed()
+        compose.onNodeWithTag("team-role-MEMBER").assertIsDisplayed()
     }
 
     @Test fun soloExternalSendPackageShowsSameExplanation(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithTag("team-role-SOLO").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
@@ -138,13 +168,13 @@ class DispatchCoordinatorUiTest {
         val packageIntent = { Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/reopen.slwork"), WORK_PACKAGE_MIME) }
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithTag("team-role-SOLO").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit(); compose.activity.onNewIntent(packageIntent()) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("external-package-open-role").performClick()
-        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithTag("team-role-MEMBER").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit(); compose.activity.onNewIntent(packageIntent()) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("dispatch-import").fetchSemanticsNodes().isNotEmpty() }
@@ -155,7 +185,7 @@ class DispatchCoordinatorUiTest {
     @Test fun coordinatorExternalPackageShowsRoleExplanationWithoutImport(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-coordinator").performClick()
+        compose.onNodeWithTag("team-role-COORDINATOR").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.COORDINATOR.name).commit() }

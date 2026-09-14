@@ -261,6 +261,65 @@ fun <T> ServiceLoopChoiceGroup(
     }
 }
 
+/** A compact, wrapped single-choice family for short numeric, time, and unit presets. */
+@Composable
+fun <T> ServiceLoopPresetChoiceGroup(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    testTagPrefix: String? = null,
+    enabled: Boolean = true,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+    ) {
+        options.forEach { (value, label) ->
+            ServiceLoopPresetChoice(
+                selected = value == selected,
+                onClick = { onSelected(value) },
+                label = label,
+                enabled = enabled,
+                modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
+            )
+        }
+    }
+}
+
+@Composable
+fun ServiceLoopPresetChoice(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val c = LocalServiceLoopTokens.current
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minWidth = ServiceLoopUiTokens.Size.touchMin, minHeight = ServiceLoopUiTokens.Size.touchMin)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.pill),
+        color = if (selected) c.selection else c.surface,
+        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
+            color = when {
+                !enabled -> c.disabledText
+                selected -> c.selectionInk
+                else -> c.textPrimary
+            },
+            style = ServiceLoopUiTokens.Type.label,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            softWrap = false,
+        )
+    }
+}
+
 @Composable
 fun ServiceLoopSelectionOption(
     selected: Boolean,

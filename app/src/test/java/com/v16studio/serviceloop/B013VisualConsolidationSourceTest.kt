@@ -68,4 +68,19 @@ class B013VisualConsolidationSourceTest {
         assertTrue(components.contains("role = Role.RadioButton"))
         assertFalse(production.contains("FilterChip("))
     }
+
+    @Test fun compactPresetFamilyStaysSeparateFromDescriptiveSelectionRows() {
+        val components = source("app/src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt")
+        val app = source("app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt")
+        val daily = source("app/src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt")
+        assertTrue(components.contains("fun <T> ServiceLoopPresetChoiceGroup"))
+        assertTrue(components.contains("FlowRow("))
+        assertTrue(components.contains("Role.RadioButton"))
+        assertTrue(components.contains("ServiceLoopUiTokens.Radius.pill"))
+        assertTrue(app.contains("ServiceLoopPresetChoiceGroup(listOf(1 to \"1 day\""))
+        assertTrue(app.contains("ServiceLoopPresetChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS"))
+        assertTrue(daily.contains("ServiceLoopPresetChoiceGroup(listOf(null to \"Default\",0 to \"Off\") + ReminderPreferences.APPOINTMENT_LEAD_PRESETS"))
+        assertTrue(daily.contains("ServiceLoopPresetChoiceGroup(listOf(\"DAYS\",\"WEEKS\",\"MONTHS\",\"YEARS\")"))
+        assertTrue(app.contains("options = AppearanceMode.entries.map"))
+    }
 }

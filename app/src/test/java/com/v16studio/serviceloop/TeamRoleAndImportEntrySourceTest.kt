@@ -70,6 +70,22 @@ class TeamRoleAndImportEntrySourceTest {
         assertFalse(dispatch.contains("Open Technician identity"))
     }
 
+    @Test fun memberIdentityShowsTechnicianIdBeforeDesignationWithoutReportNameDuplication() {
+        val dispatch = source("java/com/v16studio/serviceloop/ui/DispatchUi.kt")
+        val identity = dispatch.substringAfter("internal fun TechnicianIdentityContent").substringBefore("private fun")
+        assertTrue(identity.contains("Text(\"Technician ID\""))
+        assertTrue(identity.contains("technician-id-value"))
+        assertTrue(identity.contains("technician-designation"))
+        assertTrue(identity.indexOf("Technician ID") < identity.indexOf("technician-id-value"))
+        assertTrue(identity.indexOf("technician-id-value") < identity.indexOf("technician-designation"))
+        assertFalse(identity.contains("Actual report name"))
+        assertFalse(identity.contains("technician-report-name"))
+        assertFalse(identity.contains("Business and report identity"))
+        assertTrue(dispatch.contains("roleExplanation"))
+        assertTrue(dispatch.contains("ServiceLoopUiTokens.Layout.bodyGap"))
+        assertTrue(dispatch.contains("team-role-helper"))
+    }
+
     @Test fun appearanceIsARealPersistedRootThemeSetting() {
         val app = appSource()
         val theme = source("java/com/v16studio/serviceloop/ui/theme/Theme.kt")

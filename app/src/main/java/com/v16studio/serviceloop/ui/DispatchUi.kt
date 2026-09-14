@@ -130,57 +130,54 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("What is your role?", style = MaterialTheme.typography.titleLarge)
-            ServiceLoopChoiceGroup(
-                options = choices.map { (value, copy) -> value to "${copy.first} (${copy.second})" },
-                selected = role,
-                onSelected = { role = it; context.setTeamRole(it) },
-                testTagPrefix = "team-role",
-            )
-            Text("Roles only control local file-based workflows. No account, synchronization, or shared database is created.", style = MaterialTheme.typography.bodySmall)
-            if (role == TeamRole.COORDINATOR) Text("Coordinator tools are available from Home.", style = MaterialTheme.typography.bodySmall)
+            val roleExplanation = buildString {
+                append("Roles only control local file-based workflows. No account, synchronization, or shared database is created.")
+                if (role == TeamRole.COORDINATOR) append(" Coordinator tools are available from Home.")
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.bodyGap)) {
+                Text("What is your role?", style = MaterialTheme.typography.titleLarge)
+                ServiceLoopChoiceGroup(
+                    options = choices.map { (value, copy) -> value to "${copy.first} (${copy.second})" },
+                    selected = role,
+                    onSelected = { role = it; context.setTeamRole(it) },
+                    testTagPrefix = "team-role",
+                )
+                Text(roleExplanation, style = ServiceLoopUiTokens.Type.supporting, modifier = Modifier.testTag("team-role-helper"))
+            }
         }
         item {
             OutlinedTextField(
                 email,
                 { email = it; prefs.edit().putString(OFFICE_EMAIL, it.trim()).apply() },
                 label = { Text("Send report copies to (optional)") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("team-role-office-email"),
             )
         }
         if (role == TeamRole.MEMBER) item {
-            TechnicianIdentityContent(nav = nav)
+            TechnicianIdentityContent()
         }
     }
 }
 
 @Composable
-internal fun TechnicianIdentityContent(modifier: Modifier = Modifier, nav: NavHostController? = null) {
+internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val svc = remember { service(context) }
     val scope = rememberCoroutineScope()
     var value by remember { mutableStateOf<TechnicianIdentity?>(null) }
-    var profileName by remember { mutableStateOf("") }
     var designation by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { svc.identity() }
         value = loaded
         designation = loaded.designation.orEmpty()
-        profileName = withContext(Dispatchers.IO) { svcProfile(context)?.technicianName.orEmpty() }
     }
     Column(modifier.fillMaxWidth().testTag("technician-identity"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Technician identity", style = MaterialTheme.typography.titleLarge)
         Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.")
-        Text("Actual report name", style = MaterialTheme.typography.labelLarge)
-        Text(profileName.ifBlank { "Not set" }, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("technician-report-name"))
-        Text("The actual name on service records is managed under Business and report identity.", style = MaterialTheme.typography.bodySmall)
-        nav?.let { destination ->
-            TextButton({ destination.navigate("business-profile") }, Modifier.testTag("open-business-report-identity")) { Text("Business and report identity") }
-        }
+        Text("Technician ID", style = MaterialTheme.typography.labelLarge)
+        Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = ServiceLoopUiTokens.IdentifierStyle, modifier = Modifier.testTag("technician-id-value"))
         OutlinedTextField(designation, { designation = it }, label = { Text("Team designation or badge (optional)") }, modifier = Modifier.fillMaxWidth().testTag("technician-designation"))
-        Text("Technician ID")
-        Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("technician-id-value"))
         ServiceLoopActionStack {
             Button(
                 {
@@ -220,8 +217,6 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier, nav: NavHo
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
-
-private suspend fun svcProfile(context: Context) = (context.applicationContext as ServiceLoopApplication).container.database.serviceLoopDao().businessProfile()
 
 private fun dispatchImportSubjectLabel(work:DispatchWork,equipment:DispatchEquipment?):String=when{
     work.subjectType==WorkSubjectType.SITE->"Site"
