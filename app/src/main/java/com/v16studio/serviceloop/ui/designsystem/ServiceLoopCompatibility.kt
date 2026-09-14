@@ -94,7 +94,7 @@ fun ServiceLoopIconButtonAdapter(
     ),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable () -> Unit,
-) = ServiceLoopIconAction(accessibleName,onClick,modifier,enabled,content)
+) = ServiceLoopIconAction(accessibleName,onClick,modifier,enabled,content = content)
 
 @Composable
 fun ServiceLoopTextFieldAdapter(

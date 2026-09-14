@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.LayoutDirection
 import com.v16studio.serviceloop.ui.designsystem.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -173,5 +175,14 @@ class ServiceLoopDesignSystemTest {
         assertEquals("Open",serviceLoopStateStyle("OPEN",c).label)
         assertEquals("Closed",serviceLoopStateStyle("CLOSED",c).label)
         assertEquals(ServiceLoopVisualState.History,serviceLoopStateStyle("CANCELED",c).state)
+    }
+
+    @Test fun longTextEditorUsesLocalClearanceAndKeepsTheExpandTargetCompact() {
+        val source = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
+        assertFalse(source.contains("suffix = { Spacer(Modifier.width(ServiceLoopUiTokens.Size.editorActionReserve)) }"))
+        assertTrue(source.contains("contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 52.dp)"))
+        assertTrue(source.contains("Modifier.size(ServiceLoopUiTokens.Size.iconSmall)"))
+        assertEquals(48f, ServiceLoopUiTokens.Size.touchMin.value, 0f)
+        assertEquals(20f, ServiceLoopUiTokens.Size.iconSmall.value, 0f)
     }
 }

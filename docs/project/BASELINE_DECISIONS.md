@@ -44,7 +44,7 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 
 - Adopt C's recurrence rule: the next due date is derived from the qualifying completion date plus the plan interval, subject to the adopted explicit override/correction rules.
 - Each active plan has one current obligation identity at a time. Consuming/finalizing that obligation must be exactly-once even across retries.
-- `Performed`/outcome and **Fulfills current obligation** are separate decisions. Performing work does not automatically mean the current scheduled obligation is fulfilled.
+- `Performed` completes the eligible captured recurring obligation automatically, with the normal next due date calculated from the actual service date and captured interval. `Partly performed` requires an explicit **Fulfill** or **Keep due** choice; `Not performed` never fulfills and requires a reason. Outcome and fulfillment remain separately persisted where historical/output semantics require it, but they are not always separate technician decisions.
 - One visit has one site and one actual service date. Multiple machines/plans may be handled in the visit, and partial/unperformed work preserves the appropriate outstanding obligation.
 - Master-data/template edits must not silently rewrite historical inspection/report meaning. Finalized history uses immutable snapshots/versioned correction rather than in-place semantic mutation.
 - Use C's conservative archive/retire/move rules plus adopted FC-03: resolve named blockers individually; do not cascade-cancel or silently retarget dependent history/drafts.
@@ -151,10 +151,10 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 
 - Bundle 1 adopts durable Working service-flow autosave foundations: raw edit buffers are stored separately from canonical facts, writes are versioned against stale async work, and raw buffers never become final history/report content.
 - Inspection completeness is derived from the current immutable checklist snapshot and active Working responses. `checklistReviewed` remains Room compatibility/cache state only; manual “Mark checklist reviewed” is no longer the authority for readiness.
-- Outcome and current-obligation fulfillment are separate. Fulfillment is nullable until an eligible technician decision is explicit; only true fulfillment advances the captured current obligation. PARTLY/NOT outcomes cannot fulfill.
+- Completion semantics are outcome-dependent: eligible `PERFORMED` work automatically fulfills the captured current obligation; eligible `PARTLY_PERFORMED` work keeps fulfillment nullable until the technician explicitly chooses Fulfill or Keep due; `NOT_PERFORMED` persists false and requires a reason. Only finalized true fulfillment consumes the captured obligation and advances recurrence.
 - Eligible true fulfillment calculates the next due date immediately from actual service date and captured interval. A different confirmed date is a deliberate override requiring a nonblank reason; there is no separate second confirmation of the calculated date.
-- Response mutation recomputes derived completeness in the same transaction and clears an obsolete true fulfillment and due fields when the current inspection becomes incomplete. Finalization recomputes directly and flushes draft work before creating final history.
-- This amendment supersedes only the manual checklist-review authority and the separate second confirmation of a calculated next due date. It does not supersede outcome/fulfillment separation, immutable snapshots, B-014 Working response drafts, recurrence safeguards, finalization, correction/history, or the existing B-009/B-010 inline editing decisions.
+- Response mutation recomputes derived completeness in the same transaction. An incomplete checklist blocks Review/finalization for every outcome but does not erase an automatic Performed fulfillment or an explicit Partly decision. Finalization recomputes directly and flushes draft work before creating final history.
+- This amendment supersedes the earlier outcome/fulfillment interaction and blanket checklist-gate wording for B-025: Performed is automatic, Partly is explicit, Not performed is non-fulfilling, and checklist completeness is required before Review/finalization for all outcomes. Immutable snapshots, B-014 Working response drafts, recurrence safeguards, finalization, correction/history, and the existing B-009/B-010 inline editing decisions remain in force.
 
 ## B-026A — Flexible ad-hoc work and one-time customer foundation
 

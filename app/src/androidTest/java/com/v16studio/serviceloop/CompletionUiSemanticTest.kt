@@ -80,7 +80,9 @@ class CompletionUiSemanticTest {
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Customer").fetchSemanticsNodes().isNotEmpty())
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Site").fetchSemanticsNodes().isNotEmpty())
         compose.onNodeWithText("Address").assertIsDisplayed()
-        compose.onNodeWithText("Service date 2026-09-05").assertIsDisplayed()
+        compose.onNodeWithTag("visit-date-landmark-label").assertTextContains("SERVICE DATE")
+        compose.onNodeWithTag("visit-date-landmark-value").assertTextContains("5 Sep 2026")
+        compose.onAllNodesWithText("Service date 2026-09-05").assertCountEquals(0)
         compose.onNodeWithTag("visit-relationship-actions").assertIsDisplayed()
         compose.onNodeWithTag("visit-customer-link").assertIsDisplayed()
         compose.onNodeWithTag("visit-site-link").assertIsDisplayed()
@@ -97,7 +99,9 @@ class CompletionUiSemanticTest {
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
         compose.waitUntil(5_000) { viewModel.state.value.completionLines.isNotEmpty() }
-        compose.onNodeWithText("Review the service facts and due consequences before finalizing.").assertIsDisplayed()
+        compose.onNodeWithText("Review the service details before finalizing.").assertIsDisplayed()
+        compose.onAllNodesWithText("Checklist completion records inspection facts.").assertCountEquals(0)
+        compose.onAllNodesWithText("Service outcome and recurring fulfillment remain separate decisions.").assertCountEquals(0)
         compose.onNodeWithText("Report identity").assertIsDisplayed()
         compose.onNodeWithText("Business · Technician").assertIsDisplayed()
         compose.onNodeWithText("Update from current profile").assertIsDisplayed()
@@ -120,11 +124,10 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-PERFORMED"))
         compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
-        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("fulfill-w"))
-        compose.onNodeWithTag("keep-due-w").assertExists()
-        compose.onNodeWithTag("fulfill-w").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.fulfillsCurrentObligation == true }
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-05" }
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-w").assertCountEquals(0)
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("change-next-due"))
         compose.onNodeWithTag("change-next-due").assertIsDisplayed()
         compose.onAllNodesWithTag("override-date").assertCountEquals(0)
@@ -172,6 +175,10 @@ class CompletionUiSemanticTest {
         }
         compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
         compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-w").assertCountEquals(0)
+        compose.onNodeWithTag("outcome-w-PARTLY_PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PARTLY_PERFORMED" }
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("fulfill-w"))
         compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("keep-due-w"))
@@ -210,7 +217,7 @@ class CompletionUiSemanticTest {
         }
     }
 
-    @Test fun partlyAndNotPerformedServicesCanVisiblyReachReadyWithIncompleteChecklist() {
+    @Test fun incompleteChecklistBlocksPartlyAndNotPerformedServicesUntilCompleted() {
         runBlocking {
             val dao = database.serviceLoopDao()
             dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("progress-template", null, "Optional inspection", 1, 1)))
@@ -223,26 +230,25 @@ class CompletionUiSemanticTest {
             repository.savePublicWork("w", "Partly serviced")
             repository.saveCompletionDraft("w", "PARTLY_PERFORMED", false, null, null, null, null)
             org.junit.Assert.assertEquals(
-                com.v16studio.serviceloop.domain.ServiceEntryStatus.READY,
+                com.v16studio.serviceloop.domain.ServiceEntryStatus.IN_PROGRESS,
                 repository.serviceVisitProgress("v").items.single().status,
             )
         }
         val viewModel = ServiceLoopViewModel(repository) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
-        compose.waitUntil(10_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
-        compose.onNodeWithText("Ready for review").assertIsDisplayed()
-        compose.onAllNodesWithText("In progress").assertCountEquals(0)
+        compose.waitUntil(10_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.IN_PROGRESS }
+        compose.onNodeWithText("In progress").assertIsDisplayed()
 
         runBlocking {
             repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
             org.junit.Assert.assertEquals(
-                com.v16studio.serviceloop.domain.ServiceEntryStatus.READY,
+                com.v16studio.serviceloop.domain.ServiceEntryStatus.IN_PROGRESS,
                 repository.serviceVisitProgress("v").items.single().status,
             )
         }
         viewModel.loadVisit("v")
-        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
-        compose.onNodeWithText("Ready for review").assertIsDisplayed()
+        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.IN_PROGRESS }
+        compose.onNodeWithText("In progress").assertIsDisplayed()
     }
 
     @Test fun inlinePhotoDetailsPersistAndRemovalRequiresConfirmation() {

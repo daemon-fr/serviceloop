@@ -513,9 +513,6 @@ interface ServiceLoopDao {
         val item = workItem(response.workItemId) ?: error("Working item no longer exists")
         val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(checklistItems(snapshotId), responses(response.workItemId)) }
         updateChecklistReviewed(response.workItemId, completeness?.complete ?: false)
-        if (item.outcome == "PERFORMED" && item.fulfillsCurrentObligation == true && completeness?.complete != true) {
-            invalidateFulfillment(response.workItemId)
-        }
         touchVisit(visitId, response.modifiedAtEpochMillis)
     }
 }

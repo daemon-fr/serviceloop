@@ -220,7 +220,7 @@ class DailyOperationsIntegrityTest {
         val visit=repo.createVisit(listOf(ids.plan,planB),"WORKING","2026-09-05"); val lines=db.serviceLoopDao().visitWorkItems(visit).associateBy{it.servicePlanId}
         val a=lines.getValue(ids.plan).id; val b=lines.getValue(planB).id
         repo.savePublicWork(a,"Annual service complete"); repo.saveCompletionDraft(a,"PERFORMED",true,null,"2027-09-05",true,null)
-        repo.savePublicWork(b,"Pump service partly completed"); repo.saveCompletionDraft(b,"PARTLY_PERFORMED",false,null,null,null,null)
+        repo.savePublicWork(b,"Pump service partly completed"); repo.saveCompletionDraft(b,"PARTLY_PERFORMED",false,null,null,null,null); repo.saveCompletionDraft(b,"PARTLY_PERFORMED",false,null,null,null,null)
         val oldB=db.serviceLoopDao().plan(planB)!!.currentObligationId; val result=repo.finalizeVisit(visit) as FinalizeResult.Success; val record=repo.finalRecord(result.recordId)!!
         assertEquals("2027-09-05",db.serviceLoopDao().plan(ids.plan)!!.currentDueDate); assertEquals(oldB,db.serviceLoopDao().plan(planB)!!.currentObligationId); assertNull(db.serviceLoopDao().obligation(oldB!!)!!.consumedAtEpochMillis)
         assertEquals(2,record.public.lines.size); assertEquals(setOf("Compressor","Pump"),record.public.lines.map{it.equipmentName}.toSet())
@@ -269,7 +269,7 @@ class DailyOperationsIntegrityTest {
         assertEquals(items[0].id, progress.preferredResumeItem()?.workItemId)
     }
 
-    @Test fun performedReadinessStillRequiresChecklistAndFulfillmentButUsesCanonicalBlockers() = runTest {
+    @Test fun performedReadinessRequiresChecklistButAutomaticallyFulfillsEligibleCurrentWork() = runTest {
         val ids = foundation()
         val template = repo.createTemplate("Required inspection", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
         repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
@@ -280,20 +280,12 @@ class DailyOperationsIntegrityTest {
         repo.saveCompletionDraft(work, "PERFORMED", null, null, null, null, null)
         assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
         assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
+        assertEquals(true, repo.completionLines(visit).single().fulfillsCurrentObligation)
 
         repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.OK, null, null)
         repo.saveCompletionDraft(work, "PERFORMED", null, null, null, null, null)
-        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
-        assertTrue(repo.completionLines(visit).single().blockers.any { it.kind == CompletionBlockerKind.NEXT_DUE })
-
-        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
         assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
-        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
-        assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
-
-        repo.saveCompletionDraft(work, "PERFORMED", true, null, null, null, null)
         val ready = repo.completionLines(visit).single()
-        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
         assertEquals(true, ready.fulfillsCurrentObligation)
         assertEquals("2027-09-05", ready.confirmedNextDueDate)
     }
@@ -305,6 +297,12 @@ class DailyOperationsIntegrityTest {
         val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
         val work = db.serviceLoopDao().firstWorkItemId(visit)!!
         repo.savePublicWork(work, "Partly serviced")
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        assertNull(repo.completionLines(visit).single().fulfillsCurrentObligation)
+
+        val question = repo.inspection(work)!!.questions.single()
+        repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.OK, null, null)
         repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
         assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
         assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
@@ -362,10 +360,14 @@ class DailyOperationsIntegrityTest {
         val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
         val work = db.serviceLoopDao().firstWorkItemId(visit)!!
         repo.saveCompletionDraft(work, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
-        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
         assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
         assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
         assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
+
+        val question = repo.inspection(work)!!.questions.single()
+        repo.saveResponse(work, question.snapshotItemId, ResponseDisposition.OK, null, null)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
 
         repo.saveCompletionDraft(work, "NOT_PERFORMED", false, null, null, null, null)
         assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
@@ -434,15 +436,15 @@ class DailyOperationsIntegrityTest {
         assertEquals("2027-09-05", repo.completionLines(visit).single().confirmedNextDueDate)
         assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
         repo.saveCompletionDraft(work, "PARTLY_PERFORMED", true, null, "2027-09-05", true, null)
-        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
-        assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
-        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
         assertNull(repo.completionLines(visit).single().fulfillsCurrentObligation)
-        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", false, null, null, null, null)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
         repo.saveCompletionDraft(work, "NOT_PERFORMED", true, "Access blocked", null, null, null)
         assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
         repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
-        assertNull(repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertEquals(true, repo.completionLines(visit).single().fulfillsCurrentObligation)
     }
 
     @Test fun failedPhotoMetadataWriteDoesNotLeaveAFalseSavedFile() = runTest {

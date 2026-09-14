@@ -172,6 +172,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -550,7 +551,7 @@ private fun HomeScreen(state: UiState, home: HomeSummary?, equipment: List<Equip
             AccentCard {
                 Text(home.workingSite.orEmpty(), style = MaterialTheme.typography.titleMedium)
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
-                home.savedAtEpochMillis?.let { ServiceLoopSavedStatus(it) }
+                home.savedAtEpochMillis?.let { ServiceLoopSavedStatus(it, iconSize = ServiceLoopUiTokens.Size.iconSmall) }
                 Button(onClick = {
                     val sessionItem = state.activeServiceWorkItemId?.takeIf { state.activeServiceVisitId == home.workingVisitId && state.serviceProgress?.items?.any { item -> item.workItemId == it } == true }
                     val target = sessionItem ?: home.inspectionWorkItemId
@@ -839,7 +840,7 @@ internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSo
 @Composable
 private fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>, profile: BusinessProfile?, state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     LazyColumn(Modifier.padding(padding).testTag("completion-review-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { Text("Review the service facts and due consequences before finalizing.", style = MaterialTheme.typography.titleMedium); Text("Checklist completion records inspection facts. Service outcome and recurring fulfillment remain separate decisions.") }
+        item { Text("Review the service details before finalizing.", style = MaterialTheme.typography.titleMedium) }
         if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
         else item { AccentCard { Text("Report identity", style = MaterialTheme.typography.titleMedium); Text("${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); TextButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.testTag("refresh-report-identity")) { Text("Update from current profile") } } }
         items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav) }
@@ -863,8 +864,8 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed)
         if (!line.notPerformedReason.isNullOrBlank()) Text("Reason · ${line.notPerformedReason}")
         when (line.fulfillsCurrentObligation) {
-            true -> Text("Next due · ${line.confirmedNextDueDate ?: "Needs attention"}")
-            false -> if (line.dueDate != null) Text("Due remains · ${line.dueDate}")
+            true -> Text("Next due · ${line.confirmedNextDueDate?.let(::formatServiceLoopDate) ?: "Needs attention"}")
+            false -> if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE && line.dueDate != null && line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED")) Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")
             null -> if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE) Text("Due-service decision needed")
         }
         if (line.fulfillmentEligibility == FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED) Text("Current service obligation changed — this Service cannot advance the current due date.")
@@ -1121,6 +1122,9 @@ private fun ReportPhotoThumbnail(photo: PublicPhoto, index: Int, context: androi
 @Composable private fun HonestPlaceholder(padding: PaddingValues, message: String) { Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text(message, style = MaterialTheme.typography.titleMedium) } }
 
 internal fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: "not yet"
+internal fun formatServiceLoopDate(persisted: String): String = runCatching {
+    LocalDate.parse(persisted).format(DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH))
+}.getOrDefault(persisted)
 private fun formatRecordedOn(epochMillis: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMillis))
 
 private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())

@@ -313,6 +313,7 @@ class PersistenceIntegrityTest {
         repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
         assertEquals(null, repository.inspection("work-1")!!.questions.single().reason)
         repository.markChecklistReviewed("work-1")
+        repository.saveCompletionDraft("work-1", "PERFORMED", null, null, null, null, null)
         val result=repository.finalizeVisit("visit-1") as com.v16studio.serviceloop.domain.FinalizeResult.Success
         val record=database.serviceLoopDao().finalRecord(result.recordId)!!
         val finalWork=database.serviceLoopDao().finalWorkItems(record.currentRevisionId).single()
@@ -335,31 +336,34 @@ class PersistenceIntegrityTest {
         assertEquals(null, question.reason)
     }
 
-    @Test fun performedOutcomeDoesNotImplicitlyFulfillCurrentObligation() = runTest {
+    @Test fun performedOutcomeAutomaticallyFulfillsEligibleCurrentObligation() = runTest {
         seedFoundation()
         val line = RoomServiceLoopRepository(database, time).completionLines("visit-1").single()
         assertEquals("PERFORMED", line.outcome)
-        assertEquals(FulfillmentEligibility.CHECKLIST_INCOMPLETE, line.fulfillmentEligibility)
-        assertFalse(line.fulfillsCurrentObligation == true)
+        assertEquals(FulfillmentEligibility.ELIGIBLE, line.fulfillmentEligibility)
+        assertTrue(line.fulfillsCurrentObligation == true)
         assertEquals("2026-09-01", line.dueDate)
-        assertEquals(null, line.proposedNextDueDate)
+        assertEquals("2026-12-05", line.proposedNextDueDate)
     }
 
-    @Test fun fulfillmentEligibilityRejectsPartialAndNotPerformedEvenIfPersistedTrue() = runTest {
+    @Test fun fulfillmentEligibilityAllowsPartlyButRejectsNotPerformedEvenIfPersistedTrue() = runTest {
         seedFoundation()
         insertAdditionalWorkItem("work-partial", "PARTLY_PERFORMED", true)
         insertAdditionalWorkItem("work-not-performed", "NOT_PERFORMED", true)
         insertAdditionalWorkItem("work-unreviewed", "PERFORMED", true, templateSnapshotId = "template-snapshot-1")
 
         val lines = RoomServiceLoopRepository(database, time).completionLines("visit-1").associateBy { it.workItemId }
-        listOf("work-partial", "work-not-performed").forEach { id ->
-            assertEquals(FulfillmentEligibility.OUTCOME_INELIGIBLE, lines.getValue(id).fulfillmentEligibility)
-            assertFalse(lines.getValue(id).fulfillsCurrentObligation == true)
-            assertEquals(null, lines.getValue(id).proposedNextDueDate)
-        }
-        assertEquals(FulfillmentEligibility.CHECKLIST_INCOMPLETE, lines.getValue("work-unreviewed").fulfillmentEligibility)
-        assertFalse(lines.getValue("work-unreviewed").fulfillsCurrentObligation == true)
-        assertEquals(null, lines.getValue("work-unreviewed").proposedNextDueDate)
+        assertEquals(FulfillmentEligibility.ELIGIBLE, lines.getValue("work-partial").fulfillmentEligibility)
+        assertTrue(lines.getValue("work-partial").fulfillsCurrentObligation == true)
+        assertEquals("2026-12-05", lines.getValue("work-partial").proposedNextDueDate)
+        assertEquals(FulfillmentEligibility.OUTCOME_INELIGIBLE, lines.getValue("work-not-performed").fulfillmentEligibility)
+        assertFalse(lines.getValue("work-not-performed").fulfillsCurrentObligation == true)
+        assertEquals(null, lines.getValue("work-not-performed").proposedNextDueDate)
+        assertEquals(FulfillmentEligibility.ELIGIBLE, lines.getValue("work-unreviewed").fulfillmentEligibility)
+        assertTrue(lines.getValue("work-unreviewed").fulfillsCurrentObligation == true)
+        assertEquals("2026-12-05", lines.getValue("work-unreviewed").proposedNextDueDate)
+        assertFalse(lines.getValue("work-unreviewed").checklistComplete)
+        assertTrue(lines.getValue("work-unreviewed").blockers.any { it.kind == com.v16studio.serviceloop.domain.CompletionBlockerKind.CHECKLIST_INCOMPLETE })
     }
 
     @Test fun explicitEligibleFulfillmentUsesCapturedIntervalFromActualServiceDate() = runTest {

@@ -777,9 +777,16 @@ class ServiceLoopViewModel(
 
     fun chooseOutcome(workItemId: String, visitId: String, outcome: String) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        val sameOutcome = line.outcome == outcome
+        val fulfills = when (outcome) {
+            "PERFORMED" -> true
+            "PARTLY_PERFORMED" -> line.fulfillsCurrentObligation.takeIf { sameOutcome }
+            "NOT_PERFORMED" -> false
+            else -> null
+        }
         serviceDraftAutosaveCoordinator.immediateChoice(
             ServiceDraftFieldId(workItemId, "result:outcome"), outcome,
-            writer = { repository.saveCompletionDraft(workItemId, outcome, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
+            writer = { repository.saveCompletionDraft(workItemId, outcome, fulfills, line.notPerformedReason.takeIf { outcome == "NOT_PERFORMED" }, line.confirmedNextDueDate.takeIf { sameOutcome }, line.nextDueDateCalculated.takeIf { sameOutcome }, line.nextDueOverrideReason.takeIf { sameOutcome }) },
             onSaved = { refreshServiceContext(workItemId) },
         )
     }

@@ -83,9 +83,10 @@ class Sl2IntegrityTest {
         assertEquals(0, dao.finalRecordCount()); assertEquals(1, dao.obligationCount("plan-1")); assertEquals("obligation-1", dao.plan("plan-1")!!.currentObligationId); assertEquals("2026-09-01", dao.plan("plan-1")!!.currentDueDate); assertEquals("WORKING", dao.visit("visit-1")!!.state)
     }
 
-    @Test fun partialNotPerformedUnfulfilledAndOneOffRemainHistoryOnly() = runTest {
+    @Test fun partlyNotPerformedUnfulfilledAndOneOffRemainHistoryOnly() = runTest {
         seed(); val dao = db.serviceLoopDao(); val repository = repo()
-        repository.saveCompletionDraft("work-1", "PERFORMED", false, null, null, null, null)
+        repository.saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        repository.saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
         insertLine("work-partial", "PARTLY_PERFORMED", "Partial public work")
         insertLine("work-not", "NOT_PERFORMED", "", reason = "Could not access equipment")
         insertLine("work-one-off", "PERFORMED", "One-off public work", oneOff = true)
@@ -102,6 +103,8 @@ class Sl2IntegrityTest {
         dao.insertWorkItems(listOf(WorkItemEntity("work-2", "visit-1", "equipment-1", "plan-2", "obligation-2", null, "Captured equipment", "EQ-1", "Other service", "P-2", "2026-09-02", 6, "MONTHS", false, "PERFORMED", false)))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-2", "Other work"))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-2", "")))
         repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        repository.saveCompletionDraft("work-2", "PARTLY_PERFORMED", false, null, null, null, null)
+        repository.saveCompletionDraft("work-2", "PARTLY_PERFORMED", false, null, null, null, null)
         repository.finalizeVisit("visit-1")
         assertEquals("2026-12-05", dao.plan("plan-1")!!.currentDueDate); assertEquals("2026-09-02", dao.plan("plan-2")!!.currentDueDate); assertNull(dao.obligation("obligation-2")!!.consumedAtEpochMillis)
     }
@@ -135,6 +138,7 @@ class Sl2IntegrityTest {
         seed(); val repository = RoomServiceLoopRepository(db, time, attachmentRoot = context.filesDir)
         val attachmentId = repository.savePhoto("work-1", testImageBytes(Color.BLUE), "evidence.png", "image/png", true, "Evidence")
         val attachment = db.serviceLoopDao().attachment(attachmentId)!!; val source = File(context.filesDir, attachment.storedRelativePath); val exact = source.readBytes()
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
         val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId; val historicalRevision = repository.finalRecord(record)!!.public.revisionId
         val correction = repository.openCorrection(record); repository.saveCorrection(correction.copy(reason = "Create a newer revision", publicNote = "Newer revision")); repository.commitCorrection(record)
         var renders = 0; val writer = ReportWriter { _, _, _, _, file -> renders++; FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
@@ -155,17 +159,15 @@ class Sl2IntegrityTest {
         assertTrue((repo().finalizeVisit("visit-1") as FinalizeResult.Blocked).message.contains("description"))
     }
 
-    @Test fun requiredIncompleteChecklistMayFinalizePartialAndNotPerformedButNotPerformedOutcome() = runTest {
+    @Test fun requiredIncompleteChecklistBlocksPartlyAndNotPerformedUntilCompleted() = runTest {
         seed(withChecklist = true)
         repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
-        val partialId = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
-        assertEquals("NOT_CHECKED", repo().finalRecord(partialId)!!.public.lines.single().checklist.single().disposition)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
 
         db.close(); setup(); seed(withChecklist = true)
         db.serviceLoopDao().insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Required note", "TEXT", null, true, null)))
         repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
-        val notId = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
-        assertTrue(repo().finalRecord(notId)!!.public.lines.single().checklist.any { it.disposition == "UNANSWERED" })
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
 
         db.close(); setup(); seed(withChecklist = true)
         assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
@@ -184,7 +186,7 @@ class Sl2IntegrityTest {
         repository.saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
         repository.saveCompletionDraft("work-1", "PERFORMED", false, "stale", "2027-01-01", false, "stale")
         var item = dao.workItem("work-1")!!
-        assertNull(item.notPerformedReason); assertNull(item.confirmedNextDueDate); assertNull(item.nextDueOverrideReason)
+        assertNull(item.notPerformedReason); assertEquals("2026-12-05", item.confirmedNextDueDate); assertEquals(true, item.nextDueDateCalculated); assertNull(item.nextDueOverrideReason)
         repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", false, "stale")
         item = dao.workItem("work-1")!!; assertEquals(true, item.nextDueDateCalculated); assertNull(item.nextDueOverrideReason)
         val before = writes
@@ -203,13 +205,14 @@ class Sl2IntegrityTest {
         seed(); val dao = db.serviceLoopDao()
         dao.updateEquipmentIdentity("equipment-1", "T-B", "Maker B", "Model B", "Serial B")
         dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Business B", technicianName = "Tech B", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 2))
+        repo().saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
         val first = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
         val frozen = repo().finalRecord(first)!!
         assertEquals("T-1 · Maker A · Model A · Serial A", frozen.public.lines.single().equipmentIdentification)
         assertEquals("Service Business", frozen.public.businessName)
         assertEquals("CU-1", frozen.public.customerReference); assertEquals("ST-1", frozen.public.siteReference)
 
-        db.close(); setup(); seed(); db.serviceLoopDao().upsertBusinessProfile(BusinessProfileEntity(businessName = "Business B", technicianName = "Tech B", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 2))
+        db.close(); setup(); seed(); db.serviceLoopDao().upsertBusinessProfile(BusinessProfileEntity(businessName = "Business B", technicianName = "Tech B", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 2)); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
         repo().refreshVisitReportIdentity("visit-1")
         val refreshed = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
         assertEquals("Business B", repo().finalRecord(refreshed)!!.public.businessName)
@@ -231,7 +234,7 @@ class Sl2IntegrityTest {
     }
 
     @Test fun reportMetadataFailureRemovesAdoptedOrphanAndRetryIsSafe() = runTest {
-        seed(); val repository = repo(); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        seed(); val repository = repo(); repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
         val fakeWriter = ReportWriter { _, _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
         val failing = AndroidReportService(context, db, repository, writer = fakeWriter, metadataGate = ReportMetadataGate { error("metadata") })
         assertFails { failing.generate(record) }
@@ -283,19 +286,17 @@ class Sl2IntegrityTest {
         assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
     }
 
-    @Test fun explicitIncompleteResponsesRemainAllowedForPartialAndNotPerformed() = runTest {
+    @Test fun explicitIncompleteResponsesBlockPartialAndNotPerformed() = runTest {
         seed(withChecklist = true); val dao = db.serviceLoopDao()
         dao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-1", "NOT_CHECKED", null, null, null, 2)))
         repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
-        val partial = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
-        assertEquals("NOT_CHECKED", repo().finalRecord(partial)!!.public.lines.single().checklist.single().disposition)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
 
         db.close(); setup(); seed(withChecklist = true); val secondDao = db.serviceLoopDao()
         secondDao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Text", "TEXT", null, true, null)))
         secondDao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-text", "UNANSWERED", null, null, null, 2)))
         repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
-        val notPerformed = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
-        assertTrue(repo().finalRecord(notPerformed)!!.public.lines.single().checklist.any { it.disposition == "UNANSWERED" })
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
     }
 
     @Test fun responseAndPublicWorkWhitespaceNormalizeBeforeNoOpComparison() = runTest {

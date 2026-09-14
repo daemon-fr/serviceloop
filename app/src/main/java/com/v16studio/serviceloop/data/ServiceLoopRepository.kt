@@ -1036,15 +1036,15 @@ class RoomServiceLoopRepository(
             val plan = item.servicePlanId?.let { dao.plan(it) }
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
             val completeness = item.templateSnapshotId?.let { checklistCompleteness(dao.checklistItems(it), dao.responses(item.id)) }
-            val eligibility = fulfillmentEligibility(item, plan, obligation, completeness)
+            val eligibility = fulfillmentEligibility(item, plan, obligation)
             val projectedFulfills = when {
-                item.outcome == "PARTLY_PERFORMED" || item.outcome == "NOT_PERFORMED" -> false
-                item.servicePlanId == null || item.capturedObligationId == null -> false
                 item.outcome == null -> null
-                eligibility == FulfillmentEligibility.ELIGIBLE -> item.fulfillsCurrentObligation
-                else -> null
+                item.outcome == "NOT_PERFORMED" -> false
+                item.outcome == "PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE -> true
+                item.outcome == "PARTLY_PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE -> item.fulfillsCurrentObligation
+                else -> false
             }
-            val calculated = if (eligibility == FulfillmentEligibility.ELIGIBLE && item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) {
+            val calculated = if (eligibility == FulfillmentEligibility.ELIGIBLE && projectedFulfills == true && item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) {
                 RecurrenceCalculator.nextDate(LocalDate.parse(visit.actualServiceDate), item.intervalCountSnapshot, item.intervalUnitSnapshot).toString()
             } else null
             val public = dao.publicDraft(item.id)?.workPerformed.orEmpty()
@@ -1053,14 +1053,15 @@ class RoomServiceLoopRepository(
                 if ((item.outcome == "PERFORMED" || item.outcome == "PARTLY_PERFORMED") && public.isBlank()) add(CompletionBlocker(CompletionBlockerKind.WORK_PERFORMED, "Work performed is required"))
                 if (item.outcome == "NOT_PERFORMED" && item.notPerformedReason.isNullOrBlank()) add(CompletionBlocker(CompletionBlockerKind.NOT_PERFORMED_REASON, "Reason is required"))
                 completeness?.let { result ->
-                    if (result.complete.not() && item.outcome == "PERFORMED") add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_INCOMPLETE, "Inspection needs attention"))
+                    if (!result.complete) add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_INCOMPLETE, "Complete all required checklist questions"))
                     result.issueMissingDescription.forEach { questionId ->
                         val question = item.templateSnapshotId?.let { snapshot -> dao.checklistItems(snapshot).firstOrNull { it.id == questionId } }
                         add(CompletionBlocker(CompletionBlockerKind.FINDING_DESCRIPTION, "${question?.label ?: questionId}: Issue found needs a public description", questionId, question?.label))
                     }
-                    if (result.invalidExplicitAnswers.any { it !in result.issueMissingDescription }) add(CompletionBlocker(CompletionBlockerKind.CHECKLIST_INCOMPLETE, "A saved inspection answer is invalid — review it before finalizing"))
+                    // The concrete checklist count is the page-level blocker. The
+                    // question itself remains the place to resolve a bad answer.
                 }
-                if (eligibility == FulfillmentEligibility.ELIGIBLE && projectedFulfills == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Choose whether this completes the due service"))
+                if (item.outcome == "PARTLY_PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE && projectedFulfills == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Choose whether this completes the due service"))
                 if (projectedFulfills == true && item.confirmedNextDueDate == null) add(CompletionBlocker(CompletionBlockerKind.NEXT_DUE, "Confirm the next due date"))
             }
             CompletionLine(
@@ -1093,15 +1094,13 @@ class RoomServiceLoopRepository(
         item: WorkItemEntity,
         plan: ServicePlanEntity?,
         obligation: ServiceObligationEntity?,
-        completeness: ChecklistCompleteness?,
     ): FulfillmentEligibility = when {
         item.servicePlanId == null -> FulfillmentEligibility.NO_CURRENT_OBLIGATION
         item.capturedObligationId == null -> FulfillmentEligibility.HISTORY_ONLY
         item.outcome == null -> FulfillmentEligibility.OUTCOME_INELIGIBLE
-        item.outcome != "PERFORMED" -> FulfillmentEligibility.OUTCOME_INELIGIBLE
+        item.outcome !in setOf("PERFORMED", "PARTLY_PERFORMED") -> FulfillmentEligibility.OUTCOME_INELIGIBLE
         plan == null || plan.state != "ACTIVE" -> FulfillmentEligibility.PLAN_INELIGIBLE
         obligation == null || obligation.planId != plan.id || obligation.consumedAtEpochMillis != null || plan.currentObligationId != item.capturedObligationId -> FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED
-        completeness?.complete == false -> FulfillmentEligibility.CHECKLIST_INCOMPLETE
         else -> FulfillmentEligibility.ELIGIBLE
     }
 
@@ -1225,7 +1224,7 @@ class RoomServiceLoopRepository(
     @Deprecated("Checklist completeness is derived from the current snapshot and responses")
     override suspend fun markChecklistReviewed(workItemId: String): Long {
         val completeness = checklistCompleteness(workItemId)
-        require(completeness.complete) { "Inspection needs attention" }
+        require(completeness.complete) { "Complete all required checklist questions" }
         writeGate.beforeWrite()
         val now = businessTime.instant().toEpochMilli()
         database.withTransaction {
@@ -1244,24 +1243,32 @@ class RoomServiceLoopRepository(
         val obligation = item.capturedObligationId?.let { dao.obligation(it) }
         val completeness = item.templateSnapshotId?.let { checklistCompleteness(dao.checklistItems(it), dao.responses(workItemId)) }
         val candidate = item.copy(outcome = outcome)
-        val eligibility = fulfillmentEligibility(candidate, plan, obligation, completeness)
+        val eligibility = fulfillmentEligibility(candidate, plan, obligation)
         val normalizedReason = reason?.trim()?.ifBlank { null }?.takeIf { outcome == "NOT_PERFORMED" }
-        val actual = LocalDate.parse(visit.actualServiceDate)
-        val transitionedToPerformed = item.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && outcome == "PERFORMED"
-        var normalizedFulfills: Boolean? = when (outcome) {
+        val transitionedToPerformed = item.outcome != "PERFORMED" && outcome == "PERFORMED"
+        val transitionedToPartly = item.outcome != "PARTLY_PERFORMED" && outcome == "PARTLY_PERFORMED"
+        val normalizedFulfills: Boolean? = when (outcome) {
             null -> null
-            "PARTLY_PERFORMED", "NOT_PERFORMED" -> false
-            "PERFORMED" -> if (transitionedToPerformed) null else if (eligibility == FulfillmentEligibility.ELIGIBLE) fulfills else null
+            "NOT_PERFORMED" -> false
+            "PERFORMED" -> eligibility == FulfillmentEligibility.ELIGIBLE
+            "PARTLY_PERFORMED" -> if (eligibility == FulfillmentEligibility.ELIGIBLE) {
+                // Entering Partly performed always starts a new explicit decision;
+                // only a choice made while already in Partly is retained.
+                if (transitionedToPartly) null else fulfills
+            } else false
             else -> null
         }
         var normalizedNextDue: String? = null
         var normalizedCalculated: Boolean? = null
         var normalizedOverrideReason: String? = null
-        if (outcome == "PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE && normalizedFulfills == true) {
+        if (outcome in setOf("PERFORMED", "PARTLY_PERFORMED") && eligibility == FulfillmentEligibility.ELIGIBLE && normalizedFulfills == true) {
             val intervalCount = item.intervalCountSnapshot ?: error("Review the confirmed next due date")
             val intervalUnit = item.intervalUnitSnapshot ?: error("Review the confirmed next due date")
+            val actual = LocalDate.parse(visit.actualServiceDate)
             val calculatedDate = RecurrenceCalculator.nextDate(actual, intervalCount, intervalUnit).toString()
-            val suppliedDate = nextDue?.trim()?.ifBlank { null }
+            // A transition into Performed restores the standard automatic result;
+            // a deliberate override can be applied again after that transition.
+            val suppliedDate = nextDue?.trim()?.ifBlank { null }.takeUnless { transitionedToPerformed }
             if (suppliedDate == null || suppliedDate == calculatedDate) {
                 normalizedNextDue = calculatedDate
                 normalizedCalculated = true
@@ -1274,8 +1281,6 @@ class RoomServiceLoopRepository(
                 normalizedNextDue = suppliedDate
                 normalizedCalculated = false
             }
-        } else if (outcome == "PARTLY_PERFORMED" || outcome == "NOT_PERFORMED") {
-            normalizedFulfills = false
         }
         if (item.outcome == outcome && item.fulfillsCurrentObligation == normalizedFulfills && item.notPerformedReason == normalizedReason && item.confirmedNextDueDate == normalizedNextDue && item.nextDueDateCalculated == normalizedCalculated && item.nextDueOverrideReason == normalizedOverrideReason) {
             return item.visitId.let { dao.visit(it)?.modifiedAtEpochMillis ?: error("Visit no longer exists") }
@@ -1508,16 +1513,16 @@ class RoomServiceLoopRepository(
             val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(dao.checklistItems(snapshotId), dao.responses(item.id)) }
             if (completeness != null) {
                 if (completeness.issueMissingDescription.isNotEmpty()) return@withTransaction FinalizeResult.Blocked("Issue found needs a public description")
-                if (completeness.invalidExplicitAnswers.any { it !in completeness.issueMissingDescription }) return@withTransaction FinalizeResult.Blocked("A saved inspection answer is invalid — review it before finalizing")
-                if (outcome == "PERFORMED" && !completeness.complete) return@withTransaction FinalizeResult.Blocked("Inspection needs attention")
+                if (!completeness.complete) return@withTransaction FinalizeResult.Blocked("Complete all required checklist questions")
             }
             val plan = item.servicePlanId?.let { dao.plan(it) }
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
             WorkSubjectValidator.validateWorkItem(item, CustomerType.fromCode(dao.customer(visit.customerId)?.customerType ?: error("Customer no longer exists")), plan?.equipmentId)
-            val eligibility = fulfillmentEligibility(item, plan, obligation, completeness)
+            val eligibility = fulfillmentEligibility(item, plan, obligation)
             val fulfills = item.fulfillsCurrentObligation
             if (fulfills == true && eligibility != FulfillmentEligibility.ELIGIBLE) return@withTransaction FinalizeResult.Blocked("Current service obligation changed — review this line before finalizing")
-            if (eligibility == FulfillmentEligibility.ELIGIBLE && fulfills == null) return@withTransaction FinalizeResult.Blocked("Choose whether this completes the due service")
+            if (outcome == "PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE && fulfills != true) return@withTransaction FinalizeResult.Blocked("Performed work must fulfill the current due service")
+            if (outcome == "PARTLY_PERFORMED" && eligibility == FulfillmentEligibility.ELIGIBLE && fulfills == null) return@withTransaction FinalizeResult.Blocked("Choose whether this completes the due service")
             if (fulfills == true) {
                 val eligiblePlan = plan ?: return@withTransaction FinalizeResult.Blocked("Current service obligation changed — review this line before finalizing")
                 val actual = LocalDate.parse(visit.actualServiceDate); if (eligiblePlan.lastCountedCompletionDate?.let(LocalDate::parse)?.let { !actual.isAfter(it) } == true) return@withTransaction FinalizeResult.Blocked("Service date must be after the latest counted completion")

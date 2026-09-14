@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,8 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -69,7 +72,8 @@ import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import com.v16studio.serviceloop.domain.serviceDocumentationMode
 import com.v16studio.serviceloop.domain.serviceEntryStatus
 import com.v16studio.serviceloop.domain.serviceProgressGroups
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceChip
+import com.v16studio.serviceloop.data.isFiniteSignedDecimal
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChecklistChoice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
@@ -82,6 +86,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -155,6 +161,7 @@ internal fun ServiceScreen(
     val current = resolvedProgress.items.firstOrNull { it.workItemId == draft.workItemId }
     val currentPosition = current?.position ?: 1
     val next = resolvedProgress.nextService(draft.workItemId)
+    val reviewAvailable = resolvedProgress.actionableItems.isNotEmpty() && resolvedProgress.actionableItems.all { it.status == ServiceEntryStatus.READY }
     val editingEnabled = current?.documentationMode != ServiceDocumentationMode.CHOICE_REQUIRED &&
         current?.documentationMode != ServiceDocumentationMode.LEADER_OBSERVE && current?.documentationMode != ServiceDocumentationMode.DEFERRED
     val contextRows = listOf(
@@ -265,7 +272,7 @@ internal fun ServiceScreen(
                         }
                     },
                     modifier.testTag("review-visit"),
-                    enabled = true,
+                    enabled = reviewAvailable,
                 )
             }
         }
@@ -343,6 +350,7 @@ internal fun ServiceScreen(
                 }
                 item { ChecklistCompletionSummary(draft) }
             }
+            item { ServiceCompletionLandmark() }
             item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
             if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled) }
             if (viewState.contentRefreshError != null) item {
@@ -378,44 +386,48 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
             var reason by remember(workItemId, initial) { mutableStateOf(initial) }
             OutlinedTextField(reason, { reason = it; viewModel.scheduleNotPerformedReason(workItemId, visitId, it) }, label = { Text("Not performed reason") }, enabled = editingEnabled, modifier = Modifier.fillMaxWidth().testTag("not-performed-reason"))
         }
-    }
-    if (line.outcome != null) ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-fulfillment")) {
-        when (line.fulfillmentEligibility) {
-            FulfillmentEligibility.ELIGIBLE -> {
-                Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
-                listOf(true to "Fulfill — advance next due", false to "Keep due — service remains outstanding").forEach { (choice, label) ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (choice) "fulfill-$workItemId" else "keep-due-$workItemId")
-                        .selectable(selected = line.fulfillsCurrentObligation == choice, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseFulfillment(workItemId, visitId, choice) }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = line.fulfillsCurrentObligation == choice, onClick = null, enabled = editingEnabled)
-                        Text(label)
+        if (line.outcome != null) {
+            when (line.fulfillmentEligibility) {
+                FulfillmentEligibility.ELIGIBLE -> {
+                    if (line.outcome == "PARTLY_PERFORMED") {
+                        Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
+                        listOf(true to "Fulfill — advance next due", false to "Keep due — service remains outstanding").forEach { (choice, label) ->
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (choice) "fulfill-$workItemId" else "keep-due-$workItemId")
+                                .selectable(selected = line.fulfillsCurrentObligation == choice, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseFulfillment(workItemId, visitId, choice) }, verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = line.fulfillsCurrentObligation == choice, onClick = null, enabled = editingEnabled)
+                                Text(label)
+                            }
+                        }
                     }
                 }
+                FulfillmentEligibility.HISTORY_ONLY -> Text("History only — current due date is unchanged.")
+                FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date for this Service.")
+                FulfillmentEligibility.CHECKLIST_INCOMPLETE -> Text("Complete all required checklist questions")
+                FulfillmentEligibility.PLAN_INELIGIBLE -> Text("This plan is no longer active; it cannot advance the due date.")
+                FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("The current obligation changed; review this Service before finalizing.")
+                FulfillmentEligibility.OUTCOME_INELIGIBLE -> Unit
             }
-            FulfillmentEligibility.HISTORY_ONLY -> Text("History only — current due date is unchanged.")
-            FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date for this Service.")
-            FulfillmentEligibility.CHECKLIST_INCOMPLETE -> Text("Complete the inspection before deciding whether this fulfills the due service.")
-            FulfillmentEligibility.PLAN_INELIGIBLE -> Text("This plan is no longer active; it cannot advance the due date.")
-            FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("The current obligation changed; review this Service before finalizing.")
-            FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("The due service remains outstanding.")
+            if (line.fulfillsCurrentObligation == true && line.confirmedNextDueDate != null) {
+                Text("Next due · ${formatServiceLoopDate(line.confirmedNextDueDate)}", style = MaterialTheme.typography.titleMedium)
+                if (line.nextDueDateCalculated == true) Text("Calculated next due")
+                else Text("Manual override · ${line.nextDueOverrideReason.orEmpty()}")
+                var changeDue by rememberSaveable(workItemId) { mutableStateOf(false) }
+                if (!changeDue && editingEnabled) ServiceLoopTextAction("Change next due", { changeDue = true }, Modifier.testTag("change-next-due"))
+                if (changeDue && editingEnabled) {
+                    val initialDate = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_DATE] ?: line.confirmedNextDueDate
+                    val initialReason = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_REASON] ?: line.nextDueOverrideReason.orEmpty()
+                    var date by remember(workItemId, initialDate) { mutableStateOf(initialDate) }
+                    var reason by remember(workItemId, initialReason) { mutableStateOf(initialReason) }
+                    OutlinedTextField(date, { date = it; viewModel.scheduleRecurrenceOverrideDate(workItemId, it) }, label = { Text("Next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("override-date"))
+                    OutlinedTextField(reason, { reason = it; viewModel.scheduleRecurrenceOverrideReason(workItemId, it) }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth().testTag("override-reason"))
+                    val validDate = runCatching { LocalDate.parse(date).isAfter(LocalDate.parse(viewModel.state.value.serviceProgress?.serviceDate ?: "")) }.getOrDefault(false)
+                    ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason); changeDue = false }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
+                    ServiceLoopTextAction("Cancel", { changeDue = false })
+                }
+            } else if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE && line.fulfillsCurrentObligation == false && line.dueDate != null && line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED")) {
+                Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")
+            }
         }
-        if (line.fulfillsCurrentObligation == true && line.confirmedNextDueDate != null) {
-            Text("Next due · ${line.confirmedNextDueDate}", style = MaterialTheme.typography.titleMedium)
-            if (line.nextDueDateCalculated == true) Text("Calculated from the actual service date and captured interval.")
-            else Text("Manual override · ${line.nextDueOverrideReason.orEmpty()}")
-            var changeDue by rememberSaveable(workItemId) { mutableStateOf(false) }
-            if (!changeDue && editingEnabled) ServiceLoopTextAction("Change next due", { changeDue = true }, Modifier.testTag("change-next-due"))
-            if (changeDue && editingEnabled) {
-                val initialDate = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_DATE] ?: line.confirmedNextDueDate
-                val initialReason = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_REASON] ?: line.nextDueOverrideReason.orEmpty()
-                var date by remember(workItemId, initialDate) { mutableStateOf(initialDate) }
-                var reason by remember(workItemId, initialReason) { mutableStateOf(initialReason) }
-                OutlinedTextField(date, { date = it; viewModel.scheduleRecurrenceOverrideDate(workItemId, it) }, label = { Text("Next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("override-date"))
-                OutlinedTextField(reason, { reason = it; viewModel.scheduleRecurrenceOverrideReason(workItemId, it) }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth().testTag("override-reason"))
-                val validDate = runCatching { LocalDate.parse(date).isAfter(LocalDate.parse(viewModel.state.value.serviceProgress?.serviceDate ?: "")) }.getOrDefault(false)
-                ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason); changeDue = false }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
-                ServiceLoopTextAction("Cancel", { changeDue = false })
-            }
-        } else if (line.fulfillsCurrentObligation == false && line.dueDate != null) Text("Remains due · ${line.dueDate}")
     }
 }
 
@@ -539,13 +551,24 @@ private fun PrivateWorkContext(rows: List<Pair<String, String>>) {
 }
 
 @Composable
+private fun ServiceCompletionLandmark() {
+    val colors = LocalServiceLoopTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("service-completion-landmark"),
+        color = colors.surfaceSubtle,
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+    ) {
+        Text("Service completion", style = ServiceLoopUiTokens.Type.sectionTitle, modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm))
+    }
+}
+
+@Composable
 private fun ChecklistSectionHeader(draft: InspectionDraft) {
+    val colors = LocalServiceLoopTokens.current
     Column(Modifier.testTag("checklist-section"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Checklist", style = MaterialTheme.typography.titleLarge)
         if (draft.questions.isNotEmpty()) {
-            Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}")
-            Text(if (draft.checklistComplete) "Checklist complete" else "Checklist needs attention", color = if (draft.checklistComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-            Text("Unanswered and Not checked are never treated as OK.", style = MaterialTheme.typography.bodySmall)
+            Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}", color = if (draft.checklistComplete) colors.successInk else colors.errorInk)
         }
     }
 }
@@ -553,7 +576,6 @@ private fun ChecklistSectionHeader(draft: InspectionDraft) {
 @Composable
 private fun ChecklistCompletionSummary(draft: InspectionDraft) {
     if (draft.issueMissingDescription.isNotEmpty()) Text("Issue findings require a public description before checklist completion.", color = MaterialTheme.colorScheme.error)
-    if (draft.invalidExplicitAnswers.isNotEmpty()) Text("A saved checklist answer needs attention.", color = MaterialTheme.colorScheme.error)
 }
 
 @Composable
@@ -563,7 +585,10 @@ private fun ServiceQuestionBlock(workItemId: String, rawInputs: Map<String, Stri
     var issueBuffer by rememberSaveable("issue-${question.snapshotItemId}", initialIssue) { mutableStateOf(initialIssue) }
     var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}", initialNotApplicable) { mutableStateOf(initialNotApplicable) }
     ServiceLoopSurfaceCard(modifier = Modifier.testTag("question-${question.snapshotItemId}")) {
-        Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
+        Box(Modifier.fillMaxWidth()) {
+            Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth().padding(end = ServiceLoopUiTokens.Size.iconSmall + ServiceLoopUiTokens.Space.sm))
+            if (question.isResolved()) ServiceLoopIcon(ServiceLoopIcons.SelectionCheck, null, Modifier.align(Alignment.TopEnd).size(ServiceLoopUiTokens.Size.iconSmall).testTag("question-${question.snapshotItemId}-complete"), LocalServiceLoopTokens.current.successInk)
+        }
         Text(if (question.required) "Required · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}" else "Optional · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.bodySmall)
         question.privateGuidance?.takeIf(String::isNotBlank)?.let { Text("PRIVATE · $it", style = MaterialTheme.typography.bodySmall) }
         when (question.responseType) {
@@ -603,11 +628,12 @@ private fun StatusChoiceGrid(question: InspectionQuestion, enabled: Boolean, vie
 
 @Composable
 private fun StatusChoice(choice: Pair<ResponseDisposition, String>, question: InspectionQuestion, enabled: Boolean, viewModel: ServiceLoopViewModel, workItemId: String, modifier: Modifier = Modifier) {
-    ServiceLoopChoiceChip(
+    ServiceLoopChecklistChoice(
         selected = question.disposition == choice.first,
         onClick = { if (enabled) viewModel.chooseResponse(workItemId, question.snapshotItemId, choice.first) },
         label = choice.second,
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("response-${question.snapshotItemId}-${choice.first.name}").semantics { role = Role.RadioButton; if (!enabled) disabled() },
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("response-${question.snapshotItemId}-${choice.first.name}"),
+        enabled = enabled,
     )
 }
 
@@ -629,7 +655,32 @@ private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, qu
             wasFocused = it.isFocused
         },
     )
-    ServiceLoopSecondaryButton("Not applicable", { viewModel.chooseResponse(workItemId, question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, Modifier.fillMaxWidth().testTag("not-applicable-${question.snapshotItemId}"), enabled = enabled)
+    ServiceLoopChecklistChoice(
+        selected = question.disposition == ResponseDisposition.NOT_APPLICABLE,
+        onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) },
+        label = "Not applicable",
+        modifier = Modifier.fillMaxWidth().testTag("not-applicable-${question.snapshotItemId}"),
+        enabled = enabled,
+    )
+}
+
+private fun InspectionQuestion.isResolved(): Boolean = when (responseType) {
+    "STATUS" -> when (disposition) {
+        ResponseDisposition.OK -> true
+        ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE -> !reason.isNullOrBlank()
+        else -> false
+    }
+    "TEXT" -> when (disposition) {
+        ResponseDisposition.VALUE -> !textValue.isNullOrBlank()
+        ResponseDisposition.NOT_APPLICABLE -> !reason.isNullOrBlank()
+        else -> false
+    }
+    "NUMBER" -> when (disposition) {
+        ResponseDisposition.VALUE -> isFiniteSignedDecimal(numberValue.orEmpty())
+        ResponseDisposition.NOT_APPLICABLE -> !reason.isNullOrBlank()
+        else -> false
+    }
+    else -> false
 }
 
 private fun progressSummary(progress: VisitServiceProgress): String {

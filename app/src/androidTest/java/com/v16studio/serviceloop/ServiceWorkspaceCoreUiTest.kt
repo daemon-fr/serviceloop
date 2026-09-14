@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -172,8 +173,12 @@ class ServiceWorkspaceCoreUiTest {
 
         compose.onNodeWithTag("private-work-note").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag("long-text-private-note-expanded").fetchSemanticsNodes().isEmpty())
+        val expandAction = compose.onNodeWithTag("long-text-private-note-expand")
+        expandAction.performScrollTo()
+        val expandBounds = expandAction.fetchSemanticsNode().boundsInRoot
+        assertTrue("expand target must remain at least 48dp: $expandBounds", expandBounds.width >= 48f && expandBounds.height >= 48f)
 
-        compose.onNodeWithTag("long-text-private-note-expand").performClick()
+        expandAction.performClick()
         compose.onNodeWithTag("long-text-private-note-expanded").assertIsDisplayed()
     }
 
