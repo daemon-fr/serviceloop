@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -95,6 +96,7 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -238,9 +240,12 @@ internal fun ServiceScreen(
                      ?.let { listIndices.firstQuestion + it }
                      ?: listIndices.checklistHeader
                  CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE ->
-                     listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size + 1) + 1
-             }
-            listState.scrollToItem(index.coerceAtLeast(0))
+                     listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size) + 2
+            }
+            val targetIndex = index.coerceAtLeast(0)
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > targetIndex }
+            listState.scrollToItem(targetIndex)
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.index == targetIndex } }.first { it }
             withFrameNanos { }
             when (target.kind) {
                 CompletionBlockerKind.OUTCOME -> outcomeRequester.bringIntoView()

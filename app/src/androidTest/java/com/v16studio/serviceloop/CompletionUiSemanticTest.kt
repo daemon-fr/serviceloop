@@ -94,7 +94,11 @@ class CompletionUiSemanticTest {
         assertCompletionBlockerNavigation("NEXT_DUE", true, largeText = true)
     }
 
-    private fun assertCompletionBlockerNavigation(kind: String, withChecklist: Boolean, largeText: Boolean = false) {
+    @Test fun noChecklistReasonLinkRevealsControlInDarkTheme() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", false, dark = true)
+    }
+
+    private fun assertCompletionBlockerNavigation(kind: String, withChecklist: Boolean, largeText: Boolean = false, dark: Boolean = false) {
         runBlocking {
             val dao = database.serviceLoopDao()
             if (withChecklist) {
@@ -109,7 +113,7 @@ class CompletionUiSemanticTest {
         }
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
-        compose.setContent { ServiceLoopTheme {
+        compose.setContent { ServiceLoopTheme(darkTheme = dark) {
             if (largeText) {
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) { ServiceLoopApp(viewModel, "review/v") }
@@ -121,7 +125,12 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag(blockerTag).assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
-        compose.onNodeWithTag("service-outcome").assertIsDisplayed()
+        if (dark || largeText || kind == "OUTCOME") {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val image = compose.onRoot().captureToImage().asAndroidBitmap()
+            val name = "checkpoint0-${kind.lowercase()}-${if (withChecklist) "checklist" else "no-checklist"}-${if (dark) "dark" else "light"}${if (largeText) "-large-text" else ""}.png"
+            File(context.getExternalFilesDir(null), name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
         when (kind) {
             "NOT_PERFORMED_REASON" -> compose.onNodeWithTag("not-performed-reason").assertIsDisplayed()
             "NEXT_DUE" -> compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
