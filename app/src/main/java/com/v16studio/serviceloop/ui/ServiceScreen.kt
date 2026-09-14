@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
@@ -170,6 +173,9 @@ internal fun ServiceScreen(
         "Dispatch" to draft.dispatchInstructions.orEmpty(),
     ).filter { it.second.isNotBlank() }
     val completion = viewState.completionLines.firstOrNull { it.workItemId == draft.workItemId }
+    val outcomeRequester = remember(draft.workItemId) { BringIntoViewRequester() }
+    val reasonRequester = remember(draft.workItemId) { BringIntoViewRequester() }
+    val dueRequester = remember(draft.workItemId) { BringIntoViewRequester() }
     LaunchedEffect(draft.workItemId) {
         viewModel.loadFieldEvidence(draft.workItemId)
         viewModel.loadCompletion(draft.visitId)
@@ -221,8 +227,9 @@ internal fun ServiceScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(draft.workItemId, focus, listIndices) {
+    LaunchedEffect(draft.workItemId, focus, listIndices, completion != null) {
         focus?.let { target ->
+            if (target.kind in setOf(CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE) && completion == null) return@let
              val index = when (target.kind) {
                  CompletionBlockerKind.WORK_PERFORMED -> listIndices.workPerformed
                  CompletionBlockerKind.CHECKLIST_INCOMPLETE -> listIndices.checklistHeader
@@ -234,6 +241,13 @@ internal fun ServiceScreen(
                      listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size + 1) + 1
              }
             listState.scrollToItem(index.coerceAtLeast(0))
+            withFrameNanos { }
+            when (target.kind) {
+                CompletionBlockerKind.OUTCOME -> outcomeRequester.bringIntoView()
+                CompletionBlockerKind.NOT_PERFORMED_REASON -> reasonRequester.bringIntoView()
+                CompletionBlockerKind.NEXT_DUE -> dueRequester.bringIntoView()
+                else -> Unit
+            }
             viewModel.clearInspectionFocus()
         }
     }
@@ -349,7 +363,7 @@ internal fun ServiceScreen(
             }
             item { ServiceCompletionLandmark() }
             item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
-            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled) }
+            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled, outcomeRequester, reasonRequester, dueRequester) }
             if (viewState.contentRefreshError != null) item {
                 Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
             }
@@ -366,7 +380,7 @@ internal fun ServiceScreen(
 
 /** Compatibility surface for existing B025/B026 tests and transitional callers. */
 @Composable
-private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraft, viewModel: ServiceLoopViewModel, editingEnabled: Boolean) {
+private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraft, viewModel: ServiceLoopViewModel, editingEnabled: Boolean, outcomeRequester: BringIntoViewRequester, reasonRequester: BringIntoViewRequester, dueRequester: BringIntoViewRequester) {
     val visitId = draft.visitId
     val workItemId = draft.workItemId
     ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-outcome")) {
@@ -377,18 +391,19 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
             onSelected = { viewModel.chooseOutcome(workItemId, visitId, it) },
             enabled = editingEnabled,
             testTagPrefix = "outcome-$workItemId",
+            modifier = Modifier.bringIntoViewRequester(outcomeRequester),
         )
         if (line.outcome == "NOT_PERFORMED") {
             val initial = draft.rawInputs[ServiceDraftFieldKeys.NOT_PERFORMED_REASON] ?: line.notPerformedReason.orEmpty()
             var reason by remember(workItemId, initial) { mutableStateOf(initial) }
-            OutlinedTextField(reason, { reason = it; viewModel.scheduleNotPerformedReason(workItemId, visitId, it) }, label = { Text("Not performed reason") }, enabled = editingEnabled, modifier = Modifier.fillMaxWidth().testTag("not-performed-reason"))
+            OutlinedTextField(reason, { reason = it; viewModel.scheduleNotPerformedReason(workItemId, visitId, it) }, label = { Text("Not performed reason") }, enabled = editingEnabled, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(reasonRequester).testTag("not-performed-reason"))
         }
         if (line.outcome != null) {
             when (line.fulfillmentEligibility) {
                 FulfillmentEligibility.ELIGIBLE -> {
                     if (line.outcome == "PARTLY_PERFORMED") {
                         Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
-                        Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                        Column(Modifier.bringIntoViewRequester(dueRequester), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                             ServiceLoopSelectionOption(
                                 selected = line.fulfillsCurrentObligation == true,
                                 onClick = { viewModel.chooseFulfillment(workItemId, visitId, true) },

@@ -70,6 +70,65 @@ class CompletionUiSemanticTest {
 
     @After fun tearDown() = database.close()
 
+    @Test fun noChecklistBlockerLinksRevealCompletionControls() {
+        assertCompletionBlockerNavigation("OUTCOME", false)
+    }
+
+    @Test fun checklistBlockerLinksRevealCompletionControls() {
+        assertCompletionBlockerNavigation("OUTCOME", true)
+    }
+
+    @Test fun noChecklistNotPerformedReasonLinkRevealsReason() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", false)
+    }
+
+    @Test fun checklistNotPerformedReasonLinkRevealsReason() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", true)
+    }
+
+    @Test fun noChecklistNextDueLinkRevealsFulfillment() {
+        assertCompletionBlockerNavigation("NEXT_DUE", false)
+    }
+
+    @Test fun checklistNextDueLinkRevealsFulfillmentAtLargeText() {
+        assertCompletionBlockerNavigation("NEXT_DUE", true, largeText = true)
+    }
+
+    private fun assertCompletionBlockerNavigation(kind: String, withChecklist: Boolean, largeText: Boolean = false) {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            if (withChecklist) {
+                dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("snapshot", null, "Fixture checklist", 1, 1)))
+                dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("question", "snapshot", 1, "Optional check", "STATUS", null, false, null)))
+            }
+            dao.updateWorkItem(dao.workItem("w")!!.copy(
+                templateSnapshotId = if (withChecklist) "snapshot" else null,
+                outcome = when (kind) { "NOT_PERFORMED_REASON" -> "NOT_PERFORMED"; "NEXT_DUE" -> "PARTLY_PERFORMED"; else -> null },
+                fulfillsCurrentObligation = if (kind == "NOT_PERFORMED_REASON") false else null,
+            ))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme {
+            if (largeText) {
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) { ServiceLoopApp(viewModel, "review/v") }
+            } else ServiceLoopApp(viewModel, "review/v")
+        } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        val blockerTag = "completion-blocker-w-$kind-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).assertIsDisplayed().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        compose.onNodeWithTag("service-outcome").assertIsDisplayed()
+        when (kind) {
+            "NOT_PERFORMED_REASON" -> compose.onNodeWithTag("not-performed-reason").assertIsDisplayed()
+            "NEXT_DUE" -> compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
+            else -> compose.onNodeWithTag("outcome-w-PERFORMED").assertIsDisplayed()
+        }
+    }
+
     @Test fun workingVisitIdentityAndActionsAreSeparated() {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
