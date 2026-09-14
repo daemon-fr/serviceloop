@@ -20,11 +20,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,13 +43,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -74,6 +72,8 @@ import com.v16studio.serviceloop.domain.serviceEntryStatus
 import com.v16studio.serviceloop.domain.serviceProgressGroups
 import com.v16studio.serviceloop.data.isFiniteSignedDecimal
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChecklistChoice
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
@@ -84,6 +84,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
+import com.v16studio.serviceloop.ui.designsystem.serviceLoopFocusRing
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
@@ -154,7 +155,6 @@ internal fun ServiceScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val listState = rememberLazyListState()
-    var servicesExpanded by rememberSaveable(draft.visitId) { mutableStateOf(false) }
     var navigationMessage by rememberSaveable(draft.workItemId) { mutableStateOf<String?>(null) }
     var showLeaveDialog by rememberSaveable(draft.workItemId) { mutableStateOf(false) }
     var leaveFlushResult by remember { mutableStateOf<com.v16studio.serviceloop.ui.service.ServiceDraftFlushResult?>(null) }
@@ -292,8 +292,6 @@ internal fun ServiceScreen(
                 ServiceProgressNavigator(
                     progress = resolvedProgress,
                     currentWorkItemId = draft.workItemId,
-                    expanded = servicesExpanded,
-                    onExpandedChange = { servicesExpanded = it },
                     onSelect = { target -> if (target.workItemId != draft.workItemId) flushAndThen { replaceServiceDestination(nav, target.workItemId) } },
                 )
             }
@@ -373,13 +371,13 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
     val workItemId = draft.workItemId
     ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-outcome")) {
         Text("Outcome", style = MaterialTheme.typography.titleLarge)
-        listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("outcome-$workItemId-$value")
-                .selectable(selected = line.outcome == value, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseOutcome(workItemId, visitId, value) }, verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = line.outcome == value, onClick = null, enabled = editingEnabled)
-                Text(label)
-            }
-        }
+        ServiceLoopChoiceGroup(
+            options = listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed"),
+            selected = line.outcome.orEmpty(),
+            onSelected = { viewModel.chooseOutcome(workItemId, visitId, it) },
+            enabled = editingEnabled,
+            testTagPrefix = "outcome-$workItemId",
+        )
         if (line.outcome == "NOT_PERFORMED") {
             val initial = draft.rawInputs[ServiceDraftFieldKeys.NOT_PERFORMED_REASON] ?: line.notPerformedReason.orEmpty()
             var reason by remember(workItemId, initial) { mutableStateOf(initial) }
@@ -390,12 +388,21 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
                 FulfillmentEligibility.ELIGIBLE -> {
                     if (line.outcome == "PARTLY_PERFORMED") {
                         Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
-                        listOf(true to "Fulfill — advance next due", false to "Keep due — service remains outstanding").forEach { (choice, label) ->
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (choice) "fulfill-$workItemId" else "keep-due-$workItemId")
-                                .selectable(selected = line.fulfillsCurrentObligation == choice, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseFulfillment(workItemId, visitId, choice) }, verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = line.fulfillsCurrentObligation == choice, onClick = null, enabled = editingEnabled)
-                                Text(label)
-                            }
+                        Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                            ServiceLoopSelectionOption(
+                                selected = line.fulfillsCurrentObligation == true,
+                                onClick = { viewModel.chooseFulfillment(workItemId, visitId, true) },
+                                label = "Fulfill — advance next due",
+                                enabled = editingEnabled,
+                                modifier = Modifier.testTag("fulfill-$workItemId"),
+                            )
+                            ServiceLoopSelectionOption(
+                                selected = line.fulfillsCurrentObligation == false,
+                                onClick = { viewModel.chooseFulfillment(workItemId, visitId, false) },
+                                label = "Keep due — service remains outstanding",
+                                enabled = editingEnabled,
+                                modifier = Modifier.testTag("keep-due-$workItemId"),
+                            )
                         }
                     }
                 }
@@ -441,29 +448,56 @@ internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, fo
 internal fun ServiceProgressNavigator(
     progress: VisitServiceProgress,
     currentWorkItemId: String?,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
     onSelect: (ServiceProgressItem) -> Unit,
     rowTagPrefix: String = "service-row",
 ) {
+    val currentGroupKey = currentWorkItemId?.let { progress.groupFor(it)?.key }
+    val defaultExpandedKeys = if (currentWorkItemId == null) {
+        progress.groups.map { it.key }
+    } else {
+        listOfNotNull(currentGroupKey)
+    }
+    var expandedGroupKeys by rememberSaveable(progress.visitId, currentWorkItemId) {
+        mutableStateOf(defaultExpandedKeys)
+    }
+
     ServiceLoopSurfaceCard(modifier = Modifier.testTag("visit-progress")) {
         Text("Visit progress", style = MaterialTheme.typography.titleLarge)
-        Text(progressSummary(progress))
-        ServiceLoopTextAction(if (expanded) "Hide services" else "Show services", { onExpandedChange(!expanded) }, Modifier.testTag("show-services"))
-        if (expanded) {
-            progress.groups.forEach { group ->
-                Text(group.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-                group.items.forEach { item ->
-                    val selected = item.workItemId == currentWorkItemId
-                    ServiceLoopDenseNavigableRow(
-                        title = item.serviceName,
-                        context = null,
-                        statusContent = { ServiceProgressBadge(item) },
-                        modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}"),
-                        selected = selected,
-                        showDisclosure = !selected,
-                        onClick = if (selected) null else ({ onSelect(item) }),
-                    )
+        Text(progressSummary(progress), modifier = Modifier.testTag("visit-progress-summary"))
+        progress.groups.forEachIndexed { groupIndex, group ->
+            val groupTag = serviceProgressGroupTag(group.key)
+            val expanded = group.key in expandedGroupKeys
+            Column(
+                Modifier.fillMaxWidth().testTag("service-group-$groupTag"),
+                verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+            ) {
+                Text(
+                    group.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = if (groupIndex == 0) ServiceLoopUiTokens.Space.sm else ServiceLoopUiTokens.Space.md),
+                )
+                ServiceProgressGroupToggle(
+                    group = group,
+                    expanded = expanded,
+                    onToggle = {
+                        expandedGroupKeys = if (expanded) expandedGroupKeys - group.key else expandedGroupKeys + group.key
+                    },
+                    modifier = Modifier.testTag("service-group-toggle-$groupTag"),
+                )
+                if (expanded) {
+                    group.items.forEachIndexed { index, item ->
+                        val selected = item.workItemId == currentWorkItemId
+                        ServiceLoopDenseNavigableRow(
+                            title = item.serviceName,
+                            context = null,
+                            statusContent = { ServiceProgressBadge(item) },
+                            modifier = Modifier.padding(start = ServiceLoopUiTokens.Space.sm).testTag("$rowTagPrefix-${item.workItemId}"),
+                            selected = selected,
+                            showDisclosure = !selected,
+                            onClick = if (selected) null else ({ onSelect(item) }),
+                            showDivider = index < group.items.lastIndex,
+                        )
+                    }
                 }
             }
         }
@@ -472,7 +506,39 @@ internal fun ServiceProgressNavigator(
 
 @Composable
 internal fun VisitServiceProgressOverview(progress: VisitServiceProgress, onSelect: (ServiceProgressItem) -> Unit) {
-    ServiceProgressNavigator(progress, null, true, {}, onSelect, rowTagPrefix = "visit-line")
+    ServiceProgressNavigator(progress, null, onSelect, rowTagPrefix = "visit-line")
+}
+
+@Composable
+private fun ServiceProgressGroupToggle(
+    group: ServiceProgressGroup,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = LocalServiceLoopTokens.current
+    val serviceSummary = serviceProgressGroupSummary(group)
+    val accessibleName = "${if (expanded) "Hide" else "Show"} $serviceSummary for ${group.label}"
+    Row(
+        modifier = modifier.fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+            .clickable(role = Role.Button, onClick = onToggle)
+            .semantics {
+                contentDescription = accessibleName
+                stateDescription = if (expanded) "Expanded" else "Collapsed"
+            }
+            .padding(horizontal = ServiceLoopUiTokens.Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(serviceSummary, style = ServiceLoopUiTokens.Type.label, color = c.textSecondary, modifier = Modifier.weight(1f))
+        ServiceLoopIcon(
+            if (expanded) ServiceLoopIcons.Dropdown else ServiceLoopIcons.Disclosure,
+            null,
+            Modifier.size(ServiceLoopUiTokens.Size.icon),
+            c.icon,
+        )
+    }
 }
 
 @Composable
@@ -677,7 +743,7 @@ private fun InspectionQuestion.isResolved(): Boolean = when (responseType) {
     else -> false
 }
 
-private fun progressSummary(progress: VisitServiceProgress): String {
+internal fun progressSummary(progress: VisitServiceProgress): String {
     val actionable = progress.actionableItems
     val values = listOf(
         actionable.count { it.status == ServiceEntryStatus.READY } to "ready for review",
@@ -685,8 +751,31 @@ private fun progressSummary(progress: VisitServiceProgress): String {
         actionable.count { it.status == ServiceEntryStatus.NEEDS_ATTENTION } to "needs attention",
         actionable.count { it.status == ServiceEntryStatus.NOT_STARTED } to "not started",
     ).filter { it.first > 0 }
-    return values.joinToString(" · ") { "${it.first} ${it.second}" }.ifBlank { "No local service work" }
+    return values.joinToString(" · ") { serviceProgressStatusPhrase(it.first, it.second) }.ifBlank { "No local service work" }
 }
+
+internal fun serviceProgressGroupSummary(group: ServiceProgressGroup): String {
+    val actionable = group.items.filter { it.documentationMode in setOf(ServiceDocumentationMode.LOCAL, ServiceDocumentationMode.CHOICE_REQUIRED) }
+    val statusClauses = listOf(
+        actionable.count { it.status == ServiceEntryStatus.NEEDS_ATTENTION } to "needs attention",
+        actionable.count { it.status == ServiceEntryStatus.READY } to "ready for review",
+        actionable.count { it.status == ServiceEntryStatus.IN_PROGRESS } to "in progress",
+        actionable.count { it.status == ServiceEntryStatus.NOT_STARTED } to "not started",
+    ).filter { it.first > 0 }
+    return buildList {
+        add("${group.items.size} ${serviceWord(group.items.size)}")
+        addAll(statusClauses.map { serviceProgressStatusPhrase(it.first, it.second) })
+    }.joinToString(" · ")
+}
+
+private fun serviceWord(count: Int): String = if (count == 1) "service" else "services"
+
+private fun serviceProgressStatusPhrase(count: Int, status: String): String {
+    val verb = if (status == "needs attention" && count != 1) "need attention" else status
+    return "$count ${serviceWord(count)} $verb"
+}
+
+private fun serviceProgressGroupTag(key: String): String = key.replace(Regex("[^A-Za-z0-9_-]"), "-")
 
 private fun ServiceProgressItem.navigationStatusLabel(): String = when (documentationMode) {
     ServiceDocumentationMode.CHOICE_REQUIRED -> "Choose documentation"

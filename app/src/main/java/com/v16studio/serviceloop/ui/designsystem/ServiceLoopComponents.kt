@@ -13,8 +13,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -105,7 +103,7 @@ fun ServiceLoopBrandStrip(modifier: Modifier = Modifier) {
     }
 }
 
-/** A compact, purpose-built weekday toggle. It intentionally has no FilterChip padding. */
+/** A compact, purpose-built weekday toggle. It intentionally has no chip-style padding. */
 @Composable
 fun ServiceLoopDayToggle(
     label: String,
@@ -241,23 +239,71 @@ fun <T> ServiceLoopContentTabs(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun <T> ServiceLoopChoiceGroup(options: List<Pair<T, String>>, selected: T, onSelected: (T) -> Unit, modifier: Modifier = Modifier, testTagPrefix: String? = null) {
-    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+fun <T> ServiceLoopChoiceGroup(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    testTagPrefix: String? = null,
+    enabled: Boolean = true,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
         options.forEach { (value, label) ->
-            ServiceLoopChoiceChip(value == selected, { onSelected(value) }, label, if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"))
+            ServiceLoopSelectionOption(
+                selected = value == selected,
+                onClick = { onSelected(value) },
+                label = label,
+                enabled = enabled,
+                modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
+            )
         }
     }
 }
 
 @Composable
+fun ServiceLoopSelectionOption(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val c = LocalServiceLoopTokens.current
+    Surface(
+        modifier = modifier.fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+        color = if (selected) c.selection else c.surface,
+        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                label,
+                color = when {
+                    !enabled -> c.disabledText
+                    selected -> c.selectionInk
+                    else -> c.textPrimary
+                },
+                style = ServiceLoopUiTokens.Type.label,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+/** Compatibility wrapper for older callers; ordinary choices use the framed selection primitive. */
+@Composable
 fun ServiceLoopChoiceChip(selected: Boolean, onClick: () -> Unit, label: String, modifier: Modifier = Modifier) {
-    FilterChip(
+    ServiceLoopSelectionOption(
         selected = selected,
         onClick = onClick,
-        label = { Text(label, softWrap = false, style = ServiceLoopUiTokens.Type.label) },
-        modifier = modifier.width(IntrinsicSize.Max).heightIn(min = ServiceLoopUiTokens.Size.touchMin),
+        label = label,
+        modifier = modifier,
     )
 }
 
@@ -270,20 +316,7 @@ fun ServiceLoopChecklistChoice(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val c = LocalServiceLoopTokens.current
-    val selectedInk = if (selected && c.canvas == ServiceLoopUiTokens.DarkColors.canvas) Color.White else c.textPrimary
-    Surface(
-        modifier = modifier.fillMaxWidth()
-            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
-        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-        color = if (selected) c.selection else c.surface,
-        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
-    ) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm), contentAlignment = Alignment.CenterStart) {
-            Text(label, color = if (enabled) selectedInk else c.disabledText, style = ServiceLoopUiTokens.Type.label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-        }
-    }
+    ServiceLoopSelectionOption(selected, onClick, label, modifier, enabled)
 }
 
 /** A compact, menu-backed selector for a stable Work-filter dimension. */
@@ -632,7 +665,7 @@ fun ServiceLoopDenseNavigableRow(
     title:String,context:String?=null,metadata:String?=null,status:String?=null,actionLabel:String?=null,
     modifier:Modifier=Modifier,leadingIcon:Int?=null,
     leadingContent:(@Composable RowScope.()->Unit)?=null,
-    showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,onClick:(()->Unit)?,
+    showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,showDivider:Boolean=true,onClick:(()->Unit)?,
 ) {
     val c=LocalServiceLoopTokens.current
     Row(
@@ -640,7 +673,7 @@ fun ServiceLoopDenseNavigableRow(
             .then(if (selected) Modifier.background(c.selection, RoundedCornerShape(ServiceLoopUiTokens.Radius.field)) else Modifier)
             .then(if (onClick != null) Modifier.serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clickable(role=Role.Button,onClick=onClick).focusable() else Modifier)
             .semantics { this.selected = selected }
-            .drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())}
+            .then(if (showDivider) Modifier.drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())} else Modifier)
             .padding(vertical=ServiceLoopUiTokens.Space.md),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
     ) {

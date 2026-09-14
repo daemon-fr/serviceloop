@@ -39,12 +39,14 @@ class ServiceLoopDesignSystemTest {
             assertEquals(Color(0xFF182A30), textPrimary); assertEquals(Color(0xFF08666B), action)
             assertEquals(Color(0xFFE7F3F1), selection); assertEquals(Color(0xFF08747A), selectionOutline)
             assertEquals(Color(0xFF6A828C), outlineControl); assertEquals(Color(0xFFA32D35), errorInk)
+            assertEquals(Color(0xFF182A30), selectionInk)
         }
         with(ServiceLoopUiTokens.DarkColors) {
             assertEquals(Color(0xFF10191C), canvas); assertEquals(Color(0xFF19262B), surface)
             assertEquals(Color(0xFFEAF2F4), textPrimary); assertEquals(Color(0xFF79D4CE), action)
             assertEquals(Color(0xFF173C3D), selection); assertEquals(Color(0xFF79D4CE), selectionOutline)
             assertEquals(Color(0xFF809AA5), outlineControl); assertEquals(Color(0xFFFFC0C4), errorInk)
+            assertEquals(Color.White, selectionInk)
         }
     }
 

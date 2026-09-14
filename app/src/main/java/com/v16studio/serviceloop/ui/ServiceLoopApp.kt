@@ -41,19 +41,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -147,6 +144,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDayToggle
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
@@ -904,25 +902,13 @@ private fun AppearanceSettingsScreen(padding: PaddingValues, appearancePreferenc
             Text("Appearance", style = MaterialTheme.typography.titleLarge)
             Text("Choose how ServiceLoop should appear. Changes apply immediately; no restart is required.")
         }
-        AppearanceMode.entries.forEach { mode ->
-            item {
-                val description = "${mode.label} — ${mode.meaning}"
-                Row(
-                    Modifier.fillMaxWidth()
-                        .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
-                        .testTag("appearance-${mode.name.lowercase()}")
-                        .selectable(selected == mode, onClick = { appearancePreferences.setMode(mode) })
-                        .semantics { contentDescription = description }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected == mode, null)
-                    Column(Modifier.weight(1f)) {
-                        Text(mode.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(mode.meaning, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
+        item {
+            ServiceLoopChoiceGroup(
+                options = AppearanceMode.entries.map { mode -> mode to "${mode.label} — ${mode.meaning}" },
+                selected = selected,
+                onSelected = appearancePreferences::setMode,
+                testTagPrefix = "appearance",
+            )
         }
     }
 }
@@ -934,7 +920,7 @@ private fun CalendarSettingsScreen(state:UiState,padding:PaddingValues,viewModel
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){result->if(result[Manifest.permission.READ_CALENDAR]==true&&result[Manifest.permission.WRITE_CALENDAR]==true)viewModel.setCalendarEnabled(true)else viewModel.loadCalendarSettings()}
     LazyColumn(Modifier.padding(padding).testTag("calendar-settings"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)){
         item{Text("One-way Calendar integration",style=MaterialTheme.typography.titleLarge);Text("ServiceLoop remains the source of truth. Calendar changes do not change ServiceLoop. Only Booked Visits with an appointment time are automatically synchronized.");Text("Status: ${runtime.label}",modifier=Modifier.testTag("calendar-status"));Row(verticalAlignment=Alignment.CenterVertically){Checkbox(runtime.enabled,{enabled->if(enabled&&!runtime.hasPermissions)permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))else viewModel.setCalendarEnabled(enabled)},Modifier.testTag("calendar-enabled"));Text("Enable Calendar integration")};if(!runtime.hasPermissions)OutlinedButton({permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR))},Modifier.fillMaxWidth().testTag("calendar-request-permission")){Text("Allow Calendar access")}}
-        if(runtime.hasPermissions)item{Text("Preferred calendar",fontWeight=FontWeight.Bold);if(runtime.writableCalendars.isEmpty())Text("No writable calendar is available on this device.");runtime.writableCalendars.forEach{calendar->FilterChip(runtime.selectedCalendarLabel==calendar.label,{viewModel.selectCalendar(calendar)},{Text(listOfNotNull(calendar.label,calendar.accountLabel).joinToString(" · "))},Modifier.testTag("calendar-${calendar.id}"))};if(runtime.linkedFutureCount>0)Text("Changing this choice affects new events only; existing linked events stay in their original calendar.")}
+        if(runtime.hasPermissions)item{Text("Preferred calendar",fontWeight=FontWeight.Bold);if(runtime.writableCalendars.isEmpty())Text("No writable calendar is available on this device.");runtime.writableCalendars.forEach{calendar->ServiceLoopSelectionOption(runtime.selectedCalendarLabel==calendar.label,{viewModel.selectCalendar(calendar)},listOfNotNull(calendar.label,calendar.accountLabel).joinToString(" · "),Modifier.testTag("calendar-${calendar.id}"))};if(runtime.linkedFutureCount>0)Text("Changing this choice affects new events only; existing linked events stay in their original calendar.")}
         item{Text("${runtime.linkedFutureCount} linked future Visits · ${runtime.problemCount} need attention");if(!runtime.hasPermissions)OutlinedButton({context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}")))},Modifier.fillMaxWidth()){Text("Open Android app permission settings")};state.operationMessage?.let{Text(it)};state.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}}
     }
 }

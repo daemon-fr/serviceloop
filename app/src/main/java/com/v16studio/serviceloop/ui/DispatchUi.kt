@@ -16,14 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
@@ -32,6 +29,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as 
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
@@ -48,10 +46,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
@@ -137,27 +131,12 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
     ) {
         item {
             Text("What is your role?", style = MaterialTheme.typography.titleLarge)
-            choices.forEach { (value, copy) ->
-                val fullLabel = "${copy.first} (${copy.second})"
-                Row(
-                    Modifier.fillMaxWidth()
-                        .testTag("team-role-${value.name.lowercase()}")
-                        .selectable(role == value, onClick = { role = value; context.setTeamRole(value) })
-                        .semantics { contentDescription = fullLabel }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    RadioButton(role == value, null)
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(copy.first) }
-                            withStyle(SpanStyle(fontWeight = FontWeight.Normal)) { append(" (${copy.second})") }
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+            ServiceLoopChoiceGroup(
+                options = choices.map { (value, copy) -> value to "${copy.first} (${copy.second})" },
+                selected = role,
+                onSelected = { role = it; context.setTeamRole(it) },
+                testTagPrefix = "team-role",
+            )
             Text("Roles only control local file-based workflows. No account, synchronization, or shared database is created.", style = MaterialTheme.typography.bodySmall)
             if (role == TeamRole.COORDINATOR) Text("Coordinator tools are available from Home.", style = MaterialTheme.typography.bodySmall)
         }
@@ -278,6 +257,6 @@ private fun dispatchImportSubjectLabel(work:DispatchWork,equipment:DispatchEquip
 @Composable internal fun DispatchVisitPanel(detail:VisitDetail,modifier:Modifier=Modifier){
     val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var data by remember(detail.id){mutableStateOf<Pair<DispatchVisitBindingEntity,List<DispatchItemBindingEntity>>?>(null)};var message by remember{mutableStateOf<String?>(null)};var handoffItem by remember{mutableStateOf<DispatchItemBindingEntity?>(null)};var review by remember{mutableStateOf<HandoffReview?>(null)};var target by remember{mutableStateOf<DispatchTechnicianSnapshot?>(null)}
     fun reload(){scope.launch{data=withContext(Dispatchers.IO){svc.dispatchDetail(detail.id)}}};LaunchedEffect(detail.id){reload()}
-    if(handoffItem!=null&&review!=null){val r=review!!;AlertDialog(modifier=Modifier.testTag("handoff-picker"),onDismissRequest={handoffItem=null;review=null;target=null},title={Text("Hand off documentation")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Choose an eligible recipient. This records your local documentation handoff. ServiceLoop cannot confirm that the selected Technician accepted it.");r.candidates.forEach{candidate->FilterChip(target?.technicianId==candidate.technicianId,{target=candidate},{Text(candidate.name)},Modifier.testTag("handoff-recipient-${candidate.technicianId}"))};if(r.hasSubstantiveDraft)Text("Your local answers, notes, parts, and draft photographs will be permanently removed from this draft.",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton({handoffItem=null;review=null;target=null}){Text("Cancel")}},confirmButton={Button({val selected=target?:return@Button;val item=handoffItem?:return@Button;scope.launch{runCatching{withContext(Dispatchers.IO){svc.handoff(detail.id,item.dispatchItemId,selected,r.hasSubstantiveDraft)}}.onSuccess{message="Documentation handed off locally to ${selected.name}; acceptance is not implied"}.onFailure{if(it is CancellationException)throw it else message=it.message};handoffItem=null;review=null;target=null;reload()}},enabled=target!=null,modifier=Modifier.testTag(if(r.hasSubstantiveDraft)"handoff-discard-confirm" else "handoff-confirm")){Text(if(r.hasSubstantiveDraft)"Discard my local documentation and hand off to ${target?.name.orEmpty()}" else "Hand off to ${target?.name.orEmpty()}")}})}
+    if(handoffItem!=null&&review!=null){val r=review!!;AlertDialog(modifier=Modifier.testTag("handoff-picker"),onDismissRequest={handoffItem=null;review=null;target=null},title={Text("Hand off documentation")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Choose an eligible recipient. This records your local documentation handoff. ServiceLoop cannot confirm that the selected Technician accepted it.");r.candidates.forEach{candidate->ServiceLoopSelectionOption(target?.technicianId==candidate.technicianId,{target=candidate},candidate.name,Modifier.testTag("handoff-recipient-${candidate.technicianId}"))};if(r.hasSubstantiveDraft)Text("Your local answers, notes, parts, and draft photographs will be permanently removed from this draft.",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton({handoffItem=null;review=null;target=null}){Text("Cancel")}},confirmButton={Button({val selected=target?:return@Button;val item=handoffItem?:return@Button;scope.launch{runCatching{withContext(Dispatchers.IO){svc.handoff(detail.id,item.dispatchItemId,selected,r.hasSubstantiveDraft)}}.onSuccess{message="Documentation handed off locally to ${selected.name}; acceptance is not implied"}.onFailure{if(it is CancellationException)throw it else message=it.message};handoffItem=null;review=null;target=null;reload()}},enabled=target!=null,modifier=Modifier.testTag(if(r.hasSubstantiveDraft)"handoff-discard-confirm" else "handoff-confirm")){Text(if(r.hasSubstantiveDraft)"Discard my local documentation and hand off to ${target?.name.orEmpty()}" else "Hand off to ${target?.name.orEmpty()}")}})}
     data?.let{(binding,items)->Card(modifier.fillMaxWidth().testTag("dispatched-visit")){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Dispatched · generation ${binding.appliedGeneration}",style=MaterialTheme.typography.titleMedium);binding.managerReference?.let{Text("Job $it")};binding.instructionsSnapshot?.let{Text("Dispatch instructions\n$it",Modifier.testTag("dispatch-instructions"))};if(detail.state=="COMPLETED")Text("Completed. This records only your local visit lifecycle; it does not mean a final record, PDF, central acceptance, or report was created.");if(detail.state=="CANCELED")Text(canceledDispatchVisitMessage(detail.cancellationOrigin)+" Local evidence and any completed record are preserved.",Modifier.testTag("dispatch-canceled-copy"));items.forEach{i->Text("${i.taskNameSnapshot}\n${if(i.assignmentMeaning=="EVERYONE")"Assigned to everyone" else "Assigned technicians preserved"} · ${i.localRole.replace('_',' ').lowercase()} · ${i.documentationDisposition.replace('_',' ').lowercase()}");if(detail.state=="WORKING"){if(i.documentationDisposition in setOf("PENDING","LEADER_OBSERVE"))Button({scope.launch{message=withContext(Dispatchers.IO){svc.documentLocally(detail.id,i.dispatchItemId)};reload()}},Modifier.fillMaxWidth()){Text("Document this item")};if(i.localRole=="ASSIGNED"&&i.documentationDisposition!="DEFERRED"){OutlinedButton({scope.launch{runCatching{withContext(Dispatchers.IO){svc.handoffReview(detail.id,i.dispatchItemId)}}.onSuccess{r->handoffItem=i;review=r}.onFailure{message=it.message}}},Modifier.fillMaxWidth().testTag("handoff-open-${i.dispatchItemId}")){Text("Hand off documentation…")}};if(i.documentationDisposition=="DEFERRED")OutlinedButton({scope.launch{withContext(Dispatchers.IO){svc.undoHandoff(detail.id,i.dispatchItemId)};reload()}},Modifier.fillMaxWidth()){Text("Document this item myself")}}};if(detail.state=="WORKING"&&items.filter{it.localRole=="ASSIGNED"}.all{it.documentationDisposition=="DEFERRED"}&&items.none{it.documentationDisposition=="DOCUMENT_LOCAL"})Button({scope.launch{withContext(Dispatchers.IO){svc.finishInvolvement(detail.id)};reload()}},Modifier.fillMaxWidth()){Text("Complete visit")};message?.let{Text(it,color=MaterialTheme.colorScheme.primary)}}}}
 }

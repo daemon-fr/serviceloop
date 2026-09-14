@@ -47,4 +47,25 @@ class B013VisualConsolidationSourceTest {
         assertFalse(screen.contains("Private equipment notes"))
         assertFalse(screen.contains("ServiceLoopSurfaceCard(Modifier.padding(top=ServiceLoopUiTokens.Space.section)"))
     }
+
+    @Test fun visitProgressUsesGroupExpansionAndCompleteServiceCounts() {
+        val screen = source("app/src/main/java/com/v16studio/serviceloop/ui/ServiceScreen.kt")
+        assertTrue(screen.contains("service-group-toggle-"))
+        assertTrue(screen.contains("serviceProgressGroupSummary"))
+        assertTrue(screen.contains("serviceProgressStatusPhrase"))
+        assertTrue(screen.contains("showDivider = index < group.items.lastIndex"))
+        assertFalse(screen.contains("Show services"))
+        assertFalse(screen.contains("Hide services"))
+    }
+
+    @Test fun ordinarySelectionsUseOneFramedPrimitiveWithoutFilterChipCallSites() {
+        val production = File(root, "app/src/main/java/com/v16studio/serviceloop/ui").walkTopDown()
+            .filter { it.extension == "kt" }
+            .joinToString("\n") { it.readText() }
+        val components = source("app/src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt")
+        assertTrue(components.contains("fun ServiceLoopSelectionOption"))
+        assertTrue(components.contains("fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal"))
+        assertTrue(components.contains("role = Role.RadioButton"))
+        assertFalse(production.contains("FilterChip("))
+    }
 }

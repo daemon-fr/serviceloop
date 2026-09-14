@@ -53,6 +53,8 @@ data class ServiceLoopColorRoles(
     val recordBorder: Color,
     val tonalCommandContainer: Color,
     val tonalCommandInk: Color,
+    /** Ink for a selected value option; deliberately distinct from command-button ink. */
+    val selectionInk: Color = Color.Unspecified,
 )
 
 object ServiceLoopUiTokens {
@@ -66,7 +68,7 @@ object ServiceLoopUiTokens {
         Color(0xFF875100), Color(0xFFFBE9E8), Color(0xFFA32D35), Color(0xFFA32D35),
         Color(0xFFFFFFFF), Color(0xFFE5F2EB), Color(0xFF236347), Color(0xFFE5F3F2),
         Color(0xFF07666B), Color(0xFFEEEAF4), Color(0xFF66517F), Color(0xFFE6ECEE),
-        Color(0xFF000000), Color(0xFFF0F8F7), Color(0xFF67B9B8), Color(0xFFD7EFED), Color(0xFF075C62),
+        Color(0xFF000000), Color(0xFFF0F8F7), Color(0xFF67B9B8), Color(0xFFD7EFED), Color(0xFF075C62), Color(0xFF182A30),
     )
     val DarkColors = ServiceLoopColorRoles(
         Color(0xFF10191C), Color(0xFF19262B), Color(0xFF223239), Color(0xFF293C43),
@@ -78,7 +80,7 @@ object ServiceLoopUiTokens {
         Color(0xFFFFDA97), Color(0xFF49282D), Color(0xFFFFC0C4), Color(0xFFFFB3B9),
         Color(0xFF3B0A12), Color(0xFF173C30), Color(0xFFA5E3BF), Color(0xFF163B3E),
         Color(0xFFA0E4DF), Color(0xFF362E45), Color(0xFFD9C9F1), Color(0xFF0C1316),
-        Color(0xFF000000), Color(0xFF152629), Color(0xFF4D8D8A), Color(0xFF234B4D), Color(0xFFA4E6DF),
+        Color(0xFF000000), Color(0xFF152629), Color(0xFF4D8D8A), Color(0xFF234B4D), Color(0xFFA4E6DF), Color.White,
     )
 
     object Space { val none=0.dp; val hair=2.dp; val xs=4.dp; val sm=8.dp; val md=12.dp; val lg=16.dp; val xl=20.dp; val section=24.dp; val major=32.dp; val hero=40.dp; val large=48.dp }

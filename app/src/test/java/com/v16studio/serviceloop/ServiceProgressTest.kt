@@ -8,11 +8,40 @@ import com.v16studio.serviceloop.domain.WorkSubjectType
 import com.v16studio.serviceloop.domain.serviceDocumentationMode
 import com.v16studio.serviceloop.domain.serviceEntryStatus
 import com.v16studio.serviceloop.domain.serviceProgressGroups
+import com.v16studio.serviceloop.ui.progressSummary
+import com.v16studio.serviceloop.ui.serviceProgressGroupSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 
 class ServiceProgressTest {
+    @Test fun progressSummaryNamesTheThingBeingCountedAndPluralizesItsVerb() {
+        assertEquals(
+            "1 service needs attention",
+            progress(listOf(item("attention", 1, ServiceEntryStatus.NEEDS_ATTENTION))).let(::progressSummary),
+        )
+        assertEquals(
+            "2 services need attention",
+            progress(listOf(
+                item("attention-a", 1, ServiceEntryStatus.NEEDS_ATTENTION, equipmentId = "equipment"),
+                item("attention-b", 2, ServiceEntryStatus.NEEDS_ATTENTION, equipmentId = "equipment"),
+            )).let(::progressSummary),
+        )
+        assertEquals(
+            "1 service ready for review · 1 service in progress",
+            progress(listOf(
+                item("working", 1, ServiceEntryStatus.IN_PROGRESS, equipmentId = "working-equipment"),
+                item("ready", 2, ServiceEntryStatus.READY, equipmentId = "ready-equipment"),
+            )).let(::progressSummary),
+        )
+    }
+
+    @Test fun groupSummaryNamesTheGroupCountAndKeepsDocumentationOwnershipTruth() {
+        val local = item("local", 1, ServiceEntryStatus.NEEDS_ATTENTION, equipmentId = "equipment")
+        val observed = item("observed", 2, ServiceEntryStatus.NEEDS_ATTENTION, mode = ServiceDocumentationMode.LEADER_OBSERVE, equipmentId = "equipment")
+        assertEquals("2 services · 1 service needs attention", serviceProgressGroupSummary(serviceProgressGroups(listOf(local, observed)).single()))
+    }
+
     @Test fun preferredResumeHonorsAttentionThenLocalWorkThenChoice() {
         val items = listOf(
             item("leader", 1, ServiceEntryStatus.IN_PROGRESS, ServiceDocumentationMode.LEADER_OBSERVE),

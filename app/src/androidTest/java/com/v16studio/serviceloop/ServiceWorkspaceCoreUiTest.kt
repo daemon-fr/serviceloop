@@ -48,6 +48,7 @@ import com.v16studio.serviceloop.domain.serviceProgressGroups
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.InspectionFocus
 import com.v16studio.serviceloop.ui.ServiceScreen
+import com.v16studio.serviceloop.ui.VisitServiceProgressOverview
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import java.time.Instant
 import java.time.ZoneId
@@ -101,16 +102,84 @@ class ServiceWorkspaceCoreUiTest {
     }
 
     @Test
+    fun visitOverviewGroupsServicesByEquipmentAndSiteAndCollapsesIndependently() {
+        val equipmentOne = progressItem("equipment-one-service", 1, "Electrical inspection").copy(
+            equipmentId = "equipment-one",
+            equipmentReference = "EQ-001",
+            equipmentName = "Treadmill 01",
+        )
+        val equipmentOneSecond = progressItem("equipment-one-second", 2, "Belt inspection").copy(
+            equipmentId = "equipment-one",
+            equipmentReference = "EQ-001",
+            equipmentName = "Treadmill 01",
+        )
+        val equipmentTwo = progressItem("equipment-two-service", 3, "Lubrication").copy(
+            equipmentId = "equipment-two",
+            equipmentReference = "EQ-002",
+            equipmentName = "Treadmill 02",
+        )
+        val siteWork = progressItem("site-work", 4, "Safety briefing").copy(
+            subjectType = WorkSubjectType.SITE,
+            equipmentId = null,
+            equipmentReference = null,
+            equipmentName = null,
+        )
+        val visitProgress = progress(draft(), listOf(equipmentOne, equipmentOneSecond, equipmentTwo, siteWork))
+        val selected = mutableListOf<String>()
+        compose.setContent {
+            ServiceLoopTheme {
+                VisitServiceProgressOverview(visitProgress) { selected += it.workItemId }
+            }
+        }
+
+        compose.onNodeWithText("EQ-001 · Treadmill 01").assertIsDisplayed()
+        compose.onNodeWithText("EQ-002 · Treadmill 02").assertIsDisplayed()
+        compose.onNodeWithText("Site work").assertIsDisplayed()
+        compose.onNodeWithTag("visit-progress-summary").assertHasNoClickAction()
+        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").assertIsDisplayed()
+        compose.onNodeWithText("2 services · 2 services not started").assertIsDisplayed()
+        compose.onNodeWithTag("visit-line-equipment-one-service").assertIsDisplayed()
+        compose.onNodeWithTag("visit-line-equipment-one-second").assertIsDisplayed()
+        compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
+        compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
+
+        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").performClick()
+        compose.onAllNodesWithTag("visit-line-equipment-one-service").assertCountEquals(0)
+        compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
+        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two").performClick()
+        compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
+        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
+        assertTrue(selected.isEmpty())
+        compose.onNodeWithTag("visit-line-equipment-two-service").performClick()
+        assertTrue(selected.single() == "equipment-two-service")
+    }
+
+    @Test
     fun currentServiceIsSelectedWithoutNavigationAndReadyStatusIsExplicit() {
         val current = progressItem("work-1", 1, "Electrical inspection").copy(status = ServiceEntryStatus.READY)
         val other = progressItem("work-2", 2, "Mechanical inspection")
         render(draft(), progress(draft(), listOf(current, other)))
-        compose.onNodeWithTag("show-services").performClick()
         compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasNoClickAction()
         compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
         compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Back to visit").assertIsDisplayed()
+    }
+
+    @Test
+    fun serviceWorkspaceExpandsCurrentEquipmentGroupAndLeavesOtherGroupsCollapsed() {
+        val current = progressItem("work-1", 1, "Electrical inspection")
+        val other = progressItem("work-2", 2, "Mechanical inspection").copy(
+            equipmentId = "equipment-2",
+            equipmentReference = "EQ-002",
+            equipmentName = "Machine 02",
+        )
+        render(draft(), progress(draft(), listOf(current, other)))
+
+        compose.onNodeWithTag("service-row-work-1").assertIsDisplayed()
+        compose.onAllNodesWithTag("service-row-work-2").assertCountEquals(0)
+        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-2").performClick()
+        compose.onNodeWithTag("service-row-work-2").assertIsDisplayed()
     }
 
     @Test
@@ -137,7 +206,6 @@ class ServiceWorkspaceCoreUiTest {
     fun legacyFalseFulfillmentDoesNotShowUntouchedServiceAsInProgress() {
         render(draft().copy(fulfillsCurrentObligation = false))
 
-        compose.onNodeWithTag("show-services").performClick()
         compose.onNodeWithText("Not started").assertIsDisplayed()
         compose.onAllNodesWithText("In progress").assertCountEquals(0)
     }

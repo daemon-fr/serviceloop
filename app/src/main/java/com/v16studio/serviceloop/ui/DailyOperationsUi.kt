@@ -10,7 +10,6 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopElevatedCardAdapter 
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceChip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
@@ -196,7 +195,7 @@ internal fun PlanEditorScreen(equipmentId: String?, existing: PlanDetail?, templ
     EditorColumn(padding, state, "plan-editor") {
         item { DailyHeading(if (existing == null) "Add recurring service plan" else "Edit ${existing.reference}"); DailyField(name, { name = it }, "Plan name · Required"); DailyField(count, { count = it }, "Positive interval") }
         item { ServiceLoopChoiceGroup(listOf("DAYS","WEEKS","MONTHS","YEARS").map{it to it.lowercase().replaceFirstChar(Char::uppercase)},unit,{unit=it}); DailyField(due, { due = it }, "Next due date · YYYY-MM-DD"); if(existing!=null&&due!=existing.dueDate) LongTextEditor(dueReason,{dueReason=it},"Due-date change reason · Required",false) }
-        item { Text("Reusable inspection template", fontWeight = FontWeight.Medium); FilterChip(templateId == null, { templateId = null }, { Text("None") }); templates.forEach { template -> FilterChip(templateId == template.id, { templateId = template.id }, { Text("${template.name} · r${template.revisionNumber}") }) } }
+        item { Text("Reusable inspection template", fontWeight = FontWeight.Medium); ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "None") + templates.map { it.id to "${it.name} · r${it.revisionNumber}" }, templateId, { templateId = it }, testTagPrefix = "plan-template") }
         item { Button({ val parsed = count.toIntOrNull() ?: 0; val input = PlanInput(name, parsed, unit, due, templateId,dueReason); if (existing == null) viewModel.createPlan(equipmentId!!, input) { nav.navigate("plan/$it") { popUpTo("plan/new/$equipmentId") { inclusive = true } } } else viewModel.updatePlan(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && (count.toIntOrNull() ?: 0) > 0 && runCatching { LocalDate.parse(due) }.isSuccess && (existing==null||due==existing.dueDate||dueReason.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-plan")) { Text("Save plan") } }
     }
 }
