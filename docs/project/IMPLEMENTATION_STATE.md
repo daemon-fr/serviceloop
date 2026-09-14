@@ -1,20 +1,20 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-12
+**Updated:** 2026-09-15
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
-## Authoritative technical development line
+## Accepted baseline and active implementation line
 
-Current authoritative branch:
+Protected accepted baseline:
 
-- branch: `master`
+- branch: `master` at `1fd51131b040ab62af3874c1106615b75f3008fe`
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
-- Room schema: v13 on the B013 milestone branch (v11 at the frozen SL-5C checkpoint)
+- Room schema at the historical SL-5C checkpoint: v11
 
-`master` is now the single technical starting point for B-013 and subsequent accepted work. Documentation-only commits may advance `master` beyond the production checkpoint without changing the verification meaning of `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. New milestone branches should start from the current `master` HEAD unless the owner explicitly authorizes another base.
+The explicitly authorized active implementation/review branch is `codex/b013-ui-overhaul`, currently declaring Room v15 with schema files 1–15 and migrations through 14→15. B-025 Service Flow and B-026 flexible work/Dispatch v5 are implemented there. This work remains subject to independent review and owner acceptance; it has not advanced `master`. See `REFACTORING_CHECKPOINT_0.md` for this branch's current correctness and verification checkpoint. Historical SL-5C results below remain evidence for their stated revision only.
 
-## Current accepted / verified state
+## Historical accepted state and active branch context
 
 - **SL-1:** OWNER ACCEPTED.
 - **SL-2:** OWNER ACCEPTED. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
@@ -119,7 +119,7 @@ Reported evidence:
 
 Execution-environment recovery evidence: one exact-match managed patch helper failure used the approved shell/file-edit fallback, and Gradle sandbox cache access recovered through the approved runner path without turning the task into a false project blocker.
 
-## Current forward sequence
+## Forward sequence recorded at SL-5C
 
 1. **B-013 — dedicated whole-product UI/UX overhaul**
    - implement the comprehensive visual/UI authority against the functionally frozen product;
@@ -156,7 +156,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Kotlin 2.2.10
 - Compose BOM 2026.02.01
 - Room 2.8.4
-- Room schema v11
+- Room schema v15 on the active B-013 branch (v11 at SL-5C)
 - canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
 
 ## Verification / acceptance boundaries

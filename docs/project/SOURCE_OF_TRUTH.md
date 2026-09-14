@@ -1,6 +1,6 @@
 # ServiceLoop — Source of Truth
 
-**Status:** Adopted for implementation on 2026-09-06; current through 2026-09-09.
+**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-15.
 
 ## Authority order
 
@@ -15,28 +15,28 @@ Do not silently merge competing policies from the conceptual and complete functi
 
 Matching HTML editions are reading formats and are intentionally not retained in the repository as independent requirements.
 
-## Current authoritative technical development line
+## Accepted baseline and active implementation line
 
 SL-4 and Dispatch were deliberately reconciled/banked; SL-5A added time-aware work state and local reminders; SL-5B added the adopted one-way Android Calendar projection; SL-5C completed the final broad functional hardening pass.
 
-Current technical line:
+Accepted/banked baseline:
 
 - authoritative branch: `master`
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
-- Room schema: v11
+- Room schema at that historical SL-5C checkpoint: v11
 
-`master` is the single authoritative development baseline. It was fast-forwarded to the accepted Stage-5 line; documentation-only commits may advance `master` beyond the production checkpoint without changing that checkpoint's verification meaning. New substantial work should start from the current `master` HEAD unless an explicit owner instruction says otherwise. Accepted milestone work returns to `master` after review; old milestone/prototype branches are historical and need not remain as active development branches.
+`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The explicitly authorized active implementation/review line is `codex/b013-ui-overhaul`; it is not owner-accepted or merged. Its current Room declaration is v15, with retained schema files and migrations through 14→15. See `IMPLEMENTATION_STATE.md` and `REFACTORING_CHECKPOINT_0.md` for current verification evidence. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
 
-B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013, when the final interface and copy are stable. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
+B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013; UI corrections may continue during implementation and review. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 
-## Current accepted / verified implementation state
+## Historical accepted state and active branch context
 
 - **SL-1:** owner accepted.
 - **SL-2:** owner accepted on 2026-09-06. Accepted user-facing implementation/review state: `d97a8c0013dcea924d91ace993a1325ac16cf5b3`.
 - **SL-3:** owner accepted on 2026-09-08. Accepted production implementation/review state: `ad078faae3c73faa2a9bb02dd1251b1033237399`.
 - **SL-4:** complete History/recovery implementation independently Phase-B verified and **VERIFIED AND BANKED**.
 - **Dispatch:** owner approved under B-015 and deliberately integrated/banked as product scope within the local-first/file-based boundary.
-- **B-014:** durable Working inspection-response drafts remain adopted core behavior through current Room v11.
+- **B-014:** durable Working inspection-response drafts remain adopted core behavior through the later schema versions.
 - **SL-5A — time-aware work state and local reminders:** implemented/reviewed and retained on the current line.
 - **SL-5B — optional Android Calendar integration:** implemented, corrected, source-reviewed and banked under B-016.
 - **SL-5C — final functional completion/hardening:** implemented and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. No known ordinary-workflow functional placeholder remains before B-013.
@@ -85,7 +85,7 @@ The supported statement after SL-5C is:
 
 This is a **functional freeze**, not a claim that the current interface/copy is final, localized, pilot-valid, or release-ready.
 
-## Current forward sequence
+## Forward sequence recorded at SL-5C
 
 1. **B-013 — dedicated whole-product UI/UX overhaul**
    - apply the forthcoming all-encompassing visual/UI design authority to the functionally frozen product;
