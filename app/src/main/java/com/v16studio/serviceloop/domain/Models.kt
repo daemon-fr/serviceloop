@@ -117,6 +117,12 @@ data class InspectionDraft(
     val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
     val equipmentId: String? = null,
     val equipmentDescription: String? = null,
+    val customerName: String = "",
+    val siteAccessNote: String = "",
+    val equipmentPrivateNote: String = "",
+    val dispatchInstructions: String? = null,
+    val dispatchLocalRole: String? = null,
+    val dispatchDocumentationDisposition: String? = null,
 )
 
 data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String? = null)

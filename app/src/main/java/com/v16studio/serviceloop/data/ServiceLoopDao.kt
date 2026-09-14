@@ -50,6 +50,12 @@ data class InspectionRow(
     val subjectType: String,
     val equipmentId: String?,
     val equipmentDescriptionSnapshot: String?,
+    val customerName: String?,
+    val siteAccessNote: String?,
+    val equipmentPrivateNote: String?,
+    val dispatchInstructions: String?,
+    val dispatchLocalRole: String?,
+    val dispatchDocumentationDisposition: String?,
 )
 
 data class EquipmentSummaryRow(
@@ -250,15 +256,22 @@ interface ServiceLoopDao {
 
     @Query("""
          SELECT wi.id workItemId, wi.visitId, v.reference visitReference, v.siteNameSnapshot,
-                wi.equipmentNameSnapshot, wi.equipmentReferenceSnapshot, wi.serviceNameSnapshot,
-                wi.dueDateSnapshot, wi.intervalCountSnapshot, wi.intervalUnitSnapshot,
-                wi.templateSnapshotId, wi.checklistReviewed, wi.outcome, wi.fulfillsCurrentObligation,
-                pub.workPerformed, priv.internalNote privateInternalNote, v.modifiedAtEpochMillis,
-                wi.subjectType, wi.equipmentId, wi.equipmentDescriptionSnapshot
-        FROM work_items wi JOIN working_visits v ON v.id=wi.visitId
-        JOIN work_item_public_drafts pub ON pub.workItemId=wi.id
-        JOIN work_item_private_drafts priv ON priv.workItemId=wi.id
-        WHERE wi.id=:workItemId
+                 wi.equipmentNameSnapshot, wi.equipmentReferenceSnapshot, wi.serviceNameSnapshot,
+                 wi.dueDateSnapshot, wi.intervalCountSnapshot, wi.intervalUnitSnapshot,
+                 wi.templateSnapshotId, wi.checklistReviewed, wi.outcome, wi.fulfillsCurrentObligation,
+                 pub.workPerformed, priv.internalNote privateInternalNote, v.modifiedAtEpochMillis,
+                 wi.subjectType, wi.equipmentId, wi.equipmentDescriptionSnapshot,
+                 v.customerNameSnapshot customerName, s.privateAccessNotes siteAccessNote,
+                 e.privateNotes equipmentPrivateNote, dv.instructionsSnapshot dispatchInstructions,
+                 di.localRole dispatchLocalRole, di.documentationDisposition dispatchDocumentationDisposition
+         FROM work_items wi JOIN working_visits v ON v.id=wi.visitId
+         JOIN work_item_public_drafts pub ON pub.workItemId=wi.id
+         JOIN work_item_private_drafts priv ON priv.workItemId=wi.id
+         LEFT JOIN sites s ON s.id=v.siteId
+         LEFT JOIN equipment e ON e.id=wi.equipmentId
+         LEFT JOIN dispatch_visit_bindings dv ON dv.localVisitId=v.id
+         LEFT JOIN dispatch_item_bindings di ON di.localWorkItemId=wi.id
+         WHERE wi.id=:workItemId
     """)
     suspend fun inspection(workItemId: String): InspectionRow?
 

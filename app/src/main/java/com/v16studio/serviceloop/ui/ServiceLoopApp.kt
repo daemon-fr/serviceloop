@@ -222,7 +222,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { HomeScreen(state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
+                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { HomeScreen(state, state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
             }
         }
         composable(
@@ -286,7 +286,9 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }
             DetailScaffold("Service", nav) { padding ->
-                ScreenState(state.loading, state.error, padding) { state.inspection?.let { InspectionScreen(it, state.saveStatus, state.inspectionFocus, viewModel, nav) } }
+                ScreenState(state.loading, state.error, padding) { state.inspection?.let { draft ->
+                    ServiceScreen(draft, state.serviceProgress, state.saveStatus, state.inspectionFocus, viewModel, nav, PaddingValues(), LocalDetailBackInterceptor.current)
+                } }
             }
         }
         composable("review/{visitId}") { entry ->
@@ -295,7 +297,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner, visitId) { val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.loadCompletion(visitId) }; lifecycleOwner.lifecycle.addObserver(observer); onDispose { lifecycleOwner.lifecycle.removeObserver(observer); viewModel.clearCompletionContext(visitId) } }
             LaunchedEffect(state.finalizedRecordId) { state.finalizedRecordId?.let { recordId -> viewModel.consumeFinalizedNavigation(); nav.navigate("record/$recordId") { popUpTo("review/{visitId}") { inclusive = true } } } }
-            DetailScaffold("Review completion", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
+            DetailScaffold("Review visit", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
         }
         composable("settings") {
             LaunchedEffect(Unit) { viewModel.loadReminderSettings() }
@@ -495,7 +497,7 @@ private fun ScreenState(loading: Boolean, error: String?, padding: PaddingValues
 }
 
 @Composable
-private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, attention: List<com.v16studio.serviceloop.domain.AttentionItem>, nav: NavHostController, viewModel: ServiceLoopViewModel) {
+private fun HomeScreen(state: UiState, home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, attention: List<com.v16studio.serviceloop.domain.AttentionItem>, nav: NavHostController, viewModel: ServiceLoopViewModel) {
     LaunchedEffect(Unit) { viewModel.loadAttention() }
     if (home == null) { LazyColumn(contentPadding = PaddingValues(16.dp)) { item { CoordinatorHomeActions(nav) }; item { Text("Add a customer to create your first service obligation.") } }; return }
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -506,7 +508,11 @@ private fun HomeScreen(home: HomeSummary?, equipment: List<EquipmentSummary>, vi
                 Text(home.workingSite.orEmpty(), style = MaterialTheme.typography.titleMedium)
                 Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
                 home.savedAtEpochMillis?.let { ServiceLoopSavedStatus(it) }
-                Button(onClick = { home.inspectionWorkItemId?.let { nav.navigate("inspection/$it") } }, modifier = Modifier.fillMaxWidth()) { Text("Resume visit") }
+                Button(onClick = {
+                    val sessionItem = state.activeServiceWorkItemId?.takeIf { state.activeServiceVisitId == home.workingVisitId && state.serviceProgress?.items?.any { item -> item.workItemId == it } == true }
+                    val target = sessionItem ?: home.inspectionWorkItemId
+                    if (target != null) nav.navigate("inspection/$target") else nav.navigate("visit/${home.workingVisitId}")
+                }, modifier = Modifier.fillMaxWidth().testTag("resume-service")) { Text("Resume service") }
                 TextButton(onClick = { nav.navigate(workRoute(WorkTab.VISITS, "WORKING")) }) { Text("View all unfinished") }
             }
         }
@@ -759,40 +765,6 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
     }
 }
 
-@Composable
-internal fun InspectionScreen(draft: InspectionDraft, saveStatus: SaveStatus, focus: InspectionFocus?, viewModel: ServiceLoopViewModel, nav: NavHostController) {
-    val listState = rememberLazyListState()
-    LaunchedEffect(draft.workItemId, focus) { focus?.let { target -> val index = when (target.kind) { CompletionBlockerKind.WORK_PERFORMED -> 1; CompletionBlockerKind.CHECKLIST_INCOMPLETE -> 3 + draft.questions.size; CompletionBlockerKind.FINDING_DESCRIPTION -> 3 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0); else -> 0 }; listState.scrollToItem(index); viewModel.clearInspectionFocus() } }
-    Column(Modifier.fillMaxSize()) {
-    if (saveStatus is SaveStatus.Failed) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { SaveStateBanner(saveStatus) }
-    LazyColumn(Modifier.weight(1f).testTag("inspection-list"), state=listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item {
-             Text(serviceLoopSubjectLabel(draft.subjectType, draft.equipmentName, draft.equipmentReference, draft.equipmentDescription), style = MaterialTheme.typography.titleMedium)
-             Text("${draft.visitReference} · ${draft.siteName}", style = MaterialTheme.typography.bodyMedium)
-             if (draft.subjectType == WorkSubjectType.EQUIPMENT && draft.equipmentId == null) ServiceLoopSecondaryButton("Link equipment", { nav.navigate("work/${draft.workItemId}/link-equipment") }, Modifier.fillMaxWidth().testTag("link-equipment"))
-             if (saveStatus !is SaveStatus.Failed) SaveStateBanner(saveStatus)
-            Text("Due ${draft.dueDate} · ${draft.interval} · Checklist revision ${draft.templateRevision}", style = MaterialTheme.typography.bodyMedium)
-        }
-        item {
-            val initialWork = draft.rawInputs[ServiceDraftFieldKeys.WORK] ?: draft.workPerformed
-            var work by rememberSaveable(draft.workItemId, initialWork) { mutableStateOf(initialWork) }
-            Text("Work performed · Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            LongTextEditor(work, { work = it; viewModel.scheduleWorkText(draft.workItemId, it) }, "Public work performed", false)
-            ServiceLoopPrimaryButton("Save work performed",{ viewModel.savePublicWork(draft.workItemId, work) },enabled = saveStatus !is SaveStatus.Saving && work.trim() != draft.workPerformed, modifier = Modifier.fillMaxWidth())
-            LabelledValue("Private — not in customer report", draft.privateInternalNote.ifBlank { "Not recorded" }, public = false)
-        }
-        item { SectionTitle("Inspection responses"); Text("Unanswered and Not checked are never treated as OK.") }
-         items(draft.questions, key = { it.snapshotItemId }) { question -> QuestionBlock(draft.workItemId, draft.rawInputs, question, saveStatus is SaveStatus.Saving, viewModel) }
-        item {
-            StatusChip(if (draft.checklistComplete) "Inspection complete" else "Inspection needs attention", urgency = !draft.checklistComplete); Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}")
-            if (draft.issueMissingDescription.isNotEmpty()) Text("Issue findings need public descriptions before this inspection is complete.", style = MaterialTheme.typography.bodyMedium)
-            Text("Inspection completeness is derived from the saved snapshot answers.", style = MaterialTheme.typography.bodyMedium)
-        }
-        item { ServiceLoopActionStack { ServiceLoopSecondaryButton("Parts and photographs",{ nav.navigate("field/${draft.workItemId}") },modifier = Modifier.fillMaxWidth().testTag("open-field-evidence")); ServiceLoopPrimaryButton("Review completion",{ nav.navigate("review/${draft.visitId}") },modifier = Modifier.fillMaxWidth().testTag("open-completion-review"), enabled = saveStatus !is SaveStatus.Saving && saveStatus !is SaveStatus.Failed) } }
-    }
-    }
-}
-
 internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSoonHorizonDays: Int): String {
     val due = runCatching { LocalDate.parse(dueDate) }.getOrNull() ?: return "State unavailable"
     return when {
@@ -801,75 +773,6 @@ internal fun servicePlanDueLabel(dueDate: String, businessDate: LocalDate, dueSo
         !due.isAfter(businessDate.plusDays(dueSoonHorizonDays.toLong())) -> "Due soon"
         else -> "Upcoming"
     }
-}
-
-@Composable
-private fun QuestionBlock(workItemId: String, rawInputs: Map<String, String>, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    val initialIssue = rawInputs[ServiceDraftFieldKeys.questionIssue(question.snapshotItemId)]
-        ?: question.issueFoundReasonDraft
-        ?: question.reason.takeIf { question.disposition == ResponseDisposition.ISSUE_FOUND }
-        ?: ""
-    val initialNotApplicable = rawInputs[ServiceDraftFieldKeys.questionNotApplicable(question.snapshotItemId)]
-        ?: question.notApplicableReasonDraft
-        ?: question.reason.takeIf { question.disposition == ResponseDisposition.NOT_APPLICABLE }
-        ?: ""
-    var issueBuffer by rememberSaveable(question.snapshotItemId, initialIssue) { mutableStateOf(initialIssue) }
-    var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}", initialNotApplicable) { mutableStateOf(initialNotApplicable) }
-    AccentCard {
-        Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium)
-        Text("${question.responseType.lowercase().replaceFirstChar { it.uppercase() }} · ${if (question.required) "Required" else "Optional"}", style = MaterialTheme.typography.bodySmall)
-        question.privateGuidance?.takeIf { it.isNotBlank() }?.let { guidance -> Text("Technician guidance: $guidance", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        when (question.responseType) {
-            "STATUS" -> listOf(ResponseDisposition.OK to "OK", ResponseDisposition.ISSUE_FOUND to "Issue found", ResponseDisposition.NOT_APPLICABLE to "Not applicable", ResponseDisposition.NOT_CHECKED to "Not checked").forEach { (value, label) ->
-                Row(Modifier.fillMaxWidth().testTag("response-${question.snapshotItemId}-${value.name}").selectable(selected = question.disposition == value, enabled = !saving, onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, value) }).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = question.disposition == value, onClick = null); Text(label) }
-            }
-            else -> ValueQuestion(workItemId, rawInputs, question, saving, viewModel)
-        }
-        if (question.disposition == ResponseDisposition.ISSUE_FOUND) {
-            InlineFindingEditor(workItemId, question, issueBuffer, { issueBuffer = it; viewModel.scheduleIssueDescription(workItemId, question.snapshotItemId, it) }, saving, viewModel)
-        }
-        if (question.disposition == ResponseDisposition.NOT_APPLICABLE) {
-            NotApplicableEditor(workItemId, question, notApplicableBuffer, { notApplicableBuffer = it; viewModel.scheduleNotApplicableReason(workItemId, question.snapshotItemId, it) }, saving, viewModel)
-        }
-    }
-}
-
-@Composable
-private fun InlineFindingEditor(workItemId: String, question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    val changed = text.trim() != question.reason.orEmpty()
-    Surface(color = LocalServiceLoopTokens.current.warningContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Finding details · Customer report", color = LocalServiceLoopTokens.current.warningInk, fontWeight = FontWeight.Medium)
-            LongTextEditor(text,onTextChange,"Public finding description",false)
-            ServiceLoopPrimaryButton("Save finding",
-                onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.ISSUE_FOUND, reason = text) },
-                enabled = !saving && changed,
-                modifier = Modifier.fillMaxWidth().testTag("finding-save-${question.snapshotItemId}"),
-            )
-        }
-    }
-}
-
-@Composable
-private fun NotApplicableEditor(workItemId: String, question: InspectionQuestion, text: String, onTextChange: (String) -> Unit, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    ServiceLoopLongTextEditor(text, onTextChange, "Not applicable reason", private = false, enabled = !saving, fieldTestTag = "not-applicable-reason-${question.snapshotItemId}")
-    ServiceLoopPrimaryButton("Save reason",{ viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE, reason = text) }, enabled = !saving && text.isNotBlank() && text.trim() != question.reason.orEmpty(), modifier = Modifier.fillMaxWidth().testTag("not-applicable-save-${question.snapshotItemId}"))
-}
-
-@Composable
-private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, question: InspectionQuestion, saving: Boolean, viewModel: ServiceLoopViewModel) {
-    val initialValue = rawInputs[ServiceDraftFieldKeys.questionValue(question.snapshotItemId)]
-        ?: question.textValue
-        ?: question.numberValue
-        ?: ""
-    var value by rememberSaveable(question.snapshotItemId, initialValue) { mutableStateOf(initialValue) }
-    val invalidNumber = question.responseType == "NUMBER" && value.isNotBlank() && !signedDecimal(value)
-    OutlinedTextField(value = value, onValueChange = { value = it; viewModel.scheduleQuestionValue(workItemId, question.snapshotItemId, it) }, label = { Text(if (question.responseType == "NUMBER") "Recorded value" else "Response") }, supportingText = { Text(if (invalidNumber) "Enter a signed decimal, for example -12.5" else question.unit.orEmpty()) }, isError = invalidNumber, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("value-${question.snapshotItemId}"))
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.VALUE, value = value) }, enabled = !saving && value.isNotBlank() && !invalidNumber, modifier = Modifier.weight(1f).fillMaxHeight().testTag("value-save-${question.snapshotItemId}")) { Text("Save response") }
-        OutlinedButton(onClick = { viewModel.requestResponseChange(question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight().testTag("not-applicable-${question.snapshotItemId}")) { Text("Not applicable") }
-    }
-    if (question.disposition == ResponseDisposition.UNANSWERED) Text("Not recorded", color = LocalServiceLoopColors.current.errorInk)
 }
 
 @Composable
@@ -1174,16 +1077,17 @@ private fun ReportPhotoThumbnail(photo: PublicPhoto, index: Int, context: androi
 
 @Composable private fun HonestPlaceholder(padding: PaddingValues, message: String) { Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text(message, style = MaterialTheme.typography.titleMedium) } }
 
-private fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: "not yet"
+internal fun formatTime(epochMillis: Long?): String = epochMillis?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: "not yet"
 private fun formatRecordedOn(epochMillis: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMillis))
 
 private fun signedDecimal(value: String): Boolean = Regex("^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)$").matches(value.trim())
 
 internal fun serviceLoopSubjectLabel(subjectType: WorkSubjectType, equipmentName: String?, equipmentReference: String?, equipmentDescription: String?): String = when {
     subjectType == WorkSubjectType.SITE -> "Site task"
-    equipmentReference != null -> "${equipmentReference} · ${equipmentName.orEmpty()}"
-    !equipmentDescription.isNullOrBlank() -> equipmentDescription.trim()
-    else -> "Equipment not specified"
+    else -> listOfNotNull(
+        equipmentReference?.trim()?.takeIf(String::isNotBlank),
+        equipmentName?.trim()?.takeIf(String::isNotBlank),
+    ).joinToString(" · ").ifBlank { equipmentDescription?.trim()?.takeIf(String::isNotBlank) ?: "Equipment not specified" }
 }
 
 private fun dueEffect(line: com.v16studio.serviceloop.domain.PublicWorkLine): String = when {

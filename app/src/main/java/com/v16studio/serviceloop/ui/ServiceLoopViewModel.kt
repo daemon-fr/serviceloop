@@ -62,6 +62,9 @@ data class UiState(
     val customerList: List<CustomerSummary> = emptyList(),
     val siteList: List<SiteRegisterSummary> = emptyList(),
     val inspection: InspectionDraft? = null,
+    val serviceProgress: VisitServiceProgress? = null,
+    val activeServiceVisitId: String? = null,
+    val activeServiceWorkItemId: String? = null,
     val completionLines: List<CompletionLine> = emptyList(),
     val completionVisitId: String? = null,
     val visits: List<VisitSummary> = emptyList(),
@@ -236,11 +239,41 @@ class ServiceLoopViewModel(
         launchLoad {
             val draft = repository.inspection(id)
             if (!isCurrent(request)) return@launchLoad
+            val progress = draft?.let { value -> runCatching { repository.serviceVisitProgress(value.visitId) }.getOrElse { progressFallback(value) } }
             _state.update { current -> current.copy(
                 inspection = draft,
+                serviceProgress = progress,
+                activeServiceVisitId = draft?.visitId ?: current.activeServiceVisitId,
+                activeServiceWorkItemId = draft?.workItemId ?: current.activeServiceWorkItemId,
                 saveStatus = draft?.let { SaveStatus.Saved(it.modifiedAtEpochMillis) } ?: SaveStatus.Idle,
             ) }
             draft?.let(::reconcilePersistedServiceDrafts)
+        }
+    }
+
+    /** Refresh Service content after a canonical field write without replacing the screen with a loader. */
+    fun refreshServiceContext(workItemId: String) {
+        val request = issueRequest("inspection")
+        viewModelScope.launch {
+            try {
+                val draft = repository.inspection(workItemId) ?: return@launch
+                val progress = runCatching { repository.serviceVisitProgress(draft.visitId) }.getOrElse { progressFallback(draft) }
+                if (isCurrent(request)) _state.update { current ->
+                    if (current.inspection?.workItemId == workItemId) current.copy(
+                        inspection = draft,
+                        serviceProgress = progress,
+                        activeServiceVisitId = draft.visitId,
+                        activeServiceWorkItemId = draft.workItemId,
+                        contentRefreshError = null,
+                    ) else current
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (isCurrent(request)) _state.update { current ->
+                    if (current.inspection?.workItemId == workItemId) current.copy(contentRefreshError = failure.message ?: "Saved, but the Service could not refresh") else current
+                }
+            }
         }
     }
 
@@ -369,7 +402,8 @@ class ServiceLoopViewModel(
             val site = visit?.let { repository.site(it.siteId) }
             val calendarState = calendarCoordinator?.visitState(id)
             val templates = repository.templates()
-            if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState) }
+            val progress = visit?.let { value -> runCatching { repository.serviceVisitProgress(value.id) }.getOrNull() }
+            if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState, serviceProgress = progress) }
         }
     }
     fun loadFollowUps() { val request=issueRequest("followUps"); launchLoad { val values = repository.followUps(); if(isCurrent(request)) _state.update { it.copy(followUps = values) } } }
@@ -463,7 +497,27 @@ class ServiceLoopViewModel(
     fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, adHocWork, state, date, scheduledAt) }, onSuccess)
     fun createOneTimeVisit(input: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createOneTimeVisit(input, adHocWork, state, date, scheduledAt) }, onSuccess)
     fun makeCustomerStandard(customerId: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.makeCustomerStandard(customerId); customerId }) { id -> refreshRootDataNonBlocking(); loadCustomer(id); onSuccess(id) }
-    fun startVisit(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.startVisit(id); id }, onSuccess)
+    fun startVisit(id: String, onSuccess: (String) -> Unit) {
+        if (_state.value.operationInProgress) return
+        val request = issueRequest("visit")
+        _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
+        viewModelScope.launch {
+            try {
+                repository.startVisit(id)
+                val visit = repository.visit(id)
+                val site = visit?.let { repository.site(it.siteId) }
+                val progress = runCatching { repository.serviceVisitProgress(id) }.getOrNull()
+                try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
+                if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, serviceProgress = progress, operationInProgress = false, operationMessage = "Saved on this device") }
+                refreshRootDataNonBlocking()
+                onSuccess(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (isCurrent(request)) _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Visit could not be started") }
+            }
+        }
+    }
     fun rescheduleVisit(id: String, date: String, scheduledAt: Long?, reason: String, onSuccess: (String) -> Unit) {
         if (_state.value.operationInProgress) return
         val request = issueRequest("visit")
@@ -559,31 +613,47 @@ class ServiceLoopViewModel(
 
     fun scheduleWorkText(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.WORK), rawValue, ServiceDraftValidators.alwaysValid(),
-    ) { value -> repository.savePublicWork(workItemId, value) }
+        writer = { value -> repository.savePublicWork(workItemId, value) },
+        onSaved = { refreshServiceContext(workItemId) },
+    )
 
     fun schedulePrivateText(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.PRIVATE), rawValue, ServiceDraftValidators.privateNote(),
-    ) { value -> repository.savePrivateNote(workItemId, value) }
+        writer = { value -> repository.savePrivateNote(workItemId, value) },
+        onSaved = { refreshServiceContext(workItemId) },
+    )
 
     fun scheduleQuestionValue(workItemId: String, questionId: String, rawValue: String) {
         val question = _state.value.inspection?.takeIf { it.workItemId == workItemId }?.questions?.firstOrNull { it.snapshotItemId == questionId } ?: return
-        val validator = if (question.responseType == "NUMBER") ServiceDraftValidators.number() else ServiceDraftValidators.requiredText("Response")
-        serviceDraftAutosaveCoordinator.scheduleText(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)), rawValue, validator) { value ->
-            repository.saveResponse(workItemId, questionId, ResponseDisposition.VALUE, value, null)
+        val validator = when {
+            question.responseType == "NUMBER" -> if (rawValue.trim().isBlank() && !question.required) ServiceDraftValidators.alwaysValid() else ServiceDraftValidators.number()
+            question.required -> ServiceDraftValidators.requiredText("Response")
+            else -> ServiceDraftValidators.alwaysValid()
         }
+        serviceDraftAutosaveCoordinator.scheduleText(
+            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)), rawValue, validator,
+            writer = { value -> if (value.trim().isBlank() && !question.required) repository.saveResponse(workItemId, questionId, ResponseDisposition.UNANSWERED, null, null) else repository.saveResponse(workItemId, questionId, ResponseDisposition.VALUE, value, null) },
+            onSaved = { refreshServiceContext(workItemId) },
+        )
     }
 
     fun scheduleIssueDescription(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionIssue(questionId)), rawValue, ServiceDraftValidators.issueDescription(),
-    ) { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value) }
+        writer = { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value) },
+        onSaved = { refreshServiceContext(workItemId) },
+    )
 
     fun scheduleNotApplicableReason(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionNotApplicable(questionId)), rawValue, ServiceDraftValidators.notApplicableReason(),
-    ) { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value) }
+        writer = { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value) },
+        onSaved = { refreshServiceContext(workItemId) },
+    )
 
     fun scheduleNotPerformedReason(workItemId: String, visitId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.NOT_PERFORMED_REASON), rawValue, ServiceDraftValidators.alwaysValid(),
-    ) { value -> repository.saveCompletionDraft(workItemId, "NOT_PERFORMED", false, value, null, null, null) }
+        writer = { value -> repository.saveCompletionDraft(workItemId, "NOT_PERFORMED", false, value, null, null, null) },
+        onSaved = { refreshServiceContext(workItemId) },
+    )
 
     fun scheduleRecurrenceOverrideDate(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleRaw(
         ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), rawValue, ServiceDraftValidators.isoDate(),
@@ -597,7 +667,7 @@ class ServiceLoopViewModel(
         serviceDraftAutosaveCoordinator.immediateChoice(
             ServiceDraftFieldId(workItemId, "response:$questionId"), disposition.name,
             writer = { repository.saveResponse(workItemId, questionId, disposition, null, null) },
-            onSaved = { loadInspection(workItemId) },
+             onSaved = { refreshServiceContext(workItemId) },
         )
     }
 
@@ -688,6 +758,14 @@ class ServiceLoopViewModel(
     suspend fun flushServiceDraft(workItemId: String): ServiceDraftFlushResult = serviceDraftAutosaveCoordinator.flush(workItemId)
     suspend fun flushVisitDraft(visitId: String): ServiceDraftFlushResult = serviceDraftAutosaveCoordinator.flushVisit(visitId)
     fun retryServiceDraft(fieldId: ServiceDraftFieldId) = serviceDraftAutosaveCoordinator.retry(fieldId)
+    fun retryFailedServiceEdits(workItemId: String) {
+        serviceDraftStates.value.filterKeys { it.workItemId == workItemId }.forEach { (fieldId, fieldState) ->
+            if (fieldState is ServiceDraftFieldState.Failed) serviceDraftAutosaveCoordinator.retry(fieldId)
+        }
+    }
+    fun flushServiceDraftAsync(workItemId: String) {
+        viewModelScope.launch { runCatching { flushServiceDraft(workItemId) } }
+    }
 
     fun savePublicWork(workItemId: String, text: String) = persistInspectionDraft(workItemId) { repository.savePublicWork(workItemId, text) }
     fun markChecklistReviewed(workItemId: String) = persistInspectionDraft(workItemId) { repository.markChecklistReviewed(workItemId) }
@@ -842,7 +920,11 @@ class ServiceLoopViewModel(
         viewModelScope.launch {
             try {
                 val savedAt = repository.saveResponse(draft.workItemId, questionId, disposition, value, reason)
-                try { val refreshed=repository.inspection(draft.workItemId); if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(inspection=refreshed,saveStatus=SaveStatus.Saved(savedAt),contentRefreshError=null) else current } }
+                try {
+                    val refreshed = repository.inspection(draft.workItemId)
+                    val progress = refreshed?.let { value -> runCatching { repository.serviceVisitProgress(value.visitId) }.getOrElse { progressFallback(value) } }
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(inspection=refreshed, serviceProgress=progress, saveStatus=SaveStatus.Saved(savedAt), contentRefreshError=null) else current }
+                }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) { if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus=SaveStatus.Saved(savedAt),contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current } }
             } catch (cancelled: CancellationException) {
@@ -883,4 +965,38 @@ class ServiceLoopViewModel(
         is SaveStatus.Failed -> lastSavedAtEpochMillis
         else -> null
     }
+}
+
+private fun progressFallback(draft: InspectionDraft): VisitServiceProgress {
+    val hasActivity = draft.workPerformed.isNotBlank() || draft.privateInternalNote.isNotBlank() ||
+        draft.questions.any { it.disposition !in setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_CHECKED) } ||
+        draft.rawInputs.isNotEmpty() || draft.outcome != null || draft.fulfillsCurrentObligation != null
+    val status = serviceEntryStatus(
+        hasActivity = hasActivity,
+        checklistComplete = draft.checklistComplete,
+        hasUnresolvedRawBuffer = draft.rawInputs.isNotEmpty(),
+        hasMissingIssueDescription = draft.issueMissingDescription.isNotEmpty(),
+        hasInvalidExplicitAnswer = draft.invalidExplicitAnswers.isNotEmpty(),
+    )
+    val item = ServiceProgressItem(
+        workItemId = draft.workItemId,
+        position = 1,
+        subjectType = draft.subjectType,
+        equipmentId = draft.equipmentId,
+        equipmentName = draft.equipmentName,
+        equipmentReference = draft.equipmentReference,
+        equipmentDescription = draft.equipmentDescription,
+        serviceName = draft.serviceName,
+        status = status,
+        documentationMode = serviceDocumentationMode(draft.dispatchLocalRole, draft.dispatchDocumentationDisposition),
+    )
+    return VisitServiceProgress(
+        visitId = draft.visitId,
+        visitReference = draft.visitReference,
+        customerName = draft.customerName,
+        siteName = draft.siteName,
+        serviceDate = "",
+        items = listOf(item),
+        groups = serviceProgressGroups(listOf(item)),
+    )
 }

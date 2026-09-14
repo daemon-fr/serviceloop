@@ -24,6 +24,7 @@ interface ServiceLoopRepository {
     suspend fun customerList(): List<CustomerSummary>
     suspend fun siteList(): List<SiteRegisterSummary> = emptyList()
     suspend fun inspection(workItemId: String): InspectionDraft?
+    suspend fun serviceVisitProgress(visitId: String): VisitServiceProgress = error("Service progress unavailable")
     suspend fun completionLines(visitId: String): List<CompletionLine>
     suspend fun checklistCompleteness(workItemId: String): ChecklistCompleteness = error("Checklist unavailable")
     suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long
@@ -189,10 +190,15 @@ class RoomServiceLoopRepository(
 
     override suspend fun home(): HomeSummary {
         val today = businessTime.today(); val visit = dao.latestWorkingVisit(); val booked = dao.nextBookedVisit(); val followUp = dao.firstDueFollowUp(today.toString()); val horizon = reminderPreferences().dueSoonHorizonDays
-        return HomeSummary(visit?.id, visit?.reference, visit?.siteNameSnapshot, visit?.modifiedAtEpochMillis, visit?.id?.let { dao.firstWorkItemId(it) }, booked?.reference, booked?.actualServiceDate, dao.dueFollowUpCount(today.toString()), followUp?.reference, followUp?.title, dao.overdueCount(today.toString()), dao.dueSoonCount(today.toString(), today.plusDays(horizon.toLong()).toString()), dao.workingVisitCount(), dao.bookedVisitCount(), horizon)
+        val resume = visit?.let { serviceVisitProgress(it.id).preferredResumeItem()?.workItemId ?: dao.firstWorkItemId(it.id) }
+        return HomeSummary(visit?.id, visit?.reference, visit?.siteNameSnapshot, visit?.modifiedAtEpochMillis, resume, booked?.reference, booked?.actualServiceDate, dao.dueFollowUpCount(today.toString()), followUp?.reference, followUp?.title, dao.overdueCount(today.toString()), dao.dueSoonCount(today.toString(), today.plusDays(horizon.toLong()).toString()), dao.workingVisitCount(), dao.bookedVisitCount(), horizon)
     }
 
-    override suspend fun visits() = dao.visits().map { VisitSummary(it.id, it.reference, it.siteName, it.actualServiceDate, VisitLifecycleState.normalize(it.state), it.finalRecordId, it.resumeWorkItemId) }
+    override suspend fun visits() = dao.visits().map { row ->
+        val state = VisitLifecycleState.normalize(row.state)
+        val resume = if (state == VisitLifecycleState.WORKING.code) serviceVisitProgress(row.id).preferredResumeItem()?.workItemId ?: row.resumeWorkItemId else row.resumeWorkItemId
+        VisitSummary(row.id, row.reference, row.siteName, row.actualServiceDate, state, row.finalRecordId, resume)
+    }
     override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate, CustomerType.fromCode(it.customerType)) }
     override suspend fun customerList() = dao.customerList().map { CustomerSummary(it.id, it.name, it.reference, it.siteCount, it.equipmentCount, CustomerType.fromCode(it.customerType)) }
     override suspend fun siteList() = dao.activeVisitSites().map { site -> SiteRegisterSummary(site.id, site.reference, site.name, site.customerName, site.address.orEmpty(), dao.equipmentForSite(site.id).size, CustomerType.fromCode(site.customerType)) }
@@ -839,6 +845,58 @@ class RoomServiceLoopRepository(
             subjectType = WorkSubjectType.fromCode(row.subjectType),
             equipmentId = row.equipmentId,
             equipmentDescription = row.equipmentDescriptionSnapshot,
+            customerName = row.customerName.orEmpty(),
+            siteAccessNote = row.siteAccessNote.orEmpty(),
+            equipmentPrivateNote = if (row.equipmentId != null) row.equipmentPrivateNote.orEmpty() else "",
+            dispatchInstructions = row.dispatchInstructions,
+            dispatchLocalRole = row.dispatchLocalRole,
+            dispatchDocumentationDisposition = row.dispatchDocumentationDisposition,
+        )
+    }
+
+    override suspend fun serviceVisitProgress(visitId: String): VisitServiceProgress {
+        val visit = dao.visit(visitId) ?: error("Visit no longer exists")
+        val progressItems = dao.visitWorkItems(visitId).mapIndexed { index, item ->
+            val responses = dao.responses(item.id)
+            val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(dao.checklistItems(snapshotId), responses) }
+            val rawInputs = dao.workingInputBuffers(item.id)
+            val publicWork = dao.publicDraft(item.id)?.workPerformed.orEmpty()
+            val privateNote = dao.privateDraft(item.id)?.internalNote.orEmpty()
+            val hasActivity = publicWork.isNotBlank() || privateNote.isNotBlank() || responses.isNotEmpty() ||
+                rawInputs.isNotEmpty() || dispatchDao.partCount(item.id) > 0 || dispatchDao.attachmentCount(item.id) > 0 ||
+                item.outcome != null || item.fulfillsCurrentObligation != null || item.notPerformedReason.isNullOrBlank().not() ||
+                item.confirmedNextDueDate != null || item.nextDueDateCalculated != null || item.nextDueOverrideReason != null
+            val status = serviceEntryStatus(
+                hasActivity = hasActivity,
+                checklistComplete = completeness?.complete != false,
+                hasUnresolvedRawBuffer = rawInputs.isNotEmpty(),
+                hasMissingIssueDescription = completeness?.issueMissingDescription.orEmpty().isNotEmpty(),
+                hasInvalidExplicitAnswer = completeness?.invalidExplicitAnswers.orEmpty().isNotEmpty(),
+            )
+            val binding = dispatchDao.itemBindingForWorkItem(item.id)
+            ServiceProgressItem(
+                workItemId = item.id,
+                position = index + 1,
+                subjectType = WorkSubjectType.fromCode(item.subjectType),
+                equipmentId = item.equipmentId,
+                equipmentName = item.equipmentNameSnapshot,
+                equipmentReference = item.equipmentReferenceSnapshot,
+                equipmentDescription = item.equipmentDescriptionSnapshot,
+                serviceName = item.serviceNameSnapshot,
+                status = status,
+                documentationMode = serviceDocumentationMode(binding?.localRole, binding?.documentationDisposition),
+                dispatchLocalRole = binding?.localRole,
+                dispatchDocumentationDisposition = binding?.documentationDisposition,
+            )
+        }
+        return VisitServiceProgress(
+            visitId = visit.id,
+            visitReference = visit.reference,
+            customerName = visit.customerNameSnapshot,
+            siteName = visit.siteNameSnapshot,
+            serviceDate = visit.actualServiceDate,
+            items = progressItems,
+            groups = serviceProgressGroups(progressItems),
         )
     }
 

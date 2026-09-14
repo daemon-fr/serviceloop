@@ -104,8 +104,9 @@ class ServiceDraftAutosaveCoordinator(
         rawValue: String,
         validator: (String) -> ServiceDraftValidation = ServiceDraftValidators.alwaysValid(),
         writer: suspend (String) -> Long,
+        onSaved: suspend (Long) -> Unit = {},
     ) {
-        val operation = TextOperation(rawValue, validator, writer)
+        val operation = TextOperation(rawValue, validator, writer, onSaved)
         val version = synchronized(stateLock) {
             val next = versions.getOrDefault(fieldId, 0L) + 1L
             versions[fieldId] = next
@@ -117,6 +118,14 @@ class ServiceDraftAutosaveCoordinator(
         }
         check(version > 0)
     }
+
+    /** Source-compatible form for the original trailing writer lambda. */
+    fun scheduleText(
+        fieldId: ServiceDraftFieldId,
+        rawValue: String,
+        validator: (String) -> ServiceDraftValidation = ServiceDraftValidators.alwaysValid(),
+        writer: suspend (String) -> Long,
+    ) = scheduleText(fieldId, rawValue, validator, writer, {})
 
     fun scheduleRaw(
         fieldId: ServiceDraftFieldId,

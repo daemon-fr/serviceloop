@@ -735,9 +735,10 @@ fun ServiceLoopResponsivePair(first: @Composable () -> Unit, second: @Composable
 }
 
 @Composable
-fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null) {
-    var expanded by remember { mutableStateOf(false) }
+fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null, initiallyExpanded: Boolean = false) {
+    var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     var restoreCompactFocus by remember { mutableStateOf(false) }
+    var wasFocused by remember { mutableStateOf(false) }
     val compactFocusRequester = remember { FocusRequester() }
     var editorValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     val c = LocalServiceLoopTokens.current
@@ -765,7 +766,12 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, unfocusedBorderColor = c.outlineControl, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk, disabledTextColor = c.disabledText, disabledBorderColor = c.disabledContainer, disabledLabelColor = c.disabledText),
             textStyle = ServiceLoopUiTokens.Type.body,
             suffix = { Spacer(Modifier.width(ServiceLoopUiTokens.Size.editorActionReserve)) },
-            modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester).testTag(fieldTestTag ?: tag),
+            modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester)
+                .onFocusChanged { focusState ->
+                    if (wasFocused && !focusState.isFocused) onFocusLost?.invoke()
+                    wasFocused = focusState.isFocused
+                }
+                .testTag(fieldTestTag ?: tag),
         )
         ServiceLoopIconAction(
             "Expand $label",
@@ -787,7 +793,10 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
                     ServiceLoopDetailToolbar(label, { collapse() })
                     Column(Modifier.fillMaxSize().padding(ServiceLoopUiTokens.Space.lg),horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
                         if (private) Text("PRIVATE · Not included in the customer report", color = LocalServiceLoopTokens.current.textSecondary)
-                        OutlinedTextField(editorValue, updateEditor,textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+                         OutlinedTextField(editorValue, updateEditor, enabled = enabled, textStyle=ServiceLoopUiTokens.Type.body, modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).onFocusChanged { focusState ->
+                             if (wasFocused && !focusState.isFocused) onFocusLost?.invoke()
+                             wasFocused = focusState.isFocused
+                         }.testTag("$tag-expanded"), shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
                         ServiceLoopPrimaryButton("Done",{collapse()},Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth))
                     }
                 }

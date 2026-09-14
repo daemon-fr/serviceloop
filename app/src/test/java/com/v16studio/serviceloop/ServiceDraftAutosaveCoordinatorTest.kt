@@ -46,6 +46,24 @@ class ServiceDraftAutosaveCoordinatorTest {
         assertEquals(ServiceDraftFieldState.Clean(42L), coordinator.states.value[field])
     }
 
+    @Test fun onSavedRunsOnlyAfterCurrentCanonicalWriteAndRawClear() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val field = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.WORK)
+        val callbackObservations = mutableListOf<Boolean>()
+
+        coordinator.scheduleText(
+            field,
+            "saved work",
+            writer = { value -> repository.canonical(field, value); 43L },
+            onSaved = { callbackObservations += repository.buffers.containsKey(field) },
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf(false), callbackObservations)
+        assertEquals(ServiceDraftFieldState.Clean(43L), coordinator.states.value[field])
+    }
+
     @Test fun invalidTextIsDurableRawInputAndNeverCallsCanonicalWriter() = runTest {
         val repository = BufferRepository()
         val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
