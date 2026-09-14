@@ -157,8 +157,9 @@ class CompletionUiSemanticTest {
         val historyWork = runBlocking { database.serviceLoopDao().visitWorkItems(historyVisit).single().id }
         runBlocking { repository.saveCompletionDraft(historyWork, "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
         val viewModel = ServiceLoopViewModel(repository) {}
-        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/$historyVisit") } }
-        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == historyWork } }
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/$historyWork") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
         compose.onNodeWithText("History only — current due date is unchanged.").assertIsDisplayed()
         compose.onAllNodesWithText("Remains due", substring = true).assertCountEquals(0)
     }
@@ -178,6 +179,7 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("checklist-section"))
         compose.onNodeWithText("Required complete 0 of 1").assertIsDisplayed()
         compose.onAllNodesWithText("Issue findings require a public description before checklist completion.").assertCountEquals(0)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("question-checklist-question"))
         compose.onNodeWithText("Required for checklist completion.").assertIsDisplayed()
     }
 

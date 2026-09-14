@@ -252,10 +252,11 @@ class StageAVisualProofTest {
                     }
                 }
             }
-            assertTrue(compose.onAllNodesWithText("Not saved — action needed").fetchSemanticsNodes().isNotEmpty())
+            compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("service-identity"))
+            assertTrue(compose.onAllNodesWithText("Not saved", substring = true).fetchSemanticsNodes().isNotEmpty())
             assertTrue(compose.onAllNodesWithText("Storage unavailable", substring = true).fetchSemanticsNodes().isNotEmpty())
+            compose.onNodeWithText("Not saved", substring = true).assertIsDisplayed()
             compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("response-check-status-ISSUE_FOUND"))
-            compose.onNodeWithText("Not saved — action needed").assertIsDisplayed()
             capture("working-checklist-411-${if (dark) "dark" else "light"}.png")
         }
     }

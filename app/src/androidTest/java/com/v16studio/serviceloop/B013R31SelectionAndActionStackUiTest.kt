@@ -199,12 +199,12 @@ class B013R31OwnerSurfaceRenderTest {
 
         androidx.test.espresso.Espresso.pressBack()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-solo").performClick()
+        compose.onNodeWithTag("team-role-SOLO").performClick()
         capture("team-role-solo.png")
-        compose.onNodeWithTag("team-role-member").performClick()
+        compose.onNodeWithTag("team-role-MEMBER").performClick()
         compose.onNodeWithTag("technician-identity").assertIsDisplayed()
         capture("team-role-member.png")
-        compose.onNodeWithTag("team-role-coordinator").performClick()
+        compose.onNodeWithTag("team-role-COORDINATOR").performClick()
         compose.onNodeWithTag("technician-identity").assertDoesNotExist()
         capture("team-role-coordinator.png")
     }
