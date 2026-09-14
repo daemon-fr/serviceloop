@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -68,7 +70,11 @@ data class UiState(
     val activeServiceVisitId: String? = null,
     val activeServiceWorkItemId: String? = null,
     val completionLines: List<CompletionLine> = emptyList(),
+    val serviceFollowUps: List<FollowUpDetail> = emptyList(),
     val completionVisitId: String? = null,
+    val fieldEvidenceWorkItemId: String? = null,
+    val photoMetadataPendingId: String? = null,
+    val photoMetadataErrorId: String? = null,
     val visits: List<VisitSummary> = emptyList(),
     val businessProfile: BusinessProfile? = null,
     val visitReportIdentity: BusinessProfile? = null,
@@ -260,10 +266,13 @@ class ServiceLoopViewModel(
             try {
                 val draft = repository.inspection(workItemId) ?: return@launch
                 val progress = runCatching { repository.serviceVisitProgress(draft.visitId) }.getOrElse { progressFallback(draft) }
+                val lines = repository.completionLines(draft.visitId)
                 if (isCurrent(request)) _state.update { current ->
                     if (current.inspection?.workItemId == workItemId) current.copy(
                         inspection = draft,
                         serviceProgress = progress,
+                        completionLines = lines,
+                        completionVisitId = draft.visitId,
                         activeServiceVisitId = draft.visitId,
                         activeServiceWorkItemId = draft.workItemId,
                         contentRefreshError = null,
@@ -289,6 +298,11 @@ class ServiceLoopViewModel(
                 ServiceDraftFieldKeys.OVERRIDE_DATE -> scheduleRecurrenceOverrideDate(draft.workItemId, rawValue)
                 ServiceDraftFieldKeys.OVERRIDE_REASON -> scheduleRecurrenceOverrideReason(draft.workItemId, rawValue)
                 else -> {
+                    val photoId = ServiceDraftFieldKeys.parsePhotoCaption(fieldKey)
+                    if (photoId != null) {
+                        schedulePhotoCaption(draft.workItemId, photoId, rawValue)
+                        return@forEach
+                    }
                     val parsed = ServiceDraftFieldKeys.parseQuestionField(fieldKey)
                     val question = parsed?.let { parsedField ->
                         draft.questions.firstOrNull { it.snapshotItemId == parsedField.snapshotItemId }
@@ -313,11 +327,14 @@ class ServiceLoopViewModel(
     fun loadCompletion(visitId: String) {
         val request = issueRequest("completion")
         issueRequest("draftSaveContext")
-        launchLoad {
-            val lines = repository.completionLines(visitId)
-            val profile = repository.businessProfile()
-            val identity = repository.visitReportIdentity(visitId)
-            if (isCurrent(request)) _state.update { current -> current.copy(completionLines = lines, completionVisitId = visitId, businessProfile = profile, visitReportIdentity = identity, saveStatus = if(current.completionVisitId == visitId) current.saveStatus else SaveStatus.Idle) }
+        viewModelScope.launch {
+            try {
+                val lines = repository.completionLines(visitId)
+                val profile = repository.businessProfile()
+                val identity = repository.visitReportIdentity(visitId)
+                if (isCurrent(request)) _state.update { current -> current.copy(completionLines = lines, completionVisitId = visitId, businessProfile = profile, visitReportIdentity = identity, contentRefreshError = null) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { if (isCurrent(request)) _state.update { it.copy(contentRefreshError = failure.message ?: "Unable to load service completion") } }
         }
     }
     fun clearCompletionContext(visitId: String) {
@@ -488,7 +505,13 @@ class ServiceLoopViewModel(
     fun setAppointmentReminderLead(visitId: String, minutes: Int?) = runOperation({ repository.setAppointmentReminderLead(visitId, minutes); visitId }) { loadVisit(it) }
     fun loadFieldEvidence(workItemId: String) {
         val request = issueRequest("fieldEvidence")
-        launchLoad { val parts=repository.parts(workItemId); val photos=repository.photos(workItemId); if(isCurrent(request)) _state.update { it.copy(parts=parts, photos=photos) } }
+        viewModelScope.launch {
+            try {
+                val parts=repository.parts(workItemId); val photos=repository.photos(workItemId); val followUps=repository.correctiveFollowUps(workItemId)
+                if(isCurrent(request)) _state.update { it.copy(parts=parts, photos=photos, serviceFollowUps=followUps, fieldEvidenceWorkItemId=workItemId, contentRefreshError=null) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { if (isCurrent(request)) _state.update { it.copy(contentRefreshError = failure.message ?: "Unable to load Service evidence") } }
+        }
     }
 
     fun search(query: String) {
@@ -560,8 +583,48 @@ class ServiceLoopViewModel(
     }
     fun linkWorkItemEquipment(workItemId: String, equipmentId: String, onSuccess: () -> Unit = {}) = runOperation({ repository.linkWorkItemEquipment(workItemId, equipmentId); workItemId }) { id -> loadInspection(id); onSuccess() }
     fun createAndLinkEquipment(workItemId: String, input: EquipmentInput, onSuccess: () -> Unit = {}) = runOperation({ repository.createAndLinkEquipment(workItemId, input); workItemId }) { id -> loadInspection(id); onSuccess() }
-    fun addPart(workItemId: String, description: String, quantity: String, unit: String) = runOperation({ repository.addPart(workItemId, description, quantity, unit) }) { loadFieldEvidence(workItemId) }
-    fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { loadFieldEvidence(workItemId) }
+    private fun refreshEvidence(workItemId: String) { loadFieldEvidence(workItemId); refreshServiceContext(workItemId) }
+    fun addPart(workItemId: String, description: String, quantity: String, unit: String, onSuccess: () -> Unit = {}) = runOperation({ repository.addPart(workItemId, description, quantity, unit) }) { refreshEvidence(workItemId); onSuccess() }
+    fun updatePart(workItemId: String, partId: String, description: String, quantity: String, unit: String, onSuccess: () -> Unit = {}) = runOperation({ repository.updatePart(workItemId, partId, description, quantity, unit) }) { refreshEvidence(workItemId); onSuccess() }
+    fun removePart(workItemId: String, partId: String) = runOperation({ repository.removePart(workItemId, partId) }) { refreshEvidence(workItemId) }
+    fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { refreshEvidence(workItemId) }
+    private val photoMetadataMutex = Mutex()
+    private val photoMetadataVersions = mutableMapOf<String, Long>()
+    fun setPhotoReportInclusion(workItemId: String, photoId: String, include: Boolean) {
+        val version = (photoMetadataVersions[photoId] ?: 0L) + 1L
+        photoMetadataVersions[photoId] = version
+        _state.update { it.copy(photoMetadataPendingId = photoId, photoMetadataErrorId = null, error = null) }
+        viewModelScope.launch {
+            try {
+                photoMetadataMutex.withLock {
+                    if (photoMetadataVersions[photoId] != version) return@withLock
+                    repository.setPhotoReportInclusion(workItemId, photoId, include)
+                    if (photoMetadataVersions[photoId] == version) {
+                        loadFieldEvidence(workItemId)
+                        _state.update { it.copy(photoMetadataPendingId = null, photoMetadataErrorId = null) }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (photoMetadataVersions[photoId] == version) _state.update { it.copy(photoMetadataPendingId = null, photoMetadataErrorId = photoId, error = failure.message ?: "Photo details not saved") }
+            }
+        }
+    }
+    fun removePhoto(workItemId: String, photoId: String) {
+        photoMetadataVersions[photoId] = (photoMetadataVersions[photoId] ?: 0L) + 1L
+        runOperation({
+            serviceDraftAutosaveCoordinator.cancelAndJoin(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.photoCaption(photoId)))
+            repository.clearWorkingInputBuffer(workItemId, ServiceDraftFieldKeys.photoCaption(photoId))
+            withContext(Dispatchers.IO) { repository.removePhoto(workItemId, photoId) }
+        }) { refreshEvidence(workItemId) }
+    }
+
+    fun schedulePhotoCaption(workItemId: String, photoId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
+        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.photoCaption(photoId)), rawValue,
+        validator = { value -> if (value.length <= 500) ServiceDraftValidation() else ServiceDraftValidation("Caption is too long") },
+        writer = { value -> repository.savePhotoCaption(workItemId, photoId, value) },
+        onSaved = { refreshEvidence(workItemId) },
+    )
     fun reportOperationFailure(message:String) { _state.update { it.copy(operationInProgress=false,error=message,operationMessage=null) } }
     fun createContactNote(input: ContactNoteInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createContactNote(input) }, onSuccess)
     fun loadContactNote(id: String) {
@@ -570,7 +633,7 @@ class ServiceLoopViewModel(
     }
     fun markContactNoteEnteredInError(id:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.markContactNoteEnteredInError(id,reason);id},onSuccess)
     fun createFollowUp(input: FollowUpInput, onSuccess: (String) -> Unit) = runOperation({ repository.createFollowUp(input) }, onSuccess)
-    fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCorrectiveFollowUp(workItemId, title, dueDate, privateNote) }, onSuccess)
+    fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCorrectiveFollowUp(workItemId, title, dueDate, privateNote) }) { id -> loadFieldEvidence(workItemId); onSuccess(id) }
     fun updateFollowUp(id:String,title:String,dueDate:String,note:String,reason:String,onSuccess:(String)->Unit={})=runOperation({repository.updateFollowUp(id,title,dueDate,note,reason);id},onSuccess)
     fun changeFollowUpState(id: String, target: String, reason: String, newDue: String?, onSuccess: (String) -> Unit = {}) = runOperation({ repository.changeFollowUpState(id, target, reason, newDue); id }, onSuccess)
     fun loadBusinessProfile() {
@@ -717,7 +780,7 @@ class ServiceLoopViewModel(
         serviceDraftAutosaveCoordinator.immediateChoice(
             ServiceDraftFieldId(workItemId, "result:outcome"), outcome,
             writer = { repository.saveCompletionDraft(workItemId, outcome, line.fulfillsCurrentObligation, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
-            onSaved = { loadCompletion(visitId) },
+            onSaved = { refreshServiceContext(workItemId) },
         )
     }
 
@@ -726,7 +789,7 @@ class ServiceLoopViewModel(
         serviceDraftAutosaveCoordinator.immediateChoice(
             ServiceDraftFieldId(workItemId, "result:fulfillment"), fulfills.toString(),
             writer = { repository.saveCompletionDraft(workItemId, line.outcome, fulfills, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
-            onSaved = { loadCompletion(visitId) },
+            onSaved = { refreshServiceContext(workItemId) },
         )
     }
 

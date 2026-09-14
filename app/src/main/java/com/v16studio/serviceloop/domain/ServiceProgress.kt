@@ -32,10 +32,11 @@ fun serviceEntryStatus(
     hasUnresolvedRawBuffer: Boolean = false,
     hasMissingIssueDescription: Boolean = false,
     hasInvalidExplicitAnswer: Boolean = false,
+    completionReady: Boolean = false,
 ): ServiceEntryStatus = when {
     !hasActivity -> ServiceEntryStatus.NOT_STARTED
     hasUnresolvedRawBuffer || hasMissingIssueDescription || hasInvalidExplicitAnswer -> ServiceEntryStatus.NEEDS_ATTENTION
-    checklistComplete -> ServiceEntryStatus.READY
+    checklistComplete && completionReady -> ServiceEntryStatus.READY
     else -> ServiceEntryStatus.IN_PROGRESS
 }
 

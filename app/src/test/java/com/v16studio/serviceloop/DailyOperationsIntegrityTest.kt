@@ -239,11 +239,81 @@ class DailyOperationsIntegrityTest {
         assertEquals("2.5", line.parts.single().quantity); assertEquals(1, line.photos.size); assertEquals("Filter housing", line.photos.single().caption); assertFalse(record.public.toString().contains("PRIVATE_PHOTO")); assertTrue(File(root, line.photos.single().relativePath).isFile)
     }
 
+    @Test fun savedPrivateNoteIsReadByFreshRepositoryWhileVisitRemainsWorking() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.savePrivateNote(work, "PRIVATE_RESTART_CHECK_2B")
+        assertEquals("WORKING", repo.visit(visit)!!.state)
+        val freshReader = RoomServiceLoopRepository(db, time, attachmentRoot = root)
+        assertEquals("PRIVATE_RESTART_CHECK_2B", freshReader.inspection(work)!!.privateInternalNote)
+        assertTrue(freshReader.workingInputBuffers(work).isEmpty())
+    }
+
+    @Test fun workingEvidenceMutationsPersistAndFinalEvidenceRejectsWorkingEdits() = runTest {
+        val ids = foundation()
+        repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex", zoneId = "Europe/Bucharest"))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val part = repo.addPart(work, "Filter", "2", "pcs")
+        repo.updatePart(work, part, "Seal", "3.5", "sets")
+        assertEquals(PartEntry(part, "Seal", "3.5", "sets"), repo.parts(work).single())
+        repo.removePart(work, part)
+        assertTrue(repo.parts(work).isEmpty())
+        val photo = repo.savePhoto(work, testImageBytes(Color.CYAN), "source.png", "image/png", false, null)
+        assertFalse(repo.photos(work).single().includedInReport)
+        repo.updatePhoto(work, photo, "Inspection view", true)
+        assertEquals("Inspection view", repo.photos(work).single().caption)
+        assertTrue(repo.photos(work).single().includedInReport)
+        val path = db.serviceLoopDao().attachment(photo)!!.storedRelativePath
+        repo.removePhoto(work, photo)
+        assertTrue(repo.photos(work).isEmpty())
+        assertFalse(File(root, path).exists())
+        repo.savePublicWork(work, "Completed")
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        assertTrue(repo.finalizeVisit(visit) is FinalizeResult.Success)
+        assertTrue(runCatching { repo.updatePart(work, part, "Changed", "1", "pc") }.isFailure)
+        assertTrue(runCatching { repo.updatePhoto(work, photo, "Changed", false) }.isFailure)
+    }
+
+    @Test fun outcomeTransitionsKeepFulfillmentDecisionExplicitAndNextDueAtomic() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.savePublicWork(work, "Serviced")
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        repo.saveCompletionDraft(work, "PERFORMED", true, null, null, null, null)
+        assertEquals("2027-09-05", repo.completionLines(visit).single().confirmedNextDueDate)
+        assertEquals(ServiceEntryStatus.READY, repo.serviceVisitProgress(visit).items.single().status)
+        repo.saveCompletionDraft(work, "PARTLY_PERFORMED", true, null, "2027-09-05", true, null)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        assertNull(repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
+        repo.saveCompletionDraft(work, "NOT_PERFORMED", true, "Access blocked", null, null, null)
+        assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        assertNull(repo.completionLines(visit).single().fulfillsCurrentObligation)
+    }
+
     @Test fun failedPhotoMetadataWriteDoesNotLeaveAFalseSavedFile() = runTest {
         val ids=foundation(); val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!
         db.openHelper.writableDatabase.execSQL("CREATE TRIGGER reject_test_attachment BEFORE INSERT ON attachments BEGIN SELECT RAISE(ABORT, 'test rejection'); END")
         assertTrue(runCatching{repo.savePhoto(work,testImageBytes(Color.GREEN),"rejected.png","image/png",true,"Rejected")}.isFailure)
         assertTrue(repo.photos(work).isEmpty()); assertTrue(root.walkTopDown().filter{it.isFile}.none())
+    }
+
+    @Test fun failedPhotoRemovalRestoresStoredFileAndMetadata() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val photo = repo.savePhoto(work, testImageBytes(Color.GREEN), "source.png", "image/png", false, null)
+        val path = db.serviceLoopDao().attachment(photo)!!.storedRelativePath
+        db.openHelper.writableDatabase.execSQL("CREATE TRIGGER reject_photo_delete BEFORE DELETE ON attachments BEGIN SELECT RAISE(ABORT, 'test rejection'); END")
+        assertTrue(runCatching { repo.removePhoto(work, photo) }.isFailure)
+        assertEquals(photo, repo.photos(work).single().id)
+        assertTrue(File(root, path).isFile)
     }
 
     @Test fun missingSelectedPhotoBlocksFinalizationWithoutChangingVisitOrObligation() = runTest {

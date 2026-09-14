@@ -1,6 +1,12 @@
 package com.v16studio.serviceloop
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
@@ -10,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -17,6 +24,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.room.Room
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
@@ -26,6 +34,8 @@ import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import java.time.Instant
 import java.time.ZoneId
+import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -84,7 +94,7 @@ class CompletionUiSemanticTest {
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
         compose.waitUntil(5_000) { viewModel.state.value.completionLines.isNotEmpty() }
-        compose.onNodeWithText("Review the visit and complete any remaining service decisions before finalizing.").assertIsDisplayed()
+        compose.onNodeWithText("Review the service facts and due consequences before finalizing.").assertIsDisplayed()
         compose.onNodeWithText("Report identity").assertIsDisplayed()
         compose.onNodeWithText("Business · Technician").assertIsDisplayed()
         compose.onNodeWithText("Update from current profile").assertIsDisplayed()
@@ -98,17 +108,104 @@ class CompletionUiSemanticTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val repository = RoomServiceLoopRepository(database, time)
         val viewModel = ServiceLoopViewModel(repository) {}
-        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
-        compose.onNodeWithTag("outcome-w-PERFORMED").performScrollTo().performClick()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-PERFORMED"))
+        compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
-        compose.onNodeWithTag("fulfills-w").performScrollTo().performClick()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("fulfill-w"))
+        compose.onNodeWithTag("keep-due-w").assertExists()
+        compose.onNodeWithTag("fulfill-w").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.fulfillsCurrentObligation == true }
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-05" }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("change-next-due"))
+        compose.onNodeWithTag("change-next-due").assertIsDisplayed()
+        compose.onAllNodesWithTag("override-date").assertCountEquals(0)
+        compose.onNodeWithTag("change-next-due").performClick()
+        compose.onNodeWithTag("override-date").performTextReplacement("2026-12-20")
+        compose.onNodeWithTag("override-reason").performTextReplacement("Customer requested later date")
+        compose.onNodeWithTag("override-date").assertTextContains("2026-12-20")
+        compose.onNodeWithTag("override-reason").assertTextContains("Customer requested later date")
+        org.junit.Assert.assertEquals("v", viewModel.state.value.completionVisitId)
+        compose.onNodeWithTag("apply-override").assertIsEnabled()
+        org.junit.Assert.assertEquals("2026-12-05", viewModel.state.value.completionLines.single().confirmedNextDueDate)
+        org.junit.Assert.assertEquals("2026-12-05", runBlocking { repository.completionLines("v").single().confirmedNextDueDate })
+        compose.onNodeWithTag("apply-override").performScrollTo().assertIsDisplayed().performClick()
+        compose.onAllNodesWithTag("override-date").assertCountEquals(0)
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-20" }
+        compose.onNodeWithTag("review-visit").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("completion-review-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithTag("outcome-w-PERFORMED").assertCountEquals(0)
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
         compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag("finalize-record"))
         compose.onNodeWithTag("finalize-record").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.finalRecord != null }
         compose.onNodeWithText("Final service record").assertIsDisplayed()
+    }
+
+    @Test fun oneOffServiceCanBeReadyWithoutARecurringFulfillmentChoice() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.insertWorkItems(listOf(WorkItemEntity("oneoff", "v", null, null, null, null, null, null, "Site repair", null, null, null, null, false, null, null, subjectType = "SITE")))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("oneoff", "Repaired the door closer")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("oneoff", "")))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("visit-line-oneoff"))
+        compose.onNodeWithTag("visit-line-oneoff").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-parts"))
+        compose.onNodeWithTag("add-part").assertExists()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-photos"))
+        compose.onNodeWithTag("choose-photo").assertExists()
+        compose.onNodeWithTag("take-photo").assertExists()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-oneoff-PERFORMED"))
+        compose.onNodeWithTag("outcome-oneoff-PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.firstOrNull { it.workItemId == "oneoff" }?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
+        compose.onAllNodesWithTag("fulfill-oneoff").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-oneoff").assertCountEquals(0)
+        compose.onNodeWithText("No recurring due date for this Service.").assertExists()
+        InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)?.let { directory ->
+            File(directory, "service-flow-2b-oneoff.png").outputStream().use { output ->
+                compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output)
+            }
+        }
+    }
+
+    @Test fun inlinePhotoDetailsPersistAndRemovalRequiresConfirmation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
+        val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val photoId = runBlocking { repository.savePhoto("w", bytes, "test.png", "image/png", false, null) }
+        val path = runBlocking { database.serviceLoopDao().attachment(photoId)!!.storedRelativePath }
+        try {
+            val viewModel = ServiceLoopViewModel(repository) {}
+            compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+            compose.onNodeWithTag("resume-service").performClick()
+            compose.waitUntil(10_000) { viewModel.state.value.fieldEvidenceWorkItemId == "w" && compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("photo-$photoId"))
+            compose.onNodeWithTag("photo-report-$photoId").performScrollTo().assertIsOff().performClick()
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").single().includedInReport } }
+            compose.onNodeWithTag("photo-caption-$photoId").performScrollTo().performTextReplacement("Inspection view")
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").single().caption == "Inspection view" } }
+            compose.onNodeWithTag("remove-photo-$photoId").performScrollTo().performClick()
+            compose.onNodeWithText("Remove photo?").assertIsDisplayed()
+            org.junit.Assert.assertTrue(File(context.filesDir, path).isFile)
+            compose.onNodeWithTag("confirm-remove-photo-$photoId").performClick()
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").isEmpty() } }
+            org.junit.Assert.assertFalse(File(context.filesDir, path).exists())
+        } finally { File(context.filesDir, path).delete() }
     }
 
     @Test fun readyMetadataWithMissingPdfKeepsStructuredTextAndDisablesShare() {
@@ -180,7 +277,7 @@ class CompletionUiSemanticTest {
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
         compose.waitUntil(5_000){viewModel.state.value.completionLines.isNotEmpty()}
-        val unavailable = androidx.compose.ui.test.hasText("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.")
+        val unavailable = androidx.compose.ui.test.hasText("Current service obligation changed — this Service cannot advance the current due date.")
         compose.onNodeWithTag("completion-review-list").performScrollToNode(unavailable)
         compose.onNode(unavailable).assertIsDisplayed()
         compose.onAllNodesWithTag("fulfills-w").assertCountEquals(0)

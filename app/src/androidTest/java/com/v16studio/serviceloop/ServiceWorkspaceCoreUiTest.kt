@@ -2,6 +2,7 @@ package com.v16studio.serviceloop
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertHasNoClickAction
@@ -78,8 +79,10 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("visit-progress").assertIsDisplayed()
         compose.onNodeWithTag("work-performed-section").assertIsDisplayed()
         compose.onNodeWithTag("add-private-note").assertIsDisplayed()
-        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("open-field-evidence"))
-        compose.onNodeWithTag("open-field-evidence").assertIsDisplayed()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-parts"))
+        compose.onNodeWithTag("service-parts").assertIsDisplayed()
+        compose.onNodeWithTag("service-photos").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("open-field-evidence").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("response-q-status-OK"))
         compose.onNodeWithTag("response-q-status-OK").assertIsDisplayed()
         compose.onNodeWithTag("response-q-status-ISSUE_FOUND").assertIsDisplayed()
@@ -97,7 +100,7 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("show-services").performClick()
         compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasNoClickAction()
         compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
-        compose.onNodeWithText("Ready for outcome").assertIsDisplayed()
+        compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Back to visit").assertIsDisplayed()
     }
@@ -224,8 +227,9 @@ class ServiceWorkspaceCoreUiTest {
     private fun assertReadOnlyParts(mode: ServiceDocumentationMode, localRole: String?, disposition: String?) {
         val currentDraft = draft()
         render(currentDraft, progress(currentDraft, listOf(progressItem(currentDraft.workItemId, 1, currentDraft.serviceName, mode, localRole, disposition))))
-        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("open-field-evidence"))
-        compose.onNodeWithTag("open-field-evidence").assertIsNotEnabled()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-parts"))
+        compose.onAllNodesWithTag("add-part").assertCountEquals(0)
+        compose.onAllNodesWithTag("choose-photo").assertCountEquals(0)
     }
 
     private fun progress(draft: InspectionDraft, items: List<ServiceProgressItem>) = VisitServiceProgress(

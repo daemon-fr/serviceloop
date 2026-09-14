@@ -112,13 +112,20 @@ interface ServiceLoopRepository {
     suspend fun cancelVisit(id: String, reason: String): Long = error("Visit unavailable")
     suspend fun restoreVisit(id: String, serviceDate: String): Long = error("Visit unavailable")
     suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String = error("Part entry unavailable")
+    suspend fun updatePart(workItemId: String, partId: String, description: String, quantity: String, unit: String): Long = error("Part update unavailable")
+    suspend fun removePart(workItemId: String, partId: String): Long = error("Part removal unavailable")
     suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = error("Photo intake unavailable")
+    suspend fun updatePhoto(workItemId: String, photoId: String, caption: String?, includeInReport: Boolean): Long = error("Photo update unavailable")
+    suspend fun savePhotoCaption(workItemId: String, photoId: String, caption: String): Long = error("Photo caption unavailable")
+    suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long = error("Photo report choice unavailable")
+    suspend fun removePhoto(workItemId: String, photoId: String): Long = error("Photo removal unavailable")
     suspend fun createContactNote(input: ContactNoteInput): String = error("Contact note unavailable")
     suspend fun contactNote(id: String): ContactNoteDetail? = null
     suspend fun markContactNoteEnteredInError(id: String, reason: String): Long = error("Contact note unavailable")
     suspend fun createFollowUp(input: FollowUpInput): String = error("Follow-up unavailable")
     suspend fun updateFollowUp(id: String, title: String, dueDate: String, privateNote: String, reason: String): Long = error("Follow-up unavailable")
     suspend fun createCorrectiveFollowUp(workItemId: String, title: String, dueDate: String, privateNote: String): String = error("Corrective follow-up unavailable")
+    suspend fun correctiveFollowUps(workItemId: String): List<FollowUpDetail> = emptyList()
     suspend fun changeFollowUpState(id: String, state: String, reason: String, newDueDate: String? = null): Long = error("Follow-up unavailable")
     suspend fun history(query: HistoryQuery): List<HistoryEntry> = emptyList()
     suspend fun attention(): List<AttentionItem> = emptyList()
@@ -781,6 +788,96 @@ class RoomServiceLoopRepository(
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val item=workingItem(workItemId); dao.insertPart(PartEntryEntity(id, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now)); dao.touchVisit(item.visitId, now) }; return id
     }
 
+    override suspend fun updatePart(workItemId: String, partId: String, description: String, quantity: String, unit: String): Long {
+        require(description.trim().isNotEmpty() && description.length <= 200)
+        require(unit.trim().isNotEmpty() && unit.length <= 30)
+        val numeric = runCatching { BigDecimal(quantity.trim()) }.getOrNull()
+        require(numeric != null && numeric > BigDecimal.ZERO) { "Quantity must be a finite positive number" }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.part(partId)?.workItemId == workItemId) { "Part no longer belongs to this Service" }
+            check(dao.updatePart(partId, workItemId, description.trim(), numeric.stripTrailingZeros().toPlainString(), unit.trim(), now) == 1)
+            dao.touchVisit(item.visitId, now)
+        }
+        return now
+    }
+
+    override suspend fun removePart(workItemId: String, partId: String): Long {
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.deletePart(partId, workItemId) == 1) { "Part no longer belongs to this Service" }
+            dao.touchVisit(item.visitId, now)
+        }
+        return now
+    }
+
+    override suspend fun updatePhoto(workItemId: String, photoId: String, caption: String?, includeInReport: Boolean): Long = BusinessFileCoordinator.mutex.withLock {
+        require(caption == null || caption.length <= 500) { "Caption is too long" }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.updateWorkPhoto(photoId, workItemId, clean(caption), includeInReport) == 1) { "Photo no longer belongs to this Service" }
+            dao.touchVisit(item.visitId, now)
+        }
+        now
+    }
+
+    override suspend fun savePhotoCaption(workItemId: String, photoId: String, caption: String): Long = BusinessFileCoordinator.mutex.withLock {
+        require(caption.length <= 500) { "Caption is too long" }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.updateWorkPhotoCaption(photoId, workItemId, clean(caption)) == 1) { "Photo no longer belongs to this Service" }
+            dao.touchVisit(item.visitId, now)
+        }
+        now
+    }
+
+    override suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long = BusinessFileCoordinator.mutex.withLock {
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val item = workingItem(workItemId)
+            check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" }
+            dao.touchVisit(item.visitId, now)
+        }
+        now
+    }
+
+    override suspend fun removePhoto(workItemId: String, photoId: String): Long = BusinessFileCoordinator.mutex.withLock {
+        val root = attachmentRoot ?: error("Attachment storage unavailable")
+        val photo = dao.attachment(photoId)?.takeIf { it.ownerType == "WORK_ITEM" && it.ownerId == workItemId }
+            ?: error("Photo no longer belongs to this Service")
+        val file = File(root, photo.storedRelativePath)
+        val bytes = file.takeIf { it.isFile }?.readBytes() ?: error("Saved photo file is missing")
+        val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        require(bytes.size.toLong() == photo.byteSize && hash == photo.sha256) { "Saved photo failed integrity check" }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        try {
+            check(file.delete()) { "Stored photo could not be deleted" }
+            database.withTransaction {
+                val item = workingItem(workItemId)
+                check(dao.deleteAttachment(photoId) == 1)
+                dao.touchVisit(item.visitId, now)
+            }
+            file.parentFile?.takeIf { it.listFiles().isNullOrEmpty() }?.delete()
+            now
+        } catch (failure: Throwable) {
+            if (!file.isFile) {
+                file.parentFile?.mkdirs()
+                runCatching { file.writeBytes(bytes) }.onFailure { failure.addSuppressed(it) }
+            }
+            throw failure
+        }
+    }
+
     override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = BusinessFileCoordinator.mutex.withLock { savePhotoUnlocked(workItemId, bytes, displayName, mimeType, includeInReport, caption) }
 
     private suspend fun savePhotoUnlocked(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String {
@@ -809,6 +906,7 @@ class RoomServiceLoopRepository(
         val item = dao.workItem(workItemId) ?: error("Work item no longer exists"); val visit = dao.visit(item.visitId) ?: error("Visit no longer exists")
         return createFollowUp(FollowUpInput("CORRECTIVE", title, dueDate, visit.customerId, visit.siteId, item.equipmentId, privateNote, visit.id, item.id))
     }
+    override suspend fun correctiveFollowUps(workItemId: String): List<FollowUpDetail> = dao.followUpsForWorkItem(workItemId).map { followUpDetail(it) }
 
     override suspend fun changeFollowUpState(id: String, state: String, reason: String, newDueDate: String?): Long {
         require(state in setOf("RESOLVED", "CANCELLED", "OPEN")); require(reason.trim().isNotEmpty()); newDueDate?.let(LocalDate::parse)
@@ -884,6 +982,7 @@ class RoomServiceLoopRepository(
 
     override suspend fun serviceVisitProgress(visitId: String): VisitServiceProgress {
         val visit = dao.visit(visitId) ?: error("Visit no longer exists")
+        val completionByItem = completionLines(visitId).associateBy { it.workItemId }
         val progressItems = dao.visitWorkItems(visitId).mapIndexed { index, item ->
             val responses = dao.responses(item.id)
             val completeness = item.templateSnapshotId?.let { snapshotId -> checklistCompleteness(dao.checklistItems(snapshotId), responses) }
@@ -894,12 +993,14 @@ class RoomServiceLoopRepository(
                 rawInputs.isNotEmpty() || dispatchDao.partCount(item.id) > 0 || dispatchDao.attachmentCount(item.id) > 0 ||
                 item.outcome != null || item.fulfillsCurrentObligation != null || item.notPerformedReason.isNullOrBlank().not() ||
                 item.confirmedNextDueDate != null || item.nextDueDateCalculated != null || item.nextDueOverrideReason != null
+            val completion = completionByItem[item.id]
             val status = serviceEntryStatus(
                 hasActivity = hasActivity,
                 checklistComplete = completeness?.complete != false,
                 hasUnresolvedRawBuffer = rawInputs.isNotEmpty(),
                 hasMissingIssueDescription = completeness?.issueMissingDescription.orEmpty().isNotEmpty(),
                 hasInvalidExplicitAnswer = completeness?.invalidExplicitAnswers.orEmpty().isNotEmpty(),
+                completionReady = completion?.blockers?.isEmpty() == true,
             )
             val binding = dispatchDao.itemBindingForWorkItem(item.id)
             ServiceProgressItem(
@@ -1149,7 +1250,8 @@ class RoomServiceLoopRepository(
         val actual = LocalDate.parse(visit.actualServiceDate)
         val transitionedToPerformed = item.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") && outcome == "PERFORMED"
         var normalizedFulfills: Boolean? = when (outcome) {
-            null, "PARTLY_PERFORMED", "NOT_PERFORMED" -> if (outcome == "NOT_PERFORMED") false else null
+            null -> null
+            "PARTLY_PERFORMED", "NOT_PERFORMED" -> false
             "PERFORMED" -> if (transitionedToPerformed) null else if (eligibility == FulfillmentEligibility.ELIGIBLE) fulfills else null
             else -> null
         }

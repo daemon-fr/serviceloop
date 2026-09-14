@@ -22,6 +22,12 @@ object ServiceDraftFieldKeys {
     fun questionValue(snapshotItemId: String) = question(snapshotItemId, "value")
     fun questionIssue(snapshotItemId: String) = question(snapshotItemId, "issue")
     fun questionNotApplicable(snapshotItemId: String) = question(snapshotItemId, "na")
+    fun photoCaption(photoId: String): String {
+        require(photoId.isNotBlank() && !photoId.contains(':')) { "Invalid photo id" }
+        return "photo:$photoId:caption"
+    }
+
+    fun parsePhotoCaption(fieldKey: String): String? = fieldKey.split(':').takeIf { it.size == 3 && it[0] == "photo" && it[1].isNotBlank() && it[2] == "caption" }?.get(1)
 
     fun parseQuestionField(fieldKey: String): ParsedQuestionField? {
         val parts = fieldKey.split(':')
@@ -37,7 +43,7 @@ object ServiceDraftFieldKeys {
 
     fun isSupported(fieldKey: String): Boolean = when (fieldKey) {
         WORK, PRIVATE, NOT_PERFORMED_REASON, OVERRIDE_DATE, OVERRIDE_REASON -> true
-        else -> parseQuestionField(fieldKey) != null
+        else -> parseQuestionField(fieldKey) != null || parsePhotoCaption(fieldKey) != null
     }
 
     private fun question(snapshotItemId: String, suffix: String): String {

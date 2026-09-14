@@ -668,12 +668,118 @@ internal fun FieldEvidenceScreen(workItemId: String, state: UiState, padding: Pa
 }
 
 @Composable
-private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context) {
+internal fun ServiceEvidenceContent(workItemId: String, state: UiState, viewModel: ServiceLoopViewModel, editingEnabled: Boolean) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var addingPart by rememberSaveable(workItemId) { mutableStateOf(false) }
+    var partToEdit by rememberSaveable(workItemId) { mutableStateOf<String?>(null) }
+    var description by rememberSaveable(workItemId, partToEdit) { mutableStateOf(state.parts.firstOrNull { it.id == partToEdit }?.description.orEmpty()) }
+    var quantity by rememberSaveable(workItemId, partToEdit) { mutableStateOf(state.parts.firstOrNull { it.id == partToEdit }?.quantity ?: "1") }
+    var unit by rememberSaveable(workItemId, partToEdit) { mutableStateOf(state.parts.firstOrNull { it.id == partToEdit }?.unit ?: "item") }
+    var followOpen by rememberSaveable(workItemId) { mutableStateOf(false) }
+    var followTitle by rememberSaveable(workItemId) { mutableStateOf("") }
+    var followDue by rememberSaveable(workItemId) { mutableStateOf(state.businessDate.plusDays(7).toString()) }
+    var followNote by rememberSaveable(workItemId) { mutableStateOf("") }
+    var cameraPath by rememberSaveable(workItemId) { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBounded(MAX_PHOTO_PICK_BYTES) } }
+            if (bytes != null) viewModel.savePhoto(workItemId, bytes, uri.lastPathSegment, context.contentResolver.getType(uri) ?: "image/jpeg", false, null)
+            else viewModel.reportOperationFailure("Photo not added — choose a readable image smaller than 30 MB")
+        }
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val path = cameraPath
+        if (success && path != null) scope.launch {
+            val file = File(path)
+            val bytes = withContext(Dispatchers.IO) { if (file.isFile && file.length() in 1..MAX_PHOTO_PICK_BYTES.toLong()) file.readBytes() else null }
+            if (bytes != null) viewModel.savePhoto(workItemId, bytes, file.name, "image/jpeg", false, null)
+            else viewModel.reportOperationFailure("Photo not added — camera output was missing or too large")
+            withContext(Dispatchers.IO) { file.delete() }
+        }
+        cameraPath = null
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
+        ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-parts")) {
+            Text("Parts", style = MaterialTheme.typography.titleLarge)
+            state.parts.forEach { part ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${part.description} · ${part.quantity} ${part.unit}", Modifier.weight(1f))
+                    if (editingEnabled) TextButton({ partToEdit = part.id; addingPart = true }, modifier = Modifier.testTag("edit-part-${part.id}")) { Text("Edit") }
+                }
+            }
+            if (editingEnabled && !addingPart) OutlinedButton({ partToEdit = null; addingPart = true }, Modifier.fillMaxWidth().testTag("add-part")) { Text("Add part") }
+            if (editingEnabled && addingPart) {
+                DailyField(description, { description = it }, "Description")
+                DailyField(quantity, { quantity = it }, "Positive quantity")
+                DailyField(unit, { unit = it }, "Unit")
+                Button({
+                    val id = partToEdit
+                    if (id == null) viewModel.addPart(workItemId, description, quantity, unit) { addingPart = false; partToEdit = null }
+                    else viewModel.updatePart(workItemId, id, description, quantity, unit) { addingPart = false; partToEdit = null }
+                }, enabled = description.isNotBlank() && unit.isNotBlank() && runCatching { java.math.BigDecimal(quantity) > java.math.BigDecimal.ZERO }.getOrDefault(false) && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text(if (partToEdit == null) "Add part" else "Update part") }
+                partToEdit?.let { id -> TextButton({ viewModel.removePart(workItemId, id); addingPart = false; partToEdit = null }, Modifier.testTag("remove-part-$id")) { Text("Remove part") } }
+                TextButton({ addingPart = false; partToEdit = null }) { Text("Cancel") }
+            }
+        }
+        ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-photos")) {
+            Text("Photos", style = MaterialTheme.typography.titleLarge)
+            state.photos.forEach { photo -> ServicePhotoCard(workItemId, photo, context, viewModel, editingEnabled, state) }
+            if (editingEnabled) {
+                OutlinedButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth().testTag("choose-photo")) { Text("Choose photo") }
+                OutlinedButton({
+                    val directory = File(context.cacheDir, "camera-staging").apply { mkdirs() }
+                    val file = File(directory, "capture-${System.currentTimeMillis()}.jpg")
+                    cameraPath = file.absolutePath
+                    camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.reports", file))
+                }, Modifier.fillMaxWidth().testTag("take-photo")) { Text("Take photo") }
+            }
+        }
+        ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-follow-up")) {
+            Text("Corrective follow-up", style = MaterialTheme.typography.titleLarge)
+            Text("Create future work only when it remains needed.")
+            state.serviceFollowUps.forEach { follow -> Text("${follow.reference} · ${follow.title} · ${follow.state.lowercase()} · Due ${follow.dueDate}") }
+            if (editingEnabled && !followOpen) OutlinedButton({ followOpen = true }, Modifier.fillMaxWidth().testTag("add-follow-up")) { Text("Add follow-up") }
+            if (editingEnabled && followOpen) {
+                DailyField(followTitle, { followTitle = it }, "Follow-up title")
+                DailyField(followDue, { followDue = it }, "Due date (YYYY-MM-DD)")
+                LongTextEditor(followNote, { followNote = it }, "PRIVATE planning note", true)
+                OutlinedButton({ viewModel.createCorrectiveFollowUp(workItemId, followTitle, followDue, followNote) { followOpen = false; followTitle = ""; followNote = "" } }, enabled = followTitle.isNotBlank() && runCatching { LocalDate.parse(followDue) }.isSuccess && !state.operationInProgress, modifier = Modifier.fillMaxWidth()) { Text("Create follow-up") }
+                TextButton({ followOpen = false }) { Text("Cancel") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServicePhotoCard(workItemId: String, photo: PhotoEntry, context: Context, viewModel: ServiceLoopViewModel, editingEnabled: Boolean, state: UiState) {
+    val initialCaption = state.inspection?.takeIf { it.workItemId == workItemId }?.rawInputs?.get(com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.photoCaption(photo.id)) ?: photo.caption.orEmpty()
+    var caption by rememberSaveable(photo.id, initialCaption) { mutableStateOf(initialCaption) }
+    var include by rememberSaveable(photo.id, photo.includedInReport) { mutableStateOf(photo.includedInReport) }
+    var confirmRemoval by rememberSaveable(photo.id) { mutableStateOf(false) }
+    var fullView by rememberSaveable(photo.id) { mutableStateOf(false) }
+    PhotoEvidenceCard(photo, context, onOpen = { fullView = true })
+    if (state.photoMetadataPendingId == photo.id) Text("Saving photo details…", modifier = Modifier.testTag("photo-saving-${photo.id}"))
+    if (state.photoMetadataErrorId == photo.id) Text("Photo details not saved — retry by editing the caption or report choice.", color = MaterialTheme.colorScheme.error)
+    if (editingEnabled) {
+        OutlinedTextField(caption, { caption = it; viewModel.schedulePhotoCaption(workItemId, photo.id, it) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth().testTag("photo-caption-${photo.id}"))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(include, { selected -> include = selected; viewModel.setPhotoReportInclusion(workItemId, photo.id, selected) }, modifier = Modifier.testTag("photo-report-${photo.id}"))
+            Text("Include in customer report")
+        }
+        TextButton({ confirmRemoval = true }, Modifier.testTag("remove-photo-${photo.id}")) { Text("Remove photo") }
+    }
+    if (confirmRemoval) AlertDialog(onDismissRequest = { confirmRemoval = false }, title = { Text("Remove photo?") }, text = { Text("The photo will be removed from this Service and ServiceLoop's stored copy deleted. Your source image is unaffected.") }, confirmButton = { TextButton({ viewModel.removePhoto(workItemId, photo.id); confirmRemoval = false }, Modifier.testTag("confirm-remove-photo-${photo.id}")) { Text("Remove photo") } }, dismissButton = { TextButton({ confirmRemoval = false }) { Text("Cancel") } })
+    if (fullView) AlertDialog(onDismissRequest = { fullView = false }, confirmButton = { TextButton({ fullView = false }) { Text("Close") } }, text = { val bitmap = remember(photo.relativePath) { BitmapFactory.decodeFile(File(context.filesDir, photo.relativePath).absolutePath) }; if (bitmap != null) Image(bitmap.asImageBitmap(), contentDescription = photo.caption ?: "Service photo", modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) else Text("Image unavailable") })
+}
+
+@Composable
+private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context, onOpen: (() -> Unit)? = null) {
     val colors = com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens.current
     val bitmap = remember(photo.relativePath, photo.byteSize) {
         BitmapFactory.decodeFile(File(context.filesDir, photo.relativePath).absolutePath, BitmapFactory.Options().apply { inSampleSize = 4 })
     }
-    ServiceLoopSurfaceCard {
+    ServiceLoopSurfaceCard(modifier = if (onOpen == null) Modifier else Modifier.clickable(onClick = onOpen).testTag("photo-${photo.id}")) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(88.dp).background(colors.photoMat, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
                 if (bitmap != null) Image(bitmap.asImageBitmap(), contentDescription = photo.caption?.takeIf(String::isNotBlank) ?: "Service evidence photograph", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
@@ -682,7 +788,7 @@ private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(if (photo.includedInReport) "Included in customer report" else "Private evidence", fontWeight = FontWeight.SemiBold)
                 Text(photo.caption?.takeIf(String::isNotBlank) ?: "No caption", style = MaterialTheme.typography.bodyMedium)
-                Text("${photo.byteSize} bytes · Saved on this device", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("${photo.byteSize} bytes · Stored on this device", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

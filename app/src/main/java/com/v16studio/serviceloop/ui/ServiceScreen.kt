@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +51,8 @@ import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
+import com.v16studio.serviceloop.domain.CompletionLine
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.SaveStatus
 import com.v16studio.serviceloop.domain.ServiceDocumentationMode
@@ -78,6 +82,7 @@ import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 internal data class ServiceListIndices(
     val workPerformed: Int,
@@ -153,6 +158,11 @@ internal fun ServiceScreen(
         "Equipment" to draft.equipmentPrivateNote,
         "Dispatch" to draft.dispatchInstructions.orEmpty(),
     ).filter { it.second.isNotBlank() }
+    val completion = viewState.completionLines.firstOrNull { it.workItemId == draft.workItemId }
+    LaunchedEffect(draft.workItemId) {
+        viewModel.loadFieldEvidence(draft.workItemId)
+        viewModel.loadCompletion(draft.visitId)
+    }
     val listIndices = serviceListIndices(
         hasNavigationMessage = navigationMessage != null,
         hasDocumentationNotice = current?.documentationMode != ServiceDocumentationMode.LOCAL,
@@ -209,7 +219,8 @@ internal fun ServiceScreen(
                      .takeIf { it >= 0 }
                      ?.let { listIndices.firstQuestion + it }
                      ?: listIndices.checklistHeader
-                 else -> 0
+                 CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE ->
+                     listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size + 1) + 1
              }
             listState.scrollToItem(index.coerceAtLeast(0))
             viewModel.clearInspectionFocus()
@@ -275,8 +286,8 @@ internal fun ServiceScreen(
             }
             item {
                 val initialPrivate = draft.rawInputs[ServiceDraftFieldKeys.PRIVATE] ?: draft.privateInternalNote
-                 var privateExpanded by rememberSaveable(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate.isNotBlank()) }
-                 var privateNote by rememberSaveable(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate) }
+                 var privateExpanded by remember(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate.isNotBlank()) }
+                 var privateNote by remember(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate) }
                 if (!privateExpanded) {
                     ServiceLoopTextAction("+ Private note", { privateExpanded = true }, Modifier.testTag("add-private-note"), enabled = editingEnabled)
                 } else {
@@ -305,12 +316,12 @@ internal fun ServiceScreen(
                 }
                 item { ChecklistCompletionSummary(draft) }
             }
-            item {
-                ServiceLoopSecondaryButton("Parts & photos", { nav.navigate("field/${draft.workItemId}") }, Modifier.fillMaxWidth().testTag("open-field-evidence"), enabled = editingEnabled)
-            }
+            item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
+            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled) }
             if (viewState.contentRefreshError != null) item {
                 Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
             }
+            if (viewState.error != null) item { Text(viewState.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("service-operation-error")) }
         }
         ServiceLoopPinnedBar {
             ServiceLoopSecondaryButton("Back to visit", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
@@ -325,6 +336,66 @@ internal fun ServiceScreen(
                 }, Modifier.fillMaxWidth().testTag("review-visit"), enabled = true)
             }
         }
+    }
+}
+
+/** Compatibility surface for existing B025/B026 tests and transitional callers. */
+@Composable
+private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraft, viewModel: ServiceLoopViewModel, editingEnabled: Boolean) {
+    val visitId = draft.visitId
+    val workItemId = draft.workItemId
+    ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-outcome")) {
+        Text("Outcome", style = MaterialTheme.typography.titleLarge)
+        listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed").forEach { (value, label) ->
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("outcome-$workItemId-$value")
+                .selectable(selected = line.outcome == value, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseOutcome(workItemId, visitId, value) }, verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = line.outcome == value, onClick = null, enabled = editingEnabled)
+                Text(label)
+            }
+        }
+        if (line.outcome == "NOT_PERFORMED") {
+            val initial = draft.rawInputs[ServiceDraftFieldKeys.NOT_PERFORMED_REASON] ?: line.notPerformedReason.orEmpty()
+            var reason by remember(workItemId, initial) { mutableStateOf(initial) }
+            OutlinedTextField(reason, { reason = it; viewModel.scheduleNotPerformedReason(workItemId, visitId, it) }, label = { Text("Not performed reason") }, enabled = editingEnabled, modifier = Modifier.fillMaxWidth().testTag("not-performed-reason"))
+        }
+    }
+    if (line.outcome != null) ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-fulfillment")) {
+        when (line.fulfillmentEligibility) {
+            FulfillmentEligibility.ELIGIBLE -> {
+                Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
+                listOf(true to "Fulfill — advance next due", false to "Keep due — service remains outstanding").forEach { (choice, label) ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (choice) "fulfill-$workItemId" else "keep-due-$workItemId")
+                        .selectable(selected = line.fulfillsCurrentObligation == choice, enabled = editingEnabled, role = Role.RadioButton) { viewModel.chooseFulfillment(workItemId, visitId, choice) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = line.fulfillsCurrentObligation == choice, onClick = null, enabled = editingEnabled)
+                        Text(label)
+                    }
+                }
+            }
+            FulfillmentEligibility.HISTORY_ONLY -> Text("History only — current due date is unchanged.")
+            FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date for this Service.")
+            FulfillmentEligibility.CHECKLIST_INCOMPLETE -> Text("Complete the inspection before deciding whether this fulfills the due service.")
+            FulfillmentEligibility.PLAN_INELIGIBLE -> Text("This plan is no longer active; it cannot advance the due date.")
+            FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("The current obligation changed; review this Service before finalizing.")
+            FulfillmentEligibility.OUTCOME_INELIGIBLE -> Text("The due service remains outstanding.")
+        }
+        if (line.fulfillsCurrentObligation == true && line.confirmedNextDueDate != null) {
+            Text("Next due · ${line.confirmedNextDueDate}", style = MaterialTheme.typography.titleMedium)
+            if (line.nextDueDateCalculated == true) Text("Calculated from the actual service date and captured interval.")
+            else Text("Manual override · ${line.nextDueOverrideReason.orEmpty()}")
+            var changeDue by rememberSaveable(workItemId) { mutableStateOf(false) }
+            if (!changeDue && editingEnabled) ServiceLoopTextAction("Change next due", { changeDue = true }, Modifier.testTag("change-next-due"))
+            if (changeDue && editingEnabled) {
+                val initialDate = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_DATE] ?: line.confirmedNextDueDate
+                val initialReason = draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_REASON] ?: line.nextDueOverrideReason.orEmpty()
+                var date by remember(workItemId, initialDate) { mutableStateOf(initialDate) }
+                var reason by remember(workItemId, initialReason) { mutableStateOf(initialReason) }
+                OutlinedTextField(date, { date = it; viewModel.scheduleRecurrenceOverrideDate(workItemId, it) }, label = { Text("Next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("override-date"))
+                OutlinedTextField(reason, { reason = it; viewModel.scheduleRecurrenceOverrideReason(workItemId, it) }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth().testTag("override-reason"))
+                val validDate = runCatching { LocalDate.parse(date).isAfter(LocalDate.parse(viewModel.state.value.serviceProgress?.serviceDate ?: "")) }.getOrDefault(false)
+                ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason); changeDue = false }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
+                ServiceLoopTextAction("Cancel", { changeDue = false })
+            }
+        } else if (line.fulfillsCurrentObligation == false && line.dueDate != null) Text("Remains due · ${line.dueDate}")
     }
 }
 
@@ -544,7 +615,7 @@ private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, qu
 private fun progressSummary(progress: VisitServiceProgress): String {
     val actionable = progress.actionableItems
     val values = listOf(
-        actionable.count { it.status == ServiceEntryStatus.READY } to "ready for outcome",
+        actionable.count { it.status == ServiceEntryStatus.READY } to "ready for review",
         actionable.count { it.status == ServiceEntryStatus.IN_PROGRESS } to "in progress",
         actionable.count { it.status == ServiceEntryStatus.NEEDS_ATTENTION } to "needs attention",
         actionable.count { it.status == ServiceEntryStatus.NOT_STARTED } to "not started",
@@ -560,7 +631,7 @@ private fun ServiceProgressItem.navigationStatusLabel(): String = when (document
         ServiceEntryStatus.NOT_STARTED -> "Not started"
         ServiceEntryStatus.IN_PROGRESS -> "In progress"
         ServiceEntryStatus.NEEDS_ATTENTION -> "Needs attention"
-        ServiceEntryStatus.READY -> "Ready for outcome"
+        ServiceEntryStatus.READY -> "Ready for review"
     }
 }
 

@@ -1,6 +1,6 @@
 # B-025 Service Flow Redesign
 
-Status: Bundle 1 + Service Flow 2A implemented
+Status: Bundle 1 + Service Flow 2A and 2B implemented
 
 This milestone establishes the ServiceLoop service-flow foundation for the Bundle 1 redesign. It keeps the product loop intact:
 
@@ -22,16 +22,20 @@ Customer → site → equipment → service plan → due work/arrangements → w
 
 Room schema 14 adds exactly one `working_input_buffers` table keyed by `(workItemId, fieldKey)` with a cascading WorkItem foreign key. Migration 13→14 normalizes legacy fulfillment and due-date combinations without rewriting Final* history. Portable backup/recovery preserves the table and inserts an empty table for older supported packages without inferring rows. Finalization is conservatively blocked for every documented WorkItem with any unresolved durable raw input buffer; those buffers are retained for reconciliation.
 
-## Service Flow 2A — unified Service workspace
+## Service Flow 2A and 2B — unified Service workspace
 
-The Working Visit path is now Start → Service → Review visit. Service is one continuous workspace per WorkItem with grouped Site work, known Equipment work, and separate unidentified Equipment work. Derived entry status is Not started, In progress, Needs attention, or Ready; Ready means Service-entry work has no remaining checklist issue, not that the Visit is finalized.
+The Working Visit path is Start → Service → Review visit → Finalize. Service is one continuous workspace per WorkItem with grouped Site work, known Equipment work, and separate unidentified Equipment work. Derived entry status is Not started, In progress, Needs attention, or Ready for review. Ready for review requires complete applicable Working facts and decisions, with no unresolved raw Service input; it does not finalize the Visit.
 
 Work performed, the optional private work note, checklist widgets, issue findings, Not applicable reasons, and TEXT/NUMBER answers use continuous autosave with durable raw-input recovery and no ordinary per-field Save buttons. Private operational context remains technician-only. Next Service follows same-group then forward then wrap-around Visit order, and session last-active context supports Resume service.
 
-Dispatch documentation mode remains authoritative: local work is editable, pending choices require the Visit assignment, leader-observe work is visible but not documented locally, and handed-off work is read-only. Parts & photos remains a transitional separate action. Outcome, fulfillment, and recurrence decisions remain outside this 2A workspace; Review/finalization and PDF behavior remain later scope.
+Service also owns Working parts, photos, explicit corrective follow-up creation, Outcome, fulfillment, and recurrence consequence. New photos start private; report inclusion and caption are deliberate saved photo facts. Removing ServiceLoop's owned photo requires confirmation and coordinated file/metadata cleanup. A saved Private note survives a Working app/process restart independently of Outcome, Review, or finalization.
 
-Owner feedback on 2A clarified the transitional UI: successful Service saves use one compact status; READY appears as “Ready for outcome” until 2B; the current Service row is selected and non-navigable; Service uses “Back to visit” alongside “Review visit”; Visit relationship actions follow the uninterrupted Visit identity; and task selection calls a reusable template an “Inspection checklist.”
+Outcome has no default and is distinct from fulfillment. A current eligible recurring obligation requires an explicit Fulfill or Keep due choice; one-off and history-only work do not. Fulfill automatically persists the calculated next due from actual service date plus captured interval. Change next due is subordinate and commits a valid later date and reason together; half-entered text remains only draft input. Review visit summarizes these facts and links blockers back to their Service, with finalization/report changes reserved for Bundle 3.
+
+Dispatch documentation mode remains authoritative: local work is editable, pending choices require the Visit assignment, leader-observe work is visible but not documented locally, and handed-off work is read-only. The transitional FieldEvidence route is retained only for pre-existing connected/visual test callers; normal Service navigation no longer uses it.
+
+Successful Service saves use one compact status; the current Service row is selected and non-navigable; Service uses “Back to visit” alongside “Review visit”; Visit relationship actions follow the uninterrupted Visit identity; and task selection calls a reusable template an “Inspection checklist.”
 
 ## Scope boundary
 
-This document covers Bundle 1 and Service Flow 2A. Service Flow 2B, Review/finalization/PDF bundles, localization, and unrelated product expansion remain outside this milestone.
+This document covers Bundle 1 and Service Flow 2A/2B. Bundle 3 finalization/report redesign, localization, and unrelated product expansion remain outside this milestone.

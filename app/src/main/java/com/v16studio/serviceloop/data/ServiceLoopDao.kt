@@ -130,8 +130,19 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReusableTemplateItems(values: List<ReusableTemplateItemEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertContactNote(value: ContactNoteEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUp(value: FollowUpEntity)
+    @Query("SELECT * FROM follow_ups WHERE sourceWorkItemId=:workItemId ORDER BY dueDate, reference") suspend fun followUpsForWorkItem(workItemId: String): List<FollowUpEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFollowUpEvent(value: FollowUpEventEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertPart(value: PartEntryEntity)
+    @Query("SELECT * FROM part_entries WHERE id=:id") suspend fun part(id: String): PartEntryEntity?
+    @Query("UPDATE part_entries SET description=:description, quantity=:quantity, unit=:unit, modifiedAtEpochMillis=:modifiedAt WHERE id=:id AND workItemId=:workItemId")
+    suspend fun updatePart(id: String, workItemId: String, description: String, quantity: String, unit: String, modifiedAt: Long): Int
+    @Query("DELETE FROM part_entries WHERE id=:id AND workItemId=:workItemId") suspend fun deletePart(id: String, workItemId: String): Int
+    @Query("UPDATE attachments SET caption=:caption, includedInCustomerReport=:included WHERE id=:id AND ownerType='WORK_ITEM' AND ownerId=:workItemId")
+    suspend fun updateWorkPhoto(id: String, workItemId: String, caption: String?, included: Boolean): Int
+    @Query("UPDATE attachments SET caption=:caption WHERE id=:id AND ownerType='WORK_ITEM' AND ownerId=:workItemId")
+    suspend fun updateWorkPhotoCaption(id: String, workItemId: String, caption: String?): Int
+    @Query("UPDATE attachments SET includedInCustomerReport=:included WHERE id=:id AND ownerType='WORK_ITEM' AND ownerId=:workItemId")
+    suspend fun updateWorkPhotoInclusion(id: String, workItemId: String, included: Boolean): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertVisitClaim(value: VisitClaimEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalParts(values: List<FinalPartEntryEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalPhotos(values: List<FinalPhotoEntryEntity>)
