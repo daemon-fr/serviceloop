@@ -104,6 +104,9 @@ class DispatchPackageTest {
         val beforeBinding = db.dispatchDao().visitBindingForLocalVisit(local)
         val beforeItems = db.dispatchDao().itemBindings("DV-1")
         val identity = db.dispatchDao().technicianIdentity()!!
+        fun rowCount(table: String): Int = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM $table").use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
+        val historyTables = listOf("final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "final_part_entries", "final_photo_entries", "final_dispatch_visits", "final_dispatch_items")
+        val beforeHistory = historyTables.associateWith(::rowCount)
         db.openHelper.writableDatabase.execSQL("DELETE FROM technician_identity WHERE id='primary'")
         repeat(2) {
             assertEquals("Technician identity is unavailable", (repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Blocked).message)
@@ -112,6 +115,7 @@ class DispatchPackageTest {
             assertEquals(beforeWork, dao.visitWorkItems(local))
             assertEquals(beforeBinding, db.dispatchDao().visitBindingForLocalVisit(local))
             assertEquals(beforeItems, db.dispatchDao().itemBindings("DV-1"))
+            assertEquals(beforeHistory, historyTables.associateWith(::rowCount))
         }
         db.dispatchDao().insertTechnicianIdentity(identity)
         val first = repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Success
