@@ -38,6 +38,24 @@ interface ServiceLoopRepository {
         issueFoundReasonDraft: String? = null,
         notApplicableReasonDraft: String? = null,
     ): Long = saveResponse(workItemId, questionId, disposition, value, reason)
+    /** Persists a question transition and clears its obsolete raw input family atomically. */
+    suspend fun saveQuestionTransition(
+        workItemId: String,
+        questionId: String,
+        disposition: ResponseDisposition,
+        value: String?,
+        reason: String?,
+        issueFoundReasonDraft: String?,
+        notApplicableReasonDraft: String?,
+    ): Long = saveResponseWithInactiveDrafts(
+        workItemId,
+        questionId,
+        disposition,
+        value,
+        reason,
+        issueFoundReasonDraft,
+        notApplicableReasonDraft,
+    )
     suspend fun saveWorkingInputBuffer(workItemId: String, fieldKey: String, rawValue: String): Long = error("Working input buffer unavailable")
     suspend fun clearWorkingInputBuffer(workItemId: String, fieldKey: String): Long = error("Working input buffer unavailable")
     suspend fun workingInputBuffers(workItemId: String): Map<String, String> = emptyMap()
@@ -1197,6 +1215,52 @@ class RoomServiceLoopRepository(
         notApplicableReasonDraftOverride = notApplicableReasonDraft,
     )
 
+    override suspend fun saveQuestionTransition(
+        workItemId: String,
+        questionId: String,
+        disposition: ResponseDisposition,
+        value: String?,
+        reason: String?,
+        issueFoundReasonDraft: String?,
+        notApplicableReasonDraft: String?,
+    ): Long {
+        // Validate through the same normalization used by the ordinary response writers
+        // before invoking the write gate. The transaction repeats that helper so the
+        // persisted response is derived from the transaction's current database state.
+        normalizeResponse(
+            workItemId = workItemId,
+            questionId = questionId,
+            disposition = disposition,
+            value = value,
+            reason = reason,
+            issueFoundReasonDraftOverride = issueFoundReasonDraft,
+            notApplicableReasonDraftOverride = notApplicableReasonDraft,
+        )
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        return database.withTransaction {
+            val normalized = normalizeResponse(
+                workItemId = workItemId,
+                questionId = questionId,
+                disposition = disposition,
+                value = value,
+                reason = reason,
+                issueFoundReasonDraftOverride = issueFoundReasonDraft,
+                notApplicableReasonDraftOverride = notApplicableReasonDraft,
+            )
+            val changed = !normalized.matchesExisting()
+            if (changed) dao.persistResponse(normalized.entity(now), normalized.visitId)
+
+            val cleared = questionBufferKeys(questionId).sumOf { fieldKey ->
+                dao.deleteWorkingInputBuffer(workItemId, fieldKey)
+            }
+            if (!changed && cleared > 0) dao.touchVisit(normalized.visitId, now)
+
+            if (changed || cleared > 0) now
+            else dao.visit(normalized.visitId)?.modifiedAtEpochMillis ?: error("Visit no longer exists")
+        }
+    }
+
     private suspend fun saveResponseInternal(
         workItemId: String,
         questionId: String,
@@ -1206,15 +1270,86 @@ class RoomServiceLoopRepository(
         issueFoundReasonDraftOverride: String? = null,
         notApplicableReasonDraftOverride: String? = null,
     ): Long {
-        val inspection = dao.inspection(workItemId) ?: error("Working item no longer exists"); val item = dao.checklistItems(inspection.templateSnapshotId ?: error("Checklist no longer exists")).firstOrNull { it.id == questionId } ?: error("Checklist item no longer exists")
+        val normalized = normalizeResponse(
+            workItemId = workItemId,
+            questionId = questionId,
+            disposition = disposition,
+            value = value,
+            reason = reason,
+            issueFoundReasonDraftOverride = issueFoundReasonDraftOverride,
+            notApplicableReasonDraftOverride = notApplicableReasonDraftOverride,
+        )
+        if (normalized.matchesExisting()) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction { workingItem(workItemId); dao.persistResponse(normalized.entity(now), normalized.visitId) }; return now
+    }
+
+    private data class NormalizedResponse(
+        val existing: WorkingResponseEntity?,
+        val responseId: String,
+        val workItemId: String,
+        val questionId: String,
+        val visitId: String,
+        val disposition: ResponseDisposition,
+        val textValue: String?,
+        val numberValue: String?,
+        val reason: String?,
+        val issueFoundReasonDraft: String?,
+        val notApplicableReasonDraft: String?,
+    ) {
+        fun matchesExisting(): Boolean = existing != null &&
+            existing.disposition == disposition.name &&
+            existing.textValue == textValue &&
+            existing.numberValue == numberValue &&
+            existing.reason == reason &&
+            existing.issueFoundReasonDraft == issueFoundReasonDraft &&
+            existing.notApplicableReasonDraft == notApplicableReasonDraft
+
+        fun entity(modifiedAtEpochMillis: Long) = WorkingResponseEntity(
+            responseId,
+            workItemId,
+            questionId,
+            disposition.name,
+            textValue,
+            numberValue,
+            reason,
+            modifiedAtEpochMillis,
+            issueFoundReasonDraft,
+            notApplicableReasonDraft,
+        )
+    }
+
+    private suspend fun normalizeResponse(
+        workItemId: String,
+        questionId: String,
+        disposition: ResponseDisposition,
+        value: String?,
+        reason: String?,
+        issueFoundReasonDraftOverride: String? = null,
+        notApplicableReasonDraftOverride: String? = null,
+    ): NormalizedResponse {
+        val inspection = dao.inspection(workItemId) ?: error("Working item no longer exists")
+        val item = dao.checklistItems(inspection.templateSnapshotId ?: error("Checklist no longer exists"))
+            .firstOrNull { it.id == questionId } ?: error("Checklist item no longer exists")
         val existing = dao.responses(workItemId).firstOrNull { it.checklistItemSnapshotId == questionId }
         val normalizedValue = value?.trim()?.takeIf { disposition == ResponseDisposition.VALUE }
         val suppliedReason = reason?.trim()?.ifBlank { null }
-        val normalizedReason = when (disposition) { ResponseDisposition.ISSUE_FOUND -> if (reason != null) suppliedReason else existing?.issueFoundReasonDraft; ResponseDisposition.NOT_APPLICABLE -> if (reason != null) suppliedReason else existing?.notApplicableReasonDraft; else -> null }
-        val allowed = if (item.responseType == "STATUS") setOf(ResponseDisposition.OK, ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.NOT_CHECKED) else setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.VALUE)
+        val normalizedReason = when (disposition) {
+            ResponseDisposition.ISSUE_FOUND -> if (reason != null) suppliedReason else existing?.issueFoundReasonDraft
+            ResponseDisposition.NOT_APPLICABLE -> if (reason != null) suppliedReason else existing?.notApplicableReasonDraft
+            else -> null
+        }
+        val allowed = if (item.responseType == "STATUS") {
+            setOf(ResponseDisposition.OK, ResponseDisposition.ISSUE_FOUND, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.NOT_CHECKED)
+        } else {
+            setOf(ResponseDisposition.UNANSWERED, ResponseDisposition.NOT_APPLICABLE, ResponseDisposition.VALUE)
+        }
         require(disposition in allowed)
         if (disposition == ResponseDisposition.VALUE) require(!normalizedValue.isNullOrBlank())
-        if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) require(isFiniteSignedDecimal(normalizedValue!!)) { "Enter a signed decimal number, for example -12.5" }
+        if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) {
+            require(isFiniteSignedDecimal(normalizedValue!!)) { "Enter a signed decimal number, for example -12.5" }
+        }
         val textDraft = if (item.responseType == "TEXT" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.textValue
         val numberDraft = if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.numberValue
         val issueDraft = when {
@@ -1227,12 +1362,26 @@ class RoomServiceLoopRepository(
             disposition == ResponseDisposition.NOT_APPLICABLE && reason != null -> suppliedReason
             else -> existing?.notApplicableReasonDraft
         }
-        if(existing!=null&&existing.disposition==disposition.name&&existing.textValue==textDraft&&existing.numberValue==numberDraft&&existing.reason==normalizedReason&&existing.issueFoundReasonDraft==issueDraft&&existing.notApplicableReasonDraft==notApplicableDraft) return database.withTransaction { workingItem(workItemId); dao.inspection(workItemId)?.modifiedAtEpochMillis ?: error("Working item no longer exists") }
-        writeGate.beforeWrite()
-        val now = businessTime.instant().toEpochMilli()
-        val response = WorkingResponseEntity(existing?.id ?: stableId("response", workItemId, item.id), workItemId, questionId, disposition.name, textDraft, numberDraft, normalizedReason, now, issueDraft, notApplicableDraft)
-        database.withTransaction { workingItem(workItemId); dao.persistResponse(response, inspection.visitId) }; return now
+        return NormalizedResponse(
+            existing = existing,
+            responseId = existing?.id ?: stableId("response", workItemId, item.id),
+            workItemId = workItemId,
+            questionId = questionId,
+            visitId = inspection.visitId,
+            disposition = disposition,
+            textValue = textDraft,
+            numberValue = numberDraft,
+            reason = normalizedReason,
+            issueFoundReasonDraft = issueDraft,
+            notApplicableReasonDraft = notApplicableDraft,
+        )
     }
+
+    private fun questionBufferKeys(questionId: String): List<String> = listOf(
+        ServiceDraftFieldKeys.questionValue(questionId),
+        ServiceDraftFieldKeys.questionIssue(questionId),
+        ServiceDraftFieldKeys.questionNotApplicable(questionId),
+    )
 
     override suspend fun finalizeVisit(visitId: String): FinalizeResult = database.withTransaction {
         dao.finalRecordForVisit(visitId)?.let { return@withTransaction FinalizeResult.Success(it.id) }

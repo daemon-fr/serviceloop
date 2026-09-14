@@ -656,9 +656,9 @@ class ServiceLoopViewModel(
             validator = validator,
             writer = { value, drafts ->
                 if (value.trim().isBlank() && !question.required) {
-                    repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.UNANSWERED, null, null, drafts.issueReason, drafts.notApplicableReason)
+                    repository.saveQuestionTransition(workItemId, questionId, ResponseDisposition.UNANSWERED, null, null, drafts.issueReason, drafts.notApplicableReason)
                 } else {
-                    repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.VALUE, value, null, drafts.issueReason, drafts.notApplicableReason)
+                    repository.saveQuestionTransition(workItemId, questionId, ResponseDisposition.VALUE, value, null, drafts.issueReason, drafts.notApplicableReason)
                 }
             },
             onSaved = { refreshServiceContext(workItemId) },
@@ -671,7 +671,7 @@ class ServiceLoopViewModel(
         fieldKind = ServiceDraftQuestionFieldKind.ISSUE_REASON,
         rawValue = rawValue,
         validator = ServiceDraftValidators.issueDescription(),
-        writer = { value, drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value, drafts.issueReason, drafts.notApplicableReason) },
+        writer = { value, drafts -> repository.saveQuestionTransition(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value, drafts.issueReason, drafts.notApplicableReason) },
         onSaved = { refreshServiceContext(workItemId) },
     )
 
@@ -681,7 +681,7 @@ class ServiceLoopViewModel(
         fieldKind = ServiceDraftQuestionFieldKind.NOT_APPLICABLE_REASON,
         rawValue = rawValue,
         validator = ServiceDraftValidators.notApplicableReason(),
-        writer = { value, drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value, drafts.issueReason, drafts.notApplicableReason) },
+        writer = { value, drafts -> repository.saveQuestionTransition(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value, drafts.issueReason, drafts.notApplicableReason) },
         onSaved = { refreshServiceContext(workItemId) },
     )
 
@@ -707,7 +707,7 @@ class ServiceLoopViewModel(
             discardRawFields = if (disposition == ResponseDisposition.NOT_APPLICABLE) {
                 setOf(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)))
             } else emptySet(),
-            writer = { drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, disposition, null, null, drafts.issueReason, drafts.notApplicableReason) },
+            writer = { drafts -> repository.saveQuestionTransition(workItemId, questionId, disposition, null, null, drafts.issueReason, drafts.notApplicableReason) },
             onSaved = { refreshServiceContext(workItemId) },
         )
     }
@@ -965,7 +965,7 @@ class ServiceLoopViewModel(
             discardRawFields = if (disposition == ResponseDisposition.NOT_APPLICABLE) {
                 setOf(ServiceDraftFieldId(draft.workItemId, ServiceDraftFieldKeys.questionValue(questionId)))
             } else emptySet(),
-            writer = { drafts -> repository.saveResponseWithInactiveDrafts(draft.workItemId, questionId, disposition, value, reason, drafts.issueReason, drafts.notApplicableReason) },
+            writer = { drafts -> repository.saveQuestionTransition(draft.workItemId, questionId, disposition, value, reason, drafts.issueReason, drafts.notApplicableReason) },
             onSaved = { savedAt ->
                 if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
                     if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus = SaveStatus.Saved(savedAt), error = null) else current

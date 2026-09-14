@@ -103,6 +103,109 @@ class PersistenceIntegrityTest {
         assertEquals(ResponseDisposition.OK, reconstructedRepository.inspection("work-1")!!.questions.single().disposition)
     }
 
+    @Test fun atomicQuestionTransitionClearsRawFamilyAndSurvivesFreshLoad() = runTest {
+        seedFoundation()
+        insertTextAndNumberQuestions()
+        val repository = RoomServiceLoopRepository(database, time)
+        val dao = database.serviceLoopDao()
+        repository.saveResponse("work-1", "check-text", ResponseDisposition.VALUE, "Old value", null)
+        val family = questionBufferKeys("check-text")
+        family.forEachIndexed { index, fieldKey ->
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", fieldKey, "raw-$index", time.instant().toEpochMilli()))
+        }
+
+        repository.saveQuestionTransition(
+            workItemId = "work-1",
+            questionId = "check-text",
+            disposition = ResponseDisposition.NOT_APPLICABLE,
+            value = null,
+            reason = "Access blocked",
+            issueFoundReasonDraft = "Saved issue draft",
+            notApplicableReasonDraft = "Access blocked",
+        )
+
+        val response = dao.responses("work-1").single { it.checklistItemSnapshotId == "check-text" }
+        assertEquals("NOT_APPLICABLE", response.disposition)
+        assertEquals("Old value", response.textValue)
+        assertEquals("Access blocked", response.reason)
+        assertEquals("Saved issue draft", response.issueFoundReasonDraft)
+        assertEquals("Access blocked", response.notApplicableReasonDraft)
+        assertTrue(dao.workingInputBuffers("work-1").none { it.fieldKey in family })
+
+        val freshDraft = RoomServiceLoopRepository(database, time).inspection("work-1")!!
+        val freshQuestion = freshDraft.questions.single { it.snapshotItemId == "check-text" }
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, freshQuestion.disposition)
+        assertEquals("Old value", freshQuestion.textValue)
+        assertEquals("Access blocked", freshQuestion.reason)
+        assertTrue(freshDraft.rawInputs.keys.none { it in family })
+    }
+
+    @Test fun atomicIssueToOkPreservesInactiveIssueDraftAndFreshLoadStaysOk() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        val dao = database.serviceLoopDao()
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "Existing issue")
+        val issueKey = ServiceDraftFieldKeys.questionIssue("check-1")
+        dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", issueKey, "Pending issue edit", time.instant().toEpochMilli()))
+
+        repository.saveQuestionTransition(
+            workItemId = "work-1",
+            questionId = "check-1",
+            disposition = ResponseDisposition.OK,
+            value = null,
+            reason = null,
+            issueFoundReasonDraft = "Pending issue edit",
+            notApplicableReasonDraft = null,
+        )
+
+        val response = dao.responses("work-1").single()
+        assertEquals("OK", response.disposition)
+        assertEquals(null, response.reason)
+        assertEquals("Pending issue edit", response.issueFoundReasonDraft)
+        assertTrue(dao.workingInputBuffers("work-1").none { it.fieldKey in questionBufferKeys("check-1") })
+        val freshQuestion = RoomServiceLoopRepository(database, time).inspection("work-1")!!.questions.single()
+        assertEquals(ResponseDisposition.OK, freshQuestion.disposition)
+        assertEquals("Pending issue edit", freshQuestion.issueFoundReasonDraft)
+    }
+
+    @Test fun unchangedQuestionTransitionStillClearsObsoleteRawFamily() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        val dao = database.serviceLoopDao()
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "Access blocked")
+        val valueKey = ServiceDraftFieldKeys.questionValue("check-1")
+        dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", valueKey, "stale value", time.instant().toEpochMilli()))
+
+        repository.saveQuestionTransition("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, null, null, null)
+
+        assertEquals("NOT_APPLICABLE", dao.responses("work-1").single().disposition)
+        assertTrue(dao.workingInputBuffers("work-1").none { it.fieldKey in questionBufferKeys("check-1") })
+    }
+
+    @Test fun failedQuestionBufferCleanupRollsBackCanonicalResponseAndRawBuffer() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+        val dao = database.serviceLoopDao()
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        val valueKey = ServiceDraftFieldKeys.questionValue("check-1")
+        dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", valueKey, "original raw value", time.instant().toEpochMilli()))
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER fail_question_buffer_cleanup BEFORE DELETE ON working_input_buffers " +
+                "BEGIN SELECT RAISE(ABORT, 'controlled question buffer cleanup failure'); END",
+        )
+
+        try {
+            repository.saveQuestionTransition("work-1", "check-1", ResponseDisposition.NOT_APPLICABLE, null, "Blocked", null, "Blocked")
+            fail("Expected the controlled cleanup failure")
+        } catch (expected: Exception) {
+            assertTrue(expected.message.orEmpty().contains("controlled question buffer cleanup failure"))
+        }
+
+        val response = dao.responses("work-1").single()
+        assertEquals("OK", response.disposition)
+        assertEquals("original raw value", dao.workingInputBuffer("work-1", valueKey)?.rawValue)
+    }
+
     @Test fun failedDraftWriteDoesNotPersistTheOptimisticAnswer() = runTest {
         seedFoundation()
         val repository = RoomServiceLoopRepository(database, time, DraftWriteGate { error("controlled write failure") })
@@ -308,6 +411,21 @@ class PersistenceIntegrityTest {
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work")))
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "Private work")))
     }
+
+    private suspend fun insertTextAndNumberQuestions() {
+        database.serviceLoopDao().insertChecklistItems(
+            listOf(
+                ChecklistItemSnapshotEntity("check-text", "template-snapshot-1", 2, "Text question", "TEXT", null, true, null),
+                ChecklistItemSnapshotEntity("check-number", "template-snapshot-1", 3, "Number question", "NUMBER", "units", true, null),
+            ),
+        )
+    }
+
+    private fun questionBufferKeys(questionId: String) = listOf(
+        ServiceDraftFieldKeys.questionValue(questionId),
+        ServiceDraftFieldKeys.questionIssue(questionId),
+        ServiceDraftFieldKeys.questionNotApplicable(questionId),
+    )
 
     private suspend fun insertAdditionalWorkItem(id: String, outcome: String, fulfills: Boolean, templateSnapshotId: String? = null) {
         val dao = database.serviceLoopDao()
