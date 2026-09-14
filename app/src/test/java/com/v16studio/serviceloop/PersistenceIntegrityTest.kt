@@ -346,7 +346,7 @@ class PersistenceIntegrityTest {
         assertEquals("2026-12-05", line.proposedNextDueDate)
     }
 
-    @Test fun fulfillmentEligibilityAllowsPartlyButRejectsNotPerformedEvenIfPersistedTrue() = runTest {
+    @Test fun fulfillmentProjectionKeepsPerformedAutomaticPartlyExplicitAndNotPerformedNonFulfilling() = runTest {
         seedFoundation()
         insertAdditionalWorkItem("work-partial", "PARTLY_PERFORMED", true)
         insertAdditionalWorkItem("work-not-performed", "NOT_PERFORMED", true)
@@ -358,6 +358,7 @@ class PersistenceIntegrityTest {
         assertEquals("2026-12-05", lines.getValue("work-partial").proposedNextDueDate)
         assertEquals(FulfillmentEligibility.OUTCOME_INELIGIBLE, lines.getValue("work-not-performed").fulfillmentEligibility)
         assertFalse(lines.getValue("work-not-performed").fulfillsCurrentObligation == true)
+        assertFalse(lines.getValue("work-not-performed").currentObligationOutstanding)
         assertEquals(null, lines.getValue("work-not-performed").proposedNextDueDate)
         assertEquals(FulfillmentEligibility.ELIGIBLE, lines.getValue("work-unreviewed").fulfillmentEligibility)
         assertTrue(lines.getValue("work-unreviewed").fulfillsCurrentObligation == true)
@@ -388,6 +389,21 @@ class PersistenceIntegrityTest {
             assertFalse(line.fulfillsCurrentObligation == true)
             assertEquals(null, line.proposedNextDueDate)
         }
+    }
+
+    @Test fun notPerformedOneOffAndHistoryOnlyWorkNeverClaimAnOutstandingDueDate() = runTest {
+        seedFoundation()
+        insertOneOffWorkItem("work-one-off-not-performed", false, outcome = "NOT_PERFORMED")
+        val repository = RoomServiceLoopRepository(database, time)
+        val historyVisit = repository.createVisit(listOf("plan-1"), "HISTORICAL", "2026-08-01")
+        val historyWork = database.serviceLoopDao().visitWorkItems(historyVisit).single().id
+        repository.saveCompletionDraft(historyWork, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+
+        val lines = repository.completionLines("visit-1").associateBy { it.workItemId }
+        assertFalse(lines.getValue("work-one-off-not-performed").currentObligationOutstanding)
+        val historyLine = repository.completionLines(historyVisit).single()
+        assertEquals(FulfillmentEligibility.HISTORY_ONLY, historyLine.fulfillmentEligibility)
+        assertFalse(historyLine.currentObligationOutstanding)
     }
 
     @Test fun attachmentUsesStableOwnerAndOwnedPathNotDisplayNameOrExternalUri() = runTest {
@@ -438,9 +454,9 @@ class PersistenceIntegrityTest {
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
     }
 
-    private suspend fun insertOneOffWorkItem(id: String, fulfills: Boolean) {
+    private suspend fun insertOneOffWorkItem(id: String, fulfills: Boolean, outcome: String = "PERFORMED") {
         val dao = database.serviceLoopDao()
-        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", null, null, null, "Captured equipment", "EQ-001", "One-off service", null, null, null, null, false, "PERFORMED", fulfills)))
+        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", null, null, null, "Captured equipment", "EQ-001", "One-off service", null, null, null, null, false, outcome, fulfills)))
         dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, "One-off work note")))
         dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
     }

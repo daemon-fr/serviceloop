@@ -353,7 +353,7 @@ class DailyOperationsIntegrityTest {
         assertTrue(repo.completionLines(secondVisit).single().blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
     }
 
-    @Test fun notPerformedIsReadyWithReasonWithoutChecklistGateAndStaysDue() = runTest {
+    @Test fun notPerformedWithReasonRequiresChecklistAndKeepsCurrentObligationDue() = runTest {
         val ids = foundation()
         val template = repo.createTemplate("Optional for not performed", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
         repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
@@ -362,6 +362,7 @@ class DailyOperationsIntegrityTest {
         repo.saveCompletionDraft(work, "NOT_PERFORMED", false, "Access unavailable", null, null, null)
         assertEquals(ServiceEntryStatus.IN_PROGRESS, repo.serviceVisitProgress(visit).items.single().status)
         assertEquals(false, repo.completionLines(visit).single().fulfillsCurrentObligation)
+        assertTrue(repo.completionLines(visit).single().currentObligationOutstanding)
         assertNull(repo.completionLines(visit).single().confirmedNextDueDate)
         assertEquals("2026-09-01", db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
 
@@ -426,7 +427,7 @@ class DailyOperationsIntegrityTest {
         assertTrue(runCatching { repo.updatePhoto(work, photo, "Changed", false) }.isFailure)
     }
 
-    @Test fun outcomeTransitionsKeepFulfillmentDecisionExplicitAndNextDueAtomic() = runTest {
+    @Test fun outcomeTransitionsKeepPerformedAutomaticPartlyExplicitAndNextDueAtomic() = runTest {
         val ids = foundation()
         val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
         val work = db.serviceLoopDao().firstWorkItemId(visit)!!

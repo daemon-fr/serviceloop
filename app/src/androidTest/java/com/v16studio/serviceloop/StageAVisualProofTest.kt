@@ -322,7 +322,15 @@ class StageAVisualProofTest {
             .assertContentDescriptionEquals("Expand Issue details")
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
-            .performClick()
+        val density = compose.activity.resources.displayMetrics.density
+        val fieldBounds = compose.onNodeWithTag("focus-contract-field", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val targetBounds = compose.onNodeWithTag("long-text-issue-details-expand", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val glyphBounds = compose.onNodeWithTag("long-text-issue-details-expand-glyph", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("expand target must remain 48dp", targetBounds.width >= 48f * density && targetBounds.height >= 48f * density)
+        assertTrue("expand glyph should remain modest", glyphBounds.width in (19f * density)..(21f * density) && glyphBounds.height in (19f * density)..(21f * density))
+        assertTrue("glyph should sit 4–6dp from the field right edge", fieldBounds.right - glyphBounds.right in (3.5f * density)..(6.5f * density))
+        assertTrue("glyph should sit 4–6dp from the field bottom edge", fieldBounds.bottom - glyphBounds.bottom in (3.5f * density)..(6.5f * density))
+        compose.onNodeWithTag("long-text-issue-details-expand").performClick()
         compose.onNodeWithTag("long-text-issue-details-expanded").performTextInput(" updated")
         compose.onNodeWithText("Done").performClick()
         compose.onNodeWithTag("focus-contract-field").assertIsFocused().assertTextContains("Original updated")

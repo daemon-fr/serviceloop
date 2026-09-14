@@ -111,6 +111,76 @@ class CompletionUiSemanticTest {
         compose.onAllNodesWithText("Fulfillment unavailable", substring = true).assertCountEquals(0)
     }
 
+    @Test fun currentRecurringNotPerformedShowsItsOutstandingDueDateInService() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("Remains due · 1 Sep 2026").assertIsDisplayed()
+    }
+
+    @Test fun currentRecurringNotPerformedShowsItsOutstandingDueDateInReview() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        compose.onNodeWithText("Remains due · 1 Sep 2026").assertIsDisplayed()
+    }
+
+    @Test fun oneOffNotPerformedDoesNotShowARecurringDueConsequence() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.insertWorkItems(listOf(WorkItemEntity("oneoff-not-performed", "v", "e", null, null, null, "Equipment", "EQ-1", "One-off repair", null, null, null, null, false, null, null, subjectType = "EQUIPMENT")))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("oneoff-not-performed", "")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("oneoff-not-performed", "")))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("oneoff-not-performed", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/oneoff-not-performed") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("No recurring due date for this Service.").assertIsDisplayed()
+        compose.onAllNodesWithText("Remains due", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun historyOnlyNotPerformedDoesNotShowACurrentDueConsequence() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomServiceLoopRepository(database, time)
+        val historyVisit = runBlocking { repository.createVisit(listOf("p"), "HISTORICAL", "2026-08-01") }
+        val historyWork = runBlocking { database.serviceLoopDao().visitWorkItems(historyVisit).single().id }
+        runBlocking { repository.saveCompletionDraft(historyWork, "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/$historyVisit") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == historyWork } }
+        compose.onNodeWithText("History only — current due date is unchanged.").assertIsDisplayed()
+        compose.onAllNodesWithText("Remains due", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun checklistHeaderUsesRequiredCountWithoutPageLevelFindingWarning() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("checklist-template", null, "Inspection", 1, 1)))
+            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("checklist-question", "checklist-template", 1, "Guard", "STATUS", null, true, null)))
+            dao.updateWorkItem(dao.workItem("w")!!.copy(templateSnapshotId = "checklist-template"))
+            dao.upsertResponses(listOf(WorkingResponseEntity("checklist-response", "w", "checklist-question", "ISSUE_FOUND", null, null, null, 1)))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("checklist-section"))
+        compose.onNodeWithText("Required complete 0 of 1").assertIsDisplayed()
+        compose.onAllNodesWithText("Issue findings require a public description before checklist completion.").assertCountEquals(0)
+        compose.onNodeWithText("Required for checklist completion.").assertIsDisplayed()
+    }
+
     @Test fun actualCompletionControlsFinalizeAndNavigateToFinalRecord() {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val repository = RoomServiceLoopRepository(database, time)

@@ -865,7 +865,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         if (!line.notPerformedReason.isNullOrBlank()) Text("Reason · ${line.notPerformedReason}")
         when (line.fulfillsCurrentObligation) {
             true -> Text("Next due · ${line.confirmedNextDueDate?.let(::formatServiceLoopDate) ?: "Needs attention"}")
-            false -> if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE && line.dueDate != null && line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED")) Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")
+            false -> if (line.currentObligationOutstanding && line.dueDate != null) Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")
             null -> if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE) Text("Due-service decision needed")
         }
         if (line.fulfillmentEligibility == FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED) Text("Current service obligation changed — this Service cannot advance the current due date.")

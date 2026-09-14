@@ -601,7 +601,7 @@ internal fun ServiceLoopButtonContent(
     Box(modifier.heightIn(min=ServiceLoopUiTokens.Size.touchMin).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field)).clickable(enabled=enabled,role=Role.Button,onClick=onClick).focusable(enabled).padding(horizontal=ServiceLoopUiTokens.Space.sm),contentAlignment=Alignment.Center){Text(label,style=ServiceLoopUiTokens.Type.label,color=if(enabled)c.action else c.disabledText)}
 }
 
-@Composable fun ServiceLoopIconAction(accessibleName:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,content:@Composable ()->Unit,testTag:String?=null) {
+@Composable fun ServiceLoopIconAction(accessibleName:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,content:@Composable ()->Unit,testTag:String?=null,contentAlignment: Alignment = Alignment.Center) {
     val actionModifier = modifier.size(ServiceLoopUiTokens.Size.touchMin)
         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
         .clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
@@ -609,7 +609,7 @@ internal fun ServiceLoopButtonContent(
         .focusable(enabled)
         .semantics { contentDescription = accessibleName }
         .let { if (testTag == null) it else it.testTag(testTag) }
-    Box(actionModifier,contentAlignment=Alignment.Center){Box(Modifier.size(ServiceLoopUiTokens.Size.icon),contentAlignment=Alignment.Center){content()}}
+    Box(actionModifier,contentAlignment=contentAlignment){Box(Modifier.size(ServiceLoopUiTokens.Size.icon),contentAlignment=Alignment.Center){content()}}
 }
 
 @Composable
@@ -822,12 +822,25 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             "Expand $label",
             { expanded = true },
             enabled = enabled,
-            // The target stays 48dp; the visible glyph is modest and sits directly
-            // in the field's bottom-right corner.
+            // Keep the 48dp target, but place the visible glyph toward its bottom-right
+            // so its edge sits close to the field's inner corner.
             modifier = Modifier.align(Alignment.BottomEnd)
                 .size(ServiceLoopUiTokens.Size.touchMin),
             testTag = "$tag-expand",
-            content = { ServiceLoopIcon(ServiceLoopIcons.Expand, null, Modifier.size(ServiceLoopUiTokens.Size.iconSmall), LocalServiceLoopTokens.current.action) },
+            contentAlignment = Alignment.BottomEnd,
+            content = {
+                Box(
+                    Modifier.fillMaxSize().padding(end = 4.dp, bottom = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ServiceLoopIcon(
+                        ServiceLoopIcons.Expand,
+                        null,
+                        Modifier.size(ServiceLoopUiTokens.Size.iconSmall).testTag("$tag-expand-glyph"),
+                        LocalServiceLoopTokens.current.action,
+                    )
+                }
+            },
         )
     }
     if (private) Text("PRIVATE · Not included in the customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)

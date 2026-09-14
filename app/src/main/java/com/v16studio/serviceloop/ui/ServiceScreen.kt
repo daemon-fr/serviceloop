@@ -348,7 +348,6 @@ internal fun ServiceScreen(
                 items(draft.questions, key = { it.snapshotItemId }) { question ->
                     ServiceQuestionBlock(draft.workItemId, draft.rawInputs, question, editingEnabled, viewModel)
                 }
-                item { ChecklistCompletionSummary(draft) }
             }
             item { ServiceCompletionLandmark() }
             item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
@@ -424,7 +423,7 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
                     ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason); changeDue = false }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
                     ServiceLoopTextAction("Cancel", { changeDue = false })
                 }
-            } else if (line.fulfillmentEligibility == FulfillmentEligibility.ELIGIBLE && line.fulfillsCurrentObligation == false && line.dueDate != null && line.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED")) {
+            } else if (line.currentObligationOutstanding && line.dueDate != null) {
                 Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")
             }
         }
@@ -571,11 +570,6 @@ private fun ChecklistSectionHeader(draft: InspectionDraft) {
             Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}", color = if (draft.checklistComplete) colors.successInk else colors.errorInk)
         }
     }
-}
-
-@Composable
-private fun ChecklistCompletionSummary(draft: InspectionDraft) {
-    if (draft.issueMissingDescription.isNotEmpty()) Text("Issue findings require a public description before checklist completion.", color = MaterialTheme.colorScheme.error)
 }
 
 @Composable

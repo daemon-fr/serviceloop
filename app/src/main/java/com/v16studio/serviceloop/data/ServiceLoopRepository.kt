@@ -1037,6 +1037,7 @@ class RoomServiceLoopRepository(
             val obligation = item.capturedObligationId?.let { dao.obligation(it) }
             val completeness = item.templateSnapshotId?.let { checklistCompleteness(dao.checklistItems(it), dao.responses(item.id)) }
             val eligibility = fulfillmentEligibility(item, plan, obligation)
+            val currentObligationOutstanding = currentObligationOutstanding(item, plan, obligation)
             val projectedFulfills = when {
                 item.outcome == null -> null
                 item.outcome == "NOT_PERFORMED" -> false
@@ -1086,8 +1087,28 @@ class RoomServiceLoopRepository(
                 subjectType = WorkSubjectType.fromCode(item.subjectType),
                 equipmentId = item.equipmentId,
                 equipmentDescription = item.equipmentDescriptionSnapshot,
+                currentObligationOutstanding = currentObligationOutstanding,
             )
         }
+    }
+
+    private fun currentObligationOutstanding(
+        item: WorkItemEntity,
+        plan: ServicePlanEntity?,
+        obligation: ServiceObligationEntity?,
+    ): Boolean {
+        return item.outcome in setOf("PARTLY_PERFORMED", "NOT_PERFORMED") &&
+            item.servicePlanId != null &&
+            item.capturedObligationId != null &&
+            item.fulfillsCurrentObligation == false &&
+            !item.dueDateSnapshot.isNullOrBlank() &&
+            plan != null &&
+            plan.state == "ACTIVE" &&
+            plan.currentObligationId == item.capturedObligationId &&
+            obligation != null &&
+            obligation.planId == plan.id &&
+            obligation.consumedAtEpochMillis == null &&
+            obligation.dueDate == item.dueDateSnapshot
     }
 
     private suspend fun fulfillmentEligibility(

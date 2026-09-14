@@ -161,6 +161,7 @@ data class CompletionLine(
     val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
     val equipmentId: String? = null,
     val equipmentDescription: String? = null,
+    val currentObligationOutstanding: Boolean = false,
 )
 
 enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_INCOMPLETE, FINDING_DESCRIPTION, NEXT_DUE }

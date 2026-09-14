@@ -182,6 +182,8 @@ class ServiceLoopDesignSystemTest {
         assertFalse(source.contains("suffix = { Spacer(Modifier.width(ServiceLoopUiTokens.Size.editorActionReserve)) }"))
         assertTrue(source.contains("contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 52.dp)"))
         assertTrue(source.contains("Modifier.size(ServiceLoopUiTokens.Size.iconSmall)"))
+        assertTrue(source.contains("contentAlignment = Alignment.BottomEnd"))
+        assertTrue(source.contains("padding(end = 4.dp, bottom = 4.dp)"))
         assertEquals(48f, ServiceLoopUiTokens.Size.touchMin.value, 0f)
         assertEquals(20f, ServiceLoopUiTokens.Size.iconSmall.value, 0f)
     }
