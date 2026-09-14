@@ -1555,10 +1555,13 @@ class RoomServiceLoopRepository(
             }
             prepared += Prepared(item, row.workPerformed, row.privateInternalNote, plan, obligation, item.confirmedNextDueDate)
         }
+        val dispatchIdentity = if (dispatchBinding != null) {
+            dispatchDao.technicianIdentity() ?: return@withTransaction FinalizeResult.Blocked("Technician identity is unavailable")
+        } else null
         finalizationWriteGate.beforeCommit(); val now = businessTime.instant().toEpochMilli(); val recordId = stableId("record", visitId); val revisionId = stableId("revision-1", visitId)
         dao.insertFinalRecord(FinalRecordEntity(recordId, visitId, revisionId, now)); dao.insertFinalRevision(FinalRecordRevisionEntity(revisionId, recordId, 1, visit.reference, visit.actualServiceDate, now, visit.customerNameSnapshot, visit.siteNameSnapshot, visit.siteAddressSnapshot, profile.businessName, profile.technicianName, profile.phone.ifBlank { null }, profile.email.ifBlank { null }, profile.postalAddress.ifBlank { null }, profile.zoneId, null, visit.customerReferenceSnapshot, visit.siteReferenceSnapshot))
         if (dispatchBinding != null) {
-            val identity = dispatchDao.technicianIdentity() ?: return@withTransaction FinalizeResult.Blocked("Technician identity is unavailable")
+            val identity = checkNotNull(dispatchIdentity)
             dispatchDao.insertFinalDispatchVisit(FinalDispatchVisitEntity(revisionId, dispatchBinding.dispatchVisitId, dispatchBinding.appliedGeneration, dispatchBinding.managerReference, dispatchBinding.senderLabel, identity.technicianId, identity.displayName))
         }
         prepared.forEachIndexed { index, p ->

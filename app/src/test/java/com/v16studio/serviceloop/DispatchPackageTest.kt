@@ -89,6 +89,39 @@ class DispatchPackageTest {
         val dao=db.serviceLoopDao();dao.upsertBusinessProfile(BusinessProfileEntity(businessName="Service Co",technicianName="Report tech",phone=null,email=null,postalAddress=null,zoneId="Europe/Bucharest",modifiedAtEpochMillis=1));val value=pkg();val local=service.import(service.preview(value)).createdVisitIds.single();val repo=RoomServiceLoopRepository(db,ClockBusinessTime(Clock.fixed(Instant.parse("2026-09-12T08:00:00Z"),ZoneId.of("Europe/Bucharest")),ZoneId.of("Europe/Bucharest")));repo.startVisit(local);service.documentLocally(local,"ITEM-1");val work=dao.visitWorkItems(local).single();repo.savePublicWork(work.id,"Completed independently");repo.saveCompletionDraft(work.id,"PERFORMED",false,null,null,null,null);val record=(repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Success).recordId;val detail=repo.finalRecord(record)!!;assertEquals("DV-1",detail.public.dispatch!!.dispatchVisitId);assertEquals("ITEM-1",detail.public.lines.single().dispatchItemId);assertEquals(service.identity().technicianId,detail.public.dispatch!!.documentingTechnicianId)
     }
 
+    @Test fun missingIdentityBlocksDispatchFinalizationWithoutPersistingPartialHistory()=runTest {
+        val dao = db.serviceLoopDao()
+        dao.upsertBusinessProfile(BusinessProfileEntity(businessName="Service Co", technicianName="Report tech", phone=null, email=null, postalAddress=null, zoneId="Europe/Bucharest", modifiedAtEpochMillis=1))
+        val local = service.import(service.preview(pkg())).createdVisitIds.single()
+        val repo = RoomServiceLoopRepository(db, ClockBusinessTime(Clock.fixed(Instant.parse("2026-09-12T08:00:00Z"), ZoneId.of("Europe/Bucharest")), ZoneId.of("Europe/Bucharest")))
+        repo.startVisit(local)
+        service.documentLocally(local, "ITEM-1")
+        val work = dao.visitWorkItems(local).single()
+        repo.savePublicWork(work.id, "Completed independently")
+        repo.saveCompletionDraft(work.id, "PERFORMED", false, null, null, null, null)
+        val beforeVisit = dao.visit(local)
+        val beforeWork = dao.visitWorkItems(local)
+        val beforeBinding = db.dispatchDao().visitBindingForLocalVisit(local)
+        val beforeItems = db.dispatchDao().itemBindings("DV-1")
+        val identity = db.dispatchDao().technicianIdentity()!!
+        db.openHelper.writableDatabase.execSQL("DELETE FROM technician_identity WHERE id='primary'")
+        repeat(2) {
+            assertEquals("Technician identity is unavailable", (repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Blocked).message)
+            assertNull(dao.finalRecordForVisit(local))
+            assertEquals(beforeVisit, dao.visit(local))
+            assertEquals(beforeWork, dao.visitWorkItems(local))
+            assertEquals(beforeBinding, db.dispatchDao().visitBindingForLocalVisit(local))
+            assertEquals(beforeItems, db.dispatchDao().itemBindings("DV-1"))
+        }
+        db.dispatchDao().insertTechnicianIdentity(identity)
+        val first = repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Success
+        val second = repo.finalizeVisit(local) as com.v16studio.serviceloop.domain.FinalizeResult.Success
+        assertEquals(first.recordId, second.recordId)
+        assertEquals("COMPLETED", dao.visit(local)!!.state)
+        assertEquals("DV-1", repo.finalRecord(first.recordId)!!.public.dispatch!!.dispatchVisitId)
+        assertEquals(1, dao.finalWorkItems(dao.finalRecordForVisit(local)!!.currentRevisionId).size)
+    }
+
     @Test fun handoffIsNonExclusiveAndParticipationCompletionCreatesNoRecord()=runTest{
         val self=service.identity();val colleague=DispatchTechnicianSnapshot("colleague-identity-0001","Maria");val selfSnap=DispatchTechnicianSnapshot(self.technicianId,self.name);val base=pkg();val visit=base.visits.single().copy(participants=listOf(selfSnap,colleague),teams=listOf(DispatchTeamSnapshot("TEAM-1","Field",listOf(self.technicianId,colleague.technicianId),listOf(colleague.technicianId))),leaderTechnicianIds=listOf(colleague.technicianId),work=listOf(base.visits.single().work.single().copy(assignedTechnicians=listOf(selfSnap))));val local=service.import(service.preview(base.copy(visits=listOf(visit)))).createdVisitIds.single();val current=db.serviceLoopDao().visit(local)!!;db.serviceLoopDao().updateVisit(current.copy(state="WORKING"));service.handoff(local,"ITEM-1",colleague);assertEquals("DEFERRED",db.dispatchDao().itemBinding("DV-1","ITEM-1")!!.documentationDisposition);service.finishInvolvement(local);assertEquals("COMPLETED",db.serviceLoopDao().visit(local)!!.state);assertNull(db.serviceLoopDao().finalRecordForVisit(local))
         assertEquals(setOf("DISPATCH_DOCUMENTATION_DEFERRED","DISPATCH_VISIT_COMPLETED"),db.serviceLoopDao().allChangeEntries().map{it.changeType}.toSet());assertEquals(2,db.serviceLoopDao().allChangeEntries().size)
