@@ -137,6 +137,16 @@ Use the coverage CSV as the acceptance ledger. Every relevant row must end eithe
 
 Run the manual's width/font/IME/theme/accessibility matrix and V01–V19 implementation verification families as applicable. Perform the complete representative journeys described in chapter 15. B-008/V20 remains external evidence and cannot be satisfied by AI/emulator/owner-only review.
 
+#### Stage C1 checkpoint — portrait phone adaptation (2026-09-14)
+
+Stage C1 is constrained to the ordinary portrait phone interaction model. The acceptance priorities are normal portrait phone width, approximately 411dp, 360dp, 320dp, font scales 1.3 and 2.0, Light/Dark appearance, and portrait IME/reduced-height pressure. ServiceLoop is explicitly portrait-only through the MainActivity manifest declaration; landscape is removed from the Stage C1 matrix and is not an adaptive target. Wide-window behavior is limited to ordinary constrained single-column containment; no tablet or multi-pane composition is introduced.
+
+The first 320dp-equivalent portrait/font-scale-2.0 inspection exposed three presentation issues: the Work title/actions squeezed into letter-by-letter wrapping, the Work `New visit` FAB obscured content, and the Working Visit Customer/Site pair wrapped poorly. The implementation now stacks the root Search/Settings actions only for narrow or large-text conditions, places `New visit` in the existing Work scroll content for those conditions, and uses the shared responsive pair for relationship actions. Service primary actions move into the existing scroll content when usable height is short or the portrait IME is visible, with IME padding retained; business/save/finalization semantics are unchanged.
+
+Evidence recorded for this checkpoint includes deterministic responsive-pair/tab coverage at 320/360/411dp and font scales 1.0/1.3/2.0, canonical portrait runtime verification with Auto-rotate enabled and forced user rotation remaining portrait, and an actual portrait IME run proving the Review action remains reachable. The canonical `Pixel 10a ServiceLoop` AVD was resolved dynamically as `emulator-5556` for these runs. The Stage B representative matrix passed in portrait 320dp-equivalent conditions in both Light and Dark, and rendered captures are retained under `app/build/reports/b013-stage-c1/portrait-320-fs2/`. Normal phone baseline captures and the focused Service/Review/Work/Register/shared-navigation checks were also exercised; Dispatch was covered only through the existing representative matrix, not as a separate Stage C1 redesign.
+
+This checkpoint does not claim full B-013 completion, owner visual acceptance, TalkBack, or the external technician-pilot evidence. Full connected-suite execution was not used as acceptance because an attempted Gradle invocation targeted multiple connected devices; canonical direct instrumentation is the authoritative runtime evidence here. Landscape and 600/840dp validation are intentionally not run as acceptance targets under the owner corrections.
+
 ### Stage D boundary
 
 B-013 ends with UI/copy structure frozen in English. Only then does B-017 localization migrate/finalize strings and Romanian app/report/notification/Calendar/handoff copy. Localization is not part of this branch's current B-013 implementation scope unless the owner explicitly amends B-017.

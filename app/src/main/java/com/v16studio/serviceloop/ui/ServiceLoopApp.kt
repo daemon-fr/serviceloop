@@ -80,6 +80,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
@@ -416,25 +417,67 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
 @Composable
 private fun RootScaffold(nav: NavHostController, selected: RootDestination, content: @Composable (PaddingValues) -> Unit) {
     val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+    val compactRootActions = windowWidth < ServiceLoopUiTokens.Size.narrowThreshold ||
+        LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold
     val layoutDirection = LocalLayoutDirection.current
     Scaffold(
         topBar = {
             Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-            ServiceLoopBrandStrip()
-            TopAppBar(
-                windowInsets = WindowInsets(0),
-                title = {
-                    Text(selected.label, style = MaterialTheme.typography.titleLarge)
-                },
-                actions = {
-                    TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
-                    TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
-                },
-            )
+                ServiceLoopBrandStrip()
+                if (compactRootActions) {
+                    Surface(color = LocalServiceLoopTokens.current.surface) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.xs),
+                            verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+                        ) {
+                            Text(
+                                selected.label,
+                                style = ServiceLoopUiTokens.Type.screenTitle,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = ServiceLoopUiTokens.Space.xs),
+                            )
+                            TextButton(
+                                onClick = { nav.navigate("search") },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin),
+                            ) {
+                                ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
+                                Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
+                                Text("Search")
+                            }
+                            TextButton(
+                                onClick = { nav.navigate("settings") },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin),
+                            ) {
+                                ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
+                                Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
+                                Text("Settings")
+                            }
+                        }
+                    }
+                } else {
+                    TopAppBar(
+                        windowInsets = WindowInsets(0),
+                        title = {
+                            Text(selected.label, style = MaterialTheme.typography.titleLarge)
+                        },
+                        actions = {
+                            TextButton(onClick = { nav.navigate("search") }) { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Search") }
+                            TextButton(onClick = { nav.navigate("settings") }) { ServiceLoopIcon(ServiceLoopIcons.Settings, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("Settings") }
+                        },
+                    )
+                }
             }
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
-        floatingActionButton = { if (selected == RootDestination.WORK) Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)); Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs)); Text("New visit") } },
+        floatingActionButton = {
+            if (selected == RootDestination.WORK && !compactRootActions) {
+                Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) {
+                    ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
+                    Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
+                    Text("New visit")
+                }
+            }
+        },
         content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } },
     )
 }
@@ -539,6 +582,18 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
         ?: if (initialVisitStatus == VisitStatusFilter.ALL) VisitDateFilter.TODAY else VisitDateFilter.ALL
     val initialFollowUpDate = FollowUpDateFilter.entries.firstOrNull { it.name == contextualFilter } ?: FollowUpDateFilter.ALL
     val colors = LocalServiceLoopTokens.current
+    val compactRootActions = LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold ||
+        LocalConfiguration.current.screenWidthDp.dp < ServiceLoopUiTokens.Size.narrowThreshold
+    val inlineNewVisit: (@Composable () -> Unit)? = if (compactRootActions) {
+        {
+            ServiceLoopPrimaryButton(
+                "New visit",
+                { nav.navigate("visit/new") },
+                Modifier.fillMaxWidth().testTag("new-visit-work"),
+                leadingIcon = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
+            )
+        }
+    } else null
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp)) {
             ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
@@ -546,7 +601,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
         when (tab) {
             WorkTab.DUE_SERVICES -> {
                 val contextualDueBucket = runCatching { com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty()) }.getOrNull()
-                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket)
+                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket, inlineNewVisit)
             }
             WorkTab.VISITS -> VisitsWorkScreen(
                 values = state.visits,
@@ -556,6 +611,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialVisitDate,
                 initialStatusFilter = initialVisitStatus,
+                topContent = inlineNewVisit,
             )
             WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
                 values = state.followUps,
@@ -564,6 +620,7 @@ private fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vie
                 nav = nav,
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialFollowUpDate,
+                topContent = inlineNewVisit,
             )
         }
     }
@@ -578,6 +635,7 @@ internal fun VisitsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
+    topContent: (@Composable () -> Unit)? = null,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -588,6 +646,7 @@ internal fun VisitsWorkScreen(
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        topContent?.let { action -> item { action() } }
         item {
             ServiceLoopTextField(query, { query = it }, "Search visits", modifier = Modifier.testTag("visit-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
@@ -630,6 +689,7 @@ internal fun FollowUpsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: FollowUpDateFilter = FollowUpDateFilter.ALL,
     initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
+    topContent: (@Composable () -> Unit)? = null,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -640,6 +700,7 @@ internal fun FollowUpsWorkScreen(
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        topContent?.let { action -> item { action() } }
         item {
             ServiceLoopTextField(query, { query = it }, "Search follow-ups", modifier = Modifier.testTag("follow-up-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))

@@ -11,7 +11,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
@@ -243,9 +247,32 @@ internal fun ServiceScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(padding)) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+        val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+        val movePrimaryActionIntoList = maxHeight < ServiceLoopUiTokens.Size.compactHeightThreshold || imeVisible
+
+        @Composable
+        fun PrimaryServiceAction(modifier: Modifier = Modifier) {
+            if (next != null) {
+                ServiceLoopPrimaryButton("Next service", { flushAndThen { replaceServiceDestination(nav, next.workItemId) } }, modifier.testTag("next-service"))
+            } else {
+                ServiceLoopPrimaryButton(
+                    "Review visit",
+                    {
+                        scope.launch {
+                            val result = runCatching { viewModel.flushVisitDraft(draft.visitId) }.getOrNull()
+                            if (result?.success == true) withContext(Dispatchers.Main.immediate) { nav.navigate("review/${draft.visitId}") } else navigationMessage = "Resolve unsaved service edits before continuing."
+                        }
+                    },
+                    modifier.testTag("review-visit"),
+                    enabled = true,
+                )
+            }
+        }
+
+        Column(Modifier.fillMaxSize()) {
         LazyColumn(
-            Modifier.weight(1f).testTag(listTag),
+            Modifier.weight(1f).imePadding().testTag(listTag),
             state = listState,
             contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section),
@@ -322,19 +349,12 @@ internal fun ServiceScreen(
                 Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
             }
             if (viewState.error != null) item { Text(viewState.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("service-operation-error")) }
+            if (movePrimaryActionIntoList) item { PrimaryServiceAction(Modifier.fillMaxWidth()) }
         }
         ServiceLoopPinnedBar {
             ServiceLoopSecondaryButton("Back to visit", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
-            if (next != null) {
-                ServiceLoopPrimaryButton("Next service", { flushAndThen { replaceServiceDestination(nav, next.workItemId) } }, Modifier.fillMaxWidth().testTag("next-service"))
-            } else {
-                ServiceLoopPrimaryButton("Review visit", {
-                    scope.launch {
-                         val result = runCatching { viewModel.flushVisitDraft(draft.visitId) }.getOrNull()
-                         if (result?.success == true) withContext(Dispatchers.Main.immediate) { nav.navigate("review/${draft.visitId}") } else navigationMessage = "Resolve unsaved service edits before continuing."
-                    }
-                }, Modifier.fillMaxWidth().testTag("review-visit"), enabled = true)
-            }
+            if (!movePrimaryActionIntoList) PrimaryServiceAction(Modifier.fillMaxWidth())
+        }
         }
     }
 }

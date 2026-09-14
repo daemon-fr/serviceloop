@@ -16,6 +16,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDangerTonalButton
@@ -201,7 +202,7 @@ internal fun PlanEditorScreen(equipmentId: String?, existing: PlanDetail?, templ
 }
 
 @Composable
-internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, modifier: Modifier = Modifier, initialBucket: DueBucket? = null) {
+internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, modifier: Modifier = Modifier, initialBucket: DueBucket? = null, topContent: (@Composable () -> Unit)? = null) {
     var dateFilter by rememberSaveable(initialBucket) {
         mutableStateOf(DueServiceDateFilter.entries.firstOrNull { it.bucket == initialBucket } ?: DueServiceDateFilter.ALL)
     }
@@ -215,6 +216,7 @@ internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues,
     val filtered = filterDueServices(values, dateFilter, visitFilter, query)
     val selectedRows = values.filter { it.planId in selected }; val selectionSite = selectedRows.firstOrNull()?.siteId
     LazyColumn(modifier.padding(padding).testTag("due-services-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        topContent?.let { action -> item { action() } }
         item {
             DailyField(query, { query = it }, "Search due services")
             ServiceLoopFilterSelectorRow(
@@ -580,7 +582,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
     var newDate by rememberSaveable(detail.id) { mutableStateOf(detail.serviceDate) }; var reason by rememberSaveable(detail.id) { mutableStateOf("") }; var cancelReason by rememberSaveable(detail.id) { mutableStateOf("") }; var oneOffName by rememberSaveable(detail.id){mutableStateOf("")}; var oneOffEquipment by rememberSaveable(detail.id){mutableStateOf<String?>(null)}
     var reviewError by rememberSaveable(detail.id) { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.padding(padding).testTag("visit-detail-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { Column(Modifier.testTag("visit-identity")) { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text(detail.customerName); Text(detail.siteName); Text(detail.siteAddress); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")); Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }; Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().testTag("visit-relationship-actions"), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) { ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("visit-customer-link")); ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("visit-site-link")) } }
+         item { Column(Modifier.testTag("visit-identity")) { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text(detail.customerName); Text(detail.siteName); Text(detail.siteAddress); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")); Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }; Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); ServiceLoopResponsivePair(first = { ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.fillMaxWidth().testTag("visit-customer-link")) }, second = { ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.fillMaxWidth().testTag("visit-site-link")) }, modifier = Modifier.testTag("visit-relationship-actions")) }
         item { DispatchVisitPanel(detail) }
         item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status");when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
         if (state.serviceProgress?.visitId == detail.id) item {

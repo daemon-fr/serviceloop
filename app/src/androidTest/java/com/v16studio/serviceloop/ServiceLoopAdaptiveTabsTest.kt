@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -27,6 +28,8 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.DueServicesScreen
 import com.v16studio.serviceloop.ui.DueServicesProjection
@@ -109,6 +112,36 @@ class ServiceLoopAdaptiveTabsTest {
                     assertEquals("$width dp/$fontScale: selected state preserves $tabLabel width", before.width, after.width, 0.5f)
                     assertEquals("$width dp/$fontScale: selected state preserves $tabLabel height", before.height, after.height, 0.5f)
                 }
+            }
+        }
+    }
+
+    @Test fun responsivePairsStackBelowThePhoneThresholdOrAtLargeText() {
+        listOf(320 to 1f, 360 to 1f, 360 to 1.3f, 411 to 1f, 411 to 2f).forEach { (width, fontScale) ->
+            compose.runOnUiThread {
+                compose.activity.setContent {
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                        ServiceLoopTheme {
+                            Box(Modifier.width(width.dp)) {
+                                ServiceLoopResponsivePair(
+                                    first = { ServiceLoopSecondaryButton("Customer", {}, Modifier.testTag("pair-first")) },
+                                    second = { ServiceLoopSecondaryButton("Site", {}, Modifier.testTag("pair-second")) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            compose.waitForIdle()
+            val first = compose.onNodeWithTag("pair-first").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val second = compose.onNodeWithTag("pair-second").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("$width dp/$fontScale: first target remains touch-sized", first.height >= 48f)
+            assertTrue("$width dp/$fontScale: second target remains touch-sized", second.height >= 48f)
+            if (width < 360 || fontScale >= 1.3f) {
+                assertTrue("$width dp/$fontScale: pair stacks", first.bottom <= second.top)
+            } else {
+                assertTrue("$width dp/$fontScale: pair remains contained side-by-side", first.right <= second.left)
             }
         }
     }

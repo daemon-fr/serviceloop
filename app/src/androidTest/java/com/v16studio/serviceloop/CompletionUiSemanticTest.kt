@@ -24,7 +24,10 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.room.Room
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
@@ -145,6 +148,34 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag("finalize-record").performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.finalRecord != null }
         compose.onNodeWithText("Final service record").assertIsDisplayed()
+    }
+
+    @Test fun largeTextKeepsServiceOutcomeAndFulfillmentChoicesSeparatelyReachable() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent {
+            ServiceLoopTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                    ServiceLoopApp(viewModel, "visit/v")
+                }
+            }
+        }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        listOf("PERFORMED", "PARTLY_PERFORMED", "NOT_PERFORMED").forEach { outcome ->
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-$outcome"))
+            compose.onNodeWithTag("outcome-w-$outcome").assertIsDisplayed()
+        }
+        compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("fulfill-w"))
+        compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("keep-due-w"))
+        compose.onNodeWithTag("keep-due-w").assertIsDisplayed()
     }
 
     @Test fun oneOffServiceCanBeReadyWithoutARecurringFulfillmentChoice() {

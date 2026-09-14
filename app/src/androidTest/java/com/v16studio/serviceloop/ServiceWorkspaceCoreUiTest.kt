@@ -1,6 +1,10 @@
 package com.v16studio.serviceloop
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -16,7 +20,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -103,6 +110,26 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Back to visit").assertIsDisplayed()
+    }
+
+    @Test
+    fun shortHeightMovesPrimaryServiceActionIntoScrollableContent() {
+        val currentDraft = draft()
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, fixedTime())) {}
+        compose.setContent {
+            ServiceLoopTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                    Box(Modifier.width(320.dp).height(360.dp)) {
+                        ServiceScreen(currentDraft, progress(currentDraft, listOf(progressItem(currentDraft.workItemId, 1, currentDraft.serviceName))), SaveStatus.Saved(1L), null, viewModel, rememberNavController())
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("service-visit-overview").assertIsDisplayed()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("review-visit"))
+        compose.onNodeWithTag("review-visit").assertIsDisplayed()
     }
 
     @Test
