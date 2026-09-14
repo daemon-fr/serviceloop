@@ -19,6 +19,21 @@ import java.time.LocalDate
 
 data class ServiceDraftFieldId(val workItemId: String, val fieldKey: String)
 
+/** All response fields for one checklist question share one semantic mutation family. */
+data class ServiceDraftQuestionId(val workItemId: String, val questionId: String)
+
+data class ServiceDraftQuestionDrafts(
+    val issueReason: String?,
+    val notApplicableReason: String?,
+)
+
+enum class ServiceDraftQuestionFieldKind {
+    VALUE,
+    ISSUE_REASON,
+    NOT_APPLICABLE_REASON,
+    DISPOSITION,
+}
+
 sealed interface ServiceDraftFieldState {
     data class Clean(val savedAtEpochMillis: Long?) : ServiceDraftFieldState
     data class Pending(val rawValue: String) : ServiceDraftFieldState
@@ -80,12 +95,20 @@ class ServiceDraftAutosaveCoordinator(
         val validator: (String) -> ServiceDraftValidation,
         val writer: (suspend (String) -> Long)?,
         val onSaved: suspend (Long) -> Unit = {},
+        val question: ServiceDraftQuestionId? = null,
+        val questionFieldKind: ServiceDraftQuestionFieldKind? = null,
+        val questionWriter: (suspend (String, ServiceDraftQuestionDrafts) -> Long)? = null,
+        val onFailed: suspend (Exception) -> Unit = {},
     )
 
     private data class ChoiceOperation(
         val rawValue: String,
         val writer: suspend (String) -> Long,
         val onSaved: suspend (Long) -> Unit,
+        val question: ServiceDraftQuestionId? = null,
+        val questionWriter: (suspend (ServiceDraftQuestionDrafts) -> Long)? = null,
+        val discardRawFields: Set<ServiceDraftFieldId> = emptySet(),
+        val onFailed: suspend (Exception) -> Unit = {},
     )
 
     private val stateLock = Any()
@@ -94,6 +117,8 @@ class ServiceDraftAutosaveCoordinator(
     private val latestChoices = mutableMapOf<ServiceDraftFieldId, ChoiceOperation>()
     private val jobs = mutableMapOf<ServiceDraftFieldId, Job>()
     private val savedAt = mutableMapOf<ServiceDraftFieldId, Long?>()
+    private val questionVersions = mutableMapOf<ServiceDraftQuestionId, Long>()
+    private val questionFields = mutableMapOf<ServiceDraftQuestionId, MutableMap<ServiceDraftFieldId, ServiceDraftQuestionFieldKind>>()
     private val canonicalWriteMutex = Mutex()
     private val bufferWriteMutex = Mutex()
     private val _states = MutableStateFlow<Map<ServiceDraftFieldId, ServiceDraftFieldState>>(emptyMap())
@@ -114,6 +139,41 @@ class ServiceDraftAutosaveCoordinator(
             latestChoices.remove(fieldId)
             jobs[fieldId]?.cancel()
             jobs[fieldId] = scope.launch { persistText(fieldId, next, operation, immediate = false) }
+            next
+        }
+        check(version > 0)
+    }
+
+    fun scheduleQuestionText(
+        question: ServiceDraftQuestionId,
+        fieldId: ServiceDraftFieldId,
+        fieldKind: ServiceDraftQuestionFieldKind,
+        rawValue: String,
+        validator: (String) -> ServiceDraftValidation = ServiceDraftValidators.alwaysValid(),
+        writer: suspend (String, ServiceDraftQuestionDrafts) -> Long,
+        onSaved: suspend (Long) -> Unit = {},
+        onFailed: suspend (Exception) -> Unit = {},
+    ) {
+        require(fieldId.workItemId == question.workItemId)
+        val operation = TextOperation(
+            rawValue = rawValue,
+            validator = validator,
+            writer = null,
+            onSaved = onSaved,
+            question = question,
+            questionFieldKind = fieldKind,
+            questionWriter = writer,
+            onFailed = onFailed,
+        )
+        val version = synchronized(stateLock) {
+            registerQuestionField(question, fieldId, fieldKind)
+            val next = versions.getOrDefault(fieldId, 0L) + 1L
+            versions[fieldId] = next
+            questionVersions[question] = questionVersions.getOrDefault(question, 0L) + 1L
+            latestOperations[fieldId] = operation
+            latestChoices.keys.filter { it in questionFields[question].orEmpty() }.toList().forEach(latestChoices::remove)
+            cancelQuestionJobs(question)
+            jobs[fieldId] = scope.launch { persistText(fieldId, next, operation, immediate = false, questionVersion = questionVersions[question]) }
             next
         }
         check(version > 0)
@@ -164,6 +224,32 @@ class ServiceDraftAutosaveCoordinator(
         check(version > 0)
     }
 
+    fun saveQuestionTextNow(
+        question: ServiceDraftQuestionId,
+        fieldId: ServiceDraftFieldId,
+        fieldKind: ServiceDraftQuestionFieldKind,
+        rawValue: String,
+        validator: (String) -> ServiceDraftValidation = ServiceDraftValidators.alwaysValid(),
+        writer: suspend (String, ServiceDraftQuestionDrafts) -> Long,
+        onSaved: suspend (Long) -> Unit = {},
+        onFailed: suspend (Exception) -> Unit = {},
+    ) {
+        require(fieldId.workItemId == question.workItemId)
+        val operation = TextOperation(rawValue, validator, null, onSaved, question, fieldKind, writer, onFailed)
+        val version = synchronized(stateLock) {
+            registerQuestionField(question, fieldId, fieldKind)
+            val next = versions.getOrDefault(fieldId, 0L) + 1L
+            versions[fieldId] = next
+            questionVersions[question] = questionVersions.getOrDefault(question, 0L) + 1L
+            latestOperations[fieldId] = operation
+            latestChoices.keys.filter { it in questionFields[question].orEmpty() }.toList().forEach(latestChoices::remove)
+            cancelQuestionJobs(question)
+            jobs[fieldId] = scope.launch { persistText(fieldId, next, operation, immediate = true, questionVersion = questionVersions[question]) }
+            next
+        }
+        check(version > 0)
+    }
+
     fun immediateChoice(
         fieldId: ServiceDraftFieldId,
         rawValue: String,
@@ -188,6 +274,44 @@ class ServiceDraftAutosaveCoordinator(
         check(version > 0)
     }
 
+    fun immediateQuestionChoice(
+        question: ServiceDraftQuestionId,
+        fieldId: ServiceDraftFieldId,
+        rawValue: String,
+        writer: suspend (ServiceDraftQuestionDrafts) -> Long,
+        discardRawFields: Set<ServiceDraftFieldId> = emptySet(),
+        onSaved: suspend (Long) -> Unit = {},
+        onFailed: suspend (Exception) -> Unit = {},
+    ) {
+        require(fieldId.workItemId == question.workItemId)
+        val operation = ChoiceOperation(
+            rawValue = rawValue,
+            writer = { error("Question choice writer unavailable") },
+            onSaved = onSaved,
+            question = question,
+            questionWriter = writer,
+            discardRawFields = discardRawFields,
+            onFailed = onFailed,
+        )
+        val version = synchronized(stateLock) {
+            registerQuestionField(question, fieldId, ServiceDraftQuestionFieldKind.DISPOSITION)
+            val next = versions.getOrDefault(fieldId, 0L) + 1L
+            versions[fieldId] = next
+            val nextQuestionVersion = questionVersions.getOrDefault(question, 0L) + 1L
+            questionVersions[question] = nextQuestionVersion
+            latestOperations.keys.filter { it in questionFields[question].orEmpty() && it != fieldId }.toList().forEach { sibling ->
+                // Keep text operations so their latest reason can be carried into the
+                // new response, but their jobs and old disposition choices are stale.
+                latestChoices.remove(sibling)
+            }
+            latestChoices[fieldId] = operation
+            cancelQuestionJobs(question)
+            jobs[fieldId] = scope.launch { persistChoice(fieldId, next, rawValue, operation.writer, onSaved, operation, nextQuestionVersion) }
+            next
+        }
+        check(version > 0)
+    }
+
     suspend fun flush(workItemId: String): ServiceDraftFlushResult {
         val persisted = repository.workingInputBuffers(workItemId)
             .mapKeys { (fieldKey, _) -> ServiceDraftFieldId(workItemId, fieldKey) }
@@ -206,12 +330,12 @@ class ServiceDraftAutosaveCoordinator(
             if (!validation.valid) {
                 setState(fieldId, ServiceDraftFieldState.Invalid(operation.rawValue, validation.message!!))
                 null
-            } else if (currentState(fieldId) is ServiceDraftFieldState.Failed || operation.writer == null) {
+            } else if (currentState(fieldId) is ServiceDraftFieldState.Clean || currentState(fieldId) is ServiceDraftFieldState.Failed || !operation.hasCanonicalWriter()) {
                 null
             } else {
                 synchronized(stateLock) { jobs[fieldId]?.cancel() }
                 val version = synchronized(stateLock) { versions[fieldId] ?: return@mapNotNull null }
-                scope.launch { persistText(fieldId, version, operation, immediate = true) }
+                scope.launch { persistText(fieldId, version, operation, immediate = true, questionVersion = operation.question?.let { currentQuestionVersion(it) }) }
             }
         }
         relevant.filter { synchronized(stateLock) { latestOperations[it] == null } }.forEach { fieldId ->
@@ -235,11 +359,19 @@ class ServiceDraftAutosaveCoordinator(
     fun retry(fieldId: ServiceDraftFieldId) {
         val operation = synchronized(stateLock) { latestOperations[fieldId] }
         if (operation != null) {
-            operation.writer?.let { saveTextNow(fieldId, operation.rawValue, operation.validator, it, operation.onSaved) }
-                ?: scheduleRaw(fieldId, operation.rawValue, operation.validator)
+            if (operation.question != null && operation.questionWriter != null && operation.questionFieldKind != null) {
+                saveQuestionTextNow(operation.question, fieldId, operation.questionFieldKind, operation.rawValue, operation.validator, operation.questionWriter, operation.onSaved, operation.onFailed)
+            } else {
+                operation.writer?.let { saveTextNow(fieldId, operation.rawValue, operation.validator, it, operation.onSaved) }
+                    ?: scheduleRaw(fieldId, operation.rawValue, operation.validator)
+            }
             return
         }
-        synchronized(stateLock) { latestChoices[fieldId] }?.let { choice -> immediateChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved) }
+        synchronized(stateLock) { latestChoices[fieldId] }?.let { choice ->
+            if (choice.question != null && choice.questionWriter != null) {
+                immediateQuestionChoice(choice.question, fieldId, choice.rawValue, choice.questionWriter, choice.discardRawFields, choice.onSaved, choice.onFailed)
+            } else immediateChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved)
+        }
     }
 
     suspend fun cancelAndJoin(fieldId: ServiceDraftFieldId) {
@@ -255,62 +387,120 @@ class ServiceDraftAutosaveCoordinator(
         _states.update { current -> current - fieldId }
     }
 
-    private suspend fun persistText(fieldId: ServiceDraftFieldId, version: Long, operation: TextOperation, immediate: Boolean) {
+    private suspend fun persistText(fieldId: ServiceDraftFieldId, version: Long, operation: TextOperation, immediate: Boolean, questionVersion: Long? = null) {
         try {
             bufferWriteMutex.withLock {
-                if (!isCurrent(fieldId, version)) return
+                if (!isCurrent(fieldId, version, operation.question, questionVersion)) return
                 repository.saveWorkingInputBuffer(fieldId.workItemId, fieldId.fieldKey, operation.rawValue)
             }
-            if (!isCurrent(fieldId, version)) return
+            if (!isCurrent(fieldId, version, operation.question, questionVersion)) return
             val validation = operation.validator(operation.rawValue)
             if (!validation.valid) {
                 setState(fieldId, ServiceDraftFieldState.Invalid(operation.rawValue, validation.message!!))
                 return
             }
             setState(fieldId, ServiceDraftFieldState.Pending(operation.rawValue))
-            if (operation.writer == null) return
+            if (!operation.hasCanonicalWriter()) return
             if (!immediate) delay(debounceMillis)
-            if (!isCurrent(fieldId, version)) return
+            if (!isCurrent(fieldId, version, operation.question, questionVersion)) return
             canonicalWriteMutex.withLock {
-                if (!isCurrent(fieldId, version)) return@withLock
+                if (!isCurrent(fieldId, version, operation.question, questionVersion)) return@withLock
                 setState(fieldId, ServiceDraftFieldState.Saving)
-                val savedAt = operation.writer(operation.rawValue)
-                if (!isCurrent(fieldId, version)) return@withLock
-                repository.clearWorkingInputBuffer(fieldId.workItemId, fieldId.fieldKey)
-                if (isCurrent(fieldId, version)) {
-                    synchronized(stateLock) { this@ServiceDraftAutosaveCoordinator.savedAt[fieldId] = savedAt }
-                    setState(fieldId, ServiceDraftFieldState.Clean(savedAt))
-                    runCatching { operation.onSaved(savedAt) }
+                val savedAt = if (operation.question != null && operation.questionWriter != null) {
+                    operation.questionWriter(operation.rawValue, questionDrafts(operation.question))
+                } else operation.writer?.invoke(operation.rawValue) ?: return@withLock
+                if (!isCurrent(fieldId, version, operation.question, questionVersion)) return@withLock
+                if (operation.question != null) finishQuestionTransition(operation.question, questionVersion!!, savedAt, emptySet())
+                else {
+                    repository.clearWorkingInputBuffer(fieldId.workItemId, fieldId.fieldKey)
+                    if (isCurrent(fieldId, version)) {
+                        synchronized(stateLock) { this@ServiceDraftAutosaveCoordinator.savedAt[fieldId] = savedAt }
+                        setState(fieldId, ServiceDraftFieldState.Clean(savedAt))
+                    }
                 }
+                runCatching { operation.onSaved(savedAt) }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            if (isCurrent(fieldId, version)) setState(fieldId, ServiceDraftFieldState.Failed(operation.rawValue, failure.message ?: "Save failed", lastSavedAt(fieldId)))
+            if (isCurrent(fieldId, version, operation.question, questionVersion)) {
+                setState(fieldId, ServiceDraftFieldState.Failed(operation.rawValue, failure.message ?: "Save failed", lastSavedAt(fieldId)))
+                runCatching { operation.onFailed(failure) }
+            }
         }
     }
 
-    private suspend fun persistChoice(fieldId: ServiceDraftFieldId, version: Long, rawValue: String, writer: suspend (String) -> Long, onSaved: suspend (Long) -> Unit) {
+    private suspend fun persistChoice(fieldId: ServiceDraftFieldId, version: Long, rawValue: String, writer: suspend (String) -> Long, onSaved: suspend (Long) -> Unit, operation: ChoiceOperation? = null, questionVersion: Long? = null) {
         try {
-            if (!isCurrent(fieldId, version)) return
+            if (!isCurrent(fieldId, version, operation?.question, questionVersion)) return
             setState(fieldId, ServiceDraftFieldState.Saving)
             val savedAt = canonicalWriteMutex.withLock {
-                if (!isCurrent(fieldId, version)) return@withLock null
-                writer(rawValue)
+                if (!isCurrent(fieldId, version, operation?.question, questionVersion)) return@withLock null
+                if (operation?.question != null && operation.questionWriter != null) operation.questionWriter(questionDrafts(operation.question)) else writer(rawValue)
             } ?: return
-            if (isCurrent(fieldId, version)) {
-                synchronized(stateLock) { this@ServiceDraftAutosaveCoordinator.savedAt[fieldId] = savedAt }
-                setState(fieldId, ServiceDraftFieldState.Clean(savedAt))
+            if (isCurrent(fieldId, version, operation?.question, questionVersion)) {
+                if (operation?.question != null) finishQuestionTransition(operation.question, questionVersion!!, savedAt, operation.discardRawFields)
+                else {
+                    synchronized(stateLock) { this@ServiceDraftAutosaveCoordinator.savedAt[fieldId] = savedAt }
+                    setState(fieldId, ServiceDraftFieldState.Clean(savedAt))
+                }
                 runCatching { onSaved(savedAt) }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            if (isCurrent(fieldId, version)) setState(fieldId, ServiceDraftFieldState.Failed(rawValue, failure.message ?: "Save failed", lastSavedAt(fieldId)))
+            if (isCurrent(fieldId, version, operation?.question, questionVersion)) {
+                setState(fieldId, ServiceDraftFieldState.Failed(rawValue, failure.message ?: "Save failed", lastSavedAt(fieldId)))
+                runCatching { operation?.onFailed?.invoke(failure) }
+            }
         }
     }
 
     private fun isCurrent(fieldId: ServiceDraftFieldId, version: Long): Boolean = synchronized(stateLock) { versions[fieldId] == version }
+
+    private fun isCurrent(fieldId: ServiceDraftFieldId, version: Long, question: ServiceDraftQuestionId?, questionVersion: Long?): Boolean = synchronized(stateLock) {
+        versions[fieldId] == version && (question == null || questionVersion != null && questionVersions[question] == questionVersion)
+    }
+
+    private fun currentQuestionVersion(question: ServiceDraftQuestionId): Long? = synchronized(stateLock) { questionVersions[question] }
+
+    private fun registerQuestionField(question: ServiceDraftQuestionId, fieldId: ServiceDraftFieldId, kind: ServiceDraftQuestionFieldKind) {
+        questionFields.getOrPut(question) { linkedMapOf() }[fieldId] = kind
+    }
+
+    private fun cancelQuestionJobs(question: ServiceDraftQuestionId) {
+        questionFields[question].orEmpty().keys.forEach { fieldId -> jobs[fieldId]?.cancel() }
+    }
+
+    private fun questionDrafts(question: ServiceDraftQuestionId): ServiceDraftQuestionDrafts {
+        val fields = synchronized(stateLock) { questionFields[question].orEmpty().toMap() }
+        val latest = synchronized(stateLock) { latestOperations.toMap() }
+        return ServiceDraftQuestionDrafts(
+            issueReason = fields.entries.firstOrNull { it.value == ServiceDraftQuestionFieldKind.ISSUE_REASON }?.key?.let { latest[it]?.rawValue },
+            notApplicableReason = fields.entries.firstOrNull { it.value == ServiceDraftQuestionFieldKind.NOT_APPLICABLE_REASON }?.key?.let { latest[it]?.rawValue },
+        )
+    }
+
+    private suspend fun finishQuestionTransition(question: ServiceDraftQuestionId, questionVersion: Long, savedAtEpochMillis: Long, discardRawFields: Set<ServiceDraftFieldId>) {
+        val fields = synchronized(stateLock) { questionFields[question].orEmpty().keys.toSet() }
+        bufferWriteMutex.withLock {
+            if (!isCurrentQuestion(question, questionVersion)) return
+            val persistedBufferKeys = repository.workingInputBuffers(question.workItemId).keys
+            fields.filter { it.fieldKey in persistedBufferKeys }.forEach { fieldId ->
+                repository.clearWorkingInputBuffer(fieldId.workItemId, fieldId.fieldKey)
+            }
+        }
+        synchronized(stateLock) {
+            if (questionVersions[question] != questionVersion) return
+            discardRawFields.forEach { fieldId -> latestOperations.remove(fieldId) }
+            fields.forEach { fieldId -> this@ServiceDraftAutosaveCoordinator.savedAt[fieldId] = savedAtEpochMillis }
+            _states.update { current -> fields.fold(current) { result, fieldId -> result + (fieldId to ServiceDraftFieldState.Clean(savedAtEpochMillis)) } }
+        }
+    }
+
+    private fun isCurrentQuestion(question: ServiceDraftQuestionId, version: Long): Boolean = synchronized(stateLock) { questionVersions[question] == version }
+
+    private fun TextOperation.hasCanonicalWriter(): Boolean = writer != null || questionWriter != null
 
     private fun currentState(fieldId: ServiceDraftFieldId): ServiceDraftFieldState? = _states.value[fieldId]
 

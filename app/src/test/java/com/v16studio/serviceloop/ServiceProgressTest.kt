@@ -73,6 +73,15 @@ class ServiceProgressTest {
         assertEquals(ServiceDocumentationMode.DEFERRED, serviceDocumentationMode("ASSIGNED", "DEFERRED"))
     }
 
+    @Test fun documentationModeHonorsDeferredAndAssignmentRemovalPrecedence() {
+        assertEquals(ServiceDocumentationMode.DEFERRED, serviceDocumentationMode("LEADER_VISIBLE", "DEFERRED"))
+        assertEquals(ServiceDocumentationMode.DEFERRED, serviceDocumentationMode("ASSIGNMENT_REMOVED", "DOCUMENT_LOCAL"))
+        assertEquals(ServiceDocumentationMode.DEFERRED, serviceDocumentationMode("ASSIGNED", "ASSIGNMENT_REMOVED"))
+        assertEquals(ServiceDocumentationMode.CHOICE_REQUIRED, serviceDocumentationMode("LEADER_VISIBLE", "PENDING"))
+        assertEquals(ServiceDocumentationMode.LEADER_OBSERVE, serviceDocumentationMode("LEADER_VISIBLE", "LEADER_OBSERVE"))
+        assertEquals(ServiceDocumentationMode.DEFERRED, serviceDocumentationMode("ASSIGNED", "UNKNOWN"))
+    }
+
     private fun progress(items: List<ServiceProgressItem>) = VisitServiceProgress("visit", "V-1", "Customer", "Site", "2026-09-14", items, serviceProgressGroups(items))
 
     private fun item(

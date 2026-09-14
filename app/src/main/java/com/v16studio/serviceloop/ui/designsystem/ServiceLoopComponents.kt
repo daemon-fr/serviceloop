@@ -735,8 +735,8 @@ fun ServiceLoopResponsivePair(first: @Composable () -> Unit, second: @Composable
 }
 
 @Composable
-fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null, initiallyExpanded: Boolean = false) {
-    var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null) {
+    var expanded by remember { mutableStateOf(false) }
     var restoreCompactFocus by remember { mutableStateOf(false) }
     var wasFocused by remember { mutableStateOf(false) }
     val compactFocusRequester = remember { FocusRequester() }

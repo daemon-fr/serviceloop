@@ -31,6 +31,8 @@ import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import com.v16studio.serviceloop.ui.service.ServiceDraftFlushResult
 import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
 import com.v16studio.serviceloop.ui.service.ServiceDraftValidation
+import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionFieldKind
+import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionId
 import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -406,6 +408,22 @@ class ServiceLoopViewModel(
             if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState, serviceProgress = progress) }
         }
     }
+
+    /** Resolves the first Service for a newly-created Working Visit before navigation. */
+    fun resolveWorkingVisitResume(visitId: String, onResolved: (String?) -> Unit) {
+        viewModelScope.launch {
+            val progress = runCatching { repository.serviceVisitProgress(visitId) }.getOrNull()
+            val workItemId = progress?.preferredResumeItem()?.workItemId
+            _state.update { current ->
+                current.copy(
+                    serviceProgress = progress,
+                    activeServiceVisitId = visitId,
+                    activeServiceWorkItemId = workItemId,
+                )
+            }
+            onResolved(workItemId)
+        }
+    }
     fun loadFollowUps() { val request=issueRequest("followUps"); launchLoad { val values = repository.followUps(); if(isCurrent(request)) _state.update { it.copy(followUps = values) } } }
     fun loadFollowUp(id: String) {
         val request = issueRequest("followUp")
@@ -630,22 +648,40 @@ class ServiceLoopViewModel(
             question.required -> ServiceDraftValidators.requiredText("Response")
             else -> ServiceDraftValidators.alwaysValid()
         }
-        serviceDraftAutosaveCoordinator.scheduleText(
-            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)), rawValue, validator,
-            writer = { value -> if (value.trim().isBlank() && !question.required) repository.saveResponse(workItemId, questionId, ResponseDisposition.UNANSWERED, null, null) else repository.saveResponse(workItemId, questionId, ResponseDisposition.VALUE, value, null) },
+        serviceDraftAutosaveCoordinator.scheduleQuestionText(
+            question = ServiceDraftQuestionId(workItemId, questionId),
+            fieldId = ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)),
+            fieldKind = ServiceDraftQuestionFieldKind.VALUE,
+            rawValue = rawValue,
+            validator = validator,
+            writer = { value, drafts ->
+                if (value.trim().isBlank() && !question.required) {
+                    repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.UNANSWERED, null, null, drafts.issueReason, drafts.notApplicableReason)
+                } else {
+                    repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.VALUE, value, null, drafts.issueReason, drafts.notApplicableReason)
+                }
+            },
             onSaved = { refreshServiceContext(workItemId) },
         )
     }
 
-    fun scheduleIssueDescription(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
-        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionIssue(questionId)), rawValue, ServiceDraftValidators.issueDescription(),
-        writer = { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value) },
+    fun scheduleIssueDescription(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleQuestionText(
+        question = ServiceDraftQuestionId(workItemId, questionId),
+        fieldId = ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionIssue(questionId)),
+        fieldKind = ServiceDraftQuestionFieldKind.ISSUE_REASON,
+        rawValue = rawValue,
+        validator = ServiceDraftValidators.issueDescription(),
+        writer = { value, drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.ISSUE_FOUND, null, value, drafts.issueReason, drafts.notApplicableReason) },
         onSaved = { refreshServiceContext(workItemId) },
     )
 
-    fun scheduleNotApplicableReason(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
-        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionNotApplicable(questionId)), rawValue, ServiceDraftValidators.notApplicableReason(),
-        writer = { value -> repository.saveResponse(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value) },
+    fun scheduleNotApplicableReason(workItemId: String, questionId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleQuestionText(
+        question = ServiceDraftQuestionId(workItemId, questionId),
+        fieldId = ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionNotApplicable(questionId)),
+        fieldKind = ServiceDraftQuestionFieldKind.NOT_APPLICABLE_REASON,
+        rawValue = rawValue,
+        validator = ServiceDraftValidators.notApplicableReason(),
+        writer = { value, drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, ResponseDisposition.NOT_APPLICABLE, null, value, drafts.issueReason, drafts.notApplicableReason) },
         onSaved = { refreshServiceContext(workItemId) },
     )
 
@@ -664,10 +700,15 @@ class ServiceLoopViewModel(
     )
 
     fun chooseResponse(workItemId: String, questionId: String, disposition: ResponseDisposition) {
-        serviceDraftAutosaveCoordinator.immediateChoice(
-            ServiceDraftFieldId(workItemId, "response:$questionId"), disposition.name,
-            writer = { repository.saveResponse(workItemId, questionId, disposition, null, null) },
-             onSaved = { refreshServiceContext(workItemId) },
+        serviceDraftAutosaveCoordinator.immediateQuestionChoice(
+            question = ServiceDraftQuestionId(workItemId, questionId),
+            fieldId = ServiceDraftFieldId(workItemId, "response:$questionId"),
+            rawValue = disposition.name,
+            discardRawFields = if (disposition == ResponseDisposition.NOT_APPLICABLE) {
+                setOf(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.questionValue(questionId)))
+            } else emptySet(),
+            writer = { drafts -> repository.saveResponseWithInactiveDrafts(workItemId, questionId, disposition, null, null, drafts.issueReason, drafts.notApplicableReason) },
+            onSaved = { refreshServiceContext(workItemId) },
         )
     }
 
@@ -917,24 +958,26 @@ class ServiceLoopViewModel(
         val saveContext = issueRequest("draftSaveContext")
         val lastSaved = state.value.saveStatus.lastSavedCheckpoint() ?: draft.modifiedAtEpochMillis
         _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
-        viewModelScope.launch {
-            try {
-                val savedAt = repository.saveResponse(draft.workItemId, questionId, disposition, value, reason)
-                try {
-                    val refreshed = repository.inspection(draft.workItemId)
-                    val progress = refreshed?.let { value -> runCatching { repository.serviceVisitProgress(value.visitId) }.getOrElse { progressFallback(value) } }
-                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(inspection=refreshed, serviceProgress=progress, saveStatus=SaveStatus.Saved(savedAt), contentRefreshError=null) else current }
+        serviceDraftAutosaveCoordinator.immediateQuestionChoice(
+            question = ServiceDraftQuestionId(draft.workItemId, questionId),
+            fieldId = ServiceDraftFieldId(draft.workItemId, "response:$questionId"),
+            rawValue = disposition.name,
+            discardRawFields = if (disposition == ResponseDisposition.NOT_APPLICABLE) {
+                setOf(ServiceDraftFieldId(draft.workItemId, ServiceDraftFieldKeys.questionValue(questionId)))
+            } else emptySet(),
+            writer = { drafts -> repository.saveResponseWithInactiveDrafts(draft.workItemId, questionId, disposition, value, reason, drafts.issueReason, drafts.notApplicableReason) },
+            onSaved = { savedAt ->
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                    if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus = SaveStatus.Saved(savedAt), error = null) else current
                 }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus=SaveStatus.Saved(savedAt),contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current } }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == draft.workItemId) current.copy(
-                    saveStatus = SaveStatus.Failed(failure.message ?: "Draft write failed", lastSaved),
-                ) else current }
-            }
-        }
+                refreshServiceContext(draft.workItemId)
+            },
+            onFailed = { failure ->
+                if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
+                    if (current.inspection?.workItemId == draft.workItemId) current.copy(saveStatus = SaveStatus.Failed(failure.message ?: "Draft write failed", lastSaved)) else current
+                }
+            },
+        )
     }
 
     private fun launchLoad(block: suspend () -> Unit) {

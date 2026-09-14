@@ -388,7 +388,20 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
     fun requestModeChange(nextMode: String) { if (nextMode == mode) return; if (tasks.isEmpty()) applyMode(nextMode) else pendingMode = nextMode }
     fun save(targetState: String) {
         val inputs = tasks.map { it.toInput() }
-        val success: (String) -> Unit = { id -> nav.navigate("visit/$id") { popUpTo(setupRoute) { inclusive = true } } }
+        val success: (String) -> Unit = { id ->
+            if (targetState == "WORKING") {
+                viewModel.resolveWorkingVisitResume(id) { workItemId ->
+                    if (workItemId == null) {
+                        nav.navigate("visit/$id") { popUpTo(setupRoute) { inclusive = true } }
+                    } else {
+                        // Put the Visit overview underneath the active Service so the
+                        // workspace has a truthful logical context and route-aware exit.
+                        nav.navigate("visit/$id") { popUpTo(setupRoute) { inclusive = true } }
+                        nav.navigate("inspection/$workItemId")
+                    }
+                }
+            } else nav.navigate("visit/$id") { popUpTo(setupRoute) { inclusive = true } }
+        }
         if (mode == "ONE_TIME") viewModel.createOneTimeVisit(OneTimeVisitInput(customerName, phone, email, locationLabel, address), inputs, targetState, if (targetState == "WORKING") state.businessDate.toString() else date, null, success)
         else viewModel.createVisitForSite(site!!.id, selectedPlans, inputs, targetState, if (targetState == "WORKING") state.businessDate.toString() else date, null, success)
     }
@@ -565,6 +578,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var newDate by rememberSaveable(detail.id) { mutableStateOf(detail.serviceDate) }; var reason by rememberSaveable(detail.id) { mutableStateOf("") }; var cancelReason by rememberSaveable(detail.id) { mutableStateOf("") }; var oneOffName by rememberSaveable(detail.id){mutableStateOf("")}; var oneOffEquipment by rememberSaveable(detail.id){mutableStateOf<String?>(null)}
+    var reviewError by rememberSaveable(detail.id) { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.padding(padding).testTag("visit-detail-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text("${detail.customerName}\n${detail.siteName}\n${detail.siteAddress}"); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("visit-customer-link")); ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("visit-site-link")) }; Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }
         item { DispatchVisitPanel(detail) }
@@ -584,9 +598,13 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
             ServiceLoopSecondaryButton("Review visit", {
                 scope.launch {
                     val result = runCatching { viewModel.flushVisitDraft(detail.id) }.getOrNull()
-                    if (result?.success == true) nav.navigate("review/${detail.id}")
+                    if (result?.success == true) {
+                        reviewError = null
+                        nav.navigate("review/${detail.id}")
+                    } else reviewError = "Resolve unsaved service edits before continuing."
                 }
             }, Modifier.fillMaxWidth().testTag("visit-review"))
+            reviewError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("visit-review-error")) }
         }
         if (detail.state == "CANCELED") item { Text("Cancellation reason: ${detail.cancellationReason}"); if(detail.cancellationOrigin!=null) Text("Cancellation source: ${detail.cancellationOrigin.lowercase().replace('_',' ')}"); Text("The service obligation remains due and may be booked again.") }
     }

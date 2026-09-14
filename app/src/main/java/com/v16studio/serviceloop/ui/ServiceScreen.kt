@@ -71,7 +71,50 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+internal data class ServiceListIndices(
+    val workPerformed: Int,
+    val checklistHeader: Int,
+    val firstQuestion: Int,
+)
+
+internal fun serviceListIndices(
+    hasNavigationMessage: Boolean,
+    hasDocumentationNotice: Boolean,
+    hasPrivateContext: Boolean,
+): ServiceListIndices {
+    var next = 1 // Service identity block
+    if (hasNavigationMessage) next++
+    next++ // Visit progress
+    if (hasDocumentationNotice) next++
+    if (hasPrivateContext) next++
+    val workPerformed = next++
+    next++ // Private note, either collapsed action or inline field
+    val checklistHeader = next++
+    return ServiceListIndices(workPerformed, checklistHeader, next)
+}
+
+/** Replaces only the active Service entry, preserving any Visit below it. */
+internal fun replaceServiceDestination(nav: NavHostController, workItemId: String) {
+    nav.navigate("inspection/$workItemId") {
+        popUpTo("inspection/{id}") { inclusive = true }
+        launchSingleTop = true
+    }
+}
+
+/** Flushes callers should use this route-aware return instead of popping an arbitrary entry. */
+internal fun openVisitOverview(nav: NavHostController, visitId: String) {
+    val visitRoute = "visit/$visitId"
+    if (!nav.popBackStack(visitRoute, false)) {
+        nav.navigate(visitRoute) {
+            popUpTo("inspection/{id}") { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+}
 
 /** The single Working Visit Service workspace. InspectionScreen below is only a compatibility entry point. */
 @Composable
@@ -101,6 +144,16 @@ internal fun ServiceScreen(
     val next = resolvedProgress.nextService(draft.workItemId)
     val editingEnabled = current?.documentationMode != ServiceDocumentationMode.CHOICE_REQUIRED &&
         current?.documentationMode != ServiceDocumentationMode.LEADER_OBSERVE && current?.documentationMode != ServiceDocumentationMode.DEFERRED
+    val contextRows = listOf(
+        "Site access" to draft.siteAccessNote,
+        "Equipment" to draft.equipmentPrivateNote,
+        "Dispatch" to draft.dispatchInstructions.orEmpty(),
+    ).filter { it.second.isNotBlank() }
+    val listIndices = serviceListIndices(
+        hasNavigationMessage = navigationMessage != null,
+        hasDocumentationNotice = current?.documentationMode != ServiceDocumentationMode.LOCAL,
+        hasPrivateContext = contextRows.isNotEmpty(),
+    )
 
     fun flushAndThen(action: () -> Unit) {
         scope.launch {
@@ -108,7 +161,7 @@ internal fun ServiceScreen(
                 navigationMessage = "Resolve unsaved service edits before continuing."
                 return@launch
             }
-            if (result.success) action() else navigationMessage = "Resolve unsaved service edits before continuing."
+            if (result.success) withContext(Dispatchers.Main.immediate) { action() } else navigationMessage = "Resolve unsaved service edits before continuing."
         }
     }
 
@@ -119,7 +172,7 @@ internal fun ServiceScreen(
                 showLeaveDialog = true
                 return@launch
             }
-            if (result.success) nav.popBackStack() else {
+            if (result.success) withContext(Dispatchers.Main.immediate) { openVisitOverview(nav, draft.visitId) } else {
                 leaveFlushResult = result
                 showLeaveDialog = true
             }
@@ -143,14 +196,17 @@ internal fun ServiceScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(draft.workItemId, focus) {
+    LaunchedEffect(draft.workItemId, focus, listIndices) {
         focus?.let { target ->
-            val index = when (target.kind) {
-                CompletionBlockerKind.WORK_PERFORMED -> 2
-                CompletionBlockerKind.CHECKLIST_INCOMPLETE -> 5 + draft.questions.size
-                CompletionBlockerKind.FINDING_DESCRIPTION -> 5 + draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }.coerceAtLeast(0)
-                else -> 0
-            }
+             val index = when (target.kind) {
+                 CompletionBlockerKind.WORK_PERFORMED -> listIndices.workPerformed
+                 CompletionBlockerKind.CHECKLIST_INCOMPLETE -> listIndices.checklistHeader
+                 CompletionBlockerKind.FINDING_DESCRIPTION -> draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }
+                     .takeIf { it >= 0 }
+                     ?.let { listIndices.firstQuestion + it }
+                     ?: listIndices.checklistHeader
+                 else -> 0
+             }
             listState.scrollToItem(index.coerceAtLeast(0))
             viewModel.clearInspectionFocus()
         }
@@ -168,7 +224,7 @@ internal fun ServiceScreen(
                     leaveService()
                 }) { Text("Retry") }
             },
-            dismissButton = { TextButton(onClick = { showLeaveDialog = false; nav.popBackStack() }) { Text("Leave service") } },
+             dismissButton = { TextButton(onClick = { showLeaveDialog = false; openVisitOverview(nav, draft.visitId) }) { Text("Leave service") } },
         )
     }
 
@@ -189,17 +245,12 @@ internal fun ServiceScreen(
                     currentWorkItemId = draft.workItemId,
                     expanded = servicesExpanded,
                     onExpandedChange = { servicesExpanded = it },
-                    onSelect = { target -> if (target.workItemId != draft.workItemId) flushAndThen { nav.navigate("inspection/${target.workItemId}") } },
+                    onSelect = { target -> if (target.workItemId != draft.workItemId) flushAndThen { replaceServiceDestination(nav, target.workItemId) } },
                 )
             }
             if (current?.documentationMode != ServiceDocumentationMode.LOCAL) {
-                item { DocumentationModeNotice(current?.documentationMode ?: ServiceDocumentationMode.DEFERRED) { nav.navigate("visit/${draft.visitId}") } }
+                item { DocumentationModeNotice(current?.documentationMode ?: ServiceDocumentationMode.DEFERRED) { openVisitOverview(nav, draft.visitId) } }
             }
-            val contextRows = listOf(
-                "Site access" to draft.siteAccessNote,
-                "Equipment" to draft.equipmentPrivateNote,
-                "Dispatch" to draft.dispatchInstructions.orEmpty(),
-            ).filter { it.second.isNotBlank() }
             if (contextRows.isNotEmpty()) item { PrivateWorkContext(contextRows) }
             item {
                 ServiceLoopSurfaceCard(modifier = Modifier.testTag("work-performed-section")) {
@@ -220,19 +271,19 @@ internal fun ServiceScreen(
             }
             item {
                 val initialPrivate = draft.rawInputs[ServiceDraftFieldKeys.PRIVATE] ?: draft.privateInternalNote
-                var privateExpanded by rememberSaveable(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate.isNotBlank()) }
+                 var privateExpanded by rememberSaveable(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate.isNotBlank()) }
+                 var privateNote by rememberSaveable(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate) }
                 if (!privateExpanded) {
                     ServiceLoopTextAction("+ Private note", { privateExpanded = true }, Modifier.testTag("add-private-note"), enabled = editingEnabled)
                 } else {
                     ServiceLoopSurfaceCard(modifier = Modifier.testTag("private-work-note")) {
                         Text("Private note", style = MaterialTheme.typography.titleMedium)
                         ServiceLoopLongTextEditor(
-                            value = initialPrivate,
-                            onValueChange = { if (editingEnabled) viewModel.schedulePrivateText(draft.workItemId, it) },
+                            value = privateNote,
+                            onValueChange = { privateNote = it; if (editingEnabled) viewModel.schedulePrivateText(draft.workItemId, it) },
                             label = "Private note",
                             private = true,
                             enabled = editingEnabled,
-                            initiallyExpanded = true,
                             onFocusLost = { viewModel.flushServiceDraftAsync(draft.workItemId) },
                             fieldTestTag = "long-text-private-note",
                         )
@@ -251,21 +302,21 @@ internal fun ServiceScreen(
                 item { ChecklistCompletionSummary(draft) }
             }
             item {
-                ServiceLoopSecondaryButton("Parts & photos", { nav.navigate("field/${draft.workItemId}") }, Modifier.fillMaxWidth().testTag("open-field-evidence"))
+                ServiceLoopSecondaryButton("Parts & photos", { nav.navigate("field/${draft.workItemId}") }, Modifier.fillMaxWidth().testTag("open-field-evidence"), enabled = editingEnabled)
             }
             if (viewState.contentRefreshError != null) item {
                 Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
             }
         }
         ServiceLoopPinnedBar {
-            ServiceLoopSecondaryButton("Visit overview", { flushAndThen { nav.popBackStack() } }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
+            ServiceLoopSecondaryButton("Visit overview", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
             if (next != null) {
-                ServiceLoopPrimaryButton("Next service", { flushAndThen { nav.navigate("inspection/${next.workItemId}") } }, Modifier.fillMaxWidth().testTag("next-service"))
+                ServiceLoopPrimaryButton("Next service", { flushAndThen { replaceServiceDestination(nav, next.workItemId) } }, Modifier.fillMaxWidth().testTag("next-service"))
             } else {
                 ServiceLoopPrimaryButton("Review visit", {
                     scope.launch {
-                        val result = runCatching { viewModel.flushVisitDraft(draft.visitId) }.getOrNull()
-                        if (result?.success == true) nav.navigate("review/${draft.visitId}") else navigationMessage = "Resolve unsaved service edits before continuing."
+                         val result = runCatching { viewModel.flushVisitDraft(draft.visitId) }.getOrNull()
+                         if (result?.success == true) withContext(Dispatchers.Main.immediate) { nav.navigate("review/${draft.visitId}") } else navigationMessage = "Resolve unsaved service edits before continuing."
                     }
                 }, Modifier.fillMaxWidth().testTag("review-visit"), enabled = true)
             }
@@ -394,7 +445,7 @@ private fun PrivateWorkContext(rows: List<Pair<String, String>>) {
 
 @Composable
 private fun ChecklistSectionHeader(draft: InspectionDraft) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.testTag("checklist-section"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Checklist", style = MaterialTheme.typography.titleLarge)
         if (draft.questions.isNotEmpty()) {
             Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}")

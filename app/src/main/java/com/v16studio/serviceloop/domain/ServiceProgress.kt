@@ -17,11 +17,11 @@ enum class ServiceDocumentationMode {
 }
 
 fun serviceDocumentationMode(localRole: String?, documentationDisposition: String?): ServiceDocumentationMode = when {
+    localRole == "ASSIGNMENT_REMOVED" || documentationDisposition == "ASSIGNMENT_REMOVED" || documentationDisposition == "DEFERRED" -> ServiceDocumentationMode.DEFERRED
     documentationDisposition == "DOCUMENT_LOCAL" -> ServiceDocumentationMode.LOCAL
     documentationDisposition == "PENDING" -> ServiceDocumentationMode.CHOICE_REQUIRED
-    documentationDisposition == "LEADER_OBSERVE" ||
-        (localRole == "LEADER_VISIBLE" && documentationDisposition != "DOCUMENT_LOCAL") -> ServiceDocumentationMode.LEADER_OBSERVE
-    documentationDisposition == "DEFERRED" -> ServiceDocumentationMode.DEFERRED
+    documentationDisposition == "LEADER_OBSERVE" -> ServiceDocumentationMode.LEADER_OBSERVE
+    localRole == "LEADER_VISIBLE" && documentationDisposition == null -> ServiceDocumentationMode.LEADER_OBSERVE
     localRole == null && documentationDisposition == null -> ServiceDocumentationMode.LOCAL
     else -> ServiceDocumentationMode.DEFERRED
 }

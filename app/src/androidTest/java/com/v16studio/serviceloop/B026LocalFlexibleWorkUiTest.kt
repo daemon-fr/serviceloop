@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.platform.testTag
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -102,6 +103,64 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithText("Planned services are unavailable.").assertIsDisplayed()
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required")).assertIsDisplayed()
         assertAbsentText("Unable to read due services")
+    }
+
+    @Test fun startNowCreatesWorkingVisitAndOpensItsFirstService() {
+        val standard = site("standard-site", "Standard site", CustomerType.STANDARD)
+        val due = due(standard, "plan-start")
+        val repository = FakeRepository().apply {
+            workingProgress = VisitServiceProgress(
+                visitId = "created-working-visit",
+                visitReference = "V-START",
+                customerName = "Customer",
+                siteName = "Standard site",
+                serviceDate = "2026-09-05",
+                items = listOf(ServiceProgressItem(
+                    workItemId = "created-work-item",
+                    position = 1,
+                    subjectType = WorkSubjectType.SITE,
+                    equipmentId = null,
+                    equipmentName = null,
+                    equipmentReference = null,
+                    equipmentDescription = null,
+                    serviceName = "Started service",
+                    status = ServiceEntryStatus.NOT_STARTED,
+                )),
+                groups = emptyList(),
+            )
+        }
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(listOf(due)),
+            businessDate = LocalDate.of(2026, 9, 5),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(repository) {}
+
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
+                        val nav = rememberNavController()
+                        NavHost(nav, "visit/new") {
+                            composable("visit/new") { NewVisitScreen(listOf(standard), listOf(due), PaddingValues(), state, viewModel, nav, listOf(due.planId)) }
+                            composable("visit/{visitId}") { androidx.compose.material3.Text("Visit overview", modifier = androidx.compose.ui.Modifier.testTag("visit-overview")) }
+                            composable("inspection/{workItemId}") { androidx.compose.material3.Text("Service destination", modifier = androidx.compose.ui.Modifier.testTag("service-destination")) }
+                        }
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required"))
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Start maintenance")
+        compose.onNodeWithTag("add-task").performClick()
+        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").performScrollTo().performTextReplacement("2026-09-05")
+        compose.onNodeWithTag("primary-visit-action-WORKING").performScrollTo().assertIsEnabled().performClick()
+
+        compose.waitUntil(10_000) { repository.createdVisitId != null }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-destination").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-destination").assertIsDisplayed()
     }
 
     @Test fun existingSiteSearchDeliberatelyRevealsMatchingOneTimeSite() {
@@ -304,6 +363,8 @@ class B026LocalFlexibleWorkUiTest {
         var lastInspectedWorkItemId: String? = null
         var createdEquipment = false
         var createdEquipmentPlanCount = 0
+        var workingProgress: VisitServiceProgress? = null
+        @Volatile var createdVisitId: String? = null
 
         override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
         override suspend fun equipment(id: String) = equipmentDetail
@@ -315,6 +376,7 @@ class B026LocalFlexibleWorkUiTest {
         override suspend fun customer(id: String) = customerDetail
         override suspend fun site(id: String) = site
         override suspend fun visit(id: String) = visit
+        override suspend fun serviceVisitProgress(visitId: String) = workingProgress ?: error("No progress")
         override suspend fun templates() = emptyList<TemplateSummary>()
         override suspend fun equipmentLinkContext(workItemId: String) = linkContext
         override suspend fun linkWorkItemEquipment(workItemId: String, equipmentId: String): Long {
@@ -330,6 +392,10 @@ class B026LocalFlexibleWorkUiTest {
             lastAddedWorkItemId = "known-equipment"
             visit = visit?.copy(lines = visit!!.lines + VisitLine("known-equipment", "Registered one-time equipment", "EQ-one-time-equipment", input.taskName, null, null, WorkSubjectType.EQUIPMENT, "one-time-equipment", null))
             return "known-equipment"
+        }
+        override suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
+            createdVisitId = "created-working-visit"
+            return createdVisitId!!
         }
         override suspend fun makeCustomerStandard(customerId: String): Long {
             customerDetail = customerDetail.copy(customerType = CustomerType.STANDARD)

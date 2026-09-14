@@ -17,6 +17,8 @@ import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.ui.service.ServiceDraftAutosaveCoordinator
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
+import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionFieldKind
+import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionId
 import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -203,15 +205,132 @@ class ServiceDraftAutosaveCoordinatorTest {
         assertTrue(coordinator.states.value[field] == null)
     }
 
+    @Test fun pendingIssueReasonThenOkLeavesOkAsCanonicalDisposition() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionIssue("q1")), ServiceDraftQuestionFieldKind.ISSUE_REASON, "finding", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.ISSUE_FOUND, reason = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.OK.name, writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.OK, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertEquals(ResponseDisposition.OK, repository.responses[question]?.disposition)
+    }
+
+    @Test fun pendingNotApplicableReasonThenOkLeavesOkAsCanonicalDisposition() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionNotApplicable("q1")), ServiceDraftQuestionFieldKind.NOT_APPLICABLE_REASON, "blocked", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.NOT_APPLICABLE, reason = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.OK.name, writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.OK, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertEquals(ResponseDisposition.OK, repository.responses[question]?.disposition)
+    }
+
+    @Test fun pendingValueThenNotApplicableLeavesNotApplicableAndNoStaleValueBuffer() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+        val valueField = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionValue("q1"))
+
+        coordinator.scheduleQuestionText(question, valueField, ServiceDraftQuestionFieldKind.VALUE, "42", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.VALUE, value = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.NOT_APPLICABLE.name, discardRawFields = setOf(valueField), writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.NOT_APPLICABLE, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, repository.responses[question]?.disposition)
+        assertTrue(repository.buffers.keys.none { it.workItemId == "work-1" && it.fieldKey.contains("q1") })
+    }
+
+    @Test fun pendingNotApplicableReasonThenValueBecomesValueAndPreservesInactiveReason() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionNotApplicable("q1")), ServiceDraftQuestionFieldKind.NOT_APPLICABLE_REASON, "blocked", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.NOT_APPLICABLE, reason = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        runCurrent()
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionValue("q1")), ServiceDraftQuestionFieldKind.VALUE, "42", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.VALUE, value = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertEquals(ResponseDisposition.VALUE, repository.responses[question]?.disposition)
+        assertEquals("blocked", repository.responses[question]?.notApplicableReason)
+    }
+
+    @Test fun rapidIssueNaOkSwitchLeavesOkAsCanonicalDisposition() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionIssue("q1")), ServiceDraftQuestionFieldKind.ISSUE_REASON, "finding", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.ISSUE_FOUND, reason = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.NOT_APPLICABLE.name, writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.NOT_APPLICABLE, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.OK.name, writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.OK, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertEquals(ResponseDisposition.OK, repository.responses[question]?.disposition)
+    }
+
+    @Test fun staleSemanticWriterCannotLeaveObsoleteQuestionBuffer() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this, debounceMillis = 1_000L)
+        val question = ServiceDraftQuestionId("work-1", "q1")
+
+        coordinator.scheduleQuestionText(question, ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.questionIssue("q1")), ServiceDraftQuestionFieldKind.ISSUE_REASON, "stale finding", writer = { raw, drafts ->
+            repository.saveQuestion(question, ResponseDisposition.ISSUE_FOUND, reason = raw, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        coordinator.immediateQuestionChoice(question, ServiceDraftFieldId("work-1", "response:q1"), ResponseDisposition.OK.name, writer = { drafts ->
+            repository.saveQuestion(question, ResponseDisposition.OK, issueDraft = drafts.issueReason, naDraft = drafts.notApplicableReason)
+        })
+        advanceUntilIdle()
+
+        assertTrue(repository.buffers.keys.none { it.fieldKey == ServiceDraftFieldKeys.questionIssue("q1") })
+        assertEquals(ResponseDisposition.OK, repository.responses[question]?.disposition)
+    }
+
     private class BufferRepository : ServiceLoopRepository {
+        data class SavedQuestion(
+            val disposition: ResponseDisposition,
+            val value: String? = null,
+            val reason: String? = null,
+            val issueFoundReason: String? = null,
+            val notApplicableReason: String? = null,
+        )
         val buffers = mutableMapOf<ServiceDraftFieldId, String>()
         val rawWrites = mutableListOf<String>()
         val canonicalValues = mutableMapOf<ServiceDraftFieldId, String>()
         val preservedDrafts = mutableMapOf<ServiceDraftFieldId, String>()
+        val responses = mutableMapOf<ServiceDraftQuestionId, SavedQuestion>()
         var checklistComplete = true
         private var timestamp = 0L
 
         fun canonical(field: ServiceDraftFieldId, value: String) { canonicalValues[field] = value }
+
+        fun saveQuestion(question: ServiceDraftQuestionId, disposition: ResponseDisposition, value: String? = null, reason: String? = null, issueDraft: String? = null, naDraft: String? = null): Long {
+            responses[question] = SavedQuestion(disposition, value, reason, issueDraft, naDraft)
+            return ++timestamp
+        }
 
         override suspend fun home(): HomeSummary = error("unused")
         override suspend fun equipment(id: String): EquipmentDetail? = error("unused")
