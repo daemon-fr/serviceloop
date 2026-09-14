@@ -102,12 +102,15 @@ class B026DispatchV5UiTest {
 
         compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-add-item"))
         compose.onNodeWithTag("dispatch-add-item").performClick()
-        compose.onNodeWithTag("dispatch-subject-site").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("dispatch-subject-SITE").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dispatch-subject-SITE").performClick()
         compose.onNodeWithTag("dispatch-work-task").performTextInput("Inspect location")
         compose.onNodeWithTag("dispatch-work-item-save").performClick()
 
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-add-item"))
         compose.onNodeWithTag("dispatch-add-item").performClick()
-        compose.onNodeWithTag("dispatch-subject-equipment").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("dispatch-subject-EQUIPMENT").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dispatch-subject-EQUIPMENT").performClick()
         compose.onNodeWithTag("dispatch-equipment-description").performTextInput("Unit beside the gate")
         compose.onNodeWithTag("dispatch-work-task").performTextInput("Identify unit")
         compose.onNodeWithTag("dispatch-work-item-save").performClick()
