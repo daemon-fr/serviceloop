@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -56,6 +57,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 import org.junit.Assert.assertTrue
 
@@ -137,6 +139,16 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithText("Site work").assertIsDisplayed()
         compose.onNodeWithTag("visit-progress-summary").assertHasNoClickAction()
         compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").assertIsDisplayed()
+        assertEquals(
+            "Expanded",
+            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+        )
+        assertEquals(
+            "Expanded",
+            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+        )
         compose.onNodeWithText("2 services · 2 services not started").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-service").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-second").assertIsDisplayed()
@@ -145,11 +157,33 @@ class ServiceWorkspaceCoreUiTest {
 
         compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").performClick()
         compose.onAllNodesWithTag("visit-line-equipment-one-service").assertCountEquals(0)
+        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
         compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
+        compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
+        assertEquals(
+            "Collapsed",
+            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+        )
+        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two").performClick()
+        compose.onAllNodesWithTag("visit-line-equipment-two-service").assertCountEquals(0)
+        compose.onAllNodesWithTag("visit-line-equipment-one-service").assertCountEquals(0)
+        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
+        compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
+        assertEquals(
+            "Collapsed",
+            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+        )
+        assertTrue(selected.isEmpty())
+
         compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two").performClick()
         compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
-        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
-        assertTrue(selected.isEmpty())
+        assertEquals(
+            "Expanded",
+            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+        )
         compose.onNodeWithTag("visit-line-equipment-two-service").performClick()
         assertTrue(selected.single() == "equipment-two-service")
     }
