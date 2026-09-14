@@ -596,13 +596,14 @@ fun ServiceLoopDenseNavigableRow(
     title:String,context:String?=null,metadata:String?=null,status:String?=null,actionLabel:String?=null,
     modifier:Modifier=Modifier,leadingIcon:Int?=null,
     leadingContent:(@Composable RowScope.()->Unit)?=null,
-    showDisclosure:Boolean=true,onClick:()->Unit,
+    showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,onClick:(()->Unit)?,
 ) {
     val c=LocalServiceLoopTokens.current
     Row(
         modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.listRowMin)
-            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
-            .clickable(role=Role.Button,onClick=onClick).focusable()
+            .then(if (selected) Modifier.background(c.selection, RoundedCornerShape(ServiceLoopUiTokens.Radius.field)) else Modifier)
+            .then(if (onClick != null) Modifier.serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clickable(role=Role.Button,onClick=onClick).focusable() else Modifier)
+            .semantics { this.selected = selected }
             .drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())}
             .padding(vertical=ServiceLoopUiTokens.Space.md),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
@@ -613,7 +614,7 @@ fun ServiceLoopDenseNavigableRow(
             Text(title,style=ServiceLoopUiTokens.Type.itemTitle)
             context?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.supporting,color=c.textSecondary)}
             metadata?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.textMuted)}
-            status?.takeIf{it.isNotBlank()}?.let{ServiceLoopStatusBadge(it)}
+            statusContent?.invoke() ?: status?.takeIf{it.isNotBlank()}?.let{ServiceLoopStatusBadge(it)}
             actionLabel?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.action)}
         }
         if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)

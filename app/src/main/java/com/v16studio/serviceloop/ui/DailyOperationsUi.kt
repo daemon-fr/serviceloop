@@ -317,7 +317,7 @@ private fun NewVisitTaskEditor(
                     if (equipmentId == null) DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional")
                 }
             }
-            Text("Checklist template", fontWeight = FontWeight.Medium)
+            Text("Inspection checklist", fontWeight = FontWeight.Medium)
             ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "None") + templates.filter { it.state == "ACTIVE" }.map { it.id to "${it.name} · r${it.revisionNumber}" }, templateId, onTemplateId, testTagPrefix = "task-template")
             OutlinedButton(onSave, enabled = valid, modifier = Modifier.fillMaxWidth().testTag(if (editing) "update-task" else "add-task")) { Text(if (editing) "Update task" else "Add task") }
         }
@@ -332,7 +332,7 @@ private fun NewVisitTaskRow(index: Int, task: NewVisitTaskDraft, templates: List
             WorkSubjectType.SITE -> "Site"
             WorkSubjectType.EQUIPMENT -> task.equipmentId?.let { id -> equipment.firstOrNull { it.id == id }?.name } ?: task.equipmentDescription.ifBlank { "Equipment not specified" }
         },
-        metadata = task.templateId?.let { id -> templates.firstOrNull { it.id == id }?.let { "Checklist template · ${it.name} · r${it.revisionNumber}" } } ?: "No checklist",
+        metadata = task.templateId?.let { id -> templates.firstOrNull { it.id == id }?.let { "Inspection checklist · ${it.name} · r${it.revisionNumber}" } } ?: "No checklist",
         modifier = Modifier.testTag("visit-task-$index"),
         onClick = onEdit,
     )
@@ -564,7 +564,7 @@ private fun AdHocWorkEditor(
                 else ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "No specific equipment yet") + equipment.map { it.id to "${it.name} · ${it.reference}" }, equipmentId, { equipmentId = it; equipmentDescription = "" }, testTagPrefix = "visit-task-equipment")
                 if (!allowKnownEquipment || equipmentId == null) DailyField(equipmentDescription, { equipmentDescription = it }, "Equipment description · Optional")
             }
-            Text("Checklist template", fontWeight = FontWeight.Medium)
+            Text("Inspection checklist", fontWeight = FontWeight.Medium)
             ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "None") + templates.filter { it.state == "ACTIVE" }.map { it.id to "${it.name} · r${it.revisionNumber}" }, templateId, { templateId = it }, testTagPrefix = "visit-task-template")
             ServiceLoopPrimaryButton("Add task", { val input = AdHocWorkInput(taskName.trim(), subjectType, equipmentId, equipmentDescription.trim(), templateId); onAdd(input); taskName = ""; subjectType = WorkSubjectType.SITE; equipmentId = null; equipmentDescription = ""; templateId = null }, Modifier.fillMaxWidth().testTag("add-visit-task"), enabled = valid && !busy)
             if (!allowKnownEquipment) Text("This task will remain local to the one-time visit.", style = MaterialTheme.typography.bodySmall)
@@ -580,7 +580,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
     var newDate by rememberSaveable(detail.id) { mutableStateOf(detail.serviceDate) }; var reason by rememberSaveable(detail.id) { mutableStateOf("") }; var cancelReason by rememberSaveable(detail.id) { mutableStateOf("") }; var oneOffName by rememberSaveable(detail.id){mutableStateOf("")}; var oneOffEquipment by rememberSaveable(detail.id){mutableStateOf<String?>(null)}
     var reviewError by rememberSaveable(detail.id) { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.padding(padding).testTag("visit-detail-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text("${detail.customerName}\n${detail.siteName}\n${detail.siteAddress}"); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("visit-customer-link")); ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("visit-site-link")) }; Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }
+        item { Column(Modifier.testTag("visit-identity")) { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text(detail.customerName); Text(detail.siteName); Text(detail.siteAddress); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")); Text("${if (detail.state == "BOOKED") "Appointment" else "Service date"} ${detail.serviceDate}") }; Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().testTag("visit-relationship-actions"), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) { ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("visit-customer-link")); ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("visit-site-link")) } }
         item { DispatchVisitPanel(detail) }
         item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status");when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
         if (state.serviceProgress?.visitId == detail.id) item {
@@ -594,6 +594,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         if (detail.state == "WORKING") item {
             val session = state.activeServiceWorkItemId?.takeIf { state.activeServiceVisitId == detail.id && state.serviceProgress?.items?.any { item -> item.workItemId == it } == true }
             val target = session ?: state.serviceProgress?.preferredResumeItem()?.workItemId ?: detail.lines.firstOrNull()?.workItemId
+            ServiceLoopActionStack {
             ServiceLoopPrimaryButton("Resume service", { if (target != null) nav.navigate("inspection/$target") }, Modifier.fillMaxWidth().testTag("resume-service"), enabled = target != null)
             ServiceLoopSecondaryButton("Review visit", {
                 scope.launch {
@@ -604,6 +605,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
                     } else reviewError = "Resolve unsaved service edits before continuing."
                 }
             }, Modifier.fillMaxWidth().testTag("visit-review"))
+            }
             reviewError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("visit-review-error")) }
         }
         if (detail.state == "CANCELED") item { Text("Cancellation reason: ${detail.cancellationReason}"); if(detail.cancellationOrigin!=null) Text("Cancellation source: ${detail.cancellationOrigin.lowercase().replace('_',' ')}"); Text("The service obligation remains due and may be booked again.") }

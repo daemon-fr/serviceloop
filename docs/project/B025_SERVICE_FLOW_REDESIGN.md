@@ -30,6 +30,8 @@ Work performed, the optional private work note, checklist widgets, issue finding
 
 Dispatch documentation mode remains authoritative: local work is editable, pending choices require the Visit assignment, leader-observe work is visible but not documented locally, and handed-off work is read-only. Parts & photos remains a transitional separate action. Outcome, fulfillment, and recurrence decisions remain outside this 2A workspace; Review/finalization and PDF behavior remain later scope.
 
+Owner feedback on 2A clarified the transitional UI: successful Service saves use one compact status; READY appears as “Ready for outcome” until 2B; the current Service row is selected and non-navigable; Service uses “Back to visit” alongside “Review visit”; Visit relationship actions follow the uninterrupted Visit identity; and task selection calls a reusable template an “Inspection checklist.”
+
 ## Scope boundary
 
 This document covers Bundle 1 and Service Flow 2A. Service Flow 2B, Review/finalization/PDF bundles, localization, and unrelated product expansion remain outside this milestone.

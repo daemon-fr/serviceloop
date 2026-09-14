@@ -57,17 +57,48 @@ class CompletionUiSemanticTest {
 
     @After fun tearDown() = database.close()
 
+    @Test fun workingVisitIdentityAndActionsAreSeparated() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-identity").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-identity").assertIsDisplayed()
+        compose.onNodeWithText("V-UI · Working").assertIsDisplayed()
+        org.junit.Assert.assertTrue(compose.onAllNodesWithText("Customer").fetchSemanticsNodes().isNotEmpty())
+        org.junit.Assert.assertTrue(compose.onAllNodesWithText("Site").fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithText("Address").assertIsDisplayed()
+        compose.onNodeWithText("Service date 2026-09-05").assertIsDisplayed()
+        compose.onNodeWithTag("visit-relationship-actions").assertIsDisplayed()
+        compose.onNodeWithTag("visit-customer-link").assertIsDisplayed()
+        compose.onNodeWithTag("visit-site-link").assertIsDisplayed()
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").assertIsDisplayed()
+        compose.onNodeWithTag("visit-review").assertIsDisplayed()
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasText("Inspection checklist"))
+        compose.onNodeWithText("Inspection checklist").assertIsDisplayed()
+        compose.onAllNodesWithText("Checklist template").assertCountEquals(0)
+    }
+
+    @Test fun reviewWaitsForOutcomeBeforeShowingFulfillmentAndKeepsIdentityCompact() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        compose.onNodeWithText("Review the visit and complete any remaining service decisions before finalizing.").assertIsDisplayed()
+        compose.onNodeWithText("Report identity").assertIsDisplayed()
+        compose.onNodeWithText("Business · Technician").assertIsDisplayed()
+        compose.onNodeWithText("Update from current profile").assertIsDisplayed()
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasText("Choose an outcome"))
+        compose.onNodeWithText("Choose an outcome").assertIsDisplayed()
+        compose.onAllNodesWithText("null work", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Fulfillment unavailable", substring = true).assertCountEquals(0)
+    }
+
     @Test fun actualCompletionControlsFinalizeAndNavigateToFinalRecord() {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val repository = RoomServiceLoopRepository(database, time)
         val viewModel = ServiceLoopViewModel(repository) {}
-        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-
-        compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithText("Resume visit").performClick()
-        compose.waitUntil(5_000){compose.onAllNodesWithTag("inspection-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithTag("inspection-list", useUnmergedTree = true).performScrollToNode(hasTestTag("open-completion-review"))
-        compose.onNodeWithTag("open-completion-review").performClick()
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
         compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
         compose.onNodeWithTag("outcome-w-PERFORMED").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
@@ -147,11 +178,7 @@ class CompletionUiSemanticTest {
         }
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
-        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-        compose.waitUntil(5_000){compose.onAllNodesWithText("Resume visit").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithText("Resume visit").performClick()
-        compose.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-completion-review"))
-        compose.onNodeWithTag("open-completion-review").performClick()
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
         compose.waitUntil(5_000){viewModel.state.value.completionLines.isNotEmpty()}
         val unavailable = androidx.compose.ui.test.hasText("Fulfillment unavailable — current service obligation changed. Review this work before finalizing.")
         compose.onNodeWithTag("completion-review-list").performScrollToNode(unavailable)

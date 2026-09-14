@@ -3,10 +3,14 @@ package com.v16studio.serviceloop
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -31,6 +35,7 @@ import com.v16studio.serviceloop.domain.ServiceEntryStatus
 import com.v16studio.serviceloop.domain.ServiceProgressItem
 import com.v16studio.serviceloop.domain.VisitServiceProgress
 import com.v16studio.serviceloop.domain.WorkSubjectType
+import com.v16studio.serviceloop.domain.serviceProgressGroups
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.InspectionFocus
 import com.v16studio.serviceloop.ui.ServiceScreen
@@ -67,6 +72,9 @@ class ServiceWorkspaceCoreUiTest {
 
         compose.onNodeWithTag("service-list").assertIsDisplayed()
         compose.onNodeWithTag("service-identity").assertIsDisplayed()
+        compose.onNodeWithTag("service-save-state").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("Saved ·", substring = true).fetchSemanticsNodes().size == 1)
+        assertTrue(compose.onAllNodesWithText("Saved ", substring = true).fetchSemanticsNodes().size <= 1)
         compose.onNodeWithTag("visit-progress").assertIsDisplayed()
         compose.onNodeWithTag("work-performed-section").assertIsDisplayed()
         compose.onNodeWithTag("add-private-note").assertIsDisplayed()
@@ -79,6 +87,19 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("response-q-status-NOT_CHECKED").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("Save work performed", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Save response", substring = true).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun currentServiceIsSelectedWithoutNavigationAndReadyStatusIsExplicit() {
+        val current = progressItem("work-1", 1, "Electrical inspection").copy(status = ServiceEntryStatus.READY)
+        val other = progressItem("work-2", 2, "Mechanical inspection")
+        render(draft(), progress(draft(), listOf(current, other)))
+        compose.onNodeWithTag("show-services").performClick()
+        compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasNoClickAction()
+        compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
+        compose.onNodeWithText("Ready for outcome").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("Back to visit").assertIsDisplayed()
     }
 
     @Test
@@ -214,7 +235,7 @@ class ServiceWorkspaceCoreUiTest {
         siteName = draft.siteName,
         serviceDate = draft.dueDate ?: "2026-09-14",
         items = items,
-        groups = emptyList(),
+        groups = serviceProgressGroups(items),
     )
 
     private fun progressItem(

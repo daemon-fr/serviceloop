@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
@@ -70,6 +73,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -309,7 +313,7 @@ internal fun ServiceScreen(
             }
         }
         ServiceLoopPinnedBar {
-            ServiceLoopSecondaryButton("Visit overview", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
+            ServiceLoopSecondaryButton("Back to visit", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
             if (next != null) {
                 ServiceLoopPrimaryButton("Next service", { flushAndThen { replaceServiceDestination(nav, next.workItemId) } }, Modifier.fillMaxWidth().testTag("next-service"))
             } else {
@@ -351,11 +355,12 @@ internal fun ServiceProgressNavigator(
                     val selected = item.workItemId == currentWorkItemId
                     ServiceLoopDenseNavigableRow(
                         title = item.serviceName,
-                        context = serviceLoopSubjectLabel(item.subjectType, item.equipmentName, item.equipmentReference, item.equipmentDescription),
-                        status = item.navigationStatusLabel(),
-                        modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}").semantics { this.selected = selected },
-                        showDisclosure = true,
-                        onClick = { onSelect(item) },
+                        context = null,
+                        statusContent = { ServiceProgressBadge(item) },
+                        modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}"),
+                        selected = selected,
+                        showDisclosure = !selected,
+                        onClick = if (selected) null else ({ onSelect(item) }),
                     )
                 }
             }
@@ -413,11 +418,10 @@ private fun ServiceSaveState(
         )
         invalid != null -> ServiceLoopNotice("Needs attention", invalid.message, ServiceLoopNoticeKind.Warning)
         rawUnsettled || states.any { it is ServiceDraftFieldState.Pending || it is ServiceDraftFieldState.Saving } || saveStatus is SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The latest Service edit is being saved on this device.", ServiceLoopNoticeKind.Working)
-        else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Saved", color = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("service-save-state"))
+        else -> {
             val savedAt = states.filterIsInstance<ServiceDraftFieldState.Clean>().mapNotNull { it.savedAtEpochMillis }.maxOrNull()
                 ?: (saveStatus as? SaveStatus.Saved)?.atEpochMillis ?: draft.modifiedAtEpochMillis
-            Text("Saved ${formatTime(savedAt)}", style = MaterialTheme.typography.bodySmall)
+            Text(if (savedAt > 0) "Saved · ${formatTime(savedAt)}" else "Saved", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("service-save-state"))
         }
     }
 }
@@ -540,7 +544,7 @@ private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, qu
 private fun progressSummary(progress: VisitServiceProgress): String {
     val actionable = progress.actionableItems
     val values = listOf(
-        actionable.count { it.status == ServiceEntryStatus.READY } to "ready",
+        actionable.count { it.status == ServiceEntryStatus.READY } to "ready for outcome",
         actionable.count { it.status == ServiceEntryStatus.IN_PROGRESS } to "in progress",
         actionable.count { it.status == ServiceEntryStatus.NEEDS_ATTENTION } to "needs attention",
         actionable.count { it.status == ServiceEntryStatus.NOT_STARTED } to "not started",
@@ -556,8 +560,31 @@ private fun ServiceProgressItem.navigationStatusLabel(): String = when (document
         ServiceEntryStatus.NOT_STARTED -> "Not started"
         ServiceEntryStatus.IN_PROGRESS -> "In progress"
         ServiceEntryStatus.NEEDS_ATTENTION -> "Needs attention"
-        ServiceEntryStatus.READY -> "Ready"
+        ServiceEntryStatus.READY -> "Ready for outcome"
     }
+}
+
+@Composable
+private fun ServiceProgressBadge(item: ServiceProgressItem) {
+    val colors = LocalServiceLoopTokens.current
+    val (container, ink) = when (item.documentationMode) {
+        ServiceDocumentationMode.CHOICE_REQUIRED -> colors.warningContainer to colors.warningInk
+        ServiceDocumentationMode.LEADER_OBSERVE, ServiceDocumentationMode.DEFERRED -> colors.infoContainer to colors.infoInk
+        ServiceDocumentationMode.LOCAL -> when (item.status) {
+            ServiceEntryStatus.NOT_STARTED -> colors.infoContainer to colors.infoInk
+            ServiceEntryStatus.IN_PROGRESS -> colors.workingContainer to colors.workingInk
+            ServiceEntryStatus.NEEDS_ATTENTION -> colors.warningContainer to colors.warningInk
+            ServiceEntryStatus.READY -> colors.successContainer to colors.successInk
+        }
+    }
+    Text(
+        item.navigationStatusLabel(),
+        color = ink,
+        style = ServiceLoopUiTokens.Type.badge,
+        modifier = Modifier.clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.badge))
+            .background(container)
+            .padding(horizontal = ServiceLoopUiTokens.Space.sm, vertical = ServiceLoopUiTokens.Space.xs),
+    )
 }
 
 private fun fallbackProgress(draft: InspectionDraft): VisitServiceProgress {
