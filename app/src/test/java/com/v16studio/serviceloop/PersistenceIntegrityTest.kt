@@ -346,6 +346,17 @@ class PersistenceIntegrityTest {
         assertEquals("2026-12-05", line.proposedNextDueDate)
     }
 
+    @Test fun serviceWorkspaceMatchesTheRetainedIndividualProjections() = runTest {
+        seedFoundation()
+        val repository = RoomServiceLoopRepository(database, time)
+
+        val workspace = repository.serviceWorkspace("work-1")!!
+
+        assertEquals(repository.inspection("work-1"), workspace.inspection)
+        assertEquals(repository.completionLines("visit-1"), workspace.completionLines)
+        assertEquals(repository.serviceVisitProgress("visit-1"), workspace.serviceProgress)
+    }
+
     @Test fun fulfillmentProjectionKeepsPerformedAutomaticPartlyExplicitAndNotPerformedNonFulfilling() = runTest {
         seedFoundation()
         insertAdditionalWorkItem("work-partial", "PARTLY_PERFORMED", true)
