@@ -623,6 +623,7 @@ class CompletionUiSemanticTest {
         compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.firstOrNull { it.workItemId == "oneoff" }?.status == com.v16studio.serviceloop.domain.ServiceEntryStatus.READY }
         compose.onAllNodesWithTag("fulfill-oneoff").assertCountEquals(0)
         compose.onAllNodesWithTag("keep-due-oneoff").assertCountEquals(0)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
         compose.onNodeWithText("No recurring due date for this Service.").assertExists()
         InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)?.let { directory ->
             File(directory, "service-flow-2b-oneoff.png").outputStream().use { output ->

@@ -34,7 +34,7 @@ Outcome has no default. An eligible Performed outcome automatically fulfills the
 
 Dispatch documentation mode remains authoritative: local work is editable, pending choices require the Visit assignment, leader-observe work is visible but not documented locally, and handed-off work is read-only. The transitional FieldEvidence route is retained only for pre-existing connected/visual test callers; normal Service navigation no longer uses it.
 
-Successful Service saves use one compact status; the current Service row is selected and non-navigable; Service uses “Back to visit” alongside “Review visit”; Visit relationship actions follow the uninterrupted Visit identity; and task selection calls a reusable template an “Inspection checklist.”
+Successful Service saves use one compact status; the current Service row remains selected and actionable for in-screen positioning, while other Service rows navigate normally and no duplicate current-Service destination is pushed; Service uses “Back to visit” alongside “Review visit”; Visit relationship actions follow the uninterrupted Visit identity; and task selection calls a reusable template an “Inspection checklist.”
 
 ## Scope boundary
 

@@ -54,8 +54,10 @@ class B013VisualConsolidationSourceTest {
         assertTrue(screen.contains("serviceProgressGroupSummary"))
         assertTrue(screen.contains("serviceProgressStatusPhrase"))
         assertTrue(screen.contains("showDivider = index < group.items.lastIndex"))
-        assertFalse(screen.contains("Show services"))
-        assertFalse(screen.contains("Hide services"))
+        assertTrue(screen.contains("val actionWord = if (expanded) \"Hide\" else \"Show\""))
+        assertTrue(screen.contains("append(\"\$actionWord services"))
+        assertTrue(screen.contains("ServiceLoopIcons.CaretRight"))
+        assertTrue(screen.contains("ServiceLoopIcons.CaretDown"))
     }
 
     @Test fun ordinarySelectionsUseOneFramedPrimitiveWithoutFilterChipCallSites() {

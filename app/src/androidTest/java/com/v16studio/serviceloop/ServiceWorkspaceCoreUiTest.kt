@@ -149,7 +149,7 @@ class ServiceWorkspaceCoreUiTest {
             compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
                 .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
         )
-        compose.onNodeWithText("2 services · 2 services not started").assertIsDisplayed()
+        compose.onNodeWithText("Hide services (2)").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-service").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-second").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
@@ -193,7 +193,7 @@ class ServiceWorkspaceCoreUiTest {
         val current = progressItem("work-1", 1, "Electrical inspection").copy(status = ServiceEntryStatus.READY)
         val other = progressItem("work-2", 2, "Mechanical inspection")
         render(draft(), progress(draft(), listOf(current, other)))
-        compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasNoClickAction()
+        compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasClickAction().performClick()
         compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
         compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
