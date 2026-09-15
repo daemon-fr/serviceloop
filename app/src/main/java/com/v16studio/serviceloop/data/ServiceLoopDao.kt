@@ -463,6 +463,9 @@ interface ServiceLoopDao {
     @Query("UPDATE work_items SET outcome=:outcome, fulfillsCurrentObligation=:fulfills, notPerformedReason=:reason, confirmedNextDueDate=:nextDue, nextDueDateCalculated=:calculated, nextDueOverrideReason=:overrideReason WHERE id=:workItemId")
     suspend fun updateCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Int
 
+    @Query("UPDATE work_items SET confirmedNextDueDate=:nextDue, nextDueDateCalculated=1, nextDueOverrideReason=NULL WHERE id=:workItemId")
+    suspend fun saveCalculatedNextDueRecovery(workItemId: String, nextDue: String): Int
+
     @Query("UPDATE work_items SET fulfillsCurrentObligation=NULL, confirmedNextDueDate=NULL, nextDueDateCalculated=NULL, nextDueOverrideReason=NULL WHERE id=:workItemId")
     suspend fun invalidateFulfillment(workItemId: String): Int
 

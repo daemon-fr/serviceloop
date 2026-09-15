@@ -34,6 +34,23 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ServiceDraftAutosaveCoordinatorTest {
+    @Test fun invalidatingRecoveryLeavesUnrelatedFailedDraftActionable() = runTest {
+        val repository = BufferRepository()
+        val coordinator = ServiceDraftAutosaveCoordinator(repository, this)
+        val recovery = ServiceDraftFieldId("work-1", "result:nextDueRecovery")
+        val privateNote = ServiceDraftFieldId("work-1", ServiceDraftFieldKeys.PRIVATE)
+        coordinator.immediateConditionalChoice(recovery, "2026-12-05", { error("recovery failed") })
+        coordinator.scheduleText(privateNote, "private draft", writer = { error("note failed") })
+        advanceUntilIdle()
+
+        assertTrue(coordinator.states.value[recovery] is ServiceDraftFieldState.Failed)
+        assertTrue(coordinator.states.value[privateNote] is ServiceDraftFieldState.Failed)
+        coordinator.invalidate(recovery)
+
+        assertFalse(coordinator.states.value.containsKey(recovery))
+        assertTrue(coordinator.states.value[privateNote] is ServiceDraftFieldState.Failed)
+        assertEquals("private draft", repository.buffers[privateNote])
+    }
     @Test fun validTextDebouncesWritesCanonicalTrimAndClearsRawBuffer() = runTest {
         val repository = BufferRepository()
         val coordinator = ServiceDraftAutosaveCoordinator(repository, this)

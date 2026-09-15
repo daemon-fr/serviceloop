@@ -53,6 +53,11 @@ data class ServiceDraftValidation(val message: String? = null) {
     val valid: Boolean get() = message == null
 }
 
+sealed interface ServiceDraftChoiceWriteResult {
+    data class Applied(val savedAtEpochMillis: Long) : ServiceDraftChoiceWriteResult
+    data object Superseded : ServiceDraftChoiceWriteResult
+}
+
 object ServiceDraftValidators {
     fun alwaysValid(): (String) -> ServiceDraftValidation = { ServiceDraftValidation() }
 
@@ -103,12 +108,13 @@ class ServiceDraftAutosaveCoordinator(
 
     private data class ChoiceOperation(
         val rawValue: String,
-        val writer: suspend (String) -> Long,
+        val writer: suspend (String) -> ServiceDraftChoiceWriteResult,
         val onSaved: suspend (Long) -> Unit,
         val question: ServiceDraftQuestionId? = null,
         val questionWriter: (suspend (ServiceDraftQuestionDrafts) -> Long)? = null,
         val discardRawFields: Set<ServiceDraftFieldId> = emptySet(),
         val onFailed: suspend (Exception) -> Unit = {},
+        val onSuperseded: suspend () -> Unit = {},
     )
 
     private val stateLock = Any()
@@ -262,13 +268,24 @@ class ServiceDraftAutosaveCoordinator(
         writer: suspend (String) -> Long,
         onSaved: suspend (Long) -> Unit,
     ) {
+        immediateConditionalChoice(fieldId, rawValue, { value -> ServiceDraftChoiceWriteResult.Applied(writer(value)) }, onSaved)
+    }
+
+    fun immediateConditionalChoice(
+        fieldId: ServiceDraftFieldId,
+        rawValue: String,
+        writer: suspend (String) -> ServiceDraftChoiceWriteResult,
+        onSaved: suspend (Long) -> Unit = {},
+        onSuperseded: suspend () -> Unit = {},
+    ) {
+        val operation = ChoiceOperation(rawValue, writer, onSaved, onSuperseded = onSuperseded)
         val version = synchronized(stateLock) {
             val next = versions.getOrDefault(fieldId, 0L) + 1L
             versions[fieldId] = next
             latestOperations.remove(fieldId)
-            latestChoices[fieldId] = ChoiceOperation(rawValue, writer, onSaved)
+            latestChoices[fieldId] = operation
             jobs[fieldId]?.cancel()
-            jobs[fieldId] = scope.launch { persistChoice(fieldId, next, rawValue, writer, onSaved) }
+            jobs[fieldId] = scope.launch { persistChoice(fieldId, next, rawValue, writer, onSaved, operation) }
             next
         }
         check(version > 0)
@@ -370,11 +387,11 @@ class ServiceDraftAutosaveCoordinator(
         synchronized(stateLock) { latestChoices[fieldId] }?.let { choice ->
             if (choice.question != null && choice.questionWriter != null) {
                 immediateQuestionChoice(choice.question, fieldId, choice.rawValue, choice.questionWriter, choice.discardRawFields, choice.onSaved, choice.onFailed)
-            } else immediateChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved)
+            } else immediateConditionalChoice(fieldId, choice.rawValue, choice.writer, choice.onSaved, choice.onSuperseded)
         }
     }
 
-    suspend fun cancelAndJoin(fieldId: ServiceDraftFieldId) {
+    fun invalidate(fieldId: ServiceDraftFieldId): Job? {
         val job = synchronized(stateLock) {
             val removedJob = jobs.remove(fieldId)
             versions.remove(fieldId)
@@ -383,8 +400,14 @@ class ServiceDraftAutosaveCoordinator(
             savedAt.remove(fieldId)
             removedJob
         }
-        job?.cancelAndJoin()
+        job?.cancel()
         _states.update { current -> current - fieldId }
+        return job
+    }
+
+    suspend fun cancelAndJoin(fieldId: ServiceDraftFieldId) {
+        val job = invalidate(fieldId)
+        job?.cancelAndJoin()
     }
 
     private suspend fun persistText(fieldId: ServiceDraftFieldId, version: Long, operation: TextOperation, immediate: Boolean, questionVersion: Long? = null) {
@@ -430,14 +453,19 @@ class ServiceDraftAutosaveCoordinator(
         }
     }
 
-    private suspend fun persistChoice(fieldId: ServiceDraftFieldId, version: Long, rawValue: String, writer: suspend (String) -> Long, onSaved: suspend (Long) -> Unit, operation: ChoiceOperation? = null, questionVersion: Long? = null) {
+    private suspend fun persistChoice(fieldId: ServiceDraftFieldId, version: Long, rawValue: String, writer: suspend (String) -> ServiceDraftChoiceWriteResult, onSaved: suspend (Long) -> Unit, operation: ChoiceOperation? = null, questionVersion: Long? = null) {
         try {
             if (!isCurrent(fieldId, version, operation?.question, questionVersion)) return
             setState(fieldId, ServiceDraftFieldState.Saving)
-            val savedAt = canonicalWriteMutex.withLock {
+            val result = canonicalWriteMutex.withLock {
                 if (!isCurrent(fieldId, version, operation?.question, questionVersion)) return@withLock null
-                if (operation?.question != null && operation.questionWriter != null) operation.questionWriter(questionDrafts(operation.question)) else writer(rawValue)
+                if (operation?.question != null && operation.questionWriter != null) ServiceDraftChoiceWriteResult.Applied(operation.questionWriter(questionDrafts(operation.question))) else writer(rawValue)
             } ?: return
+            if (result is ServiceDraftChoiceWriteResult.Superseded) {
+                if (retireIfCurrent(fieldId, version)) runCatching { operation?.onSuperseded?.invoke() }
+                return
+            }
+            val savedAt = (result as ServiceDraftChoiceWriteResult.Applied).savedAtEpochMillis
             if (isCurrent(fieldId, version, operation?.question, questionVersion)) {
                 if (operation?.question != null) finishQuestionTransition(operation.question, questionVersion!!, savedAt, operation.discardRawFields)
                 else {
@@ -508,6 +536,19 @@ class ServiceDraftAutosaveCoordinator(
 
     private fun setState(fieldId: ServiceDraftFieldId, state: ServiceDraftFieldState) {
         _states.update { current -> current + (fieldId to state) }
+    }
+
+    private fun retireIfCurrent(fieldId: ServiceDraftFieldId, version: Long): Boolean {
+        synchronized(stateLock) {
+            if (versions[fieldId] != version) return false
+            versions.remove(fieldId)
+            latestOperations.remove(fieldId)
+            latestChoices.remove(fieldId)
+            jobs.remove(fieldId)
+            savedAt.remove(fieldId)
+        }
+        _states.update { current -> current - fieldId }
+        return true
     }
 
     private fun resultFor(fields: Set<ServiceDraftFieldId>): ServiceDraftFlushResult {

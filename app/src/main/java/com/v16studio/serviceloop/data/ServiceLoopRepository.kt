@@ -70,6 +70,7 @@ interface ServiceLoopRepository {
     @Deprecated("Checklist completeness is derived from the current snapshot and responses")
     suspend fun markChecklistReviewed(workItemId: String): Long = error("Checklist review unavailable")
     suspend fun saveCompletionDraft(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?): Long = error("Completion draft unavailable")
+    suspend fun recoverMissingCalculatedNextDue(request: NextDueRecoveryRequest): NextDueRecoveryResult = error("Next-due recovery unavailable")
     suspend fun finalizeVisit(visitId: String): FinalizeResult = FinalizeResult.Blocked("Finalization unavailable")
     suspend fun finalRecord(recordId: String): FinalRecordDetail? = null
     suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String? = null): FinalRecordDetail? = null
@@ -154,6 +155,19 @@ interface ServiceLoopRepository {
     suspend fun reminderPreferences(): ReminderPreferences = ReminderPreferences()
     suspend fun saveReminderPreferences(value: ReminderPreferences): Long = error("Reminder settings unavailable")
     suspend fun setAppointmentReminderLead(visitId: String, minutes: Int?): Long = error("Appointment reminder unavailable")
+}
+
+data class NextDueRecoveryRequest(
+    val workItemId: String,
+    val visitId: String,
+    val expectedOutcome: String,
+    val expectedCapturedObligationId: String,
+    val expectedCalculatedDate: String,
+)
+
+sealed interface NextDueRecoveryResult {
+    data class Applied(val savedAtEpochMillis: Long) : NextDueRecoveryResult
+    data object Superseded : NextDueRecoveryResult
 }
 
 fun interface DraftWriteGate { suspend fun beforeWrite() }
@@ -1088,6 +1102,7 @@ class RoomServiceLoopRepository(
                 equipmentId = item.equipmentId,
                 equipmentDescription = item.equipmentDescriptionSnapshot,
                 currentObligationOutstanding = currentObligationOutstanding,
+                capturedObligationId = item.capturedObligationId,
             )
         }
     }
@@ -1314,6 +1329,41 @@ class RoomServiceLoopRepository(
             dao.touchVisit(current.visitId, now)
         }
         return now
+    }
+
+    override suspend fun recoverMissingCalculatedNextDue(request: NextDueRecoveryRequest): NextDueRecoveryResult {
+        require(request.expectedOutcome in setOf("PERFORMED", "PARTLY_PERFORMED"))
+        if (!database.withTransaction { nextDueRecoveryApplicable(request) }) return NextDueRecoveryResult.Superseded
+        writeGate.beforeWrite()
+        return database.withTransaction {
+            if (!nextDueRecoveryApplicable(request)) return@withTransaction NextDueRecoveryResult.Superseded
+            val now = businessTime.instant().toEpochMilli()
+            check(dao.saveCalculatedNextDueRecovery(request.workItemId, request.expectedCalculatedDate) == 1)
+            dao.touchVisit(request.visitId, now)
+            NextDueRecoveryResult.Applied(now)
+        }
+    }
+
+    private suspend fun nextDueRecoveryApplicable(request: NextDueRecoveryRequest): Boolean {
+        val item = dao.workItem(request.workItemId) ?: return false
+        val visit = dao.visit(item.visitId) ?: return false
+        val binding = dispatchDao.itemBindingForWorkItem(item.id)
+        val plan = item.servicePlanId?.let { dao.plan(it) }
+        val obligation = item.capturedObligationId?.let { dao.obligation(it) }
+        val calculatedDate = if (item.intervalCountSnapshot != null && item.intervalUnitSnapshot != null) {
+            RecurrenceCalculator.nextDate(LocalDate.parse(visit.actualServiceDate), item.intervalCountSnapshot, item.intervalUnitSnapshot).toString()
+        } else null
+        return item.visitId == request.visitId &&
+            visit.state == "WORKING" &&
+            serviceDocumentationMode(binding?.localRole, binding?.documentationDisposition) == ServiceDocumentationMode.LOCAL &&
+            item.outcome == request.expectedOutcome &&
+            item.outcome in setOf("PERFORMED", "PARTLY_PERFORMED") &&
+            item.fulfillsCurrentObligation == true &&
+            item.capturedObligationId == request.expectedCapturedObligationId &&
+            item.confirmedNextDueDate == null &&
+            dao.workingInputBuffers(item.id).none { it.fieldKey in setOf(ServiceDraftFieldKeys.OVERRIDE_DATE, ServiceDraftFieldKeys.OVERRIDE_REASON) } &&
+            fulfillmentEligibility(item, plan, obligation) == FulfillmentEligibility.ELIGIBLE &&
+            calculatedDate == request.expectedCalculatedDate
     }
 
     override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long = saveResponseInternal(

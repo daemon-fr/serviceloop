@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.v16studio.serviceloop.AppContainer
 import com.v16studio.serviceloop.data.ServiceLoopRepository
+import com.v16studio.serviceloop.data.NextDueRecoveryRequest
+import com.v16studio.serviceloop.data.NextDueRecoveryResult
 import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.CustomerSummary
 import com.v16studio.serviceloop.domain.EquipmentDetail
@@ -33,10 +35,12 @@ import com.v16studio.serviceloop.ui.service.ServiceDraftValidators
 import com.v16studio.serviceloop.ui.service.ServiceDraftValidation
 import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionFieldKind
 import com.v16studio.serviceloop.ui.service.ServiceDraftQuestionId
+import com.v16studio.serviceloop.ui.service.ServiceDraftChoiceWriteResult
 import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -242,6 +246,7 @@ class ServiceLoopViewModel(
     }
 
     fun loadInspection(id: String) {
+        _state.value.activeServiceWorkItemId?.takeIf { it != id }?.let(::supersedeNextDueRecovery)
         val request = issueRequest("inspection")
         issueRequest("draftSaveContext")
         launchLoad {
@@ -748,19 +753,31 @@ class ServiceLoopViewModel(
         onSaved = { refreshServiceContext(workItemId) },
     )
 
-    fun scheduleNotPerformedReason(workItemId: String, visitId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
-        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.NOT_PERFORMED_REASON), rawValue, ServiceDraftValidators.alwaysValid(),
-        writer = { value -> repository.saveCompletionDraft(workItemId, "NOT_PERFORMED", false, value, null, null, null) },
-        onSaved = { refreshServiceContext(workItemId) },
-    )
+    fun scheduleNotPerformedReason(workItemId: String, visitId: String, rawValue: String) {
+        val obsoleteRecovery = supersedeNextDueRecovery(workItemId)
+        viewModelScope.launch {
+            obsoleteRecovery?.cancelAndJoin()
+            serviceDraftAutosaveCoordinator.scheduleText(
+                ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.NOT_PERFORMED_REASON), rawValue, ServiceDraftValidators.alwaysValid(),
+                writer = { value -> repository.saveCompletionDraft(workItemId, "NOT_PERFORMED", false, value, null, null, null) },
+                onSaved = { refreshServiceContext(workItemId) },
+            )
+        }
+    }
 
-    fun scheduleRecurrenceOverrideDate(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleRaw(
-        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), rawValue, ServiceDraftValidators.isoDate(),
-    )
+    fun scheduleRecurrenceOverrideDate(workItemId: String, rawValue: String) {
+        supersedeNextDueRecovery(workItemId)
+        serviceDraftAutosaveCoordinator.scheduleRaw(
+            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE), rawValue, ServiceDraftValidators.isoDate(),
+        )
+    }
 
-    fun scheduleRecurrenceOverrideReason(workItemId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleRaw(
-        ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON), rawValue, ServiceDraftValidators.requiredText("Override reason"),
-    )
+    fun scheduleRecurrenceOverrideReason(workItemId: String, rawValue: String) {
+        supersedeNextDueRecovery(workItemId)
+        serviceDraftAutosaveCoordinator.scheduleRaw(
+            ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_REASON), rawValue, ServiceDraftValidators.requiredText("Override reason"),
+        )
+    }
 
     fun chooseResponse(workItemId: String, questionId: String, disposition: ResponseDisposition) {
         serviceDraftAutosaveCoordinator.immediateQuestionChoice(
@@ -784,44 +801,63 @@ class ServiceLoopViewModel(
             "NOT_PERFORMED" -> false
             else -> null
         }
-        serviceDraftAutosaveCoordinator.immediateChoice(
-            ServiceDraftFieldId(workItemId, "result:outcome"), outcome,
-            writer = { repository.saveCompletionDraft(workItemId, outcome, fulfills, line.notPerformedReason.takeIf { outcome == "NOT_PERFORMED" }, line.confirmedNextDueDate.takeIf { sameOutcome }, line.nextDueDateCalculated.takeIf { sameOutcome }, line.nextDueOverrideReason.takeIf { sameOutcome }) },
-            onSaved = { refreshServiceContext(workItemId) },
-        )
+        val obsoleteRecovery = supersedeNextDueRecovery(workItemId)
+        viewModelScope.launch {
+            obsoleteRecovery?.cancelAndJoin()
+            serviceDraftAutosaveCoordinator.immediateChoice(
+                ServiceDraftFieldId(workItemId, "result:outcome"), outcome,
+                writer = { repository.saveCompletionDraft(workItemId, outcome, fulfills, line.notPerformedReason.takeIf { outcome == "NOT_PERFORMED" }, line.confirmedNextDueDate.takeIf { sameOutcome }, line.nextDueDateCalculated.takeIf { sameOutcome }, line.nextDueOverrideReason.takeIf { sameOutcome }) },
+                onSaved = { refreshServiceContext(workItemId) },
+            )
+        }
     }
 
     fun chooseFulfillment(workItemId: String, visitId: String, fulfills: Boolean) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
-        serviceDraftAutosaveCoordinator.immediateChoice(
-            ServiceDraftFieldId(workItemId, "result:fulfillment"), fulfills.toString(),
-            writer = { repository.saveCompletionDraft(workItemId, line.outcome, fulfills, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
-            onSaved = { refreshServiceContext(workItemId) },
-        )
+        val obsoleteRecovery = supersedeNextDueRecovery(workItemId)
+        viewModelScope.launch {
+            obsoleteRecovery?.cancelAndJoin()
+            serviceDraftAutosaveCoordinator.immediateChoice(
+                ServiceDraftFieldId(workItemId, "result:fulfillment"), fulfills.toString(),
+                writer = { repository.saveCompletionDraft(workItemId, line.outcome, fulfills, line.notPerformedReason, line.confirmedNextDueDate, line.nextDueDateCalculated, line.nextDueOverrideReason) },
+                onSaved = { refreshServiceContext(workItemId) },
+            )
+        }
     }
 
     fun useCalculatedNextDue(workItemId: String, visitId: String) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
         val calculatedDate = line.calculatedNextDueDate ?: return
+        val capturedObligationId = line.capturedObligationId ?: return
         if (line.fulfillsCurrentObligation != true || line.confirmedNextDueDate != null) return
-        serviceDraftAutosaveCoordinator.immediateChoice(
+        val request = issueRequest("nextDueRecovery:$workItemId")
+        serviceDraftAutosaveCoordinator.immediateConditionalChoice(
             ServiceDraftFieldId(workItemId, "result:nextDueRecovery"), calculatedDate,
             writer = {
-                repository.saveCompletionDraft(
-                    workItemId,
-                    line.outcome,
-                    true,
-                    line.notPerformedReason,
-                    calculatedDate,
-                    true,
-                    null,
-                )
+                if (!isCurrent(request)) ServiceDraftChoiceWriteResult.Superseded
+                else when (val result = repository.recoverMissingCalculatedNextDue(NextDueRecoveryRequest(workItemId, visitId, line.outcome!!, capturedObligationId, calculatedDate))) {
+                    is NextDueRecoveryResult.Applied -> ServiceDraftChoiceWriteResult.Applied(result.savedAtEpochMillis)
+                    NextDueRecoveryResult.Superseded -> ServiceDraftChoiceWriteResult.Superseded
+                }
             },
             onSaved = {
-                refreshServiceContext(workItemId)
-                loadCompletion(visitId)
+                if (isCurrent(request) && _state.value.completionVisitId == visitId) {
+                    refreshServiceContext(workItemId)
+                    loadCompletion(visitId)
+                }
+            },
+            onSuperseded = {
+                if (isCurrent(request) && _state.value.completionVisitId == visitId) {
+                    refreshServiceContext(workItemId)
+                    loadCompletion(visitId)
+                }
             },
         )
+    }
+
+    private fun supersedeNextDueRecovery(workItemId: String): Job? {
+        issueRequest("nextDueRecovery:$workItemId")
+        return serviceDraftAutosaveCoordinator.invalidate(ServiceDraftFieldId(workItemId, "result:nextDueRecovery"))
     }
 
     fun applyRecurrenceOverride(workItemId: String, visitId: String, date: String, reason: String) {
@@ -834,12 +870,14 @@ class ServiceLoopViewModel(
             _state.update { it.copy(error = "Override reason is required") }
             return
         }
+        val obsoleteRecovery = supersedeNextDueRecovery(workItemId)
         val request = issueRequest("completion")
         val saveContext = issueRequest("draftSaveContext")
         val lastSaved = _state.value.saveStatus.lastSavedCheckpoint()
         _state.update { current -> if (current.completionVisitId == visitId) current.copy(saveStatus = SaveStatus.Saving, error = null) else current }
         viewModelScope.launch {
             try {
+                obsoleteRecovery?.cancelAndJoin()
                 serviceDraftAutosaveCoordinator.cancelAndJoin(
                     ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.OVERRIDE_DATE),
                 )

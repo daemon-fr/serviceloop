@@ -41,6 +41,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -275,6 +276,135 @@ class CompletionUiSemanticTest {
         viewModel.retryFailedServiceEdits("w")
         compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")!!.confirmedNextDueDate == "2026-12-05" } }
         org.junit.Assert.assertEquals("WORKING", runBlocking { database.serviceLoopDao().visit("v")!!.state })
+    }
+
+    @Test fun failedCalculatedRecoveryRetryCannotRestorePerformedAfterNewNotPerformedDecision() {
+        runBlocking { database.serviceLoopDao().updateWorkItem(database.serviceLoopDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomServiceLoopRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "visit/v") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } && compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("use-calculated-next-due"))
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value[com.v16studio.serviceloop.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")] is com.v16studio.serviceloop.ui.service.ServiceDraftFieldState.Failed }
+        fail.set(false)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-NOT_PERFORMED"))
+        compose.onNodeWithTag("outcome-w-NOT_PERFORMED").performClick()
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.outcome == "NOT_PERFORMED" } }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("not-performed-reason"))
+        compose.onNodeWithTag("not-performed-reason", useUnmergedTree = true).performTextReplacement("Access unavailable")
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.notPerformedReason == "Access unavailable" } }
+
+        compose.onAllNodesWithTag("retry-service-edits").assertCountEquals(0)
+        viewModel.retryFailedServiceEdits("w")
+        runBlocking { org.junit.Assert.assertTrue(viewModel.flushServiceDraft("w").success) }
+        compose.waitForIdle()
+        viewModel.loadInspection("w")
+        compose.waitUntil(10_000) { viewModel.state.value.inspection?.workItemId == "w" }
+        runBlocking {
+            val saved = database.serviceLoopDao().workItem("w")!!
+            org.junit.Assert.assertEquals("NOT_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertEquals("Access unavailable", saved.notPerformedReason)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.serviceloop.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
+    }
+
+    @Test fun failedCalculatedRecoveryRetryCannotTurnPartlyKeepDueBackIntoFulfill() {
+        runBlocking { database.serviceLoopDao().updateWorkItem(database.serviceLoopDao().workItem("w")!!.copy(outcome = "PARTLY_PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomServiceLoopRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+
+        viewModel.useCalculatedNextDue("w", "v")
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value[com.v16studio.serviceloop.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")] is com.v16studio.serviceloop.ui.service.ServiceDraftFieldState.Failed }
+        fail.set(false)
+        viewModel.chooseFulfillment("w", "v", false)
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.fulfillsCurrentObligation == false } }
+
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.serviceLoopDao().workItem("w")!!
+            org.junit.Assert.assertEquals("PARTLY_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.serviceloop.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
+    }
+
+    @Test fun failedRecoveryCannotReplaceNewManualOverrideOrRawOverrideIntent() {
+        runBlocking { database.serviceLoopDao().updateWorkItem(database.serviceLoopDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomServiceLoopRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        viewModel.useCalculatedNextDue("w", "v")
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value.values.any { it is com.v16studio.serviceloop.ui.service.ServiceDraftFieldState.Failed } }
+        fail.set(false)
+
+        viewModel.scheduleRecurrenceOverrideDate("w", "2026-1")
+        viewModel.scheduleRecurrenceOverrideReason("w", " exact raw reason ")
+        compose.waitUntil(10_000) { runBlocking { repository.workingInputBuffers("w")[com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_REASON] == " exact raw reason " } }
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            org.junit.Assert.assertNull(database.serviceLoopDao().workItem("w")!!.confirmedNextDueDate)
+            org.junit.Assert.assertEquals("2026-1", repository.workingInputBuffers("w")[com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_DATE])
+            org.junit.Assert.assertEquals(" exact raw reason ", repository.workingInputBuffers("w")[com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_REASON])
+        }
+
+        viewModel.scheduleRecurrenceOverrideDate("w", "2026-12-20")
+        viewModel.scheduleRecurrenceOverrideReason("w", "Customer requested later")
+        compose.waitUntil(10_000) { runBlocking { repository.workingInputBuffers("w")[com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_DATE] == "2026-12-20" } }
+        viewModel.applyRecurrenceOverride("w", "v", "2026-12-20", "Customer requested later")
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.confirmedNextDueDate == "2026-12-20" } }
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.serviceLoopDao().workItem("w")!!
+            org.junit.Assert.assertEquals("2026-12-20", saved.confirmedNextDueDate)
+            org.junit.Assert.assertEquals(false, saved.nextDueDateCalculated)
+            org.junit.Assert.assertEquals("Customer requested later", saved.nextDueOverrideReason)
+        }
+    }
+
+    @Test fun inFlightRecoveryIsCancelledBeforeNewOutcomeWrites() {
+        runBlocking { database.serviceLoopDao().updateWorkItem(database.serviceLoopDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = AtomicBoolean(true)
+        val repository = RoomServiceLoopRepository(database, fixedTime(), DraftWriteGate {
+            if (first.compareAndSet(true, false)) {
+                entered.complete(Unit)
+                release.await()
+            }
+        })
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        viewModel.useCalculatedNextDue("w", "v")
+        runBlocking { entered.await() }
+        viewModel.chooseOutcome("w", "v", "NOT_PERFORMED")
+        release.complete(Unit)
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.outcome == "NOT_PERFORMED" } }
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.serviceLoopDao().workItem("w")!!
+            org.junit.Assert.assertEquals("NOT_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.serviceloop.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
     }
 
     private fun fixedTime() = object : BusinessTime {

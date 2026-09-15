@@ -45,6 +45,53 @@ class Sl2IntegrityTest {
         assertEquals(LocalDate.parse("2026-09-08"), RecurrenceCalculator.nextDate(LocalDate.parse("2026-09-05"), 3, "DAYS"))
     }
 
+    @Test fun missingNextDueRecoveryIsConditionalDateOnlyAndDuplicateSafe() = runTest {
+        seed(); val dao = db.serviceLoopDao(); val repository = repo()
+        suspend fun missing(outcome: String) {
+            dao.updateWorkItem(dao.workItem("work-1")!!.copy(outcome = outcome, fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null, nextDueOverrideReason = null))
+        }
+        fun request(outcome: String) = NextDueRecoveryRequest("work-1", "visit-1", outcome, "obligation-1", "2026-12-05")
+
+        missing("PERFORMED")
+        assertTrue(repository.recoverMissingCalculatedNextDue(request("PERFORMED")) is NextDueRecoveryResult.Applied)
+        assertEquals("PERFORMED", dao.workItem("work-1")!!.outcome)
+        assertEquals("2026-12-05", dao.workItem("work-1")!!.confirmedNextDueDate)
+
+        dao.updateWorkItem(dao.workItem("work-1")!!.copy(confirmedNextDueDate = "2027-01-10", nextDueDateCalculated = false, nextDueOverrideReason = "Customer request"))
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request("PERFORMED")))
+        assertEquals("2027-01-10", dao.workItem("work-1")!!.confirmedNextDueDate)
+        assertEquals(false, dao.workItem("work-1")!!.nextDueDateCalculated)
+        assertEquals("Customer request", dao.workItem("work-1")!!.nextDueOverrideReason)
+
+        missing("PARTLY_PERFORMED")
+        assertTrue(repository.recoverMissingCalculatedNextDue(request("PARTLY_PERFORMED")) is NextDueRecoveryResult.Applied)
+        assertEquals("PARTLY_PERFORMED", dao.workItem("work-1")!!.outcome)
+        assertEquals(true, dao.workItem("work-1")!!.fulfillsCurrentObligation)
+    }
+
+    @Test fun missingNextDueRecoveryRetiresChangedIntentRawDraftAndEligibility() = runTest {
+        seed(); val dao = db.serviceLoopDao(); val repository = repo()
+        val request = NextDueRecoveryRequest("work-1", "visit-1", "PERFORMED", "obligation-1", "2026-12-05")
+        suspend fun resetMissing() = dao.updateWorkItem(dao.workItem("work-1")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null, nextDueOverrideReason = null))
+
+        resetMissing(); repository.saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertEquals("NOT_PERFORMED", dao.workItem("work-1")!!.outcome)
+
+        resetMissing(); dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE, "2026-1", 2))
+        dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON, " exact raw reason ", 3))
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertNull(dao.workItem("work-1")!!.confirmedNextDueDate)
+        assertEquals("2026-1", dao.workingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE)!!.rawValue)
+        assertEquals(" exact raw reason ", dao.workingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON)!!.rawValue)
+
+        dao.deleteWorkingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE); dao.deleteWorkingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON)
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-new", "plan-1", 2, "2026-10-01", 4)))
+        dao.setCurrentObligationForTest("plan-1", "obligation-new")
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertNull(dao.workItem("work-1")!!.confirmedNextDueDate)
+    }
+
     @Test fun checklistReviewRequiresCompleteFindingAndSavedEditInvalidatesReview() = runTest {
         seed(withChecklist = true); val repository = repo()
         try { repository.markChecklistReviewed("work-1"); fail("Expected incomplete review") } catch (_: IllegalArgumentException) {}
