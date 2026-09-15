@@ -103,8 +103,8 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Book visit").performClick()
         compose.waitUntil(15_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().visitCount()==1}}
         compose.waitUntil(15_000){compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasText("Start with current details"))
-        compose.onNodeWithText("Start with current details").assertIsDisplayed()
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("start-visit"))
+        compose.onNodeWithTag("start-visit").assertIsDisplayed()
         compose.onNodeWithText("New appointment date").performTextReplacement("2026-09-12")
         compose.onNodeWithText("Reschedule reason").performTextInput("Customer requested another date")
         compose.onNodeWithText("Reschedule booking").performScrollTo().performClick()
@@ -134,7 +134,7 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Register").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
         compose.onNodeWithText("Site name · Required").performTextInput("Long text site")
         val longNote="Unsaved long private note that deliberately occupies enough compact-field space to exercise the reserved expand affordance region without creating a second editing buffer."
-        compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed().performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput(longNote); compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("customer-editor").performScrollToNode(hasTestTag("long-text-private-customer-note-expand")); compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed().performClick(); compose.onNodeWithTag("long-text-private-customer-note-expanded").performTextInput(longNote); compose.onNodeWithText("Done").performClick()
         compose.onNodeWithTag("long-text-private-customer-note-expand").assertIsDisplayed(); compose.onNodeWithTag("long-text-private-customer-note").assertTextContains(longNote); assertEquals(0,database.serviceLoopDao().customerCount()); compose.onNodeWithTag("customer-editor").performScrollToNode(hasTestTag("save-customer")); compose.onNodeWithTag("save-customer").performClick(); compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; assertEquals(longNote,repository.customer(database.serviceLoopDao().customerList().single().id)!!.privateNote); Unit
     }
 

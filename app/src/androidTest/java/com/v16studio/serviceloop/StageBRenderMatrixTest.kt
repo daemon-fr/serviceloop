@@ -8,6 +8,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import com.v16studio.serviceloop.data.FinalRecordEntity
+import com.v16studio.serviceloop.data.WorkItemPrivateDraftEntity
+import com.v16studio.serviceloop.data.WorkItemPublicDraftEntity
+import com.v16studio.serviceloop.domain.FinalizeResult
 import androidx.navigation.compose.rememberNavController
 import com.v16studio.serviceloop.domain.VisitDetail
 import com.v16studio.serviceloop.domain.VisitLine
@@ -28,10 +32,57 @@ class StageBRenderMatrixTest {
 
     private data class Shot(val group:String,val name:String,val route:String?)
 
+    private fun ensureStageBFinalRecord(app: ServiceLoopApplication): FinalRecordEntity {
+        val dao = app.container.database.serviceLoopDao()
+        val existing = runBlocking { dao.finalRecordForVisit(STAGE_B_VISIT_ID) }
+        if (existing != null) return existing
+
+        runBlocking {
+            check(dao.visit(STAGE_B_VISIT_ID) == null) { "Stage B fixture visit exists without its final record" }
+            val sourceVisit = dao.visit(FixtureIds.VISIT_1) ?: error("V-001 source fixture is required")
+            val sourceWork = dao.visitWorkItems(FixtureIds.VISIT_1).firstOrNull() ?: error("V-001 work fixture is required")
+            dao.insertVisits(listOf(
+                sourceVisit.copy(
+                    id = STAGE_B_VISIT_ID,
+                    reference = STAGE_B_VISIT_REFERENCE,
+                    state = "WORKING",
+                ),
+            ))
+            dao.insertWorkItems(listOf(
+                sourceWork.copy(
+                    id = STAGE_B_WORK_ID,
+                    visitId = STAGE_B_VISIT_ID,
+                    servicePlanId = null,
+                    capturedObligationId = null,
+                    templateSnapshotId = null,
+                    serviceNameSnapshot = "Stage B rendering service",
+                    planReferenceSnapshot = null,
+                    dueDateSnapshot = null,
+                    intervalCountSnapshot = null,
+                    intervalUnitSnapshot = null,
+                    checklistReviewed = false,
+                    outcome = "PERFORMED",
+                    fulfillsCurrentObligation = false,
+                    notPerformedReason = null,
+                    confirmedNextDueDate = null,
+                    nextDueDateCalculated = null,
+                    nextDueOverrideReason = null,
+                ),
+            ))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(STAGE_B_WORK_ID, "Stage B fixture work was completed for rendering.")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(STAGE_B_WORK_ID, "Stage B test-owned final record fixture.")))
+        }
+
+        val result = runBlocking { app.container.repository.finalizeVisit(STAGE_B_VISIT_ID) }
+        check(result is FinalizeResult.Success) { "Stage B final fixture could not be finalized: $result" }
+        return runBlocking { dao.finalRecordForVisit(STAGE_B_VISIT_ID) }
+            ?: error("Stage B final record was not persisted")
+    }
+
     private fun render(dark:Boolean) {
         val app=compose.activity.application as ServiceLoopApplication
         val dao=app.container.database.serviceLoopDao()
-        val record=runBlocking{dao.finalRecordForVisit(FixtureIds.VISIT_1)} ?: error("V-001 final record fixture is required")
+        val record = ensureStageBFinalRecord(app)
         val revision=runBlocking{dao.finalRevisions(record.id).first()}
         val route=mutableStateOf<String?>(null)
         app.container.appearancePreferences.setMode(if (dark) com.v16studio.serviceloop.ui.theme.AppearanceMode.DARK else com.v16studio.serviceloop.ui.theme.AppearanceMode.LIGHT)
@@ -113,4 +164,10 @@ class StageBRenderMatrixTest {
 
     @Test fun lightB1ToB4Matrix()=render(false)
     @Test fun darkB1ToB4Matrix()=render(true)
+
+    private companion object {
+        const val STAGE_B_VISIT_ID = "stage-b-render-final-visit"
+        const val STAGE_B_VISIT_REFERENCE = "V-STAGE-B"
+        const val STAGE_B_WORK_ID = "stage-b-render-final-work"
+    }
 }

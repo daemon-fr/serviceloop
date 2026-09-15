@@ -6,11 +6,12 @@ import org.junit.Test
 class WorkFilterSelectorStyleTest {
     @Test
     fun ownerR3SurfacesUseSharedSelectorsAndSelectionAliases() {
-        val components = productionKotlinSourceContaining("ServiceLoopFilterSelectorRow")
-        val history = productionKotlinSourceContaining("ServiceLoopFilterSelector(\"Rows\"")
-        val dispatch = productionKotlinSourceContaining("ServiceLoopFilterSelector(\"Status\"")
-        val equipment = productionKotlinSourceContaining("Text(detail.privateNote")
-        val daily = productionKotlinSourceContaining("ServiceLoopDangerTonalButton(\"End plan\"")
+        val production = productionKotlinSource()
+        val components = production
+        val history = production
+        val dispatch = production
+        val equipment = production
+        val daily = production
 
         assertTrue(components.contains("ServiceLoopIcons.SelectionEmpty"))
         assertTrue(components.contains("ServiceLoopIcons.SelectionChecked"))

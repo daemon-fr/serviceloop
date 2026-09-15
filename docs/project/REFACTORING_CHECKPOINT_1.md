@@ -1,39 +1,70 @@
-# Refactoring checkpoint 1 — structural change safety
+# Refactoring checkpoint 1 — completion pass
 
-**Line:** `codex/b013-ui-overhaul`, starting at `041a6c2c09eab31cc4628102ede3f04a3e773276`. The protected `master` baseline is `1fd51131b040ab62af3874c1106615b75f3008fe`. This checkpoint is structural maintenance only; it does not change the product boundary, navigation routes, persistence semantics, or UI styling.
+**Branch:** `codex/b013-ui-overhaul`
+**Starting revision:** `77d78e4210e1970b55de8a819f5baad44dbab98e`
+**Protected `master` baseline:** `1fd51131b040ab62af3874c1106615b75f3008fe`
 
-## Scope completed
+This completion pass finishes Checkpoint 1 structural maintenance. It preserves the adopted product boundary, routes, persistence semantics, visual behavior, and the existing debug fixture. No Checkpoint 2 redesign was started.
 
-### Location-independent regression contracts
+## Structural changes
 
-Source-contract tests no longer depend on the original implementation filenames. `ProductionSourceTestSupport.kt` locates production Kotlin by source tree and semantic markers, so contracts continue to follow moved components and screens without turning file ownership into a product requirement. The owner runtime harness was corrected to use the current `service-list`/visit-detail flow, current evidence surface, and a test-owned in-memory finalized record fixture.
+### Daily operations responsibility map
 
-### Application shell and feature screens
+The former `DailyOperationsUi.kt` implementation was mechanically split by responsibility. Package-level APIs, routes, saveable-state keys, BackHandler behavior, test semantics, and user-visible behavior remain unchanged.
 
-`ServiceLoopApp.kt` now owns application composition and shared scaffolding while navigation is in `ServiceLoopNavigation.kt`. Home/work, directory, completion, settings, business-profile, and record/report screens are in responsibility-oriented files. Routes, route arguments, effects, saveable-state keys, BackHandler behavior, and existing semantics were preserved.
+- `CustomerSiteUi.kt`: customer and site detail/editor surfaces.
+- `EquipmentPlanUi.kt`: equipment editors, plan detail/editor, and site selection.
+- `DueVisitUi.kt`: due services, new-visit draft/editor, ad-hoc work, and visit detail.
+- `TemplateUi.kt`: inspection template list/detail/editor surfaces.
+- `EvidenceUi.kt`: equipment links, field evidence, service evidence, and photo cards.
+- `FollowUpContactUi.kt`: follow-up list/detail/editor and contact-note editing.
+- `SearchUi.kt`: search surface.
+- `DailyOperationsUi.kt`: shared editors, guards, layout/typography helpers, private blocks, handoff helpers, and bounded photo input.
 
-### Design-system responsibilities
+### Service responsibility map
 
-The oversized component file was split mechanically into brand, actions, and editors while retaining the same package-level API and visual contracts. The remaining shared components continue to use the existing token, icon, and adapter system.
+The former `ServiceScreen.kt` implementation was mechanically split while retaining the existing root routing and focus behavior.
 
-### Dispatch transport boundary
+- `ServiceScreen.kt`: service route entry, inspection compatibility route, list-index helpers, and focus behavior.
+- `ServiceCompletionUi.kt`: completion controls and completion-state presentation.
+- `ServiceChecklistUi.kt`: checklist/question presentation and answer controls.
+- `ServiceProgressUi.kt`: service progress navigator, overview, group toggles, summaries, badges, and fallback progress.
+- `ServiceWorkspaceUi.kt`: service identity, save state, documentation/private work context, and completion landmarks.
 
-Transport MIME constants, package snapshots/codecs, validators, previews, and transport status representations are in `DispatchTransport.kt`. The existing `DispatchPackageService` remains the DB-backed operations surface in `DispatchPackage.kt`; same-package declarations preserve existing callers and compatibility.
+### Dispatch compatibility vectors
 
-No Checkpoint 2 redesign was started: service completeness/state ownership, workspace projections, repository/ViewModel boundaries, and autosave coordinator architecture remain unchanged.
+`DispatchGoldenVectorTest.kt` adds literal vectors derived from the pre-refactor data-class `toString()` codec at `041a6c2`. The values are asserted as constants rather than calculated from the current implementation at test time. The current `DispatchTransport.kt` hash source remains source-equivalent to that checkpoint; no production hash algorithm change was introduced.
+
+- Ordinary visit: `f7bab8b823145a6445c4693d94431b926aa8fd4c2e37d9e7ee5b7dabe5b028c9`
+- Multi-technician/team/work visit: `16928ad751fc7e4c1edfe3c9d354db5f7c08863ebb23fea1ffceb9ed98f8b040`
+- Inspection snapshot: `e1f714104acf98d8a67756db7b41257bec5eedc69611660e1a5b57f0a21ce3cc`
+- Canceled visit: `8207f83d256c6b4da8bbd694c42debfbd5954fcc1b73162019cacf1e15d84fb6`
+- Content-addressed snapshot ID: `snapshot-d895bfc1abcf8713356fbc38`
+
+The multi-collection vector also verifies normalized collection order, so technician/team/work ordering remains compatible.
+
+### Stage B fixture repair
+
+`StageBRenderMatrixTest` now creates a test-owned finalized visit (`V-STAGE-B`) through the real repository finalization path when needed, then renders that durable record. It no longer depends on the debug fixture's intentionally working `V-001`. The debug fixture itself was not changed, and the production app was not altered to bypass finalization preconditions.
+
+The source-contract tests were updated to locate semantic markers across the production source tree instead of coupling assertions to the old oversized filenames. Two Stage 3 selectors were also corrected for current wording and lazy-list composition; these are harness corrections, not product behavior changes.
 
 ## Verification evidence
 
-After the final code/test edits:
+Local gates after the production/test edits:
 
-- `:app:testDebugUnitTest`: **PASS**, 382 tests, 0 failures, 0 errors, 0 skipped across 30 XML suites.
+- `:app:testDebugUnitTest`: **PASS**, 385 tests, 0 failures, 0 errors, 0 skipped, across 31 XML suites.
 - `:app:assembleDebug`: **PASS**.
 - `:app:assembleRelease`: **PASS**.
-- `:app:lintDebug`: **PASS**, 0 errors, 56 warnings, 7 hints.
+- `:app:lintDebug`: **PASS**, 0 errors.
 - `:app:assembleDebugAndroidTest`: **PASS**.
-- `git diff --check`: **PASS**.
-- Canonical `Pixel_10a_ServiceLoop` AVD, dynamically resolved and targeted with explicit `adb -s`: owner runtime **4/4**, adaptive UI **5/5**, completion semantics **33/33**.
+- `git diff --check`: **PASS**; only expected Git line-ending normalization warnings were reported.
 
-The Stage B render matrix remains pre-existing test-fixture debt: both tests stop before rendering because the debug fixture intentionally leaves `V-001` working while the harness requires a finalized `V-001` record. No production behavior was changed to hide or bypass that precondition.
+Connected evidence used the canonical `Pixel_10a_ServiceLoop` AVD, whose serial was resolved dynamically and passed explicitly to every device command with `adb -s`. APK and test APK installation used separate explicit `adb -s <serial> install -r` commands.
 
-This checkpoint does not claim a full connected suite, notification delivery, Calendar-provider mutation, localization, or any Checkpoint 2 work.
+- Stage B render matrix: **PASS**, 2 tests.
+- Corrected Stage 3 plus Service Attention run: **PASS**, 21 tests; six system-handoff cases were expected assumption skips because `systemHandoff=true` was not enabled.
+- Completion semantics isolated rerun: **PASS**, 33 tests.
+- Full corrected matrix: 102 scheduled; all behavior assertions passed, with expected assumption skips for disabled system handoff and canonical persistent-state preconditions. One combined-run ActivityScenario teardown failure was reproduced as a runner lifecycle failure (`PAUSED` during teardown) and cleared by the isolated 33-test rerun; it was not a product assertion failure.
+
+This checkpoint does not claim system-handoff, notification delivery, Calendar-provider mutation, localization, human visual review, or any Checkpoint 2 work.
