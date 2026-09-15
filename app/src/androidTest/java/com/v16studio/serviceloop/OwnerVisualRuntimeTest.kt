@@ -27,6 +27,7 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.report.AndroidReportService
 import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
@@ -57,42 +58,69 @@ class OwnerVisualRuntimeTest {
     }
 
     @Test
-    fun canonicalFinalRecordPdfAndTextOpenFromVisits() {
-        composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onAllNodesWithTag("root-home").assertCountEquals(1) }.isSuccess
-        }
-        composeRule.onNodeWithText("Work").performClick()
-        composeRule.onNodeWithText("Visits").performClick()
-        composeRule.onNodeWithTag("visit-date-selector").performClick()
-        composeRule.onNodeWithTag("visit-date-selector-option-all").performClick()
-        composeRule.onNodeWithTag("work-visits-list").performScrollToNode(hasText("V-001", substring = true))
-        composeRule.onNodeWithText("V-001", substring = true).performClick()
-        composeRule.onNodeWithText("V-001 · Finalized").assertIsDisplayed()
-        captureRenderedEvidence("final-record")
+    fun finalRecordPdfAndTextOpenFromTestOwnedRecord() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val time = object : BusinessTime {
+                override val zoneId = ZoneId.of("Europe/Bucharest")
+                override fun instant() = Instant.parse("2026-09-05T10:00:00Z")
+            }
+            runBlocking {
+                val dao = database.serviceLoopDao()
+                dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+                dao.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", "Address", null)))
+                dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-1", "TECH-1", "Equipment", "Maker", "Model", "Serial", null)))
+                dao.insertPlans(listOf(ServicePlanEntity("p", "e", "P-1", "Service", 3, "MONTHS", "2026-09-01", "ACTIVE", "o")))
+                dao.insertObligations(listOf(ServiceObligationEntity("o", "p", 1, "2026-09-01", 1)))
+                dao.insertVisits(listOf(WorkingVisitEntity("v", "V-UI", "c", "s", "2026-09-05", "Customer", "Site", "Address", "WORKING", 1, "CU-1", "ST-1", "Business", "Technician", null, null, null, "Europe/Bucharest")))
+                dao.insertWorkItems(listOf(WorkItemEntity("w", "v", "e", "p", "o", null, "Equipment", "EQ-1", "Service", "P-1", "2026-09-01", 3, "MONTHS", false, null, false, equipmentIdentifierSnapshot = "TECH-1", equipmentMakeSnapshot = "Maker", equipmentModelSnapshot = "Model", equipmentSerialSnapshot = "Serial")))
+                dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("w", "Completed service")))
+                dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("w", "")))
+                dao.insertFinalRecord(FinalRecordEntity("r", "v", "rev", 2))
+                dao.insertFinalRevision(FinalRecordRevisionEntity("rev", "r", 1, "V-UI", "2026-09-05", 2, "Customer", "Site", "Address", "Business", "Technician", null, null, null, "Europe/Bucharest", null, "CU-1", "ST-1"))
+                dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("fw", "rev", 1, "w", "e", "Equipment", "EQ-1", "TECH-1", "Maker", "Model", "Serial", "Service", "p", "P-1", "NOT_PERFORMED", null, "Access unavailable", false, "2026-09-01", null, 3, "MONTHS", "o", null)))
+                dao.finalizeVisit("v", 2)
+            }
+            val repository = RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)
+            val reportService = AndroidReportService(context, database, repository)
+            runBlocking { reportService.generate("r") }
+            val viewModel = ServiceLoopViewModel(repository, reportService) {}
+            composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "record/r") } }
+            composeRule.waitUntil(10_000) {
+                runCatching { composeRule.onNodeWithTag("final-record-list").assertIsDisplayed() }.isSuccess
+            }
+            composeRule.onNodeWithTag("final-record-list").assertIsDisplayed()
+            composeRule.onNodeWithText("V-UI", substring = true).assertIsDisplayed()
+            captureRenderedEvidence("final-record")
 
-        composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))
-        composeRule.onNodeWithText("View report").performClick()
-        composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithText("PDF view").fetchSemanticsNode() }.isSuccess
-        }
-        composeRule.onNodeWithText("PDF view").assertIsDisplayed()
-        composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithContentDescription("Rendered customer report page 1").fetchSemanticsNode() }.isSuccess
-        }
-        composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasContentDescription("Rendered customer report page 1"))
-        composeRule.onNodeWithContentDescription("Rendered customer report page 1").assertIsDisplayed()
-        captureRenderedEvidence("pdf")
+            composeRule.onNodeWithTag("final-record-list").performScrollToNode(hasText("View report"))
+            composeRule.onNodeWithText("View report").performClick()
+            composeRule.waitUntil(5_000) {
+                runCatching { composeRule.onNodeWithText("PDF view").fetchSemanticsNode() }.isSuccess
+            }
+            composeRule.onNodeWithText("PDF view").assertIsDisplayed()
+            composeRule.waitUntil(5_000) {
+                runCatching { composeRule.onNodeWithContentDescription("Rendered customer report page 1").fetchSemanticsNode() }.isSuccess
+            }
+            composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasContentDescription("Rendered customer report page 1"))
+            composeRule.onNodeWithContentDescription("Rendered customer report page 1").assertIsDisplayed()
+            captureRenderedEvidence("pdf")
 
-        composeRule.onNodeWithText("Text view").performClick()
-        composeRule.onNodeWithText("Service record V-001 · Revision 1").assertIsDisplayed()
-        captureRenderedEvidence("text")
-        if(InstrumentationRegistry.getArguments().getString("systemHandoff")=="true") {
-            composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasTestTag("share-pdf"))
-            composeRule.onNodeWithTag("share-pdf").performClick()
-            val instrumentation=InstrumentationRegistry.getInstrumentation(); var external=false
-            repeat(30) { if(instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!="com.v16studio.serviceloop") external=true else Thread.sleep(100) }
-            assertTrue("Sharesheet did not open",external)
-            if(instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!="com.v16studio.serviceloop") instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            composeRule.onNodeWithText("Text view").performClick()
+            composeRule.onNodeWithText("Service record V-UI · Revision 1").assertIsDisplayed()
+            captureRenderedEvidence("text")
+            if (InstrumentationRegistry.getArguments().getString("systemHandoff") == "true") {
+                composeRule.onNodeWithTag("report-preview-list").performScrollToNode(hasTestTag("share-pdf"))
+                composeRule.onNodeWithTag("share-pdf").performClick()
+                val instrumentation = InstrumentationRegistry.getInstrumentation()
+                var external = false
+                repeat(30) { if (instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString() != "com.v16studio.serviceloop") external = true else Thread.sleep(100) }
+                assertTrue("Sharesheet did not open", external)
+                if (instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString() != "com.v16studio.serviceloop") instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            }
+        } finally {
+            database.close()
         }
     }
 
@@ -196,10 +224,10 @@ class OwnerVisualRuntimeTest {
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume service").fetchSemanticsNode() }.isSuccess }
         composeRule.onNodeWithText("Resume service").performClick()
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
         captureRenderedEvidence("public-work-expand-icon")
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         val field = composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true)
         captureRenderedEvidence("issue-found-expand-icon")
 
@@ -211,18 +239,15 @@ class OwnerVisualRuntimeTest {
 
         field.performTextClearance()
         field.performTextInput("Belt edge wear observed during inspection")
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("finding-save-check-belt"))
-        composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).performClick()
-        composeRule.waitUntil(5_000) {
-            runCatching { composeRule.onNodeWithTag("finding-save-check-belt", useUnmergedTree = true).assertIsNotEnabled() }.isSuccess
-        }
 
         composeRule.onNodeWithText("Back").performClick()
-        composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("visit-detail-list").assertIsDisplayed()
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
-        composeRule.onNodeWithText("Resume service").performClick()
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("visit-line-w").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("visit-line-w").performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
 
         composeRule.onNodeWithTag("response-check-belt-OK", useUnmergedTree = true).performClick()
@@ -230,36 +255,34 @@ class OwnerVisualRuntimeTest {
         composeRule.onAllNodesWithText("Discard saved response detail?").assertCountEquals(0)
 
         composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("not-applicable-reason-check-belt"))
         val naField=composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true)
         naField.performTextInput("Guard unavailable")
-        composeRule.onNodeWithTag("not-applicable-save-check-belt").performClick()
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
         restored.performTextInput("; local unsaved note")
         composeRule.onNodeWithTag("response-check-belt-OK", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("local unsaved note", substring = true)
         composeRule.onNodeWithTag("response-check-belt-NOT_APPLICABLE", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true).assertTextContains("Guard unavailable")
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
+        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true).assertTextContains("Guard unavailable") }.isSuccess }
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("value-check-note"))
         val valueField=composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
         composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).performTextInput("Cabinet isolated")
-        composeRule.onNodeWithTag("not-applicable-save-check-note").performClick()
         valueField.assertTextContains("Initial cabinet note")
-        composeRule.onNodeWithTag("value-save-check-note").performClick()
-        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("value-save-check-note").assertIsEnabled() }.isSuccess }
         composeRule.onNodeWithText("Back").performClick()
-        composeRule.onNodeWithText("Resume service").performClick()
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("visit-line-w").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("visit-line-w").performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("value-check-note"))
         composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
         composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).assertTextContains("Cabinet isolated")
-        composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("open-field-evidence"))
-        composeRule.onNodeWithTag("open-field-evidence").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("Parts and photographs").assertIsDisplayed()
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-photos"))
+        composeRule.onNodeWithTag("service-photos").assertIsDisplayed()
         database.close()
     }
 

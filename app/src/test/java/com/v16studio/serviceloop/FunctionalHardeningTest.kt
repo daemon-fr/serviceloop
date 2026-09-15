@@ -100,10 +100,7 @@ class FunctionalHardeningTest {
 
     @Test
     fun productionUiContainsNoStaleDispatchStatusOrDeadFoundationRoute() {
-        val uiSources = File("src/main/java/com/v16studio/serviceloop/ui")
-            .walkTopDown()
-            .filter { it.extension == "kt" }
-            .joinToString("\n") { it.readText() }
+        val uiSources = productionKotlinSource("com/v16studio/serviceloop/ui")
 
         assertFalse(uiSources.contains("Coordinator tools · Experimental"))
         assertFalse(uiSources.contains("Experimental coordinator conveniences"))

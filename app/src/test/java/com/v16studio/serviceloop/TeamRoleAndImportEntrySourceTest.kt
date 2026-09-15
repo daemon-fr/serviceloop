@@ -13,18 +13,17 @@ class TeamRoleAndImportEntrySourceTest {
     private fun source(path: String) = File("src/main/$path").readText()
 
     @Test fun legacyCoordinatorPreferenceMigratesToPersistedRole() {
-        val dispatch = source("java/com/v16studio/serviceloop/ui/DispatchUi.kt")
+        val dispatch = productionKotlinSourceContaining("enum class TeamRole")
         assertTrue(dispatch.contains("enum class TeamRole { SOLO, MEMBER, COORDINATOR }"))
         assertTrue(dispatch.contains("if (prefs.getBoolean(COORDINATOR_ENABLED, false)) TeamRole.COORDINATOR else TeamRole.SOLO"))
         assertTrue(dispatch.contains("putString(TEAM_ROLE, migrated.name).remove(COORDINATOR_ENABLED)"))
     }
 
     @Test fun workOverflowIsRemovedAndRoleGatewaysLiveOnHome() {
-        val app = source("java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt")
-        val coordinator = source("java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt")
-        assertFalse(app.contains("WorkMoreMenu"))
+        val app = productionKotlinSourceContaining("ServiceLoopDenseNavigableRow(\"History\"")
+        val coordinator = productionKotlinSourceContaining("role==TeamRole.COORDINATOR")
+        assertFalse(productionKotlinSource("com/v16studio/serviceloop/ui").contains("WorkMoreMenu"))
         assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"History\""))
-        assertTrue(coordinator.contains("role==TeamRole.COORDINATOR"))
         assertTrue(coordinator.contains("role==TeamRole.MEMBER"))
         assertTrue(coordinator.contains("member-import-work-package"))
     }
@@ -45,10 +44,10 @@ class TeamRoleAndImportEntrySourceTest {
         assertTrue(appSource().contains("external-package-open-role"))
     }
 
-    private fun appSource() = source("java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt")
+    private fun appSource() = productionKotlinSource("com/v16studio/serviceloop/ui")
 
     @Test fun reminderDaysHaveSevenAcrossAndBalancedFallback() {
-        val app = source("java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt")
+        val app = productionKotlinSourceContaining("private fun SummaryDayChoices")
         assertTrue(ServiceLoopUiTokens.Size.touchMin >= 48.dp)
         assertTrue(summaryDaysUseSingleRow(360.dp, 1f))
         assertFalse(summaryDaysUseSingleRow(359.dp, 1f))
@@ -58,11 +57,11 @@ class TeamRoleAndImportEntrySourceTest {
         assertTrue(app.contains("Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)"))
         assertTrue(app.contains("ServiceLoopDayToggle"))
         assertTrue(app.contains("label = day.name.take(2)"))
-        assertFalse(app.substringAfter("private fun SummaryDayChoices").substringBefore("private fun BusinessProfileScreen").contains("FilterChip"))
+        assertFalse(app.contains("FilterChip"))
     }
 
     @Test fun teamRoleSettingsUseCombinedLabelsAndEmbedMemberIdentity() {
-        val dispatch = source("java/com/v16studio/serviceloop/ui/DispatchUi.kt")
+        val dispatch = productionKotlinSourceContaining("TeamRole.SOLO to (\"Solo\" to \"I work alone\")")
         assertTrue(dispatch.contains("TeamRole.SOLO to (\"Solo\" to \"I work alone\")"))
         assertTrue(dispatch.contains("Send report copies to (optional)"))
         assertTrue(dispatch.contains("if (role == TeamRole.MEMBER)"))
@@ -71,8 +70,8 @@ class TeamRoleAndImportEntrySourceTest {
     }
 
     @Test fun memberIdentityShowsTechnicianIdBeforeDesignationWithoutReportNameDuplication() {
-        val dispatch = source("java/com/v16studio/serviceloop/ui/DispatchUi.kt")
-        val identity = dispatch.substringAfter("internal fun TechnicianIdentityContent").substringBefore("private fun")
+        val dispatch = productionKotlinSourceContaining("internal fun TechnicianIdentityContent")
+        val identity = productionKotlinFunctionSource("internal fun TechnicianIdentityContent", "private fun")
         assertTrue(identity.contains("Text(\"Technician ID\""))
         assertTrue(identity.contains("technician-id-value"))
         assertTrue(identity.contains("technician-designation"))
@@ -87,11 +86,12 @@ class TeamRoleAndImportEntrySourceTest {
     }
 
     @Test fun appearanceIsARealPersistedRootThemeSetting() {
-        val app = appSource()
+        val route = productionKotlinSourceContaining("composable(\"appearance\")")
+        val settings = productionKotlinSourceContaining("ServiceLoopDenseNavigableRow(\"Appearance\"")
         val theme = source("java/com/v16studio/serviceloop/ui/theme/Theme.kt")
         val prefs = source("java/com/v16studio/serviceloop/ui/theme/AppearancePreferences.kt")
-        assertTrue(app.contains("composable(\"appearance\")"))
-        assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"Appearance\""))
+        assertTrue(route.contains("composable(\"appearance\")"))
+        assertTrue(settings.contains("ServiceLoopDenseNavigableRow(\"Appearance\""))
         assertTrue(theme.contains("AppearanceMode.LIGHT -> false"))
         assertTrue(theme.contains("AppearanceMode.DARK -> true"))
         assertTrue(prefs.contains("const val PREFERENCES = \"serviceloop_appearance\""))

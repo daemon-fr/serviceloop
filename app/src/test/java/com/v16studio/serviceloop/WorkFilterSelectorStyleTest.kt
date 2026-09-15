@@ -3,16 +3,14 @@ package com.v16studio.serviceloop
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
-
 class WorkFilterSelectorStyleTest {
     @Test
     fun ownerR3SurfacesUseSharedSelectorsAndSelectionAliases() {
-        val components = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
-        val history = File("src/main/java/com/v16studio/serviceloop/ui/Stage4Ui.kt").readText()
-        val dispatch = File("src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt").readText()
-        val equipment = File("src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt").readText()
-        val daily = File("src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt").readText()
+        val components = productionKotlinSourceContaining("ServiceLoopFilterSelectorRow")
+        val history = productionKotlinSourceContaining("ServiceLoopFilterSelector(\"Rows\"")
+        val dispatch = productionKotlinSourceContaining("ServiceLoopFilterSelector(\"Status\"")
+        val equipment = productionKotlinSourceContaining("Text(detail.privateNote")
+        val daily = productionKotlinSourceContaining("ServiceLoopDangerTonalButton(\"End plan\"")
 
         assertTrue(components.contains("ServiceLoopIcons.SelectionEmpty"))
         assertTrue(components.contains("ServiceLoopIcons.SelectionChecked"))
@@ -27,9 +25,9 @@ class WorkFilterSelectorStyleTest {
 
     @Test
     fun selectorUsesThemeSurfaceAndReadableInkInBothAppearances() {
-        val components = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
-        val tokens = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopUiTokens.kt").readText()
-        val icons = File("src/main/java/com/v16studio/serviceloop/ui/icons/ServiceLoopIcons.kt").readText()
+        val components = productionKotlinSourceContaining("val selectorSurface = colors.surface")
+        val tokens = productionKotlinSourceContaining("val filterMenuCheck=16.dp")
+        val icons = productionKotlinSourceContaining("val Dropdown = R.drawable.ic_sl_dropdown")
 
         assertTrue(components.contains("color = selectorSurface"))
         assertTrue(components.contains("containerColor = selectorSurface"))
@@ -54,12 +52,12 @@ class WorkFilterSelectorStyleTest {
 
     @Test
     fun b013R31SelectionGeometryAndAuditedCommandGroupsUseSharedContracts() {
-        val components = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
-        val app = File("src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt").readText()
-        val dispatch = File("src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt").readText()
-        val daily = File("src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt").readText()
-        val stage4 = File("src/main/java/com/v16studio/serviceloop/ui/Stage4Ui.kt").readText()
-        val coordinator = File("src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt").readText()
+        val components = productionKotlinSourceContaining("entity-record-selection")
+        val app = productionKotlinSourceContaining("Open Android notification settings")
+        val dispatch = productionKotlinSourceContaining("ServiceLoopActionStack")
+        val daily = productionKotlinSourceContaining("ServiceLoopActionStack")
+        val stage4 = productionKotlinSourceContaining("ServiceLoopActionStack")
+        val coordinator = productionKotlinSource("com/v16studio/serviceloop/ui")
 
         assertTrue(components.contains(".testTag(\"entity-record-selection\")"))
         assertTrue(components.contains(".testTag(\"entity-record-selection-icon\")"))

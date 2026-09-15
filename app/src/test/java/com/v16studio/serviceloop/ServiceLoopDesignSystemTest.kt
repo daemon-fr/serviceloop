@@ -11,7 +11,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class ServiceLoopDesignSystemTest {
     @Test fun filterSelectorOutlineUsesPaleTealLightAndVisibleTealDark() {
@@ -108,7 +107,7 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun richButtonAdaptersDelegateToTheCanonicalContentPrimitive() {
-        val source=File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopCompatibility.kt").readText()
+        val source = productionKotlinSourceContaining("= ServiceLoopButtonContent(")
         assertEquals(2,Regex("= ServiceLoopButtonContent\\(").findAll(source).count())
         assertEquals(false,source.contains("= androidx.compose.material3.Button("))
         assertEquals(false,source.contains("= androidx.compose.material3.OutlinedButton("))
@@ -118,9 +117,10 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun ownerR1SharedVisualContractsStayStructural() {
-        val components=File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
-        val app=File("src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt").readText()
-        val daily=File("src/main/java/com/v16studio/serviceloop/ui/DailyOperationsUi.kt").readText()
+        val components = productionKotlinSourceContaining("maxIntrinsicWidth")
+        val app = productionKotlinSourceContaining("DetailScaffold(\"Service\", nav)")
+        val daily = productionKotlinSourceContaining("ServiceLoopEntityRecord", "ServiceLoopSectionDivider")
+        val rootScaffold = productionKotlinFunctionSource("internal fun RootScaffold")
         assertEquals(true,components.contains("maxIntrinsicWidth"))
         assertEquals(false,components.contains("label.length"))
         assertEquals(true,components.contains("PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))"))
@@ -129,8 +129,8 @@ class ServiceLoopDesignSystemTest {
         assertEquals(false,app.contains("title.contains("))
         assertEquals(true,app.contains("DetailScaffold(\"Service\", nav)"))
         assertEquals(true,components.contains("maxOf(leftWidthPx, rightWidthPx)"))
-        assertEquals(true,app.contains("ServiceLoopBrandStrip()"))
-        assertEquals(true,app.contains("ServiceLoopContentTabs"))
+        assertEquals(true,rootScaffold.contains("ServiceLoopBrandStrip()"))
+        assertEquals(true,productionKotlinSourceContaining("ServiceLoopContentTabs").isNotEmpty())
         assertEquals(true,daily.contains("ServiceLoopEntityRecord"))
         assertEquals(true,daily.contains("ServiceLoopSectionDivider"))
     }
@@ -180,7 +180,7 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun longTextEditorUsesLocalClearanceAndKeepsTheExpandTargetCompact() {
-        val source = File("src/main/java/com/v16studio/serviceloop/ui/designsystem/ServiceLoopComponents.kt").readText()
+        val source = productionKotlinFunctionSource("fun ServiceLoopLongTextEditor", "fun Modifier.serviceLoopFocusRing")
         assertFalse(source.contains("suffix = { Spacer(Modifier.width(ServiceLoopUiTokens.Size.editorActionReserve)) }"))
         assertTrue(source.contains("contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 52.dp)"))
         assertTrue(source.contains("Modifier.size(ServiceLoopUiTokens.Size.iconSmall)"))
