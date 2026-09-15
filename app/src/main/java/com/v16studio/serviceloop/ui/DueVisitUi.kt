@@ -322,8 +322,9 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         item { VisitDateLandmark(detail.state, detail.serviceDate) }
         item { DispatchVisitPanel(detail) }
         item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status");when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
-        if (state.serviceProgress?.visitId == detail.id) item {
-            VisitServiceProgressOverview(state.serviceProgress, onSelect = { item ->
+        val serviceProgress = state.serviceProgress
+        if (serviceProgress?.visitId == detail.id) item {
+            VisitServiceProgressOverview(serviceProgress, onSelect = { item ->
                 viewModel.focusService(item.workItemId)
                 nav.navigate("inspection/${item.workItemId}")
             })

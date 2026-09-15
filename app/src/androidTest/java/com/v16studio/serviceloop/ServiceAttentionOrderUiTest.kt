@@ -135,6 +135,7 @@ class ServiceAttentionOrderUiTest {
         val secondDraft = firstDraft.copy(rawInputs = raw(ServiceDraftFieldKeys.PRIVATE))
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, fixedTime())) {}
         var shownDraft by mutableStateOf(firstDraft)
+        viewModel.loadInspection("work-1")
 
         compose.setContent {
             ServiceLoopTheme {

@@ -70,13 +70,9 @@ data class UiState(
     val equipmentList: List<EquipmentSummary> = emptyList(),
     val customerList: List<CustomerSummary> = emptyList(),
     val siteList: List<SiteRegisterSummary> = emptyList(),
-    val inspection: InspectionDraft? = null,
-    val serviceProgress: VisitServiceProgress? = null,
-    val activeServiceVisitId: String? = null,
-    val activeServiceWorkItemId: String? = null,
-    val completionLines: List<CompletionLine> = emptyList(),
+    val serviceContext: ServiceContext? = null,
+    val completionContext: CompletionContext? = null,
     val serviceFollowUps: List<FollowUpDetail> = emptyList(),
-    val completionVisitId: String? = null,
     val fieldEvidenceWorkItemId: String? = null,
     val photoMetadataPendingId: String? = null,
     val photoMetadataErrorId: String? = null,
@@ -132,6 +128,20 @@ data class UiState(
     val calendarRuntimeState: CalendarRuntimeState = CalendarRuntimeState(),
     val visitCalendarState: VisitCalendarState? = null,
 ) {
+    /** Compatibility projections for existing Service and Review composables. */
+    val inspection: InspectionDraft?
+        get() = serviceContext?.workspace?.inspection
+    val serviceProgress: VisitServiceProgress?
+        get() = serviceContext?.progress ?: serviceContext?.workspace?.serviceProgress
+    val activeServiceVisitId: String?
+        get() = serviceContext?.activeVisitId
+    val activeServiceWorkItemId: String?
+        get() = serviceContext?.activeWorkItemId
+    val completionLines: List<CompletionLine>
+        get() = completionContext?.lines ?: serviceContext?.workspace?.completionLines.orEmpty()
+    val completionVisitId: String?
+        get() = completionContext?.visitId ?: serviceContext?.workspace?.inspection?.visitId
+
     val dueServices: List<DueService>
         get() = (dueServicesProjection as? DueServicesProjection.Available)?.rows.orEmpty()
     val dueServicesReady: Boolean
@@ -259,17 +269,17 @@ class ServiceLoopViewModel(
         val request = issueRequest("inspection")
         issueRequest("draftSaveContext")
         launchLoad {
-            val draft = repository.inspection(id)
+            val workspace = repository.serviceWorkspace(id)
             if (!isCurrent(request)) return@launchLoad
-            val progress = draft?.let { value -> runCatching { repository.serviceVisitProgress(value.visitId) }.getOrElse { progressFallback(value) } }
+            val published = workspace?.let { value ->
+                if (value.serviceProgress == null) value.copy(serviceProgress = progressFallback(value.inspection)) else value
+            }
             _state.update { current -> current.copy(
-                inspection = draft,
-                serviceProgress = progress,
-                activeServiceVisitId = draft?.visitId ?: current.activeServiceVisitId,
-                activeServiceWorkItemId = draft?.workItemId ?: current.activeServiceWorkItemId,
-                saveStatus = draft?.let { SaveStatus.Saved(it.modifiedAtEpochMillis) } ?: SaveStatus.Idle,
+                serviceContext = published?.let { value -> ServiceContext(value, activeVisitId = value.inspection.visitId, activeWorkItemId = value.inspection.workItemId) },
+                completionContext = null,
+                saveStatus = published?.inspection?.let { SaveStatus.Saved(it.modifiedAtEpochMillis) } ?: SaveStatus.Idle,
             ) }
-            draft?.let(::reconcilePersistedServiceDrafts)
+            published?.inspection?.let(::reconcilePersistedServiceDrafts)
         }
     }
 
@@ -278,17 +288,11 @@ class ServiceLoopViewModel(
         val request = issueRequest("inspection")
         viewModelScope.launch {
             try {
-                val draft = repository.inspection(workItemId) ?: return@launch
-                val progress = runCatching { repository.serviceVisitProgress(draft.visitId) }.getOrElse { progressFallback(draft) }
-                val lines = repository.completionLines(draft.visitId)
+                val workspace = repository.serviceWorkspace(workItemId) ?: return@launch
+                val published = if (workspace.serviceProgress == null) workspace.copy(serviceProgress = progressFallback(workspace.inspection)) else workspace
                 if (isCurrent(request)) _state.update { current ->
                     if (current.inspection?.workItemId == workItemId) current.copy(
-                        inspection = draft,
-                        serviceProgress = progress,
-                        completionLines = lines,
-                        completionVisitId = draft.visitId,
-                        activeServiceVisitId = draft.visitId,
-                        activeServiceWorkItemId = draft.workItemId,
+                        serviceContext = ServiceContext(published, activeVisitId = published.inspection.visitId, activeWorkItemId = published.inspection.workItemId),
                         contentRefreshError = null,
                     ) else current
                 }
@@ -364,7 +368,7 @@ class ServiceLoopViewModel(
                 val lines = repository.completionLines(visitId)
                 val profile = repository.businessProfile()
                 val identity = repository.visitReportIdentity(visitId)
-                if (isCurrent(request)) _state.update { current -> current.copy(completionLines = lines, completionVisitId = visitId, businessProfile = profile, visitReportIdentity = identity, contentRefreshError = null) }
+                if (isCurrent(request)) _state.update { current -> current.copy(completionContext = CompletionContext(visitId, lines), businessProfile = profile, visitReportIdentity = identity, contentRefreshError = null) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (isCurrent(request)) _state.update { it.copy(contentRefreshError = failure.message ?: "Unable to load service completion") } }
         }
@@ -372,7 +376,7 @@ class ServiceLoopViewModel(
     fun clearCompletionContext(visitId: String) {
         issueRequest("completion")
         issueRequest("draftSaveContext")
-        _state.update { current -> if(current.completionVisitId == visitId) current.copy(completionVisitId=null,finalizing=false,finalizedRecordId=null) else current }
+        _state.update { current -> if(current.completionVisitId == visitId) current.copy(completionContext = null, finalizing=false, finalizedRecordId=null) else current }
     }
 
     fun loadVisits() {
@@ -454,7 +458,7 @@ class ServiceLoopViewModel(
             val calendarState = calendarCoordinator?.visitState(id)
             val templates = repository.templates()
             val progress = visit?.let { value -> runCatching { repository.serviceVisitProgress(value.id) }.getOrNull() }
-            if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState, serviceProgress = progress) }
+            if (isCurrent(request)) _state.update { current -> current.copy(visit = visit, site = site, templates = templates, visitCalendarState = calendarState, serviceContext = ServiceContext(progress = progress, activeVisitId = progress?.visitId ?: current.activeServiceVisitId, activeWorkItemId = progress?.preferredResumeItem()?.workItemId ?: current.activeServiceWorkItemId)) }
         }
     }
 
@@ -463,13 +467,7 @@ class ServiceLoopViewModel(
         viewModelScope.launch {
             val progress = runCatching { repository.serviceVisitProgress(visitId) }.getOrNull()
             val workItemId = progress?.preferredResumeItem()?.workItemId
-            _state.update { current ->
-                current.copy(
-                    serviceProgress = progress,
-                    activeServiceVisitId = visitId,
-                    activeServiceWorkItemId = workItemId,
-                )
-            }
+            _state.update { current -> current.copy(serviceContext = ServiceContext(progress = progress, activeVisitId = visitId, activeWorkItemId = workItemId)) }
             onResolved(workItemId)
         }
     }
@@ -581,7 +579,7 @@ class ServiceLoopViewModel(
                 val site = visit?.let { repository.site(it.siteId) }
                 val progress = runCatching { repository.serviceVisitProgress(id) }.getOrNull()
                 try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
-                if (isCurrent(request)) _state.update { it.copy(visit = visit, site = site, serviceProgress = progress, operationInProgress = false, operationMessage = "Saved on this device") }
+                if (isCurrent(request)) _state.update { current -> current.copy(visit = visit, site = site, serviceContext = ServiceContext(progress = progress, activeVisitId = progress?.visitId ?: current.activeServiceVisitId, activeWorkItemId = progress?.preferredResumeItem()?.workItemId ?: current.activeServiceWorkItemId), operationInProgress = false, operationMessage = "Saved on this device") }
                 refreshRootDataNonBlocking()
                 onSuccess(id)
             } catch (cancelled: CancellationException) {
@@ -869,14 +867,12 @@ class ServiceLoopViewModel(
             },
             onSaved = {
                 if (isCurrent(request) && _state.value.completionVisitId == visitId) {
-                    refreshServiceContext(workItemId)
-                    loadCompletion(visitId)
+                    if (_state.value.completionContext == null) refreshServiceContext(workItemId) else loadCompletion(visitId)
                 }
             },
             onSuperseded = {
                 if (isCurrent(request) && _state.value.completionVisitId == visitId) {
-                    refreshServiceContext(workItemId)
-                    loadCompletion(visitId)
+                    if (_state.value.completionContext == null) refreshServiceContext(workItemId) else loadCompletion(visitId)
                 }
             },
         )
@@ -889,6 +885,7 @@ class ServiceLoopViewModel(
 
     fun applyRecurrenceOverride(workItemId: String, visitId: String, date: String, reason: String) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        val activeServiceWorkspace = _state.value.completionContext == null && _state.value.inspection?.workItemId == workItemId
         if (runCatching { LocalDate.parse(date.trim()) }.isFailure) {
             _state.update { it.copy(error = "Enter a date as YYYY-MM-DD") }
             return
@@ -923,10 +920,15 @@ class ServiceLoopViewModel(
                     }
                 }
                 try {
-                    val lines = repository.completionLines(visitId)
+                    val workspace = if (activeServiceWorkspace) repository.serviceWorkspace(workItemId) else null
+                    val published = workspace?.let { value ->
+                        if (value.serviceProgress == null) value.copy(serviceProgress = progressFallback(value.inspection)) else value
+                    }
+                    val lines = if (!activeServiceWorkspace) repository.completionLines(visitId) else emptyList()
                     if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
-                        if (current.completionVisitId == visitId) current.copy(
-                            completionLines = lines,
+                        if (current.completionVisitId == visitId && (!activeServiceWorkspace || published != null)) current.copy(
+                            serviceContext = if (activeServiceWorkspace) ServiceContext(published!!, activeVisitId = published.inspection.visitId, activeWorkItemId = published.inspection.workItemId) else current.serviceContext,
+                            completionContext = if (activeServiceWorkspace) current.completionContext else CompletionContext(visitId, lines),
                             saveStatus = SaveStatus.Saved(savedAt),
                             contentRefreshError = cleanupFailure?.let { "Saved, but service draft cleanup needs attention: ${it.message ?: "cleanup failed"}" },
                         ) else current
@@ -986,7 +988,7 @@ class ServiceLoopViewModel(
     fun refreshVisitReportIdentity(visitId: String) = persistCompletionDraft(visitId,{ repository.refreshVisitReportIdentity(visitId) }) { val value=repository.visitReportIdentity(visitId); { current -> current.copy(visitReportIdentity=value) } }
     fun saveCompletion(workItemId: String, outcome: String?, fulfills: Boolean?, reason: String?, nextDue: String?, calculated: Boolean?, overrideReason: String?, visitId: String) = persistCompletionDraft(visitId,{
         repository.saveCompletionDraft(workItemId, outcome, fulfills, reason, nextDue, calculated, overrideReason)
-    }) { val values=repository.completionLines(visitId); { current -> current.copy(completionLines=values) } }
+    }) { val values=repository.completionLines(visitId); { current -> current.copy(completionContext=CompletionContext(visitId, values)) } }
 
     fun finalizeVisit(visitId: String) {
         if (_state.value.finalizing) return
@@ -1068,12 +1070,19 @@ class ServiceLoopViewModel(
         viewModelScope.launch {
             try {
                 val savedAt = write()
-                val refreshed = try { repository.inspection(workItemId) } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) {
+                val refreshed = try { repository.serviceWorkspace(workItemId) } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) {
                     if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.inspection?.workItemId == workItemId) current.copy(saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = failure.message ?: "Saved, but the screen could not refresh") else current }
                     return@launch
                 }
+                val published = refreshed?.let { value ->
+                    if (value.serviceProgress == null) value.copy(serviceProgress = progressFallback(value.inspection)) else value
+                }
                 if (isCurrent(request) && isCurrent(saveContext)) _state.update { current ->
-                    if (current.inspection?.workItemId == workItemId) current.copy(inspection = refreshed, saveStatus = SaveStatus.Saved(savedAt), contentRefreshError = null) else current
+                    if (current.inspection?.workItemId == workItemId && published != null) current.copy(
+                        serviceContext = ServiceContext(published, activeVisitId = published.inspection.visitId, activeWorkItemId = published.inspection.workItemId),
+                        saveStatus = SaveStatus.Saved(savedAt),
+                        contentRefreshError = null,
+                    ) else current
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {

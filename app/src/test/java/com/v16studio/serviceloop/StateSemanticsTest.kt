@@ -15,6 +15,8 @@ import com.v16studio.serviceloop.domain.BusinessProfile
 import com.v16studio.serviceloop.domain.FinalRecordDetail
 import com.v16studio.serviceloop.domain.PublicReportModel
 import com.v16studio.serviceloop.domain.ReportRendition
+import com.v16studio.serviceloop.domain.ServiceWorkspace
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.report.ReportService
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import java.io.File
@@ -22,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -55,6 +58,68 @@ class StateSemanticsTest {
         assertEquals(1, repository.homeReads)
         assertEquals(1, repository.equipmentReads)
         assertEquals(1, repository.customerReads)
+    }
+
+    @Test fun serviceLoadPublishesOneWorkspaceProjection() = runTest {
+        val draft = inspectionDraft()
+        val repository = WorkspaceRepository(mapOf("work-1" to draft))
+        val viewModel = ServiceLoopViewModel(repository) {}
+
+        viewModel.loadInspection("work-1")
+
+        assertEquals(1, repository.workspaceReads)
+        assertEquals("work-1", viewModel.state.value.inspection?.workItemId)
+        assertEquals("visit-1", viewModel.state.value.serviceProgress?.visitId)
+        assertEquals(listOf("work-1"), viewModel.state.value.completionLines.map { it.workItemId })
+    }
+
+    @Test fun staleServiceLoadCannotReplaceTheNewerWorkspace() = runTest {
+        val aGate = CompletableDeferred<Unit>()
+        val repository = WorkspaceRepository(
+            drafts = mapOf("work-a" to inspectionDraft().copy(workItemId = "work-a"), "work-b" to inspectionDraft().copy(workItemId = "work-b")),
+            gates = mapOf("work-a" to aGate),
+        )
+        val viewModel = ServiceLoopViewModel(repository) {}
+
+        viewModel.loadInspection("work-a")
+        viewModel.loadInspection("work-b")
+        assertEquals("work-b", viewModel.state.value.inspection?.workItemId)
+
+        aGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("work-b", viewModel.state.value.inspection?.workItemId)
+        assertEquals("work-b", viewModel.state.value.completionLines.single().workItemId)
+    }
+
+    @Test fun serviceRefreshUsesTheSameWorkspaceProjectionPath() = runTest {
+        val repository = WorkspaceRepository(mapOf("work-1" to inspectionDraft()))
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-1")
+
+        viewModel.refreshServiceContext("work-1")
+
+        assertEquals(2, repository.workspaceReads)
+        assertEquals("work-1", viewModel.state.value.inspection?.workItemId)
+    }
+
+    @Test fun staleServiceRefreshCannotReplaceAServiceOpenedAfterIt() = runTest {
+        val repository = WorkspaceRepository(
+            drafts = mapOf("work-a" to inspectionDraft().copy(workItemId = "work-a"), "work-b" to inspectionDraft().copy(workItemId = "work-b")),
+        )
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadInspection("work-a")
+        val refreshGate = CompletableDeferred<Unit>()
+        repository.delay("work-a", refreshGate)
+
+        viewModel.refreshServiceContext("work-a")
+        viewModel.loadInspection("work-b")
+        assertEquals("work-b", viewModel.state.value.inspection?.workItemId)
+
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("work-b", viewModel.state.value.inspection?.workItemId)
     }
 
     @Test fun quietRootRefreshKeepsUsableContentVisibleUntilAtomicReplacement() = runTest {
@@ -490,5 +555,49 @@ class StateSemanticsTest {
 
         private fun next(results: MutableList<Long?>, operation: String): Long =
             results.removeAt(0) ?: error("$operation write failed")
+    }
+
+    private class WorkspaceRepository(
+        private val drafts: Map<String, InspectionDraft>,
+        gates: Map<String, CompletableDeferred<Unit>> = emptyMap(),
+    ) : ServiceLoopRepository {
+        private val gates = gates.toMutableMap()
+        var workspaceReads = 0
+
+        fun delay(workItemId: String, gate: CompletableDeferred<Unit>) {
+            gates[workItemId] = gate
+        }
+
+        override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
+        override suspend fun equipment(id: String): EquipmentDetail? = null
+        override suspend fun equipmentList(): List<EquipmentSummary> = emptyList()
+        override suspend fun customerList(): List<CustomerSummary> = emptyList()
+        override suspend fun inspection(workItemId: String): InspectionDraft? = drafts[workItemId]
+        override suspend fun completionLines(visitId: String): List<CompletionLine> = emptyList()
+        override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long = 0L
+
+        override suspend fun serviceWorkspace(workItemId: String): ServiceWorkspace? {
+            workspaceReads++
+            gates[workItemId]?.await()
+            val draft = drafts[workItemId] ?: return null
+            return ServiceWorkspace(
+                inspection = draft,
+                serviceProgress = null,
+                completionLines = listOf(
+                    CompletionLine(
+                        workItemId = workItemId,
+                        equipmentName = draft.equipmentName,
+                        equipmentReference = draft.equipmentReference,
+                        serviceName = draft.serviceName,
+                        outcome = draft.outcome,
+                        fulfillmentEligibility = FulfillmentEligibility.NO_CURRENT_OBLIGATION,
+                        fulfillsCurrentObligation = false,
+                        dueDate = null,
+                        proposedNextDueDate = null,
+                        workPerformed = draft.workPerformed,
+                    ),
+                ),
+            )
+        }
     }
 }

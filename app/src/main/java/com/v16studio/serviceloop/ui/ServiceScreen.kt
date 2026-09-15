@@ -260,7 +260,6 @@ internal fun ServiceScreen(
     val nextDueRequester = remember(draft.workItemId) { BringIntoViewRequester() }
     LaunchedEffect(draft.workItemId) {
         viewModel.loadFieldEvidence(draft.workItemId)
-        viewModel.loadCompletion(draft.visitId)
     }
     val listIndices = serviceListIndices(
         hasNavigationMessage = navigationMessage != null,
