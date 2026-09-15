@@ -844,12 +844,15 @@ private fun ServiceQuestionBlock(workItemId: String, rawInputs: Map<String, Stri
     var issueBuffer by rememberSaveable("issue-${question.snapshotItemId}", initialIssue) { mutableStateOf(initialIssue) }
     var notApplicableBuffer by rememberSaveable("na-${question.snapshotItemId}", initialNotApplicable) { mutableStateOf(initialNotApplicable) }
     ServiceLoopSurfaceCard(modifier = Modifier.testTag("question-${question.snapshotItemId}")) {
-        Box(Modifier.fillMaxWidth()) {
-            Text("${question.position}. ${question.label}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth().padding(end = ServiceLoopUiTokens.Size.iconSmall + ServiceLoopUiTokens.Space.sm))
-            if (question.isResolved()) ServiceLoopIcon(ServiceLoopIcons.SelectionCheck, null, Modifier.align(Alignment.TopEnd).size(ServiceLoopUiTokens.Size.iconSmall).testTag("question-${question.snapshotItemId}-complete"), LocalServiceLoopTokens.current.successInk)
+        ServiceQuestionHeader(question)
+        Text(
+            if (question.required) "Required · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}" else "Optional · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("question-${question.snapshotItemId}-metadata"),
+        )
+        question.privateGuidance?.takeIf(String::isNotBlank)?.let {
+            ServiceLoopPrivateLabel("PRIVATE · $it", modifier = Modifier.testTag("question-${question.snapshotItemId}-private-guidance"))
         }
-        Text(if (question.required) "Required · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}" else "Optional · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.bodySmall)
-        question.privateGuidance?.takeIf(String::isNotBlank)?.let { ServiceLoopPrivateLabel("PRIVATE · $it") }
         when (question.responseType) {
             "STATUS" -> StatusChoiceGrid(question, editingEnabled, viewModel, workItemId)
             else -> ValueQuestion(workItemId, rawInputs, question, editingEnabled, viewModel)
@@ -859,10 +862,40 @@ private fun ServiceQuestionBlock(workItemId: String, rawInputs: Map<String, Stri
             Text("Required for checklist completion.", style = MaterialTheme.typography.bodySmall)
             ServiceLoopLongTextEditor(issueBuffer, { issueBuffer = it; if (editingEnabled) viewModel.scheduleIssueDescription(workItemId, question.snapshotItemId, it) }, "Public finding description", false, enabled = editingEnabled, fieldTestTag = "long-text-public-finding-description", onFocusLost = { viewModel.flushServiceDraftAsync(workItemId) })
         }
-        if (question.disposition == ResponseDisposition.NOT_APPLICABLE) {
+        if (question.disposition == ResponseDisposition.NOT_APPLICABLE && (question.required || question.responseType != "TEXT")) {
             Text("Not applicable reason", style = MaterialTheme.typography.labelLarge)
             Text("Required for checklist completion.", style = MaterialTheme.typography.bodySmall)
             ServiceLoopLongTextEditor(notApplicableBuffer, { notApplicableBuffer = it; if (editingEnabled) viewModel.scheduleNotApplicableReason(workItemId, question.snapshotItemId, it) }, "Not applicable reason", false, enabled = editingEnabled, fieldTestTag = "not-applicable-reason-${question.snapshotItemId}", onFocusLost = { viewModel.flushServiceDraftAsync(workItemId) })
+        }
+    }
+}
+
+/**
+ * The resolved indicator owns a real, always-present slot. Keeping that slot in the
+ * measured Row makes the header height independent of the resolved state while the
+ * empty slot remains semantics-free.
+ */
+@Composable
+internal fun ServiceQuestionHeader(question: InspectionQuestion) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("question-${question.snapshotItemId}-header"),
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            "${question.position}. ${question.label}",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f).testTag("question-${question.snapshotItemId}-title"),
+        )
+        Box(Modifier.size(ServiceLoopUiTokens.Size.iconSmall)) {
+            if (question.isResolved()) {
+                ServiceLoopIcon(
+                    ServiceLoopIcons.SelectionCheck,
+                    null,
+                    Modifier.fillMaxSize().testTag("question-${question.snapshotItemId}-complete"),
+                    LocalServiceLoopTokens.current.successInk,
+                )
+            }
         }
     }
 }
@@ -903,13 +936,15 @@ private fun ValueQuestion(workItemId: String, rawInputs: Map<String, String>, qu
             wasFocused = it.isFocused
         },
     )
-    ServiceLoopChecklistChoice(
-        selected = question.disposition == ResponseDisposition.NOT_APPLICABLE,
-        onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) },
-        label = "Not applicable",
-        modifier = Modifier.fillMaxWidth().testTag("not-applicable-${question.snapshotItemId}"),
-        enabled = enabled,
-    )
+    if (question.required || question.responseType != "TEXT") {
+        ServiceLoopChecklistChoice(
+            selected = question.disposition == ResponseDisposition.NOT_APPLICABLE,
+            onClick = { viewModel.chooseResponse(workItemId, question.snapshotItemId, ResponseDisposition.NOT_APPLICABLE) },
+            label = "Not applicable",
+            modifier = Modifier.fillMaxWidth().testTag("not-applicable-${question.snapshotItemId}"),
+            enabled = enabled,
+        )
+    }
 }
 
 private fun InspectionQuestion.isResolved(): Boolean = when (responseType) {

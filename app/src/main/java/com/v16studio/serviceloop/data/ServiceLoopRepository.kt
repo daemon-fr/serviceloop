@@ -1527,8 +1527,16 @@ class RoomServiceLoopRepository(
         if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) {
             require(isFiniteSignedDecimal(normalizedValue!!)) { "Enter a signed decimal number, for example -12.5" }
         }
-        val textDraft = if (item.responseType == "TEXT" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.textValue
-        val numberDraft = if (item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE) normalizedValue else existing?.numberValue
+        val textDraft = when {
+            item.responseType == "TEXT" && disposition == ResponseDisposition.VALUE -> normalizedValue
+            item.responseType == "TEXT" && disposition == ResponseDisposition.UNANSWERED -> null
+            else -> existing?.textValue
+        }
+        val numberDraft = when {
+            item.responseType == "NUMBER" && disposition == ResponseDisposition.VALUE -> normalizedValue
+            item.responseType == "NUMBER" && disposition == ResponseDisposition.UNANSWERED -> null
+            else -> existing?.numberValue
+        }
         val issueDraft = when {
             issueFoundReasonDraftOverride != null -> issueFoundReasonDraftOverride.trim().ifBlank { null }
             disposition == ResponseDisposition.ISSUE_FOUND && reason != null -> suppliedReason

@@ -206,6 +206,44 @@ class Sl2IntegrityTest {
         assertTrue((repo().finalizeVisit("visit-1") as FinalizeResult.Blocked).message.contains("description"))
     }
 
+    @Test fun optionalTextClearingReturnsToUnansweredAndDoesNotProjectNotApplicable() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional-text", "template-1", 2, "Additional observation", "TEXT", null, false, "Template guidance")))
+        val repository = repo()
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repository.saveResponse("work-1", "check-optional-text", ResponseDisposition.VALUE, "Initial observation", null)
+        assertEquals("Initial observation", dao.responses("work-1").single { it.checklistItemSnapshotId == "check-optional-text" }.textValue)
+
+        repository.saveQuestionTransition("work-1", "check-optional-text", ResponseDisposition.UNANSWERED, null, null, null, null)
+        val cleared = dao.responses("work-1").single { it.checklistItemSnapshotId == "check-optional-text" }
+        assertEquals("UNANSWERED", cleared.disposition)
+        assertNull(cleared.textValue)
+        assertNull(cleared.reason)
+        assertTrue(repository.checklistCompleteness("work-1").complete)
+
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
+        val recordId = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val projected = repository.finalRecord(recordId)!!.public.lines.single().checklist.single { it.label == "Additional observation" }
+        assertEquals("UNANSWERED", projected.disposition)
+        assertNull(projected.value)
+        assertNull(projected.reason)
+        assertTrue(projected.disposition != "NOT_APPLICABLE")
+    }
+
+    @Test fun legacyOptionalTextNotApplicableRemainsInMutableWorkingData() = runTest {
+        seed(withChecklist = true); val dao = db.serviceLoopDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional-text", "template-1", 2, "Additional observation", "TEXT", null, false, null)))
+        repo().saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        dao.upsertResponses(listOf(WorkingResponseEntity("legacy", "work-1", "check-optional-text", "NOT_APPLICABLE", null, null, "Technician recorded no access", 2, notApplicableReasonDraft = "Technician recorded no access")))
+
+        val question = repo().inspection("work-1")!!.questions.single { it.snapshotItemId == "check-optional-text" }
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, question.disposition)
+        assertEquals("Technician recorded no access", question.reason)
+        assertEquals("Technician recorded no access", question.notApplicableReasonDraft)
+        assertTrue(repo().checklistCompleteness("work-1").complete)
+        assertEquals(0, db.serviceLoopDao().finalRecordCount())
+    }
+
     @Test fun requiredIncompleteChecklistBlocksPartlyAndNotPerformedUntilCompleted() = runTest {
         seed(withChecklist = true)
         repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)

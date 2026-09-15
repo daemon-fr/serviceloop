@@ -194,8 +194,8 @@ class OwnerVisualRuntimeTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume visit").fetchSemanticsNode() }.isSuccess }
-        composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume service").fetchSemanticsNode() }.isSuccess }
+        composeRule.onNodeWithText("Resume service").performClick()
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
         captureRenderedEvidence("public-work-expand-icon")
@@ -220,7 +220,7 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithText("Back").performClick()
         composeRule.onAllNodesWithTag("root-home").assertCountEquals(1)
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
-        composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.onNodeWithText("Resume service").performClick()
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
@@ -251,7 +251,7 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("value-save-check-note").performClick()
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("value-save-check-note").assertIsEnabled() }.isSuccess }
         composeRule.onNodeWithText("Back").performClick()
-        composeRule.onNodeWithText("Resume visit").performClick()
+        composeRule.onNodeWithText("Resume service").performClick()
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("inspection-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("inspection-list").performScrollToNode(hasTestTag("value-check-note"))
         composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
