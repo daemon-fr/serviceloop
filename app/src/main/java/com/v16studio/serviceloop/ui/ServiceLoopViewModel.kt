@@ -800,6 +800,30 @@ class ServiceLoopViewModel(
         )
     }
 
+    fun useCalculatedNextDue(workItemId: String, visitId: String) {
+        val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
+        val calculatedDate = line.calculatedNextDueDate ?: return
+        if (line.fulfillsCurrentObligation != true || line.confirmedNextDueDate != null) return
+        serviceDraftAutosaveCoordinator.immediateChoice(
+            ServiceDraftFieldId(workItemId, "result:nextDueRecovery"), calculatedDate,
+            writer = {
+                repository.saveCompletionDraft(
+                    workItemId,
+                    line.outcome,
+                    true,
+                    line.notPerformedReason,
+                    calculatedDate,
+                    true,
+                    null,
+                )
+            },
+            onSaved = {
+                refreshServiceContext(workItemId)
+                loadCompletion(visitId)
+            },
+        )
+    }
+
     fun applyRecurrenceOverride(workItemId: String, visitId: String, date: String, reason: String) {
         val line = _state.value.completionLines.firstOrNull { it.workItemId == workItemId } ?: return
         if (runCatching { LocalDate.parse(date.trim()) }.isFailure) {

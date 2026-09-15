@@ -177,7 +177,8 @@ internal fun ServiceScreen(
     val completion = viewState.completionLines.firstOrNull { it.workItemId == draft.workItemId }
     val outcomeRequester = remember(draft.workItemId) { BringIntoViewRequester() }
     val reasonRequester = remember(draft.workItemId) { BringIntoViewRequester() }
-    val dueRequester = remember(draft.workItemId) { BringIntoViewRequester() }
+    val fulfillmentRequester = remember(draft.workItemId) { BringIntoViewRequester() }
+    val nextDueRequester = remember(draft.workItemId) { BringIntoViewRequester() }
     LaunchedEffect(draft.workItemId) {
         viewModel.loadFieldEvidence(draft.workItemId)
         viewModel.loadCompletion(draft.visitId)
@@ -229,9 +230,12 @@ internal fun ServiceScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(draft.workItemId, focus, listIndices, completion != null) {
+    LaunchedEffect(draft.workItemId, focus, listIndices, completion?.outcome, completion?.fulfillsCurrentObligation, completion?.confirmedNextDueDate, draft.rawInputs) {
         focus?.let { target ->
             if (target.kind in setOf(CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE) && completion == null) return@let
+            val unansweredPartlyFulfillment = completion?.outcome == "PARTLY_PERFORMED" && completion.fulfillsCurrentObligation == null
+            val missingConfirmedNextDue = completion?.fulfillsCurrentObligation == true && completion.confirmedNextDueDate == null
+            if (target.kind == CompletionBlockerKind.NEXT_DUE && !unansweredPartlyFulfillment && !missingConfirmedNextDue) return@let
              val index = when (target.kind) {
                  CompletionBlockerKind.WORK_PERFORMED -> listIndices.workPerformed
                  CompletionBlockerKind.CHECKLIST_INCOMPLETE -> listIndices.checklistHeader
@@ -250,7 +254,7 @@ internal fun ServiceScreen(
             when (target.kind) {
                 CompletionBlockerKind.OUTCOME -> outcomeRequester.bringIntoView()
                 CompletionBlockerKind.NOT_PERFORMED_REASON -> reasonRequester.bringIntoView()
-                CompletionBlockerKind.NEXT_DUE -> dueRequester.bringIntoView()
+                CompletionBlockerKind.NEXT_DUE -> if (unansweredPartlyFulfillment) fulfillmentRequester.bringIntoView() else nextDueRequester.bringIntoView()
                 else -> Unit
             }
             viewModel.clearInspectionFocus()
@@ -368,7 +372,7 @@ internal fun ServiceScreen(
             }
             item { ServiceCompletionLandmark() }
             item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
-            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled, outcomeRequester, reasonRequester, dueRequester) }
+            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled, outcomeRequester, reasonRequester, fulfillmentRequester, nextDueRequester) }
             if (viewState.contentRefreshError != null) item {
                 Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
             }
@@ -385,7 +389,7 @@ internal fun ServiceScreen(
 
 /** Compatibility surface for existing B025/B026 tests and transitional callers. */
 @Composable
-private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraft, viewModel: ServiceLoopViewModel, editingEnabled: Boolean, outcomeRequester: BringIntoViewRequester, reasonRequester: BringIntoViewRequester, dueRequester: BringIntoViewRequester) {
+private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraft, viewModel: ServiceLoopViewModel, editingEnabled: Boolean, outcomeRequester: BringIntoViewRequester, reasonRequester: BringIntoViewRequester, fulfillmentRequester: BringIntoViewRequester, nextDueRequester: BringIntoViewRequester) {
     val visitId = draft.visitId
     val workItemId = draft.workItemId
     ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-outcome")) {
@@ -408,7 +412,7 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
                 FulfillmentEligibility.ELIGIBLE -> {
                     if (line.outcome == "PARTLY_PERFORMED") {
                         Text("Does this complete the due service?", style = MaterialTheme.typography.titleMedium)
-                        Column(Modifier.bringIntoViewRequester(dueRequester), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                        Column(Modifier.bringIntoViewRequester(fulfillmentRequester), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                             ServiceLoopSelectionOption(
                                 selected = line.fulfillsCurrentObligation == true,
                                 onClick = { viewModel.chooseFulfillment(workItemId, visitId, true) },
@@ -449,6 +453,35 @@ private fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDraf
                     val validDate = runCatching { LocalDate.parse(date).isAfter(LocalDate.parse(viewModel.state.value.serviceProgress?.serviceDate ?: "")) }.getOrDefault(false)
                     ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason); changeDue = false }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
                     ServiceLoopTextAction("Cancel", { changeDue = false })
+                }
+            } else if (line.fulfillsCurrentObligation == true && line.confirmedNextDueDate == null) {
+                val hasOverrideDraft = draft.rawInputs.containsKey(ServiceDraftFieldKeys.OVERRIDE_DATE) ||
+                    draft.rawInputs.containsKey(ServiceDraftFieldKeys.OVERRIDE_REASON)
+                Column(
+                    Modifier.fillMaxWidth().bringIntoViewRequester(nextDueRequester).testTag("missing-next-due-resolution"),
+                    verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+                ) {
+                    Text("Next due needs confirmation", style = MaterialTheme.typography.titleMedium)
+                    line.calculatedNextDueDate?.let { Text("Calculated date · ${formatServiceLoopDate(it)} (not saved)") }
+                        ?: Text("A calculated date is not available for this Service.")
+                    if (hasOverrideDraft && editingEnabled) {
+                        var date by remember(workItemId, draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_DATE]) {
+                            mutableStateOf(draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_DATE].orEmpty())
+                        }
+                        var reason by remember(workItemId, draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_REASON]) {
+                            mutableStateOf(draft.rawInputs[ServiceDraftFieldKeys.OVERRIDE_REASON].orEmpty())
+                        }
+                        OutlinedTextField(date, { date = it; viewModel.scheduleRecurrenceOverrideDate(workItemId, it) }, label = { Text("Next due (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("override-date"))
+                        OutlinedTextField(reason, { reason = it; viewModel.scheduleRecurrenceOverrideReason(workItemId, it) }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth().testTag("override-reason"))
+                        val validDate = runCatching { LocalDate.parse(date).isAfter(LocalDate.parse(viewModel.state.value.serviceProgress?.serviceDate ?: "")) }.getOrDefault(false)
+                        ServiceLoopPrimaryButton("Apply override", { viewModel.applyRecurrenceOverride(workItemId, visitId, date, reason) }, Modifier.fillMaxWidth().testTag("apply-override"), enabled = validDate && reason.isNotBlank())
+                    } else if (editingEnabled && line.calculatedNextDueDate != null) {
+                        ServiceLoopTextAction(
+                            "Use calculated date",
+                            { viewModel.useCalculatedNextDue(workItemId, visitId) },
+                            Modifier.testTag("use-calculated-next-due"),
+                        )
+                    }
                 }
             } else if (line.currentObligationOutstanding && line.dueDate != null) {
                 Text("Remains due · ${formatServiceLoopDate(line.dueDate)}")

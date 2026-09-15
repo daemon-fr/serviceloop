@@ -40,6 +40,7 @@ import java.time.ZoneId
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -94,6 +95,22 @@ class CompletionUiSemanticTest {
         assertCompletionBlockerNavigation("NEXT_DUE", true, largeText = true)
     }
 
+    @Test fun performedMissingNextDueWithoutChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PERFORMED", withChecklist = false, capture = true)
+    }
+
+    @Test fun performedMissingNextDueWithChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PERFORMED", withChecklist = true)
+    }
+
+    @Test fun fulfilledPartlyMissingNextDueWithoutChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PARTLY_PERFORMED", withChecklist = false)
+    }
+
+    @Test fun fulfilledPartlyMissingNextDueWithChecklistCanBeRecoveredFromReviewAtLargeTextInDarkTheme() {
+        assertMissingNextDueRecovery("PARTLY_PERFORMED", withChecklist = true, largeText = true, dark = true)
+    }
+
     @Test fun noChecklistReasonLinkRevealsControlInDarkTheme() {
         assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", false, dark = true)
     }
@@ -136,6 +153,133 @@ class CompletionUiSemanticTest {
             "NEXT_DUE" -> compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
             else -> compose.onNodeWithTag("outcome-w-PERFORMED").assertIsDisplayed()
         }
+    }
+
+    private fun assertMissingNextDueRecovery(
+        outcome: String,
+        withChecklist: Boolean,
+        largeText: Boolean = false,
+        dark: Boolean = false,
+        capture: Boolean = false,
+    ) {
+        val before = runBlocking {
+            val dao = database.serviceLoopDao()
+            if (withChecklist) {
+                dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("missing-date-snapshot", null, "Fixture checklist", 1, 1)))
+                dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("missing-date-question", "missing-date-snapshot", 1, "Optional check", "STATUS", null, false, null)))
+            }
+            dao.updateWorkItem(dao.workItem("w")!!.copy(
+                templateSnapshotId = if (withChecklist) "missing-date-snapshot" else null,
+                outcome = outcome,
+                fulfillsCurrentObligation = true,
+                confirmedNextDueDate = null,
+                nextDueDateCalculated = null,
+                nextDueOverrideReason = null,
+            ))
+            listOf(dao.workItem("w"), dao.visit("v"), dao.obligation("o"), dao.plan("p"))
+        }
+        val repository = RoomServiceLoopRepository(database, fixedTime())
+        val preFixLine = runBlocking { repository.completionLines("v").single() }
+        org.junit.Assert.assertEquals("Confirm the next due date", preFixLine.blockers.single { it.kind.name == "NEXT_DUE" }.message)
+        org.junit.Assert.assertEquals(true, preFixLine.fulfillsCurrentObligation)
+        org.junit.Assert.assertNull(preFixLine.confirmedNextDueDate)
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent {
+            ServiceLoopTheme(darkTheme = dark) {
+                if (largeText) {
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) { ServiceLoopApp(viewModel, "review/v") }
+                } else ServiceLoopApp(viewModel, "review/v")
+            }
+        }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithText("Confirm the next due date").assertIsDisplayed()
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("use-calculated-next-due").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("use-calculated-next-due").assertIsDisplayed()
+        compose.onNodeWithText("Calculated date · 5 Dec 2026 (not saved)").assertIsDisplayed()
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            org.junit.Assert.assertEquals(before[0], dao.workItem("w"))
+            org.junit.Assert.assertEquals(before[1], dao.visit("v"))
+            org.junit.Assert.assertEquals(before[2], dao.obligation("o"))
+            org.junit.Assert.assertEquals(before[3], dao.plan("p"))
+        }
+        if (largeText || dark || capture) {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            File(context.getExternalFilesDir(null), "checkpoint0-missing-next-due-${outcome.lowercase()}-${if (dark) "dark" else "light"}${if (largeText) "-large-text" else ""}.png")
+                .outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.confirmedNextDueDate == "2026-12-05" } }
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            val saved = dao.workItem("w")!!
+            org.junit.Assert.assertEquals(outcome, saved.outcome)
+            org.junit.Assert.assertEquals(true, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertEquals("2026-12-05", saved.confirmedNextDueDate)
+            org.junit.Assert.assertEquals(true, saved.nextDueDateCalculated)
+            org.junit.Assert.assertEquals("WORKING", dao.visit("v")!!.state)
+            org.junit.Assert.assertEquals(before[2], dao.obligation("o"))
+            org.junit.Assert.assertEquals(before[3], dao.plan("p"))
+            val reloaded = RoomServiceLoopRepository(database, fixedTime()).completionLines("v").single()
+            org.junit.Assert.assertEquals("2026-12-05", reloaded.confirmedNextDueDate)
+            org.junit.Assert.assertFalse(reloaded.blockers.any { it.kind.name == "NEXT_DUE" && it.message == "Confirm the next due date" })
+        }
+        compose.waitUntil(10_000) {
+            viewModel.state.value.completionLines.singleOrNull()?.blockers?.none {
+                it.kind.name == "NEXT_DUE" && it.message == "Confirm the next due date"
+            } == true
+        }
+    }
+
+    @Test fun pendingOverrideDraftsTakePrecedenceOverCalculatedRecovery() {
+        runBlocking {
+            val dao = database.serviceLoopDao()
+            dao.updateWorkItem(dao.workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null))
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("w", com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_DATE, "2026-12-20", 2))
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("w", com.v16studio.serviceloop.domain.ServiceDraftFieldKeys.OVERRIDE_REASON, "Customer requested later date", 3))
+        }
+        val repository = RoomServiceLoopRepository(database, fixedTime())
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("override-date").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("override-date").assertIsDisplayed().assertTextContains("2026-12-20")
+        compose.onNodeWithTag("override-reason").assertTextContains("Customer requested later date")
+        compose.onAllNodesWithTag("use-calculated-next-due").assertCountEquals(0)
+        org.junit.Assert.assertNull(runBlocking { database.serviceLoopDao().workItem("w")!!.confirmedNextDueDate })
+    }
+
+    @Test fun failedCalculatedRecoveryStaysBlockedAndRetrySucceeds() {
+        runBlocking { database.serviceLoopDao().updateWorkItem(database.serviceLoopDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomServiceLoopRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("use-calculated-next-due").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value.values.any { it is com.v16studio.serviceloop.ui.service.ServiceDraftFieldState.Failed } }
+        org.junit.Assert.assertNull(runBlocking { database.serviceLoopDao().workItem("w")!!.confirmedNextDueDate })
+        org.junit.Assert.assertTrue(runBlocking { repository.completionLines("v").single().blockers.any { it.message == "Confirm the next due date" } })
+        fail.set(false)
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")!!.confirmedNextDueDate == "2026-12-05" } }
+        org.junit.Assert.assertEquals("WORKING", runBlocking { database.serviceLoopDao().visit("v")!!.state })
+    }
+
+    private fun fixedTime() = object : BusinessTime {
+        override val zoneId = ZoneId.of("Europe/Bucharest")
+        override fun instant() = Instant.parse("2026-09-05T10:00:00Z")
     }
 
     @Test fun workingVisitIdentityAndActionsAreSeparated() {
