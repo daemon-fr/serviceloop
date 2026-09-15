@@ -84,7 +84,8 @@ fun ServiceLoopInspectionStatusGrid(
         val loose = Constraints(maxWidth = Constraints.Infinity, maxHeight = Constraints.Infinity)
         val natural = choices.map { choice ->
             subcompose("natural-${choice.key}") {
-                InspectionStatusChoiceSurface(choice, selected = choice.key == selectedKey, enabled = enabled, onClick = {}, modifier = Modifier, interactive = false)
+                // Measure the widest visual state so a selection change cannot change pair allocation.
+                InspectionStatusChoiceSurface(choice, selected = true, enabled = enabled, onClick = {}, modifier = Modifier, interactive = false)
             }.single().measure(loose)
         }
         val gapPx = ServiceLoopUiTokens.Layout.pairGap.roundToPx()

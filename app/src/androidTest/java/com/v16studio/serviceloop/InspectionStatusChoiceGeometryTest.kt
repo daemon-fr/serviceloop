@@ -11,8 +11,11 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.v16studio.serviceloop.ui.designsystem.InspectionStatusChoice
@@ -29,6 +32,118 @@ import org.junit.Test
 class InspectionStatusChoiceGeometryTest {
     @get:Rule val compose = createComposeRule()
     private var renderedDensity = 1f
+    private var selectedChoice = mutableStateOf("0")
+
+    @Test
+    fun notApplicableAndOkSelectionPreservesAllOptionBounds() {
+        renderSelectable(listOf("Not applicable", "OK", "Not checked", "Issue found"), widthDp = 320)
+        val initial = optionBounds()
+
+        compose.onNodeWithTag("grid-choice-1").assertIsNotSelected().performClick().assertIsSelected()
+        val afterOk = optionBounds()
+        assertBoundsUnchanged(initial, afterOk, "selecting OK")
+
+        compose.onNodeWithTag("grid-choice-0").assertIsNotSelected().performClick().assertIsSelected()
+        assertBoundsUnchanged(initial, optionBounds(), "selecting Not applicable")
+    }
+
+    @Test
+    fun notCheckedAndIssueFoundSelectionPreservesAllOptionBounds() {
+        renderSelectable(listOf("Not applicable", "OK", "Not checked", "Issue found"), widthDp = 320, initialSelection = 2)
+        val initial = optionBounds()
+
+        compose.onNodeWithTag("grid-choice-3").assertIsNotSelected().performClick().assertIsSelected()
+        val afterIssueFound = optionBounds()
+        assertBoundsUnchanged(initial, afterIssueFound, "selecting Issue found")
+
+        compose.onNodeWithTag("grid-choice-2").assertIsNotSelected().performClick().assertIsSelected()
+        assertBoundsUnchanged(initial, optionBounds(), "selecting Not checked")
+    }
+
+    @Test
+    fun selectionDoesNotSwitchPairModeNearAllocationThreshold() {
+        val width = mutableStateOf(280)
+        selectedChoice = mutableStateOf("1")
+        compose.setContent {
+            ServiceLoopTheme {
+                val density = LocalDensity.current
+                renderedDensity = density.density
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 1f)) {
+                    Box(Modifier.width(width.value.dp).testTag("grid-parent")) {
+                        ServiceLoopInspectionStatusGrid(
+                            choices = listOf("Long inspection answer text", "Short", "Other", "OK").mapIndexed { index, label ->
+                                InspectionStatusChoice(
+                                    key = index.toString(),
+                                    label = label,
+                                    icon = ServiceLoopIcons.Circle,
+                                    semanticColor = Color(0xFF08666B),
+                                    testTag = "grid-choice-$index",
+                                )
+                            },
+                            selectedKey = selectedChoice.value,
+                            onSelected = { selectedChoice.value = it },
+                        )
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val observedModes = mutableSetOf<String>()
+        (280..360).forEach { widthDp ->
+            compose.runOnIdle {
+                width.value = widthDp
+                selectedChoice.value = "1"
+            }
+            compose.waitForIdle()
+            val initial = optionBounds()
+            val initialMode = pairMode(initial, 0)
+            observedModes += initialMode
+
+            compose.onNodeWithTag("grid-choice-0").performClick().assertIsSelected()
+            val afterSelection = optionBounds()
+            assertEquals("selection must not change the first-pair layout mode at ${widthDp}dp", initialMode, pairMode(afterSelection, 0))
+            assertBoundsUnchanged(initial, afterSelection, "selecting long answer at ${widthDp}dp")
+        }
+        assertTrue("the sampled widths should cover both sides of the allocation threshold: $observedModes", observedModes.size == 2)
+    }
+
+    @Test
+    fun largeFontSelectionPreservesLayoutModeAndAllOptionBoundsAt320Dp() {
+        renderSelectable(
+            listOf("Not applicable", "OK", "Not checked", "Issue found"),
+            widthDp = 320,
+            fontScale = 2f,
+        )
+        val initial = optionBounds()
+        val initialModes = listOf(pairMode(initial, 0), pairMode(initial, 2))
+
+        compose.onNodeWithTag("grid-choice-3").performClick().assertIsSelected()
+        val afterIssueFound = optionBounds()
+        assertEquals(initialModes, listOf(pairMode(afterIssueFound, 0), pairMode(afterIssueFound, 2)))
+        assertBoundsUnchanged(initial, afterIssueFound, "selecting Issue found at 320dp/fontScale 2")
+
+        compose.onNodeWithTag("grid-choice-0").performClick().assertIsSelected()
+        val afterNotApplicable = optionBounds()
+        assertEquals(initialModes, listOf(pairMode(afterNotApplicable, 0), pairMode(afterNotApplicable, 2)))
+        assertBoundsUnchanged(initial, afterNotApplicable, "selecting Not applicable at 320dp/fontScale 2")
+    }
+
+    @Test
+    fun selectionMovesRadioSemanticsAndChangesVisualTreatmentWithoutChangingGeometry() {
+        renderSelectable(listOf("Not applicable", "OK", "Not checked", "Issue found"), widthDp = 320)
+        compose.onNodeWithTag("grid-choice-0").assertIsSelected()
+        compose.onNodeWithTag("grid-choice-1").assertIsNotSelected()
+        val initial = optionBounds()
+        val before = compose.onNodeWithTag("grid-parent").captureToImage().asAndroidBitmap()
+
+        compose.onNodeWithTag("grid-choice-1").performClick().assertIsSelected()
+        compose.onNodeWithTag("grid-choice-0").assertIsNotSelected()
+        val after = compose.onNodeWithTag("grid-parent").captureToImage().asAndroidBitmap()
+
+        assertBoundsUnchanged(initial, optionBounds(), "selection visual treatment")
+        assertTrue("selected label/icon treatment should change pixels", changedPixelCount(before, after) > 20)
+    }
 
     @Test
     fun unequalFirstAllocationIsMeasuredAndPlacedWithoutOverflow() {
@@ -217,6 +332,70 @@ class InspectionStatusChoiceGeometryTest {
             }
         }
         compose.waitForIdle()
+    }
+
+    private fun renderSelectable(
+        labels: List<String>,
+        widthDp: Int,
+        fontScale: Float = 1f,
+        initialSelection: Int = 0,
+    ) {
+        selectedChoice = mutableStateOf(initialSelection.toString())
+        compose.setContent {
+            ServiceLoopTheme {
+                val density = LocalDensity.current
+                renderedDensity = density.density
+                CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                    Box(Modifier.width(widthDp.dp).testTag("grid-parent")) {
+                        ServiceLoopInspectionStatusGrid(
+                            choices = labels.mapIndexed { index, label ->
+                                InspectionStatusChoice(
+                                    key = index.toString(),
+                                    label = label,
+                                    icon = ServiceLoopIcons.Circle,
+                                    semanticColor = Color(0xFF08666B),
+                                    testTag = "grid-choice-$index",
+                                )
+                            },
+                            selectedKey = selectedChoice.value,
+                            onSelected = { selectedChoice.value = it },
+                        )
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    private fun optionBounds() = (0..3).map { bounds("grid-choice-$it") }
+
+    private fun pairMode(bounds: List<androidx.compose.ui.geometry.Rect>, firstIndex: Int): String =
+        if (kotlin.math.abs(bounds[firstIndex].top - bounds[firstIndex + 1].top) <= 1.5f) "horizontal" else "vertical"
+
+    private fun assertBoundsUnchanged(
+        expected: List<androidx.compose.ui.geometry.Rect>,
+        actual: List<androidx.compose.ui.geometry.Rect>,
+        label: String,
+    ) {
+        assertEquals("$label should preserve all four options", expected.size, actual.size)
+        expected.zip(actual).forEachIndexed { index, (before, after) ->
+            assertEquals("$label option $index left", before.left, after.left, 0.5f)
+            assertEquals("$label option $index top", before.top, after.top, 0.5f)
+            assertEquals("$label option $index width", before.width, after.width, 0.5f)
+            assertEquals("$label option $index height", before.height, after.height, 0.5f)
+        }
+    }
+
+    private fun changedPixelCount(before: Bitmap, after: Bitmap): Int {
+        assertEquals(before.width, after.width)
+        assertEquals(before.height, after.height)
+        var changed = 0
+        for (y in 0 until before.height) {
+            for (x in 0 until before.width) {
+                if (before.getPixel(x, y) != after.getPixel(x, y)) changed++
+            }
+        }
+        return changed
     }
 
     private fun assertUnequalHorizontalRow(firstTag: String, secondTag: String) {
