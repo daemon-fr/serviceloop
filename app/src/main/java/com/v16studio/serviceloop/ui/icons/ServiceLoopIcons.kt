@@ -19,6 +19,10 @@ object ServiceLoopIcons {
     @DrawableRes val Calendar = R.drawable.ic_sl_calendar
     @DrawableRes val Call = R.drawable.ic_sl_call
     @DrawableRes val Camera = R.drawable.ic_sl_camera
+    @DrawableRes val CaretDown = R.drawable.ic_sl_caret_down
+    @DrawableRes val CaretRight = R.drawable.ic_sl_caret_right
+    @DrawableRes val CheckCircle = R.drawable.ic_sl_check_circle
+    @DrawableRes val Circle = R.drawable.ic_sl_circle
     @DrawableRes val Copy = R.drawable.ic_sl_copy
     @DrawableRes val Customers = R.drawable.ic_sl_customers
     @DrawableRes val Delete = R.drawable.ic_sl_delete
@@ -28,6 +32,7 @@ object ServiceLoopIcons {
     @DrawableRes val Error = R.drawable.ic_sl_error
     @DrawableRes val Expand = R.drawable.ic_sl_expand
     @DrawableRes val ExternalOpen = R.drawable.ic_sl_external_open
+    @DrawableRes val EyeSlash = R.drawable.ic_sl_eye_slash
     @DrawableRes val History = R.drawable.ic_sl_history
     @DrawableRes val Home = R.drawable.ic_sl_home
     @DrawableRes val Info = R.drawable.ic_sl_info
@@ -50,7 +55,9 @@ object ServiceLoopIcons {
     @DrawableRes val TeamRole = R.drawable.ic_sl_team_role
     @DrawableRes val Time = R.drawable.ic_sl_time
     @DrawableRes val Warning = R.drawable.ic_sl_warning
+    @DrawableRes val WarningCircle = R.drawable.ic_sl_warning_circle
     @DrawableRes val Work = R.drawable.ic_sl_work
+    @DrawableRes val XCircle = R.drawable.ic_sl_x_circle
 }
 
 @Composable

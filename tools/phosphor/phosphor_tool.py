@@ -75,6 +75,12 @@ def svg_paths(path: Path) -> list[dict[str, str]]:
             # than substituting a hand-authored product vector for a Phosphor asset.
             paths.append({"d": f"M{x},{y} H{float(x) + float(width):g} V{float(y) + float(height):g} H{x} Z" if radius == "0" else f"M{float(x) + float(radius):g},{y} H{float(x) + float(width) - float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(width):g},{float(y) + float(radius):g} V{float(y) + float(height) - float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(width) - float(radius):g},{float(y) + float(height):g} H{float(x) + float(radius):g} A{radius},{radius} 0,0,1 {x},{float(y) + float(height) - float(radius):g} V{float(y) + float(radius):g} A{radius},{radius} 0,0,1 {float(x) + float(radius):g},{y} Z"})
             continue
+        if tag == "circle":
+            if set(node.attrib) - {"cx", "cy", "r"} or not all(key in node.attrib for key in ("cx", "cy", "r")):
+                raise ValueError(f"{path}: unsupported circle attributes")
+            cx, cy, radius = (float(node.attrib[key]) for key in ("cx", "cy", "r"))
+            paths.append({"d": f"M{cx - radius:g},{cy:g} A{radius:g},{radius:g} 0,1,0 {cx + radius:g},{cy:g} A{radius:g},{radius:g} 0,1,0 {cx - radius:g},{cy:g} Z"})
+            continue
         if tag == "line" and node.attrib.get("x1") == node.attrib.get("x2") and node.attrib.get("y1") == node.attrib.get("y2"):
             # Some upstream Fill SVGs retain an explicitly zero-length, non-rendering line.
             continue

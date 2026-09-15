@@ -9,7 +9,11 @@
     "Backup": "floppy-disk",
     "Back": "arrow-left",
     "Calendar": "calendar-dots",
+    "CaretDown": "caret-down",
+    "CaretRight": "caret-right",
     "Call": "phone",
+    "CheckCircle": "check-circle",
+    "Circle": "circle",
     "Camera": "camera",
     "Copy": "copy",
     "Customers": "address-book",
@@ -20,6 +24,7 @@
     "Error": "warning-circle",
     "Expand": "arrows-out",
     "ExternalOpen": "arrow-square-out",
+    "EyeSlash": "eye-slash",
     "Home": "house",
     "History": "clock-counter-clockwise",
     "Info": "info",
@@ -42,6 +47,8 @@
     "Time": "clock",
     "TeamRole": "users-three",
     "Warning": "warning",
-    "Work": "clipboard-text"
+    "WarningCircle": "warning-circle",
+    "Work": "clipboard-text",
+    "XCircle": "x-circle"
   }
 }

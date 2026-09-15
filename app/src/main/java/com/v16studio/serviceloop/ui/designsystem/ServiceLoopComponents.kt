@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -376,6 +377,23 @@ fun ServiceLoopChecklistChoice(
     enabled: Boolean = true,
 ) {
     ServiceLoopSelectionOption(selected, onClick, label, modifier, enabled)
+}
+
+@Composable
+fun ServiceLoopPrivateLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodySmall,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+    ) {
+        ServiceLoopIcon(ServiceLoopIcons.EyeSlash, null, Modifier.size(ServiceLoopUiTokens.Size.iconSmall), colors.textSecondary)
+        Text(text, style = style, color = colors.textSecondary)
+    }
 }
 
 /** A compact, menu-backed selector for a stable Work-filter dimension. */
@@ -724,7 +742,8 @@ fun ServiceLoopDenseNavigableRow(
     title:String,context:String?=null,metadata:String?=null,status:String?=null,actionLabel:String?=null,
     modifier:Modifier=Modifier,leadingIcon:Int?=null,
     leadingContent:(@Composable RowScope.()->Unit)?=null,
-    showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,showDivider:Boolean=true,onClick:(()->Unit)?,
+    showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,showDivider:Boolean=true,
+    contentPadding: PaddingValues = PaddingValues(vertical = ServiceLoopUiTokens.Space.md), onClick:(()->Unit)?,
 ) {
     val c=LocalServiceLoopTokens.current
     Row(
@@ -733,7 +752,7 @@ fun ServiceLoopDenseNavigableRow(
             .then(if (onClick != null) Modifier.serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clickable(role=Role.Button,onClick=onClick).focusable() else Modifier)
             .semantics { this.selected = selected }
             .then(if (showDivider) Modifier.drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())} else Modifier)
-            .padding(vertical=ServiceLoopUiTokens.Space.md),
+            .padding(contentPadding),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
     ) {
         leadingIcon?.let{ServiceLoopIcon(it,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)}
@@ -935,7 +954,7 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
             },
         )
     }
-    if (private) Text("PRIVATE · Not included in the customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)
+    if (private) ServiceLoopPrivateLabel("PRIVATE · Not included in the customer report")
     }
     if (expanded) {
         BackHandler { collapse() }
@@ -945,7 +964,7 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
                     ServiceLoopBrandStrip()
                     ServiceLoopDetailToolbar(label, { collapse() })
                     Column(Modifier.fillMaxSize().padding(ServiceLoopUiTokens.Space.lg),horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
-                        if (private) Text("PRIVATE · Not included in the customer report", color = LocalServiceLoopTokens.current.textSecondary)
+                         if (private) ServiceLoopPrivateLabel("PRIVATE · Not included in the customer report")
                          OutlinedTextField(state = editorState, enabled = enabled, textStyle=ServiceLoopUiTokens.Type.body, lineLimits = TextFieldLineLimits.MultiLine(), modifier = Modifier.fillMaxWidth().widthIn(max=ServiceLoopUiTokens.Size.contentMaxWidth).weight(1f).onFocusChanged { focusState ->
                              if (wasFocused && !focusState.isFocused) onFocusLost?.invoke()
                              wasFocused = focusState.isFocused

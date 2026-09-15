@@ -53,6 +53,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -76,6 +79,9 @@ import com.v16studio.serviceloop.domain.serviceEntryStatus
 import com.v16studio.serviceloop.domain.serviceProgressGroups
 import com.v16studio.serviceloop.data.isFiniteSignedDecimal
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChecklistChoice
+import com.v16studio.serviceloop.ui.designsystem.InspectionStatusChoice
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopInspectionStatusGrid
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
@@ -94,6 +100,7 @@ import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
+import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -102,14 +109,17 @@ import java.time.LocalDate
 
 internal data class ServiceListIndices(
     val workPerformed: Int,
+    val privateNote: Int,
     val checklistHeader: Int,
     val firstQuestion: Int,
+    val evidence: Int,
 )
 
 internal fun serviceListIndices(
     hasNavigationMessage: Boolean,
     hasDocumentationNotice: Boolean,
     hasPrivateContext: Boolean,
+    questionCount: Int = 0,
 ): ServiceListIndices {
     var next = 1 // Service identity block
     if (hasNavigationMessage) next++
@@ -117,9 +127,12 @@ internal fun serviceListIndices(
     if (hasDocumentationNotice) next++
     if (hasPrivateContext) next++
     val workPerformed = next++
-    next++ // Private note, either collapsed action or inline field
+    val privateNote = next++
     val checklistHeader = next++
-    return ServiceListIndices(workPerformed, checklistHeader, next)
+    val firstQuestion = next
+    val questionItems = if (questionCount == 0) 1 else questionCount
+    val evidence = firstQuestion + questionItems + 1
+    return ServiceListIndices(workPerformed, privateNote, checklistHeader, firstQuestion, evidence)
 }
 
 /** Replaces only the active Service entry, preserving any Visit below it. */
@@ -139,6 +152,54 @@ internal fun openVisitOverview(nav: NavHostController, visitId: String) {
             launchSingleTop = true
         }
     }
+}
+
+private fun focusForRawServiceField(workItemId: String, fieldKey: String): InspectionFocus = when {
+    fieldKey == ServiceDraftFieldKeys.WORK -> InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+    fieldKey == ServiceDraftFieldKeys.PRIVATE -> InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+    fieldKey == ServiceDraftFieldKeys.NOT_PERFORMED_REASON -> InspectionFocus(CompletionBlockerKind.NOT_PERFORMED_REASON, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+    fieldKey == ServiceDraftFieldKeys.OVERRIDE_DATE || fieldKey == ServiceDraftFieldKeys.OVERRIDE_REASON -> InspectionFocus(CompletionBlockerKind.NEXT_DUE, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+    ServiceDraftFieldKeys.parsePhotoCaption(fieldKey) != null -> InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+    ServiceDraftFieldKeys.parseQuestionField(fieldKey) != null -> {
+        val parsed = ServiceDraftFieldKeys.parseQuestionField(fieldKey)!!
+        InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, parsed.snapshotItemId, workItemId, fieldKey, attention = true)
+    }
+    else -> InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, fieldKey = fieldKey, attention = true)
+}
+
+private fun resolveAutomaticInspectionFocus(
+    draft: InspectionDraft,
+    fieldStates: Map<ServiceDraftFieldId, ServiceDraftFieldState>,
+    completion: CompletionLine?,
+): InspectionFocus {
+    val workItemId = draft.workItemId
+    val localStates = fieldStates.filterKeys { it.workItemId == workItemId }
+    val failedOrInvalid = localStates
+        .filterValues { it is ServiceDraftFieldState.Failed || it is ServiceDraftFieldState.Invalid }
+        .keys.map(ServiceDraftFieldId::fieldKey)
+    val unresolvedRaw = (failedOrInvalid + draft.rawInputs.keys).distinct().sorted().firstOrNull()
+    unresolvedRaw?.let { return focusForRawServiceField(workItemId, it) }
+
+    draft.issueMissingDescription.firstOrNull()?.let { questionId ->
+        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionIssue(questionId), attention = true)
+    }
+    draft.invalidExplicitAnswers.firstOrNull()?.let { questionId ->
+        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionValue(questionId), attention = true)
+    }
+    draft.questions.firstOrNull { question ->
+        question.disposition == ResponseDisposition.ISSUE_FOUND && question.reason.isNullOrBlank()
+    }?.let { question ->
+        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, question.snapshotItemId, workItemId, ServiceDraftFieldKeys.questionIssue(question.snapshotItemId), attention = true)
+    }
+    draft.questions.firstOrNull { question ->
+        question.disposition == ResponseDisposition.NOT_APPLICABLE && question.reason.isNullOrBlank()
+    }?.let { question ->
+        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, question.snapshotItemId, workItemId, ServiceDraftFieldKeys.questionNotApplicable(question.snapshotItemId), attention = true)
+    }
+    completion?.blockers?.firstOrNull()?.let { blocker ->
+        return InspectionFocus(blocker.kind, blocker.questionId, workItemId, attention = true)
+    }
+    return InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, attention = true)
 }
 
 /** The single Working Visit Service workspace. InspectionScreen below is only a compatibility entry point. */
@@ -187,6 +248,7 @@ internal fun ServiceScreen(
         hasNavigationMessage = navigationMessage != null,
         hasDocumentationNotice = current?.documentationMode != ServiceDocumentationMode.LOCAL,
         hasPrivateContext = contextRows.isNotEmpty(),
+        questionCount = draft.questions.size,
     )
 
     fun flushAndThen(action: () -> Unit) {
@@ -230,21 +292,32 @@ internal fun ServiceScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(draft.workItemId, focus, listIndices, completion?.outcome, completion?.fulfillsCurrentObligation, completion?.confirmedNextDueDate, draft.rawInputs) {
-        focus?.let { target ->
+    LaunchedEffect(draft.workItemId, focus?.requestId, listIndices, completion?.outcome, completion?.fulfillsCurrentObligation, completion?.confirmedNextDueDate, draft.rawInputs, fieldStates) {
+        val requested = focus?.takeIf { it.workItemId == null || it.workItemId == draft.workItemId }
+        if (requested?.attention == true && completion == null) return@LaunchedEffect
+        requested?.let { requestedTarget ->
+            val target = if (requestedTarget.attention) resolveAutomaticInspectionFocus(draft, fieldStates, completion) else requestedTarget
             if (target.kind in setOf(CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE) && completion == null) return@let
             val unansweredPartlyFulfillment = completion?.outcome == "PARTLY_PERFORMED" && completion.fulfillsCurrentObligation == null
             val missingConfirmedNextDue = completion?.fulfillsCurrentObligation == true && completion.confirmedNextDueDate == null
             if (target.kind == CompletionBlockerKind.NEXT_DUE && !unansweredPartlyFulfillment && !missingConfirmedNextDue) return@let
-             val index = when (target.kind) {
-                 CompletionBlockerKind.WORK_PERFORMED -> listIndices.workPerformed
-                 CompletionBlockerKind.CHECKLIST_INCOMPLETE -> listIndices.checklistHeader
-                 CompletionBlockerKind.FINDING_DESCRIPTION -> draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }
-                     .takeIf { it >= 0 }
-                     ?.let { listIndices.firstQuestion + it }
-                     ?: listIndices.checklistHeader
-                 CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE ->
-                     listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size) + 2
+            val rawQuestion = target.fieldKey?.let(ServiceDraftFieldKeys::parseQuestionField)
+            val index = when {
+                target.fieldKey == ServiceDraftFieldKeys.PRIVATE -> listIndices.privateNote
+                target.fieldKey != null && ServiceDraftFieldKeys.parsePhotoCaption(target.fieldKey) != null -> listIndices.evidence
+                rawQuestion != null -> draft.questions.indexOfFirst { it.snapshotItemId == rawQuestion.snapshotItemId }
+                    .takeIf { it >= 0 }
+                    ?.let { listIndices.firstQuestion + it }
+                    ?: listIndices.checklistHeader
+                else -> when (target.kind) {
+                    CompletionBlockerKind.WORK_PERFORMED -> listIndices.workPerformed
+                    CompletionBlockerKind.CHECKLIST_INCOMPLETE -> listIndices.checklistHeader
+                    CompletionBlockerKind.FINDING_DESCRIPTION -> draft.questions.indexOfFirst { it.snapshotItemId == target.questionId }
+                        .takeIf { it >= 0 }
+                        ?.let { listIndices.firstQuestion + it }
+                        ?: listIndices.checklistHeader
+                    CompletionBlockerKind.OUTCOME, CompletionBlockerKind.NOT_PERFORMED_REASON, CompletionBlockerKind.NEXT_DUE -> listIndices.firstQuestion + (if (draft.questions.isEmpty()) 1 else draft.questions.size) + 2
+                }
             }
             val targetIndex = index.coerceAtLeast(0)
             snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > targetIndex }
@@ -257,7 +330,7 @@ internal fun ServiceScreen(
                 CompletionBlockerKind.NEXT_DUE -> if (unansweredPartlyFulfillment) fulfillmentRequester.bringIntoView() else nextDueRequester.bringIntoView()
                 else -> Unit
             }
-            viewModel.clearInspectionFocus()
+            viewModel.clearInspectionFocus(requestedTarget.requestId)
         }
     }
 
@@ -315,7 +388,10 @@ internal fun ServiceScreen(
                 ServiceProgressNavigator(
                     progress = resolvedProgress,
                     currentWorkItemId = draft.workItemId,
-                    onSelect = { target -> if (target.workItemId != draft.workItemId) flushAndThen { replaceServiceDestination(nav, target.workItemId) } },
+                    onSelect = { target ->
+                        if (target.workItemId == draft.workItemId) viewModel.focusService(draft.workItemId)
+                        else flushAndThen { replaceServiceDestination(nav, target.workItemId) }
+                    },
                 )
             }
             if (current?.documentationMode != ServiceDocumentationMode.LOCAL) {
@@ -347,7 +423,7 @@ internal fun ServiceScreen(
                     ServiceLoopTextAction("+ Private note", { privateExpanded = true }, Modifier.testTag("add-private-note"), enabled = editingEnabled)
                 } else {
                     ServiceLoopSurfaceCard(modifier = Modifier.testTag("private-work-note")) {
-                        Text("Private note", style = MaterialTheme.typography.titleMedium)
+                        ServiceLoopPrivateLabel("Private note", style = MaterialTheme.typography.titleMedium)
                         ServiceLoopLongTextEditor(
                             value = privateNote,
                             onValueChange = { privateNote = it; if (editingEnabled) viewModel.schedulePrivateText(draft.workItemId, it) },
@@ -544,10 +620,11 @@ internal fun ServiceProgressNavigator(
                             title = item.serviceName,
                             context = null,
                             statusContent = { ServiceProgressBadge(item) },
-                            modifier = Modifier.padding(start = ServiceLoopUiTokens.Space.sm).testTag("$rowTagPrefix-${item.workItemId}"),
+                            modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.sm).testTag("$rowTagPrefix-${item.workItemId}"),
                             selected = selected,
-                            showDisclosure = !selected,
-                            onClick = if (selected) null else ({ onSelect(item) }),
+                            showDisclosure = true,
+                            contentPadding = PaddingValues(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.md),
+                            onClick = { onSelect(item) },
                             showDivider = index < group.items.lastIndex,
                         )
                     }
@@ -570,8 +647,20 @@ private fun ServiceProgressGroupToggle(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalServiceLoopTokens.current
-    val serviceSummary = serviceProgressGroupSummary(group)
-    val accessibleName = "${if (expanded) "Hide" else "Show"} $serviceSummary for ${group.label}"
+    val attentionCount = group.items.count {
+        it.documentationMode in setOf(ServiceDocumentationMode.LOCAL, ServiceDocumentationMode.CHOICE_REQUIRED) && it.status == ServiceEntryStatus.NEEDS_ATTENTION
+    }
+    val actionWord = if (expanded) "Hide" else "Show"
+    val accessibleName = "$actionWord services (${group.items.size})${if (attentionCount > 0) " — $attentionCount ${if (attentionCount == 1) "needs" else "need"} attention" else ""} for ${group.label}"
+    val label = buildAnnotatedString {
+        append("$actionWord services (${group.items.size})")
+        if (attentionCount > 0) {
+            append(" — ")
+            withStyle(androidx.compose.ui.text.SpanStyle(fontStyle = FontStyle.Italic)) {
+                append("$attentionCount ${if (attentionCount == 1) "needs" else "need"} attention")
+            }
+        }
+    }
     Row(
         modifier = modifier.fillMaxWidth()
             .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
@@ -584,13 +673,13 @@ private fun ServiceProgressGroupToggle(
             .padding(horizontal = ServiceLoopUiTokens.Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(serviceSummary, style = ServiceLoopUiTokens.Type.label, color = c.textSecondary, modifier = Modifier.weight(1f))
         ServiceLoopIcon(
-            if (expanded) ServiceLoopIcons.Dropdown else ServiceLoopIcons.Disclosure,
+            if (expanded) ServiceLoopIcons.CaretDown else ServiceLoopIcons.CaretRight,
             null,
             Modifier.size(ServiceLoopUiTokens.Size.icon),
             c.icon,
         )
+        Text(label, style = ServiceLoopUiTokens.Type.label, color = c.textSecondary, modifier = Modifier.weight(1f))
     }
 }
 
@@ -660,7 +749,7 @@ private fun DocumentationModeNotice(mode: ServiceDocumentationMode, onOpenAssign
 @Composable
 private fun PrivateWorkContext(rows: List<Pair<String, String>>) {
     ServiceLoopSurfaceCard(modifier = Modifier.testTag("private-work-context")) {
-        Text("PRIVATE WORK CONTEXT", style = MaterialTheme.typography.labelLarge)
+        ServiceLoopPrivateLabel("PRIVATE WORK CONTEXT", style = MaterialTheme.typography.labelLarge)
         rows.forEach { (label, value) ->
             Text(label, style = MaterialTheme.typography.labelMedium)
             Text(value)
@@ -703,7 +792,7 @@ private fun ServiceQuestionBlock(workItemId: String, rawInputs: Map<String, Stri
             if (question.isResolved()) ServiceLoopIcon(ServiceLoopIcons.SelectionCheck, null, Modifier.align(Alignment.TopEnd).size(ServiceLoopUiTokens.Size.iconSmall).testTag("question-${question.snapshotItemId}-complete"), LocalServiceLoopTokens.current.successInk)
         }
         Text(if (question.required) "Required · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}" else "Optional · ${question.responseType.lowercase().replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.bodySmall)
-        question.privateGuidance?.takeIf(String::isNotBlank)?.let { Text("PRIVATE · $it", style = MaterialTheme.typography.bodySmall) }
+        question.privateGuidance?.takeIf(String::isNotBlank)?.let { ServiceLoopPrivateLabel("PRIVATE · $it") }
         when (question.responseType) {
             "STATUS" -> StatusChoiceGrid(question, editingEnabled, viewModel, workItemId)
             else -> ValueQuestion(workItemId, rawInputs, question, editingEnabled, viewModel)
@@ -723,29 +812,18 @@ private fun ServiceQuestionBlock(workItemId: String, rawInputs: Map<String, Stri
 
 @Composable
 private fun StatusChoiceGrid(question: InspectionQuestion, enabled: Boolean, viewModel: ServiceLoopViewModel, workItemId: String) {
+    val colors = LocalServiceLoopTokens.current
     val choices = listOf(
-        ResponseDisposition.OK to "OK",
-        ResponseDisposition.ISSUE_FOUND to "Issue found",
-        ResponseDisposition.NOT_APPLICABLE to "Not applicable",
-        ResponseDisposition.NOT_CHECKED to "Not checked",
+        InspectionStatusChoice(ResponseDisposition.NOT_APPLICABLE.name, "Not applicable", ServiceLoopIcons.XCircle, colors.warningInk, "response-${question.snapshotItemId}-${ResponseDisposition.NOT_APPLICABLE.name}"),
+        InspectionStatusChoice(ResponseDisposition.OK.name, "OK", ServiceLoopIcons.CheckCircle, colors.successInk, "response-${question.snapshotItemId}-${ResponseDisposition.OK.name}"),
+        InspectionStatusChoice(ResponseDisposition.NOT_CHECKED.name, "Not checked", ServiceLoopIcons.Circle, colors.textMuted, "response-${question.snapshotItemId}-${ResponseDisposition.NOT_CHECKED.name}"),
+        InspectionStatusChoice(ResponseDisposition.ISSUE_FOUND.name, "Issue found", ServiceLoopIcons.WarningCircle, colors.errorInk, "response-${question.snapshotItemId}-${ResponseDisposition.ISSUE_FOUND.name}"),
     )
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stack = maxWidth < 360.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.25f
-        if (stack) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { choices.forEach { StatusChoice(it, question, enabled, viewModel, workItemId) } }
-        else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusChoice(choices[0], question, enabled, viewModel, workItemId, Modifier.weight(1f)); StatusChoice(choices[1], question, enabled, viewModel, workItemId, Modifier.weight(1f)) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusChoice(choices[2], question, enabled, viewModel, workItemId, Modifier.weight(1f)); StatusChoice(choices[3], question, enabled, viewModel, workItemId, Modifier.weight(1f)) }
-        }
-    }
-}
-
-@Composable
-private fun StatusChoice(choice: Pair<ResponseDisposition, String>, question: InspectionQuestion, enabled: Boolean, viewModel: ServiceLoopViewModel, workItemId: String, modifier: Modifier = Modifier) {
-    ServiceLoopChecklistChoice(
-        selected = question.disposition == choice.first,
-        onClick = { if (enabled) viewModel.chooseResponse(workItemId, question.snapshotItemId, choice.first) },
-        label = choice.second,
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("response-${question.snapshotItemId}-${choice.first.name}"),
+    ServiceLoopInspectionStatusGrid(
+        choices = choices,
+        selectedKey = question.disposition.name,
+        onSelected = { value -> viewModel.chooseResponse(workItemId, question.snapshotItemId, ResponseDisposition.valueOf(value)) },
+        modifier = Modifier.testTag("response-grid-${question.snapshotItemId}"),
         enabled = enabled,
     )
 }

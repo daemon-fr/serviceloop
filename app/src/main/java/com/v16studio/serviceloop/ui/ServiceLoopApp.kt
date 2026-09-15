@@ -133,6 +133,7 @@ import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
 import com.v16studio.serviceloop.ui.theme.AppearanceMode
 import com.v16studio.serviceloop.ui.theme.AppearancePreferences
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
@@ -803,8 +804,8 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             }
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-                Text("Private equipment note",style=ServiceLoopUiTokens.Type.label)
-                Text("PRIVATE · Not included in customer report",style=ServiceLoopUiTokens.Type.meta,color=LocalServiceLoopTokens.current.textSecondary)
+                ServiceLoopPrivateLabel("Private equipment note", style = ServiceLoopUiTokens.Type.label)
+                ServiceLoopPrivateLabel("PRIVATE · Not included in customer report", style = ServiceLoopUiTokens.Type.meta)
                 Text(detail.privateNote,style=ServiceLoopUiTokens.Type.body)
             }
         }
@@ -871,7 +872,7 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
         if (line.fulfillmentEligibility == FulfillmentEligibility.PLAN_INELIGIBLE) Text("The service plan is no longer active — this Service cannot advance the due date.")
         line.blockers.forEach { blocker ->
             TextButton(onClick = {
-                viewModel.focusInspection(blocker.kind, blocker.questionId)
+                viewModel.focusInspection(blocker.kind, blocker.questionId, line.workItemId)
                 nav.navigate("inspection/${line.workItemId}")
             }, modifier = Modifier.fillMaxWidth().testTag("completion-blocker-${line.workItemId}-${blocker.kind}-${blocker.questionId.orEmpty()}")) {
                 Text(blocker.message, color = MaterialTheme.colorScheme.error)
@@ -1002,7 +1003,7 @@ private fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<R
     LazyColumn(Modifier.padding(padding).testTag("final-record-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("${report.visitReference} · ${if(detail.voided) "VOIDED" else "Finalized"}"); detail.publicVoidReason?.let{Text("Customer explanation: $it",color=MaterialTheme.colorScheme.error)}; Text("Service date ${report.actualServiceDate} · Revision ${report.revisionNumber}"); Text("Recorded on ${formatRecordedOn(report.recordedAtEpochMillis)}"); Text("${report.customerReference.orEmpty()} · ${report.customerName}\n${report.siteReference.orEmpty()} · ${report.siteName}\n${report.siteAddress.orEmpty()}"); report.publicNote?.let { Text("Record note: $it") } }
         items(report.lines) { line -> AccentCard { Text(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription), style = MaterialTheme.typography.titleMedium); Text("${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}"); Text("Outcome: ${line.outcome.replace('_', ' ')}"); line.publicWorkNote?.let { Text(it) }; line.notPerformedReason?.let { Text("Reason: $it") }; Text(dueEffect(line)); line.parts.forEach { Text("Part: ${it.description} · ${it.quantity} ${it.unit}") }; line.photos.forEachIndexed { index, photo -> ReportPhotoThumbnail(photo, index, context) }; line.checklist.forEach { Text("${it.position}. ${it.label}: ${it.value ?: it.disposition.replace('_', ' ')}${it.reason?.let { reason -> " — $reason" }.orEmpty()}") } } }
-        if (detail.privateNotes.isNotEmpty()) item { AccentCard { Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
+        if (detail.privateNotes.isNotEmpty()) item { AccentCard { ServiceLoopPrivateLabel("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); detail.privateNotes.forEach { Text(it) } } }
         item {
             Text("Customer PDF", style = MaterialTheme.typography.titleMedium)
             Text(when (detail.report?.status) { "READY" -> if (reportPresent) "Ready · Version ${detail.report.versionNumber} · ${detail.report.byteSize} bytes" else "File missing · Version ${detail.report.versionNumber}"; "MISSING" -> "File missing · Version ${detail.report.versionNumber}"; "FAILED" -> "Generation failed · Version ${detail.report.versionNumber}"; "GENERATING" -> "Generating…"; else -> "Not generated" })

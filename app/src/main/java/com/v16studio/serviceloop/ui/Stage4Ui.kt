@@ -19,6 +19,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 
@@ -94,7 +95,7 @@ internal fun ContactNoteScreen(note: ContactNoteDetail?, padding: PaddingValues)
         Text(note.reference, style = MaterialTheme.typography.headlineSmall)
         Text("${note.channel.replace('_', ' ')} · ${Instant.ofEpochMilli(note.occurredAtEpochMillis)}")
         Text(note.outcome)
-        if (note.privateNote.isNotBlank()) { HorizontalDivider(); Text("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); Text(note.privateNote) }
+        if (note.privateNote.isNotBlank()) { HorizontalDivider(); ServiceLoopPrivateLabel("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); Text(note.privateNote) }
         if (note.enteredInError) Text("Entered in error${note.errorReason?.let { ": $it" }.orEmpty()}", color = MaterialTheme.colorScheme.error)
         Text("Read-only history entry", style = MaterialTheme.typography.bodySmall)
     }
@@ -145,7 +146,7 @@ internal fun CorrectionScreen(recordId: String, state: UiState, padding: Padding
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(line.fulfilledObligation, { update(line.copy(fulfilledObligation = it)) }); Text("Fulfills current obligation") }
             } }
         }
-        item { OutlinedTextField(draft.publicNote, { draft = draft.copy(publicNote = it) }, label = { Text("Relevant public note") }, minLines = 2, modifier = Modifier.fillMaxWidth()); OutlinedTextField(draft.privateNote, { draft = draft.copy(privateNote = it) }, label = { Text("Internal note · Not in customer report") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(draft.publicNote, { draft = draft.copy(publicNote = it) }, label = { Text("Relevant public note") }, minLines = 2, modifier = Modifier.fillMaxWidth()); OutlinedTextField(draft.privateNote, { draft = draft.copy(privateNote = it) }, label = { ServiceLoopPrivateLabel("Internal note · Not in customer report") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
         items(draft.followUps, key = { "follow-up-${it.id}" }) { followUp ->
             val index = draft.followUps.indexOfFirst { it.id == followUp.id }
             ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text("Affected follow-up · ${followUp.title}"); ServiceLoopChoiceGroup(listOf("KEEP" to "Keep","CANCEL" to "Cancel as erroneous"),followUp.action,{ action -> draft = draft.copy(followUps = draft.followUps.toMutableList().also { it[index] = followUp.copy(action = action) }) }); if (followUp.action == "CANCEL") OutlinedTextField(followUp.cancellationReason, { reason -> draft = draft.copy(followUps = draft.followUps.toMutableList().also { it[index] = followUp.copy(cancellationReason = reason) }) }, label = { Text("Cancellation reason · Required") }, modifier = Modifier.fillMaxWidth()) } }
@@ -232,7 +233,7 @@ internal fun CsvExportScreen(state: UiState, padding: PaddingValues, viewModel: 
     LazyColumn(Modifier.padding(padding).testTag("csv-export"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Readable CSV export", style = MaterialTheme.typography.headlineSmall); Text("CSV files are readable and unencrypted. They do not restore photographs, report files, or the complete app."); Text("Scope"); ServiceLoopSelectionOption(selectedCustomer == null, { selectedCustomer = null }, "All customers"); OutlinedTextField(customerQuery, { customerQuery = it }, label = { Text("Find customer") }, modifier = Modifier.fillMaxWidth()) }
         items(visibleCustomers, key = { it.id }) { customer -> ServiceLoopSelectionOption(selectedCustomer == customer.id, { selectedCustomer = customer.id }, "${customer.reference} · ${customer.name}", modifier = Modifier.fillMaxWidth().testTag("export-customer-${customer.id}")) }
-        item { Row { Checkbox(inactive, { inactive = it }); Text("Include archived / retired records") }; Row { Checkbox(privateFields, { privateFields = it }); Text("Include private/access notes (plaintext)") }; Row { Checkbox(previous, { previous = it }); Text("Include previous record revisions (records package)") }; ServiceLoopActionStack { Button(onClick = { filename = "ServiceLoop-directory.csv"; launched = false; viewModel.prepareDirectoryCsv(inactive, privateFields, selectedCustomer) }, modifier = Modifier.fillMaxWidth()) { Text("Create directory export") }; OutlinedButton(onClick = { filename = "ServiceLoop-records.zip"; launched = false; viewModel.prepareRecordsCsv(inactive, privateFields, previous, selectedCustomer) }, modifier = Modifier.fillMaxWidth()) { Text("Create records package") } } }
+        item { Row { Checkbox(inactive, { inactive = it }); Text("Include archived / retired records") }; Row { Checkbox(privateFields, { privateFields = it }); ServiceLoopPrivateLabel("Include private/access notes (plaintext)") }; Row { Checkbox(previous, { previous = it }); Text("Include previous record revisions (records package)") }; ServiceLoopActionStack { Button(onClick = { filename = "ServiceLoop-directory.csv"; launched = false; viewModel.prepareDirectoryCsv(inactive, privateFields, selectedCustomer) }, modifier = Modifier.fillMaxWidth()) { Text("Create directory export") }; OutlinedButton(onClick = { filename = "ServiceLoop-records.zip"; launched = false; viewModel.prepareRecordsCsv(inactive, privateFields, previous, selectedCustomer) }, modifier = Modifier.fillMaxWidth()) { Text("Create records package") } } }
     }
 }
 

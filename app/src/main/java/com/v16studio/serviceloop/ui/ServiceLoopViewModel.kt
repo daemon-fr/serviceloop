@@ -53,6 +53,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 sealed interface DueServicesProjection {
     data object Unresolved : DueServicesProjection
@@ -143,7 +144,14 @@ data class UiState(
         }
 }
 
-data class InspectionFocus(val kind: CompletionBlockerKind, val questionId: String? = null)
+data class InspectionFocus(
+    val kind: CompletionBlockerKind,
+    val questionId: String? = null,
+    val workItemId: String? = null,
+    val fieldKey: String? = null,
+    val attention: Boolean = false,
+    val requestId: Long = 0L,
+)
 
 class ServiceLoopViewModel(
     private val repository: ServiceLoopRepository,
@@ -164,6 +172,7 @@ class ServiceLoopViewModel(
     private val activeLoads = AtomicInteger(0)
     private val requestLock = Any()
     private val requestVersions = mutableMapOf<String, Long>()
+    private val focusSequence = AtomicLong(0L)
     private var datasetGeneration = 0L
 
     private data class RequestToken(val key: String, val version: Long, val datasetGeneration: Long)
@@ -326,8 +335,26 @@ class ServiceLoopViewModel(
             if (current.inspection?.workItemId == draft.workItemId) current.copy(contentRefreshError = "A saved service edit could not be restored") else current
         }
     }
-    fun focusInspection(kind: CompletionBlockerKind, questionId: String?) { _state.update { it.copy(inspectionFocus = InspectionFocus(kind, questionId)) } }
-    fun clearInspectionFocus() { _state.update { it.copy(inspectionFocus = null) } }
+    fun focusInspection(kind: CompletionBlockerKind, questionId: String?, workItemId: String? = null) {
+        _state.update { it.copy(inspectionFocus = InspectionFocus(kind, questionId, workItemId = workItemId, requestId = focusSequence.incrementAndGet())) }
+    }
+    fun focusService(workItemId: String) {
+        _state.update {
+            it.copy(
+                inspectionFocus = InspectionFocus(
+                    kind = CompletionBlockerKind.WORK_PERFORMED,
+                    workItemId = workItemId,
+                    attention = true,
+                    requestId = focusSequence.incrementAndGet(),
+                ),
+            )
+        }
+    }
+    fun clearInspectionFocus(requestId: Long? = null) {
+        _state.update { state ->
+            if (requestId == null || state.inspectionFocus?.requestId == requestId) state.copy(inspectionFocus = null) else state
+        }
+    }
 
     fun loadCompletion(visitId: String) {
         val request = issueRequest("completion")

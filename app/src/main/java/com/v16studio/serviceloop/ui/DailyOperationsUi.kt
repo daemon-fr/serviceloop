@@ -20,6 +20,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDangerTonalButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
 
 import android.content.Intent
 import android.content.Context
@@ -597,7 +598,10 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         item { DispatchVisitPanel(detail) }
         item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status");when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
         if (state.serviceProgress?.visitId == detail.id) item {
-            VisitServiceProgressOverview(state.serviceProgress, onSelect = { item -> nav.navigate("inspection/${item.workItemId}") })
+            VisitServiceProgressOverview(state.serviceProgress, onSelect = { item ->
+                viewModel.focusService(item.workItemId)
+                nav.navigate("inspection/${item.workItemId}")
+            })
         } else {
             items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){nav.navigate("inspection/${line.workItemId}")} }
         }
@@ -799,7 +803,8 @@ private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context, onOpen: (() -
                 else Text("Image unavailable", color = colors.errorInk, style = MaterialTheme.typography.bodySmall)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(if (photo.includedInReport) "Included in customer report" else "Private evidence", fontWeight = FontWeight.SemiBold)
+                if (photo.includedInReport) Text("Included in customer report", fontWeight = FontWeight.SemiBold)
+                else ServiceLoopPrivateLabel("Private evidence", style = MaterialTheme.typography.titleSmall)
                 Text(photo.caption?.takeIf(String::isNotBlank) ?: "No caption", style = MaterialTheme.typography.bodyMedium)
                 Text("${photo.byteSize} bytes · Stored on this device", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
@@ -870,7 +875,7 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
 }
 @Composable private fun DailyHeading(value:String){Text(value,style=MaterialTheme.typography.titleLarge)}
 @Composable private fun DailyEmpty(padding:PaddingValues,value:String,onRetry:(() -> Unit)?=null){Box(Modifier.fillMaxSize().padding(padding),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)){Text(value);onRetry?.let{ServiceLoopPrimaryButton("Retry",it,Modifier.testTag("retry-due-services"))}}}}
-@Composable private fun PrivateBlock(label:String,value:String){Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(12.dp)){Text(label,fontWeight=FontWeight.Bold);Text(value)}}}
+@Composable private fun PrivateBlock(label:String,value:String){Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(12.dp)){ServiceLoopPrivateLabel(label, style = MaterialTheme.typography.labelLarge);Text(value)}}}
 private fun handoff(context:Context,intent:Intent,label:String)=if(runCatching{context.startActivity(intent);true}.getOrDefault(false)) "Opened $label · no contact outcome was recorded" else "No compatible $label app is available · copy the saved details manually"
 private fun InputStream.readBounded(limit:Int):ByteArray? { val output=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0; while(true){val count=read(buffer);if(count<0)break;total+=count;if(total>limit)return null;output.write(buffer,0,count)};return output.toByteArray() }
 private const val MAX_PHOTO_PICK_BYTES=30*1024*1024
