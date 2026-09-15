@@ -167,39 +167,95 @@ private fun focusForRawServiceField(workItemId: String, fieldKey: String): Inspe
     else -> InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, fieldKey = fieldKey, attention = true)
 }
 
-private fun resolveAutomaticInspectionFocus(
+internal fun resolveAutomaticInspectionFocus(
     draft: InspectionDraft,
     fieldStates: Map<ServiceDraftFieldId, ServiceDraftFieldState>,
     completion: CompletionLine?,
 ): InspectionFocus {
     val workItemId = draft.workItemId
     val localStates = fieldStates.filterKeys { it.workItemId == workItemId }
-    val failedOrInvalid = localStates
-        .filterValues { it is ServiceDraftFieldState.Failed || it is ServiceDraftFieldState.Invalid }
-        .keys.map(ServiceDraftFieldId::fieldKey)
-    val unresolvedRaw = (failedOrInvalid + draft.rawInputs.keys).distinct().sorted().firstOrNull()
-    unresolvedRaw?.let { return focusForRawServiceField(workItemId, it) }
+    val severeKeys = localStates.filterValues { it is ServiceDraftFieldState.Failed || it is ServiceDraftFieldState.Invalid }
+        .keys.map(ServiceDraftFieldId::fieldKey).toSet()
+    val unresolvedKeys = (localStates.filterValues { it !is ServiceDraftFieldState.Clean }
+        .keys.map(ServiceDraftFieldId::fieldKey) + draft.rawInputs.keys).toSet()
+    val questionPositions = draft.questions.mapIndexed { index, question -> question.snapshotItemId to index }.toMap()
+    val candidates = linkedMapOf<String, AutomaticInspectionFocusCandidate>()
 
-    draft.issueMissingDescription.firstOrNull()?.let { questionId ->
-        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionIssue(questionId), attention = true)
+    fun addCandidate(fieldKey: String, severe: Boolean = fieldKey in severeKeys) {
+        val candidate = automaticInspectionFocusCandidate(draft, fieldKey, severe) ?: return
+        val previous = candidates[fieldKey]
+        if (previous == null || candidate.severe && !previous.severe) candidates[fieldKey] = candidate
     }
-    draft.invalidExplicitAnswers.firstOrNull()?.let { questionId ->
-        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionValue(questionId), attention = true)
+
+    unresolvedKeys.forEach(::addCandidate)
+    draft.questions.forEach { question ->
+        val activeFieldKey = activeQuestionFieldKey(question) ?: return@forEach
+        val missingIssue = question.snapshotItemId in draft.issueMissingDescription && question.disposition == ResponseDisposition.ISSUE_FOUND
+        val missingNotApplicable = question.disposition == ResponseDisposition.NOT_APPLICABLE && question.reason.isNullOrBlank()
+        val invalidValue = question.snapshotItemId in draft.invalidExplicitAnswers && question.disposition == ResponseDisposition.VALUE
+        if (missingIssue || missingNotApplicable || invalidValue) addCandidate(activeFieldKey)
     }
-    draft.questions.firstOrNull { question ->
-        question.disposition == ResponseDisposition.ISSUE_FOUND && question.reason.isNullOrBlank()
-    }?.let { question ->
-        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, question.snapshotItemId, workItemId, ServiceDraftFieldKeys.questionIssue(question.snapshotItemId), attention = true)
-    }
-    draft.questions.firstOrNull { question ->
-        question.disposition == ResponseDisposition.NOT_APPLICABLE && question.reason.isNullOrBlank()
-    }?.let { question ->
-        return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, question.snapshotItemId, workItemId, ServiceDraftFieldKeys.questionNotApplicable(question.snapshotItemId), attention = true)
-    }
+
+    val selectedCandidate = candidates.values
+        .filter { it.severe }
+        .ifEmpty { candidates.values }
+        .minWithOrNull(compareBy<AutomaticInspectionFocusCandidate>({ it.sectionOrder }, { it.itemOrder }, { it.fieldOrder }, { it.fieldKey }))
+    selectedCandidate?.let { return focusForRawServiceField(workItemId, it.fieldKey) }
+
+    draft.issueMissingDescription
+        .firstOrNull { it !in questionPositions }
+        ?.let { questionId ->
+            return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionIssue(questionId), attention = true)
+        }
+    draft.invalidExplicitAnswers
+        .firstOrNull { it !in questionPositions }
+        ?.let { questionId ->
+            return InspectionFocus(CompletionBlockerKind.FINDING_DESCRIPTION, questionId, workItemId, ServiceDraftFieldKeys.questionValue(questionId), attention = true)
+        }
     completion?.blockers?.firstOrNull()?.let { blocker ->
         return InspectionFocus(blocker.kind, blocker.questionId, workItemId, attention = true)
     }
     return InspectionFocus(CompletionBlockerKind.WORK_PERFORMED, workItemId = workItemId, attention = true)
+}
+
+private data class AutomaticInspectionFocusCandidate(
+    val fieldKey: String,
+    val sectionOrder: Int,
+    val itemOrder: Int,
+    val fieldOrder: Int,
+    val severe: Boolean,
+)
+
+private fun activeQuestionFieldKey(question: InspectionQuestion): String? = when (question.disposition) {
+    ResponseDisposition.VALUE -> ServiceDraftFieldKeys.questionValue(question.snapshotItemId)
+    ResponseDisposition.ISSUE_FOUND -> ServiceDraftFieldKeys.questionIssue(question.snapshotItemId)
+    ResponseDisposition.NOT_APPLICABLE -> ServiceDraftFieldKeys.questionNotApplicable(question.snapshotItemId)
+    else -> null
+}
+
+private fun automaticInspectionFocusCandidate(
+    draft: InspectionDraft,
+    fieldKey: String,
+    severe: Boolean,
+): AutomaticInspectionFocusCandidate? {
+    val questionField = ServiceDraftFieldKeys.parseQuestionField(fieldKey)
+    if (questionField != null) {
+        val questionIndex = draft.questions.indexOfFirst { it.snapshotItemId == questionField.snapshotItemId }
+        if (questionIndex >= 0) {
+            if (activeQuestionFieldKey(draft.questions[questionIndex]) != fieldKey) return null
+            return AutomaticInspectionFocusCandidate(fieldKey, sectionOrder = 2, itemOrder = questionIndex, fieldOrder = questionField.kind.ordinal, severe = severe)
+        }
+        return AutomaticInspectionFocusCandidate(fieldKey, sectionOrder = 5, itemOrder = 0, fieldOrder = 0, severe = severe)
+    }
+    return when {
+        fieldKey == ServiceDraftFieldKeys.WORK -> AutomaticInspectionFocusCandidate(fieldKey, 0, 0, 0, severe)
+        fieldKey == ServiceDraftFieldKeys.PRIVATE -> AutomaticInspectionFocusCandidate(fieldKey, 1, 0, 0, severe)
+        ServiceDraftFieldKeys.parsePhotoCaption(fieldKey) != null -> AutomaticInspectionFocusCandidate(fieldKey, 3, 0, 0, severe)
+        fieldKey == ServiceDraftFieldKeys.NOT_PERFORMED_REASON -> AutomaticInspectionFocusCandidate(fieldKey, 4, 0, 0, severe)
+        fieldKey == ServiceDraftFieldKeys.OVERRIDE_DATE -> AutomaticInspectionFocusCandidate(fieldKey, 4, 0, 1, severe)
+        fieldKey == ServiceDraftFieldKeys.OVERRIDE_REASON -> AutomaticInspectionFocusCandidate(fieldKey, 4, 0, 2, severe)
+        else -> AutomaticInspectionFocusCandidate(fieldKey, 5, 0, 0, severe)
+    }
 }
 
 /** The single Working Visit Service workspace. InspectionScreen below is only a compatibility entry point. */
@@ -672,6 +728,7 @@ private fun ServiceProgressGroupToggle(
             }
             .padding(horizontal = ServiceLoopUiTokens.Space.sm),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
     ) {
         ServiceLoopIcon(
             if (expanded) ServiceLoopIcons.CaretDown else ServiceLoopIcons.CaretRight,

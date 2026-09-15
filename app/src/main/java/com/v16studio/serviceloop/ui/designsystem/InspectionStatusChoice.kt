@@ -91,7 +91,6 @@ fun ServiceLoopInspectionStatusGrid(
         val width = constraints.maxWidth
         val first = allocateInspectionChoiceWidths(width, gapPx, natural[0].width, natural[1].width)
         val second = allocateInspectionChoiceWidths(width, gapPx, natural[2].width, natural[3].width)
-        val vertical = first.vertical || second.vertical
         val measured = choices.mapIndexed { index, choice ->
             subcompose("choice-${choice.key}") {
                 InspectionStatusChoiceSurface(
@@ -101,33 +100,32 @@ fun ServiceLoopInspectionStatusGrid(
                     onClick = { onSelected(choice.key) },
                     modifier = Modifier,
                 )
-            }.single().measure(
-                if (vertical) {
-                    constraints.copy(minWidth = width, maxWidth = width)
+            }.single().let { measurable ->
+                val allocation = if (index < 2) first else second
+                if (allocation.vertical) {
+                    measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
                 } else {
-                    val allocation = if (index < 2) first else second
-                    constraints.copy(minWidth = allocation.firstWidth, maxWidth = allocation.firstWidth)
-                },
-            )
+                    val allocatedWidth = if (index % 2 == 0) allocation.firstWidth else allocation.secondWidth
+                    measurable.measure(constraints.copy(minWidth = allocatedWidth, maxWidth = allocatedWidth))
+                }
+            }
         }
         val rowGap = gapPx
-        val rowOneHeight = maxOf(measured[0].height, measured[1].height)
-        val rowTwoHeight = maxOf(measured[2].height, measured[3].height)
-        val height = if (vertical) measured.sumOf { it.height } + rowGap * (measured.size - 1)
-        else rowOneHeight + rowTwoHeight + rowGap
+        val rowOneHeight = if (first.vertical) measured[0].height + rowGap + measured[1].height else maxOf(measured[0].height, measured[1].height)
+        val rowTwoHeight = if (second.vertical) measured[2].height + rowGap + measured[3].height else maxOf(measured[2].height, measured[3].height)
+        val height = rowOneHeight + rowTwoHeight + rowGap
         layout(width, height) {
-            if (vertical) {
-                var y = 0
-                measured.forEach { placeable ->
-                    placeable.placeRelative(0, y)
-                    y += placeable.height + rowGap
+            fun placeRow(startIndex: Int, y: Int, allocation: InspectionChoiceWidthAllocation) {
+                if (allocation.vertical) {
+                    measured[startIndex].placeRelative(0, y)
+                    measured[startIndex + 1].placeRelative(0, y + measured[startIndex].height + rowGap)
+                } else {
+                    measured[startIndex].placeRelative(0, y)
+                    measured[startIndex + 1].placeRelative(allocation.firstWidth + rowGap, y)
                 }
-            } else {
-                measured[0].placeRelative(0, 0)
-                measured[1].placeRelative(first.firstWidth + rowGap, 0)
-                measured[2].placeRelative(0, rowOneHeight + rowGap)
-                measured[3].placeRelative(second.firstWidth + rowGap, rowOneHeight + rowGap)
             }
+            placeRow(0, 0, first)
+            placeRow(2, rowOneHeight + rowGap, second)
         }
     }
 }
