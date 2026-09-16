@@ -12,6 +12,9 @@ import com.v16studio.serviceloop.domain.PlanInput
 import com.v16studio.serviceloop.domain.SiteInput
 import com.v16studio.serviceloop.domain.VisitDateFilter
 import com.v16studio.serviceloop.domain.VisitStatusFilter
+import com.v16studio.serviceloop.domain.OperationalWorkKind
+import com.v16studio.serviceloop.domain.OperationalWorkState
+import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.domain.filterVisits
 import java.io.File
 import java.time.Instant
@@ -128,6 +131,22 @@ class VisitWorkFilterScheduleTruthTest {
                 LocalDate.of(2026, 9, 9),
                 "",
             ).map { it.id },
+        )
+    }
+
+    @Test
+    fun exactBookedAppointmentUsesInjectedBusinessTimeForDashboardTruth() = runTest {
+        val planId = foundation()
+        val appointment = Instant.parse("2026-09-06T12:00:00Z")
+        val visitId = repo.createVisit(listOf(planId), "BOOKED", "2026-09-06", appointment.toEpochMilli())
+
+        val projection = repo.operationalDashboard(WorkScope.Global)
+
+        assertEquals(OperationalWorkState.DUE_SOON, projection.stateFor(OperationalWorkKind.VISIT, visitId))
+        assertEquals(
+            visitId,
+            projection.sections.single { it.kind == OperationalWorkKind.VISIT && it.state == OperationalWorkState.DUE_SOON }
+                .items.single().recordId,
         )
     }
 

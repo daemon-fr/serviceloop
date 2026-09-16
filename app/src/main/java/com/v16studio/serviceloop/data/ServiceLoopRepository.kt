@@ -26,16 +26,20 @@ import kotlinx.coroutines.sync.withLock
 
 interface ServiceLoopRepository {
     suspend fun home(): HomeSummary
-    suspend fun operationalDashboard(scope: WorkScope): OperationalDashboardProjection = OperationalDashboardProjector.project(
-        scope = scope,
-        visits = visits(),
-        dueServices = dueServices(),
-        followUps = followUps(),
-        today = LocalDate.now(),
-        now = java.time.Instant.now(),
-        businessZone = ZoneId.systemDefault(),
-        dueSoonHorizonDays = 14,
-    )
+    suspend fun operationalDashboard(scope: WorkScope): OperationalDashboardProjection {
+        val fallbackBusinessTime = ClockBusinessTime()
+        val now = fallbackBusinessTime.instant()
+        return OperationalDashboardProjector.project(
+            scope = scope,
+            visits = visits(),
+            dueServices = dueServices(),
+            followUps = followUps(),
+            today = now.atZone(fallbackBusinessTime.zoneId).toLocalDate(),
+            now = now,
+            businessZone = fallbackBusinessTime.zoneId,
+            dueSoonHorizonDays = 14,
+        )
+    }
     fun observeOperationalDashboard(scope: WorkScope): Flow<OperationalDashboardProjection> = flow { emit(operationalDashboard(scope)) }
     suspend fun equipment(id: String): EquipmentDetail?
     suspend fun equipmentList(): List<EquipmentSummary>

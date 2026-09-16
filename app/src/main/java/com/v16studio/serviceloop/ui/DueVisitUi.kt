@@ -40,7 +40,21 @@ import org.json.JSONObject
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, modifier: Modifier = Modifier, initialBucket: DueBucket? = null, topContent: (@Composable () -> Unit)? = null, initialOperationalState: OperationalWorkState? = null) {
+internal fun DueServicesScreen(
+    values: List<DueService>,
+    padding: PaddingValues,
+    state: UiState,
+    viewModel: ServiceLoopViewModel,
+    nav: NavHostController,
+    modifier: Modifier = Modifier,
+    initialBucket: DueBucket? = null,
+    topContent: (@Composable () -> Unit)? = null,
+    initialOperationalState: OperationalWorkState? = null,
+    scope: WorkScope = WorkScope.Global,
+    operationalStateFor: (DueService) -> OperationalWorkState? = { due ->
+        OperationalWorkClassifier.classifyService(due.dueDate, state.businessDate, state.home?.dueSoonHorizonDays ?: 14)
+    },
+) {
     var dateFilter by rememberSaveable(initialBucket) {
         mutableStateOf(DueServiceDateFilter.entries.firstOrNull { it.bucket == initialBucket } ?: DueServiceDateFilter.ALL)
     }
@@ -59,17 +73,17 @@ internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues,
         }
         return
     }
-    val horizon = state.home?.dueSoonHorizonDays ?: 14
-    val filtered = if (initialOperationalState != null) values.filter { due ->
-        OperationalWorkClassifier.classifyService(due.dueDate, state.businessDate, horizon) == initialOperationalState &&
+    val scopedValues = values.filter { scope.includesCustomer(it.customerId) }
+    val filtered = if (initialOperationalState != null) scopedValues.filter { due ->
+        operationalStateFor(due) == initialOperationalState &&
             when (visitFilter) {
                 DueServiceVisitFilter.ALL -> true
                 DueServiceVisitFilter.NO_VISIT -> due.claimedVisitId == null
                 DueServiceVisitFilter.HAS_VISIT -> due.claimedVisitId != null
             } &&
             (query.isBlank() || listOf(due.planReference, due.planName, due.equipmentName, due.equipmentReference, due.customerName, due.siteName).any { it.contains(query, true) })
-    } else filterDueServices(values, dateFilter, visitFilter, query)
-    val selectedRows = values.filter { it.planId in selected }
+    } else filterDueServices(scopedValues, dateFilter, visitFilter, query)
+    val selectedRows = scopedValues.filter { it.planId in selected }
     val selectionSite = selectedRows.firstOrNull()?.siteId
     val selectionEnabled = selectedRows.isNotEmpty() && selectedRows.all { it.claimedVisitId == null && it.siteId == selectionSite } && !state.operationInProgress
     Column(modifier.fillMaxSize().padding(padding)) {
@@ -103,7 +117,7 @@ internal fun DueServicesScreen(values: List<DueService>, padding: PaddingValues,
                     actionDescription = if (due.claimedVisitId == null) "Open service plan ${due.planReference} ${due.planName}" else "Open existing visit ${due.planReference} ${due.planName}",
                     selectionChecked = if (selectable) due.planId in selected else null,
                     onSelectionChange = if (selectable) { checked -> selected = if (checked) selected + due.planId else selected - due.planId } else null,
-                    operationalState = OperationalWorkClassifier.classifyService(due.dueDate, state.businessDate, horizon),
+                    operationalState = operationalStateFor(due),
                 )
             }
         }

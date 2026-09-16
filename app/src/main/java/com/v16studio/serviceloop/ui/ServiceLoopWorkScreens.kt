@@ -116,6 +116,7 @@ import com.v16studio.serviceloop.domain.OperationalWorkKind
 import com.v16studio.serviceloop.domain.OperationalWorkState
 import com.v16studio.serviceloop.domain.OperationalWorkClassifier
 import com.v16studio.serviceloop.domain.WorkScope
+import com.v16studio.serviceloop.domain.includesCustomer
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
@@ -177,9 +178,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.serviceLoopAdaptiveScaffoldPadding
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.io.File
@@ -196,7 +195,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 OperationalDashboard(
                     projection = projection,
                     onOpenItem = { openOperationalWork(nav, it) },
-                    onViewAll = { openOperationalSection(nav, it) },
+                    onViewAll = { openOperationalSection(nav, it, projection.scope) },
                     modifier = Modifier.testTag("home-operational-dashboard"),
                 )
             }
@@ -218,17 +217,25 @@ internal fun openOperationalWork(nav: NavHostController, item: OperationalWorkIt
     }
 }
 
-internal fun openOperationalSection(nav: NavHostController, section: OperationalDashboardSection) {
+internal fun openOperationalSection(nav: NavHostController, section: OperationalDashboardSection, scope: WorkScope) {
     val tab = when (section.kind) {
         OperationalWorkKind.VISIT -> WorkTab.VISITS
         OperationalWorkKind.SERVICE -> WorkTab.DUE_SERVICES
         OperationalWorkKind.FOLLOW_UP -> WorkTab.FOLLOW_UPS
     }
-    nav.navigate(workRoute(tab, "OP_${section.kind.name}_${section.state.name}"))
+    nav.navigate(workRoute(tab, "OP_${section.kind.name}_${section.state.name}", scope))
 }
 
 @Composable
-internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, viewModel: ServiceLoopViewModel, contextualFilter: String? = null, onTabSelected: (WorkTab) -> Unit) {
+internal fun WorkScreen(
+    state: UiState,
+    nav: NavHostController,
+    tab: WorkTab,
+    viewModel: ServiceLoopViewModel,
+    contextualFilter: String? = null,
+    scope: WorkScope = WorkScope.Global,
+    onTabSelected: (WorkTab) -> Unit,
+) {
     val parsedOperationalFilter = parseOperationalFilter(contextualFilter)
     val initialVisitStatus = if (parsedOperationalFilter?.first == OperationalWorkKind.VISIT) VisitStatusFilter.ALL else VisitStatusFilter.entries.firstOrNull { it.name == contextualFilter } ?: VisitStatusFilter.ALL
     val initialVisitDate = if (parsedOperationalFilter?.first == OperationalWorkKind.VISIT) VisitDateFilter.ALL else VisitDateFilter.entries.firstOrNull { it.name == contextualFilter }
@@ -237,6 +244,14 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
     val colors = LocalServiceLoopTokens.current
     val compactRootActions = LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold ||
         LocalConfiguration.current.screenWidthDp.dp < ServiceLoopUiTokens.Size.narrowThreshold
+    val operationalProjection = state.operationalDashboard?.takeIf { it.scope == scope }
+    val operationalStateFor: (OperationalWorkKind, String) -> OperationalWorkState? = { kind, recordId ->
+        operationalProjection?.stateFor(kind, recordId)
+    }
+    val customerScopeName = (scope as? WorkScope.Customer)?.let { customerScope ->
+        state.customer?.takeIf { it.id == customerScope.customerId }?.name
+            ?: state.customerList.firstOrNull { it.id == customerScope.customerId }?.name
+    }
     val inlineNewVisit: (@Composable () -> Unit)? = if (compactRootActions) {
         {
             ServiceLoopPrimaryButton(
@@ -251,10 +266,29 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
         Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp)) {
             ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
         }
+        customerScopeName?.let { name ->
+            Text(
+                "Customer: $name",
+                modifier = Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 16.dp, vertical = 6.dp).testTag("work-customer-scope"),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
         when (tab) {
             WorkTab.DUE_SERVICES -> {
                 val contextualDueBucket = runCatching { com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty()) }.getOrNull()
-                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket, inlineNewVisit, parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.SERVICE }?.second)
+                DueServicesScreen(
+                    values = state.dueServices,
+                    padding = PaddingValues(),
+                    state = state,
+                    viewModel = viewModel,
+                    nav = nav,
+                    modifier = Modifier.weight(1f),
+                    initialBucket = contextualDueBucket,
+                    topContent = inlineNewVisit,
+                    initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.SERVICE }?.second,
+                    scope = scope,
+                    operationalStateFor = { due -> operationalStateFor(OperationalWorkKind.SERVICE, due.planId) },
+                )
             }
             WorkTab.VISITS -> VisitsWorkScreen(
                 values = state.visits,
@@ -266,8 +300,8 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
                 initialStatusFilter = initialVisitStatus,
                 topContent = inlineNewVisit,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.VISIT }?.second,
-                dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
-                businessZoneId = state.businessZoneId,
+                scope = scope,
+                operationalStateFor = { visit -> operationalStateFor(OperationalWorkKind.VISIT, visit.id) },
             )
             WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
                 values = state.followUps,
@@ -279,6 +313,8 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
                 topContent = inlineNewVisit,
                 dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.FOLLOW_UP }?.second,
+                scope = scope,
+                operationalStateFor = { followUp -> operationalStateFor(OperationalWorkKind.FOLLOW_UP, followUp.id) },
             )
         }
     }
@@ -303,16 +339,15 @@ internal fun VisitsWorkScreen(
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
     topContent: (@Composable () -> Unit)? = null,
     initialOperationalState: OperationalWorkState? = null,
-    dueSoonHorizonDays: Int = 14,
-    businessZoneId: String = ZoneId.systemDefault().id,
+    scope: WorkScope = WorkScope.Global,
+    operationalStateFor: (VisitSummary) -> OperationalWorkState? = { null },
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
-    val zone = runCatching { ZoneId.of(businessZoneId) }.getOrDefault(ZoneId.systemDefault())
-    val now = Instant.now()
-    val filtered = if (initialOperationalState == null) filterVisits(values, dateFilter, statusFilter, businessDate, query) else values.filter { visit ->
-        OperationalWorkClassifier.classifyVisit(visit, businessDate, now, zone, dueSoonHorizonDays) == initialOperationalState &&
+    val scopedValues = values.filter { scope.includesCustomer(it.customerId) }
+    val filtered = if (initialOperationalState == null) filterVisits(scopedValues, dateFilter, statusFilter, businessDate, query) else scopedValues.filter { visit ->
+        operationalStateFor(visit) == initialOperationalState &&
             (query.isBlank() || listOf(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, visit.customerName).any { it.contains(query, true) })
     }
     LazyColumn(
@@ -348,7 +383,7 @@ internal fun VisitsWorkScreen(
         }
         if (filtered.isEmpty()) item { Text("No visits match these filters.") }
         items(filtered) { visit ->
-            ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, operationalState = OperationalWorkClassifier.classifyVisit(visit, businessDate, now, zone, dueSoonHorizonDays)) {
+            ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, operationalState = operationalStateFor(visit)) {
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
@@ -367,12 +402,17 @@ internal fun FollowUpsWorkScreen(
     topContent: (@Composable () -> Unit)? = null,
     dueSoonHorizonDays: Int = 14,
     initialOperationalState: OperationalWorkState? = null,
+    scope: WorkScope = WorkScope.Global,
+    operationalStateFor: (com.v16studio.serviceloop.domain.FollowUpDetail) -> OperationalWorkState? = { followUp ->
+        OperationalWorkClassifier.classifyFollowUp(followUp.state, followUp.dueDate, businessDate, dueSoonHorizonDays)
+    },
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
-    val filtered = if (initialOperationalState == null) filterFollowUps(values, dateFilter, statusFilter, businessDate, query) else values.filter { followUp ->
-        OperationalWorkClassifier.classifyFollowUp(followUp.state, followUp.dueDate, businessDate, dueSoonHorizonDays) == initialOperationalState &&
+    val scopedValues = values.filter { scope.includesCustomer(it.customerId) }
+    val filtered = if (initialOperationalState == null) filterFollowUps(scopedValues, dateFilter, statusFilter, businessDate, query) else scopedValues.filter { followUp ->
+        operationalStateFor(followUp) == initialOperationalState &&
             (query.isBlank() || listOfNotNull(followUp.reference, followUp.title, followUp.customerName, followUp.siteName, followUp.equipmentName, followUp.dueDate).any { it.contains(query, true) })
     }
     LazyColumn(
@@ -413,7 +453,7 @@ internal fun FollowUpsWorkScreen(
                 listOfNotNull(follow.customerName, follow.siteName, follow.equipmentName).filter { it.isNotBlank() }.joinToString(" · "),
                 "Due ${follow.dueDate}",
                 follow.state,
-                operationalState = OperationalWorkClassifier.classifyFollowUp(follow.state, follow.dueDate, businessDate, dueSoonHorizonDays),
+                operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
     }

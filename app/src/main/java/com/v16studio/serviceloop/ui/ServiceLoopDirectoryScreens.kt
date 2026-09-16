@@ -127,6 +127,7 @@ import com.v16studio.serviceloop.domain.FollowUpStatusFilter
 import com.v16studio.serviceloop.domain.VisitDateFilter
 import com.v16studio.serviceloop.domain.VisitStatusFilter
 import com.v16studio.serviceloop.domain.WorkSubjectType
+import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.domain.filterFollowUps
 import com.v16studio.serviceloop.domain.filterVisits
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
@@ -173,6 +174,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.net.URLEncoder
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -218,13 +220,17 @@ internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteR
     }
 }
 
-internal fun workRoute(tab: WorkTab, filter: String? = null): String =
+internal fun workRoute(tab: WorkTab, filter: String? = null, scope: WorkScope = WorkScope.Global): String =
     buildString {
         append("work?tab=")
         append(tab.name)
         if (filter != null) {
             append("&filter=")
             append(filter)
+        }
+        (scope as? WorkScope.Customer)?.customerId?.takeIf(String::isNotBlank)?.let { customerId ->
+            append("&customerId=")
+            append(URLEncoder.encode(customerId, Charsets.UTF_8.name()).replace("+", "%20"))
         }
     }
 

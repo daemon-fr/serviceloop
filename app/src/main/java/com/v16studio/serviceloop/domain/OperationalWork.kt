@@ -22,6 +22,11 @@ sealed interface WorkScope {
     data class Customer(val customerId: String) : WorkScope
 }
 
+fun WorkScope.includesCustomer(customerId: String): Boolean = when (this) {
+    WorkScope.Global -> true
+    is WorkScope.Customer -> this.customerId == customerId
+}
+
 data class OperationalWorkItem(
     val kind: OperationalWorkKind,
     val state: OperationalWorkState,
@@ -53,6 +58,12 @@ data class OperationalDashboardProjection(
     val sections: List<OperationalDashboardSection>,
 ) {
     val totalItemCount: Int get() = sections.sumOf { it.itemCount }
+
+    fun stateFor(kind: OperationalWorkKind, recordId: String): OperationalWorkState? = sections
+        .asSequence()
+        .flatMap { it.items.asSequence() }
+        .firstOrNull { it.kind == kind && it.recordId == recordId }
+        ?.state
 
     val mostUrgentState: OperationalWorkState?
         get() = sections.minByOrNull { OperationalWorkClassifier.urgencyRank(it.state) }?.state

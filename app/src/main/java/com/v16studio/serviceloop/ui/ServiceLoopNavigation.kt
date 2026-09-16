@@ -30,7 +30,7 @@ import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.ui.theme.AppearancePreferences
 
 private const val HOME = "home"
-private const val WORK_ROUTE = "work?tab={tab}&filter={filter}"
+private const val WORK_ROUTE = "work?tab={tab}&filter={filter}&customerId={customerId}"
 private const val CUSTOMERS = "customers"
 
 internal enum class RootDestination(val route: String, val label: String) {
@@ -91,15 +91,26 @@ internal fun ServiceLoopNavGraph(
             arguments = listOf(
                 navArgument("tab") { type = NavType.StringType; defaultValue = WorkTab.DUE_SERVICES.name },
                 navArgument("filter") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("customerId") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) { entry ->
             val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
             val contextualFilter = entry.arguments?.getString("filter")
+            val workScope = entry.arguments?.getString("customerId")
+                ?.takeIf(String::isNotBlank)
+                ?.let(WorkScope::Customer)
+                ?: WorkScope.Global
             var workTab by androidx.compose.runtime.saveable.rememberSaveable(requested, contextualFilter) { mutableStateOf(requested) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadFollowUps(); viewModel.observeOperationalDashboard(WorkScope.Global) }
+            LaunchedEffect(workScope) {
+                viewModel.refreshRootDataNonBlocking()
+                viewModel.loadVisits()
+                viewModel.loadFollowUps()
+                if (workScope is WorkScope.Customer) viewModel.loadCustomer(workScope.customerId)
+                viewModel.observeOperationalDashboard(workScope)
+            }
             RootScaffold(nav, RootDestination.WORK) { padding ->
                 ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) {
-                    WorkScreen(state, nav, workTab, viewModel, contextualFilter) { workTab = it }
+                    WorkScreen(state, nav, workTab, viewModel, contextualFilter, workScope) { workTab = it }
                 }
             }
         }
@@ -139,7 +150,7 @@ internal fun ServiceLoopNavGraph(
                             OperationalDashboard(
                                 projection = projection,
                                 onOpenItem = { openOperationalWork(nav, it) },
-                                onViewAll = { openOperationalSection(nav, it) },
+                                onViewAll = { openOperationalSection(nav, it, projection.scope) },
                                 modifier = Modifier.testTag("customer-work-dashboard"),
                             )
                         }

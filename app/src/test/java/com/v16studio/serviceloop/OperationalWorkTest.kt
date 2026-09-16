@@ -76,6 +76,10 @@ class OperationalWorkTest {
         assertEquals(OperationalWorkState.IN_PROGRESS, project(visits = listOf(visit("working-a", "2026-09-16", "WORKING", customerId = "a"), visit("booked-a", "2026-10-08", "BOOKED", customerId = "a"))).mostUrgentState)
         assertEquals(OperationalWorkState.BOOKED, project(visits = listOf(visit("booked-a", "2026-10-08", "BOOKED", customerId = "a"))).mostUrgentState)
         assertTrue(project(scope = WorkScope.Customer("missing")).sections.isEmpty())
+        assertTrue(WorkScope.Customer("a").includesCustomer("a"))
+        assertTrue(WorkScope.Global.includesCustomer("b"))
+        assertEquals(OperationalWorkState.IN_PROGRESS, mixedCustomer.stateFor(OperationalWorkKind.VISIT, "working-a"))
+        assertNull(mixedCustomer.stateFor(OperationalWorkKind.VISIT, "booked-b"))
     }
 
     @Test fun customerUrgencyPriorityIsOverdueThenDueSoonThenInProgressThenBooked() {

@@ -62,6 +62,12 @@ Customer detail shows one compact `Work items` gateway only when its customer-sc
 
 The gateway is part of the customer summary, after identity/contact/actions and before the `Sites` / `Equipment` tabs. It uses the same pale semantic container tint as dashboard sections while remaining a single card without dashboard child-row treatment.
 
+## Correctness correction after independent review
+
+Operational `View all` routing carries the dashboard's `WorkScope`. Global Home routes remain unscoped; Customer dashboard routes carry the real `customerId` as an optional Work query argument. Visits, Due Services, and Follow-ups apply that ID scope before their operational bucket filter, and Work tab changes retain the scope until the destination is left. Scoped Work shows the loaded customer name as a compact scope indication.
+
+Work does not resample Visit timing. The repository's business-time-derived `OperationalDashboardProjection` is the authoritative state lookup for Work operational filters and row colors, including exact appointment boundaries. Derived urgency remains in memory only and is not persisted.
+
 ## UI corrections
 
 - Home's previous operational summary and Records needing attention presentation were removed; unrelated coordinator and New visit actions remain. No attention/problem replacement was added.
@@ -83,7 +89,7 @@ No dependency, toolchain, Room schema, or migration changes were made.
 
 ## Tests and verification
 
-Domain tests are in `app/src/test/java/com/v16studio/serviceloop/OperationalWorkTest.kt`. They cover Visit, Service, and Follow-up classifications; outstanding claimed Services; urgency; section order and empty buckets; customer ID scope; and empty projections. A Room-backed test in `DailyOperationsIntegrityTest.kt` verifies Review result wording, optional unanswered omission, required blockers, units, and privacy boundaries. Compose instrumentation coverage in `OperationalDashboardUiTest.kt`, `CustomerOperationalGatewayUiTest.kt`, and `WorkFilterSelectorUiTest.kt` verifies expansion semantics, independent toggles, five-item preview/View all, empty state, customer gateway order and light/dark pale containers, and Due Services action enablement.
+Domain tests are in `app/src/test/java/com/v16studio/serviceloop/OperationalWorkTest.kt`. They cover Visit, Service, and Follow-up classifications; outstanding claimed Services; urgency; section order and empty buckets; customer ID scope; and empty projections. A Room-backed test in `VisitWorkFilterScheduleTruthTest.kt` verifies exact appointment classification from injected business time. Compose instrumentation coverage in `OperationalDashboardUiTest.kt`, `CustomerOperationalGatewayUiTest.kt`, `OperationalWorkRoutingUiTest.kt`, and `WorkFilterSelectorUiTest.kt` verifies expansion semantics, independent toggles, five-item preview/View all, ID-scoped customer Visit/Service routing with global Home coverage, deterministic business-time Visit filtering, empty state, customer gateway order and light/dark pale containers, and Due Services action enablement.
 
 Final command results, exact test counts, focused/broad connected results, emulator identity, appearance, adaptive dimensions, screens actually inspected, Git commit, and upstream parity are recorded at handoff. Any visual or connected item not performed is marked **NOT RUN**.
 
