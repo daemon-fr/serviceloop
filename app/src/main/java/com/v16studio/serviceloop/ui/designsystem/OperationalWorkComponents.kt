@@ -240,7 +240,7 @@ fun OperationalWorkGateway(
     val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.card)
     Row(
         modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
-            .clip(shape).background(tokens.surface)
+            .clip(shape).background(palette.container)
             .drawWithContent {
                 drawContent()
                 drawRoundRect(color = palette.accent, size = androidx.compose.ui.geometry.Size(6.dp.toPx(), size.height), cornerRadius = CornerRadius(ServiceLoopUiTokens.Radius.card.toPx()))

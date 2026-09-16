@@ -60,6 +60,8 @@ Outer dashboard sections use the semantic tint and full-height left rail. Child 
 
 Customer detail shows one compact `Work items` gateway only when its customer-scoped projection is non-empty. The gateway displays the total count, has a semantic rail and disclosure affordance, and uses the shared urgency priority. Its destination uses the same dashboard body with `WorkScope.Customer(customerId)` and the customer name in the detail toolbar.
 
+The gateway is part of the customer summary, after identity/contact/actions and before the `Sites` / `Equipment` tabs. It uses the same pale semantic container tint as dashboard sections while remaining a single card without dashboard child-row treatment.
+
 ## UI corrections
 
 - Home's previous operational summary and Records needing attention presentation were removed; unrelated coordinator and New visit actions remain. No attention/problem replacement was added.
@@ -81,7 +83,7 @@ No dependency, toolchain, Room schema, or migration changes were made.
 
 ## Tests and verification
 
-Domain tests are in `app/src/test/java/com/v16studio/serviceloop/OperationalWorkTest.kt`. They cover Visit, Service, and Follow-up classifications; outstanding claimed Services; urgency; section order and empty buckets; customer ID scope; and empty projections. A Room-backed test in `DailyOperationsIntegrityTest.kt` verifies Review result wording, optional unanswered omission, required blockers, units, and privacy boundaries. Compose instrumentation coverage in `OperationalDashboardUiTest.kt` and `WorkFilterSelectorUiTest.kt` verifies expansion semantics, independent toggles, five-item preview/View all, empty state, and Due Services action enablement.
+Domain tests are in `app/src/test/java/com/v16studio/serviceloop/OperationalWorkTest.kt`. They cover Visit, Service, and Follow-up classifications; outstanding claimed Services; urgency; section order and empty buckets; customer ID scope; and empty projections. A Room-backed test in `DailyOperationsIntegrityTest.kt` verifies Review result wording, optional unanswered omission, required blockers, units, and privacy boundaries. Compose instrumentation coverage in `OperationalDashboardUiTest.kt`, `CustomerOperationalGatewayUiTest.kt`, and `WorkFilterSelectorUiTest.kt` verifies expansion semantics, independent toggles, five-item preview/View all, empty state, customer gateway order and light/dark pale containers, and Due Services action enablement.
 
 Final command results, exact test counts, focused/broad connected results, emulator identity, appearance, adaptive dimensions, screens actually inspected, Git commit, and upstream parity are recorded at handoff. Any visual or connected item not performed is marked **NOT RUN**.
 

@@ -59,12 +59,12 @@ internal fun CustomerDetailScreen(
                     Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
                     ServiceLoopPrimaryButton("Make Standard", { viewModel.makeCustomerStandard(detail.id) { viewModel.loadCustomer(detail.id) } }, Modifier.fillMaxWidth().testTag("make-standard-customer"))
                 }
+                workDashboard?.takeIf { it.totalItemCount > 0 }?.mostUrgentState?.let { urgency ->
+                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
+                    OperationalWorkGateway(workDashboard.totalItemCount, urgency, onClick = { nav.navigate("work-dashboard/customer/${detail.id}") }, modifier = Modifier.padding(horizontal = 16.dp))
+                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
+                }
                 ServiceLoopContentTabs(listOf("SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it})
-            }
-        }
-        workDashboard?.takeIf { it.totalItemCount > 0 }?.mostUrgentState?.let { urgency ->
-            item {
-                OperationalWorkGateway(workDashboard.totalItemCount, urgency, onClick = { nav.navigate("work-dashboard/customer/${detail.id}") }, modifier = Modifier.padding(horizontal = 16.dp))
             }
         }
         if (tab == "SITES") { item { Column(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Sites"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); Button({ nav.navigate("site/new/${detail.id}") }, Modifier.fillMaxWidth().testTag("add-site")) { Text("Add site") } } }; items(detail.sites) { site -> ServiceLoopEntityRecord("${site.reference} · ${site.name}",site.address,"${site.equipmentCount} equipment${if(site.isDefault) " · Default" else ""}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("site/${site.id}")} } }
