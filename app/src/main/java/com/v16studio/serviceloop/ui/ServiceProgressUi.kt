@@ -95,7 +95,7 @@ internal fun ServiceProgressNavigator(
                     group.items.forEachIndexed { index, item ->
                         val selected = item.workItemId == currentWorkItemId
                         ServiceLoopDenseNavigableRow(
-                            title = item.serviceName,
+                            title = "${item.position}. ${item.serviceName}",
                             context = null,
                             statusContent = { ServiceProgressBadge(item) },
                             modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}"),

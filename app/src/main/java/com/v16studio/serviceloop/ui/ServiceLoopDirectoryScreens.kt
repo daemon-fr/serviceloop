@@ -142,6 +142,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
@@ -244,8 +245,8 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ServiceLoopSecondaryButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("equipment-customer-link"))
-                ServiceLoopSecondaryButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("equipment-site-link"), enabled = detail.siteId.isNotBlank())
+                ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("equipment-customer-link"))
+                ServiceLoopNavigationButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("equipment-site-link"), enabled = detail.siteId.isNotBlank())
             }
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
@@ -263,11 +264,10 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
         item {
             if (detail.customerType == CustomerType.ONE_TIME) {
                 Text("Recurring service requires a Standard customer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = { viewModel.makeCustomerStandard(detail.customerId) { nav.navigate("plan/new/${detail.id}") } }, modifier = Modifier.fillMaxWidth().testTag("make-standard-and-add-plan")) { Text("Make Standard and add service plan") }
             } else {
                 Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }
             }
-            ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) }
+            ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopNavigationButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) }
         }
     }
 }

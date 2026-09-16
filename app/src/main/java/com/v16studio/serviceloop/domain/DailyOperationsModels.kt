@@ -6,6 +6,8 @@ data class CustomerDetail(
     val sites: List<SiteSummary>, val equipment: List<EquipmentSummary>, val openFollowUps: List<FollowUpDetail>,
     val recentContacts: List<ContactNoteDetail>, val state: String = "ACTIVE",
     val customerType: CustomerType = CustomerType.STANDARD,
+    val canMarkOneTime: Boolean = true,
+    val oneTimeBlockReason: String? = null,
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)
@@ -34,7 +36,14 @@ data class SiteDetail(
     val effectiveEmail: String get() = if (usesCustomerContact) customerEmail else email
 }
 
-data class CustomerInput(val name: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateNote: String = "")
+data class CustomerInput(
+    val name: String,
+    val contactName: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val privateNote: String = "",
+    val customerType: CustomerType = CustomerType.STANDARD,
+)
 data class SiteInput(val name: String, val address: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateAccessNote: String = "", val isDefault: Boolean = false)
 data class EquipmentInput(val name: String, val technicianIdentifier: String = "", val make: String = "", val model: String = "", val serialNumber: String = "", val privateNote: String = "")
 data class PlanInput(val name: String, val intervalCount: Int, val intervalUnit: String, val dueDate: String, val reusableTemplateId: String? = null, val dueDateChangeReason: String = "")

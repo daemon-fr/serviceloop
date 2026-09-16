@@ -204,6 +204,7 @@ interface ServiceLoopDao {
     @Query("SELECT s.id, s.reference, s.name, c.name customerName, s.address, c.customerType FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.state='ACTIVE' AND c.state='ACTIVE' ORDER BY c.name, s.name, s.reference") suspend fun activeVisitSites(): List<VisitSiteRow>
     @Query("SELECT * FROM equipment WHERE siteId=:siteId ORDER BY name, reference") suspend fun equipmentForSite(siteId: String): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans WHERE equipmentId=:equipmentId ORDER BY currentDueDate, reference") suspend fun plansForEquipment(equipmentId: String): List<ServicePlanEntity>
+    @Query("SELECT COUNT(*) FROM service_plans p JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId WHERE s.customerId=:customerId") suspend fun servicePlanCountForCustomer(customerId: String): Int
     @Query("SELECT COUNT(*) FROM equipment_moves WHERE equipmentId=:equipmentId") suspend fun equipmentMoveCount(equipmentId: String): Int
     @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUps(): List<FollowUpEntity>

@@ -71,6 +71,7 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 internal fun ServiceLoopButtonContent(
     onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,primary:Boolean,
     busy:Boolean=false,interactionSource:MutableInteractionSource=remember{MutableInteractionSource()},
+    trailingIcon:(@Composable (() -> Unit))?=null,
     content:@Composable RowScope.()->Unit,
 ) {
     val c=LocalServiceLoopTokens.current
@@ -91,13 +92,45 @@ internal fun ServiceLoopButtonContent(
             Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
         }
         CompositionLocalProvider(LocalContentColor provides ink) {
-            ProvideTextStyle(ServiceLoopButtonContract.textStyle) { content() }
+            ProvideTextStyle(ServiceLoopButtonContract.textStyle) {
+                if (trailingIcon == null) {
+                    content()
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+                    ) {
+                        Row(
+                            Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start,
+                        ) { content() }
+                        trailingIcon()
+                    }
+                }
+            }
         }
     }
 }
 
-@Composable fun ServiceLoopPrimaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,true,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
-@Composable fun ServiceLoopSecondaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false)=ServiceLoopButtonContent(onClick,modifier,enabled,false,busy){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+@Composable fun ServiceLoopPrimaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false,trailingIcon:(@Composable (() -> Unit))?=null)=ServiceLoopButtonContent(onClick,modifier,enabled,true,busy,trailingIcon=trailingIcon){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+@Composable fun ServiceLoopSecondaryButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,leadingIcon:(@Composable (() -> Unit))?=null,busy:Boolean=false,trailingIcon:(@Composable (() -> Unit))?=null)=ServiceLoopButtonContent(onClick,modifier,enabled,false,busy,trailingIcon=trailingIcon){if(!busy)leadingIcon?.let{it();Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))};Text(label)}
+
+/** Full-width or paired control for opening related information inside ServiceLoop. */
+@Composable
+fun ServiceLoopNavigationButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) = ServiceLoopSecondaryButton(
+    label = label,
+    onClick = onClick,
+    modifier = modifier,
+    enabled = enabled,
+    trailingIcon = { ServiceLoopIcon(ServiceLoopIcons.Disclosure, null, Modifier.size(ServiceLoopUiTokens.Size.icon).testTag("service-loop-disclosure-icon")) },
+)
 
 /** Full-width operational commands belong in this explicit, consistently spaced vertical group. */
 @Composable fun ServiceLoopActionStack(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =

@@ -24,6 +24,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
@@ -57,7 +58,6 @@ internal fun CustomerDetailScreen(
                     Text("${detail.reference} · ${detail.name}", style = MaterialTheme.typography.headlineSmall); Text(detail.contactName.ifBlank { "No main contact" }); Text(listOf(detail.phone, detail.email).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "No phone or email" }); Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("customer/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Record contact",{nav.navigate("contact/new/${detail.id}")},Modifier.weight(1f).fillMaxHeight()) }; Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_DIAL,Uri.parse("tel:${Uri.encode(detail.phone)}")),"dialer")},enabled=detail.phone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Call,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("Call")}; TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_SENDTO,Uri.parse("smsto:${Uri.encode(detail.phone)}")),"SMS composer")},enabled=detail.phone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Sms,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("SMS")}; TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_SENDTO,Uri.parse("mailto:${Uri.encode(detail.email)}")),"email composer")},enabled=detail.email.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("Email")} }; handoffStatus?.let{Text(it)}; Text("External handoff does not record a successful contact.",style=MaterialTheme.typography.bodySmall); Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)) }
                 if (detail.customerType == CustomerType.ONE_TIME) {
                     Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
-                    ServiceLoopPrimaryButton("Make Standard", { viewModel.makeCustomerStandard(detail.id) { viewModel.loadCustomer(detail.id) } }, Modifier.fillMaxWidth().testTag("make-standard-customer"))
                 }
                 workDashboard?.takeIf { it.totalItemCount > 0 }?.mostUrgentState?.let { urgency ->
                     Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
@@ -74,7 +74,7 @@ internal fun CustomerDetailScreen(
         if (detail.recentContacts.isNotEmpty()) item { Box(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Recent contact") } }
         items(detail.recentContacts) { note -> var errorReason by rememberSaveable(note.id){mutableStateOf("")}; Column(Modifier.padding(horizontal = 16.dp)) { Text("${note.reference} · ${note.channel} · ${note.outcome}${if (note.enteredInError) " · Entered in error: ${note.errorReason}" else ""}"); if(!note.enteredInError){ DailyField(errorReason,{errorReason=it},"Entered-in-error reason"); TextButton({viewModel.markContactNoteEnteredInError(note.id,errorReason){viewModel.loadCustomer(detail.id)}},enabled=errorReason.isNotBlank()){Text("Mark entered in error")} } } }
         if (detail.privateNote.isNotBlank()) item { Box(Modifier.padding(horizontal = 16.dp)) { PrivateBlock("Private customer note", detail.privateNote) } }
-        item { Column(Modifier.padding(horizontal = 16.dp)) { ServiceLoopSectionDivider(); DailyHeading("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Customer history",{nav.navigate("history/CUSTOMER/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Archive customer" else "Restore customer",{nav.navigate("lifecycle/CUSTOMER/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}")},Modifier.fillMaxWidth()) } } }
+        item { Column(Modifier.padding(horizontal = 16.dp)) { ServiceLoopSectionDivider(); DailyHeading("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopNavigationButton("Customer history",{nav.navigate("history/CUSTOMER/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Archive customer" else "Restore customer",{nav.navigate("lifecycle/CUSTOMER/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}")},Modifier.fillMaxWidth()) } } }
     }
 }
 
@@ -82,13 +82,27 @@ internal fun CustomerDetailScreen(
 internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
     var firstSiteName by rememberSaveable(existing?.id) { mutableStateOf("") }; var firstSiteAddress by rememberSaveable(existing?.id) { mutableStateOf("") }
-    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty()||firstSiteName.isNotBlank()||firstSiteAddress.isNotBlank(),nav)
+    var oneTimeCustomer by rememberSaveable(existing?.id) { mutableStateOf(existing?.customerType == CustomerType.ONE_TIME) }
+    val oneTimeBlocked = existing != null && existing.customerType == CustomerType.STANDARD && !existing.canMarkOneTime
+    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty()||firstSiteName.isNotBlank()||firstSiteAddress.isNotBlank()||oneTimeCustomer != (existing?.customerType == CustomerType.ONE_TIME),nav)
     EditorColumn(padding, state, tag = "customer-editor") {
         item { DailyHeading(if (existing == null) "Add customer" else "Edit ${existing.reference}"); Text("A stable reference is assigned on Save.") }
         item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
         if (existing == null) item { DailyHeading("First site"); Text("Every new customer starts with a default site. Blank contact fields inherit the customer contact."); DailyField(firstSiteName, { firstSiteName = it }, "Site name · Required"); DailyField(firstSiteAddress, { firstSiteAddress = it }, "Site address") }
         item { LongTextEditor(note, { note = it }, "Private customer note", true) }
-        item { Button({ val input = CustomerInput(name, contact, phone, email, note); if (existing == null) viewModel.createCustomerWithFirstSite(input, SiteInput(firstSiteName, firstSiteAddress, isDefault = true)) { (customerId, _) -> nav.navigate("customer/$customerId") { popUpTo("customer/new") { inclusive = true } } } else viewModel.updateCustomer(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && (existing != null || firstSiteName.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-customer")) { Text("Save customer${if (existing == null) " and first site" else ""}") } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control")) {
+                Checkbox(
+                    checked = oneTimeCustomer,
+                    onCheckedChange = { checked -> if (!oneTimeBlocked || !checked) oneTimeCustomer = checked },
+                    enabled = !oneTimeBlocked,
+                    modifier = Modifier.testTag("customer-one-time-checkbox"),
+                )
+                Text("One-time customer (no contract)")
+            }
+            if (oneTimeBlocked) Text(existing?.oneTimeBlockReason ?: "This customer has recurring service plans and cannot be marked one-time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("customer-one-time-block-reason"))
+        }
+        item { Button({ val input = CustomerInput(name, contact, phone, email, note, if (oneTimeCustomer) CustomerType.ONE_TIME else CustomerType.STANDARD); if (existing == null) viewModel.createCustomerWithFirstSite(input, SiteInput(firstSiteName, firstSiteAddress, isDefault = true)) { (customerId, _) -> nav.navigate("customer/$customerId") { popUpTo("customer/new") { inclusive = true } } } else viewModel.updateCustomer(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && (existing != null || firstSiteName.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-customer")) { Text("Save customer${if (existing == null) " and first site" else ""}") } }
     }
 }
 
@@ -99,13 +113,13 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
     var handoffStatus by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item {
-            Text("${detail.reference} · ${detail.name}", style = MaterialTheme.typography.headlineSmall)
+             Text("${detail.reference} · ${detail.name}", style = MaterialTheme.typography.headlineSmall)
             Text(detail.customerName)
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             Text(detail.address.ifBlank { "No address" })
             Text(listOf(detail.effectiveContactName, detail.effectivePhone, detail.effectiveEmail).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "No contact details" })
             if (detail.usesCustomerContact) Text("Inherited from customer", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Customer",{nav.navigate("customer/${detail.customerId}")},Modifier.weight(1f).fillMaxHeight().testTag("site-customer-link")); ServiceLoopSecondaryButton("Edit",{nav.navigate("site/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Maps",{handoffStatus=handoff(context,Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(detail.address)}")),"maps")},Modifier.weight(1f).fillMaxHeight(),enabled=detail.address.isNotBlank()) }
+             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopNavigationButton("Customer",{nav.navigate("customer/${detail.customerId}")},Modifier.weight(1f).fillMaxHeight().testTag("site-customer-link")); ServiceLoopSecondaryButton("Edit",{nav.navigate("site/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Maps",{handoffStatus=handoff(context,Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(detail.address)}")),"maps")},Modifier.weight(1f).fillMaxHeight(),enabled=detail.address.isNotBlank()) }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_DIAL,Uri.parse("tel:${Uri.encode(detail.effectivePhone)}")),"dialer")},enabled=detail.effectivePhone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Call,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("Call")}
                 TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_SENDTO,Uri.parse("smsto:${Uri.encode(detail.effectivePhone)}")),"SMS composer")},enabled=detail.effectivePhone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Sms,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("SMS")}
@@ -117,7 +131,7 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
         if (detail.privateAccessNote.isNotBlank()) item { PrivateBlock("PRIVATE access note", detail.privateAccessNote) }
         item { DailyHeading("Equipment"); Button({ nav.navigate("equipment/new/${detail.id}") }, Modifier.fillMaxWidth().testTag("add-equipment")) { Text("Add equipment") } }
         items(detail.equipment) { equipment -> ServiceLoopEntityRecord("${equipment.reference} · ${equipment.name}",metadata="${equipment.technicianIdentifier.orEmpty()} · Due ${equipment.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${equipment.id}")} }
-        item { ServiceLoopSectionDivider(); DailyHeading("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopSecondaryButton("Site history",{nav.navigate("history/SITE/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Archive site" else "Restore site",{nav.navigate("lifecycle/SITE/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}")},Modifier.fillMaxWidth()) } }
+         item { ServiceLoopSectionDivider(); DailyHeading("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopNavigationButton("Site history",{nav.navigate("history/SITE/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Archive site" else "Restore site",{nav.navigate("lifecycle/SITE/${detail.id}/${if(detail.state=="ACTIVE")"ARCHIVE" else "RESTORE"}")},Modifier.fillMaxWidth()) } }
     }
 }
 

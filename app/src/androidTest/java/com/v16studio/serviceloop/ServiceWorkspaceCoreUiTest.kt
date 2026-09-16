@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavHostController
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -150,6 +151,10 @@ class ServiceWorkspaceCoreUiTest {
                 .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
         )
         compose.onNodeWithText("Hide services (2)").assertIsDisplayed()
+        compose.onNodeWithText("1. Electrical inspection").assertIsDisplayed()
+        compose.onNodeWithText("2. Belt inspection").assertIsDisplayed()
+        compose.onNodeWithText("3. Lubrication").assertIsDisplayed()
+        compose.onNodeWithText("4. Safety briefing").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-service").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-one-second").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
@@ -197,7 +202,7 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
         compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
-        compose.onNodeWithText("Back to visit").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("Back to visit").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -231,7 +236,7 @@ class ServiceWorkspaceCoreUiTest {
             }
         }
 
-        compose.onNodeWithTag("service-visit-overview").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("service-visit-overview").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("review-visit"))
         compose.onNodeWithTag("review-visit").assertIsDisplayed()
     }
@@ -266,7 +271,7 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("open-visit-assignment"))
         compose.onNodeWithTag("open-visit-assignment").assertIsDisplayed()
         compose.onNodeWithTag("long-text-public-work-performed", useUnmergedTree = true).assertIsNotEnabled()
-        assertTrue(compose.onAllNodesWithTag("add-private-note").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("add-private-note").assertIsNotEnabled()
     }
 
     @Test
@@ -311,9 +316,11 @@ class ServiceWorkspaceCoreUiTest {
         )
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, fixedTime())) {}
 
+        var testNav: NavHostController? = null
         compose.setContent {
             ServiceLoopTheme {
                 val nav = rememberNavController()
+                testNav = nav
                 NavHost(navController = nav, startDestination = "visit/visit-1") {
                     composable("visit/{visitId}") {
                         androidx.compose.material3.Text("Visit overview", Modifier.testTag("visit-overview"))
@@ -339,7 +346,8 @@ class ServiceWorkspaceCoreUiTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Service B").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("next-service").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Service C").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("service-visit-overview").performClick()
+        assertTrue(compose.onAllNodesWithTag("service-visit-overview").fetchSemanticsNodes().isEmpty())
+        compose.runOnIdle { testNav?.popBackStack() }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-overview").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("visit-overview").assertIsDisplayed()
     }

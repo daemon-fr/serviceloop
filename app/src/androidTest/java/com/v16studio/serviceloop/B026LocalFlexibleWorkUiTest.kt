@@ -13,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -29,6 +31,8 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.state.ToggleableState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -44,6 +48,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
+import com.v16studio.serviceloop.calendar.VisitCalendarState
 
 @RunWith(AndroidJUnit4::class)
 class B026LocalFlexibleWorkUiTest {
@@ -105,10 +110,158 @@ class B026LocalFlexibleWorkUiTest {
         )
         showNewVisit(listOf(standard), listOf(due), state, listOf(due.planId))
         compose.onNodeWithText("Set up visit").assertIsDisplayed()
-        compose.onNodeWithTag("visit-mode-ONE_TIME").assertIsDisplayed()
+        compose.onNodeWithTag("visit-mode-NEW").assertIsDisplayed()
         compose.onNodeWithText("Planned services are unavailable.").assertIsDisplayed()
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required")).assertIsDisplayed()
         assertAbsentText("Unable to read due services")
+    }
+
+    @Test fun newVisitUsesExistingAndNewModesAndNewCustomerTypeCheckboxDefaultsOff() {
+        showNewVisit(emptyList(), emptyList())
+
+        compose.onNodeWithTag("visit-mode-EXISTING").assertIsDisplayed()
+        compose.onNodeWithTag("visit-mode-NEW").assertIsDisplayed().performClick()
+        compose.onNodeWithText("One-time customer (no contract)").assertIsDisplayed()
+        val checkbox = compose.onNodeWithTag("new-visit-one-time-customer")
+        assertEquals(ToggleableState.Off, checkbox.fetchSemanticsNode().config[SemanticsProperties.ToggleableState])
+        checkbox.performClick()
+        assertEquals(ToggleableState.On, checkbox.fetchSemanticsNode().config[SemanticsProperties.ToggleableState])
+    }
+
+    @Test fun newVisitSavesRequestedCustomerTypeThroughTheNewCustomerFlow() {
+        val repository = FakeRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
+                        NewVisitScreen(emptyList(), emptyList(), PaddingValues(), UiState(loading = false, businessDate = LocalDate.of(2026, 9, 5), businessZoneId = "Europe/Bucharest"), viewModel, rememberNavController())
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("visit-mode-NEW").performClick()
+        compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-customer-name-required"))
+        compose.onNodeWithTag("field-customer-name-required").performTextInput("New customer")
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Initial inspection")
+        compose.onNodeWithTag("field-customer-name-required").assertTextContains("New customer")
+        compose.onNodeWithTag("field-task-name-required").assertTextContains("Initial inspection")
+        compose.onNodeWithTag("add-task").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("new-visit-one-time-customer").performClick()
+        compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-appointment-service-date-yyyy-mm-dd"))
+        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").performTextReplacement("2026-09-06")
+        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").assertTextContains("2026-09-06")
+        compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("primary-visit-action-BOOKED"))
+        compose.onNodeWithTag("primary-visit-action-BOOKED").assertIsEnabled().performClick()
+
+        compose.waitUntil(10_000) { repository.createdCustomerType == CustomerType.ONE_TIME }
+        assertEquals(CustomerType.ONE_TIME, repository.createdCustomerType)
+    }
+
+    @Test fun calendarOffOffersSettingsNavigationAndUsesTechnicianCopy() {
+        val repository = FakeRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        val detail = VisitDetail("visit-calendar", "V-CAL", "BOOKED", "customer", "Customer", "site", "Site", "Address", "2026-09-06", null, null, emptyList(), null)
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    val nav = rememberNavController()
+                    NavHost(nav, "visit") {
+                        composable("visit") { VisitDetailScreen(detail, PaddingValues(), UiState(loading = false, visitCalendarState = VisitCalendarState("Calendar integration is off")), viewModel, nav) }
+                        composable("calendar") { androidx.compose.material3.Text("Calendar settings", modifier = androidx.compose.ui.Modifier.testTag("calendar-settings-destination")) }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("visit-calendar-status").assertTextContains("Calendar integration is off")
+        compose.onNodeWithTag("visit-calendar-settings").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("calendar-settings-destination").assertIsDisplayed()
+    }
+
+    @Test fun navigationOnlyButtonShowsDisclosureButCommandsDoNot() {
+        var navigated = false
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    androidx.compose.foundation.layout.Column {
+                        com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton("Customer", { navigated = true }, androidx.compose.ui.Modifier.testTag("relationship-navigation"))
+                        com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton("Edit", {}, androidx.compose.ui.Modifier.testTag("command-edit"))
+                        com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton("Create visit", {}, androidx.compose.ui.Modifier.testTag("command-create"))
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("service-loop-disclosure-icon", useUnmergedTree = true).assertIsDisplayed()
+        compose.onAllNodesWithTag("service-loop-disclosure-icon", useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithTag("relationship-navigation").performClick()
+        compose.onNodeWithTag("command-edit").assertIsDisplayed()
+        compose.onNodeWithTag("command-create").assertIsDisplayed()
+        assertTrue(navigated)
+    }
+
+    @Test fun customerEditShowsTheSameCheckboxAndExplainsAPlanBlock() {
+        val repository = FakeRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        val blocked = repository.customerDetail.copy(
+            customerType = CustomerType.STANDARD,
+            canMarkOneTime = false,
+            oneTimeBlockReason = "This customer has recurring service plans and cannot be marked one-time.",
+        )
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
+                        CustomerEditorScreen(blocked, PaddingValues(), UiState(loading = false), viewModel, rememberNavController())
+                    }
+                }
+            }
+        }
+        val checkbox = compose.onNodeWithTag("customer-one-time-checkbox")
+        assertEquals(ToggleableState.Off, checkbox.fetchSemanticsNode().config[SemanticsProperties.ToggleableState])
+        checkbox.assertIsNotEnabled()
+        compose.onNodeWithTag("customer-one-time-block-reason").assertIsDisplayed()
+        compose.onNodeWithText("This customer has recurring service plans and cannot be marked one-time.").assertIsDisplayed()
+    }
+
+    @Test fun servicePlanDetailLeavesARealGapBeforeTheActionStack() {
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    PlanDetailScreen(PlanDetail("plan", "P-1", "Annual", "1", "Annual service", 1, "YEARS", "2026-09-06", "ACTIVE", null), PaddingValues(), rememberNavController())
+                }
+            }
+        }
+        val explanationBottom = compose.onNodeWithText("Current obligation remains separate from bookings and contact.").fetchSemanticsNode().boundsInRoot.bottom
+        val firstActionTop = compose.onNodeWithText("Edit plan").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Plan actions need breathing room", firstActionTop - explanationBottom >= 16f)
+    }
+
+    @Test fun shortAndLongVisitsListsUseSharedNewVisitDocking() {
+        val short = listOf(VisitSummary("short", "V-SHORT", "Site", "2026-09-05", "BOOKED", null, customerId = "customer", customerName = "Customer"))
+        val long = (1..24).map { index -> VisitSummary("visit-$index", "V-$index", "Site $index", "2026-09-05", "BOOKED", null, customerId = "customer", customerName = "Customer") }
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    VisitsWorkScreen(short, LocalDate.of(2026, 9, 5), PaddingValues(), rememberNavController(), initialDateFilter = VisitDateFilter.ALL, initialStatusFilter = VisitStatusFilter.ALL)
+                }
+            }
+        }
+        compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
+
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    VisitsWorkScreen(long, LocalDate.of(2026, 9, 5), PaddingValues(), rememberNavController(), initialDateFilter = VisitDateFilter.ALL, initialStatusFilter = VisitStatusFilter.ALL)
+                }
+            }
+        }
+        compose.onNodeWithTag("new-visit-work-floating").assertIsDisplayed()
+        compose.onAllNodesWithTag("new-visit-work-bottom").assertCountEquals(0)
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(hasTestTag("new-visit-slot"))
+        compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun startNowCreatesWorkingVisitAndOpensItsFirstService() {
@@ -230,7 +383,7 @@ class B026LocalFlexibleWorkUiTest {
         assertEquals("known-equipment", repository.lastAddedWorkItemId)
     }
 
-    @Test fun makeStandardRemovesOneTimeActionAndReturnsCustomerToDefaultRegister() {
+    @Test fun oneTimeCustomerDetailHasNoSpecialPromotionActionAndKeepsEdit() {
         val repository = FakeRepository()
         val viewModel = ServiceLoopViewModel(repository) {}
         compose.runOnUiThread {
@@ -242,16 +395,12 @@ class B026LocalFlexibleWorkUiTest {
                 }
             }
         }
-        compose.onNodeWithTag("make-standard-customer").performClick()
-        compose.waitUntil(10_000) { repository.customerDetail.customerType == CustomerType.STANDARD && compose.onAllNodesWithTag("make-standard-customer").fetchSemanticsNodes().isEmpty() }
-        assertAbsentText("One-time customer")
-        compose.runOnUiThread {
-            compose.activity.setContent { ServiceLoopTheme { CustomersScreen(listOf(repository.customerSummary()), emptyList(), emptyList(), rememberNavController()) } }
-        }
-        compose.onNodeWithText("Promoted customer").assertIsDisplayed()
+        assertAbsentTag("make-standard-customer")
+        compose.onNodeWithText("Edit").assertIsDisplayed()
+        compose.onNodeWithTag("one-time-customer-label").assertIsDisplayed()
     }
 
-    @Test fun oneTimeEquipmentPromotesCustomerBeforeOpeningAddPlan() {
+    @Test fun oneTimeEquipmentHasNoSpecialPromotionAction() {
         val repository = FakeRepository()
         val viewModel = ServiceLoopViewModel(repository) {}
         compose.runOnUiThread {
@@ -265,10 +414,9 @@ class B026LocalFlexibleWorkUiTest {
                 }
             }
         }
-        compose.onNodeWithTag("make-standard-and-add-plan").performScrollTo().performClick()
-        compose.waitUntil(10_000) { repository.customerDetail.customerType == CustomerType.STANDARD && compose.onAllNodesWithText("Add service plan").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Add service plan").assertIsDisplayed()
-        assertTrue(repository.customerDetail.customerType == CustomerType.STANDARD)
+        assertAbsentTag("make-standard-and-add-plan")
+        compose.onNodeWithText("Recurring service requires a Standard customer.").assertIsDisplayed()
+        compose.onNodeWithTag("equipment-actions").assertIsDisplayed()
     }
 
     @Test fun linkExistingEquipmentReturnsToSameServiceWithTheSameWorkItem() {
@@ -381,6 +529,7 @@ class B026LocalFlexibleWorkUiTest {
         var createdEquipmentPlanCount = 0
         var workingProgress: VisitServiceProgress? = null
         @Volatile var createdVisitId: String? = null
+        @Volatile var createdCustomerType: CustomerType? = null
 
         override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
         override suspend fun equipment(id: String) = equipmentDetail
@@ -411,6 +560,11 @@ class B026LocalFlexibleWorkUiTest {
         }
         override suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
             createdVisitId = "created-working-visit"
+            return createdVisitId!!
+        }
+        override suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
+            createdCustomerType = input.customerType
+            createdVisitId = "created-new-customer-visit"
             return createdVisitId!!
         }
         override suspend fun makeCustomerStandard(customerId: String): Long {

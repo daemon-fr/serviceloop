@@ -32,6 +32,10 @@ The explicitly authorized active implementation/review branch is `codex/b013-ui-
 
 Implemented on `codex/b013-ui-overhaul` from `f9f1fc16b7878015232ecfb687b514a50e7f34bf`. The shared derived operational classifier/projection now drives Home, Customer Work items, contextual Work filters, and state-colored live work rows. Home uses expandable non-empty buckets with the adopted urgency/order, full-height semantic rails, normal-surface child rows, dashed state borders, and five-item previews. Customer detail has an ID-scoped Work items gateway and shared customer dashboard route. Visit creation/Add Task, Due Services actions, reminders, Visit Progress, service stripes, Review checklist projection/privacy, and technician-facing copy were corrected without changing business invariants or Room schema. Detailed behavior and verification scope are documented in `B027_OPERATIONAL_DASHBOARD_AND_UI_CORRECTIONS.md`.
 
+## B-028 — navigation, Work actions, and customer-type UX
+
+Implemented on `codex/b013-ui-overhaul` from the B-013 UI-overhaul line. This pass adds the reusable disclosure navigation button, Calendar-off settings remedy, shared Visit Progress numbering, Service Plan action spacing, one-way Work New-visit floating-to-docked behavior across all three Work tabs, and consistent Standard/One-time Customer type UX across New Visit, Register Add, and Edit Customer. The transactional downgrade guard rejects Standard → One-time when any recurring ServicePlan exists while preserving Sites, Equipment, history, obligations, and Register filtering. Detailed scope and evidence are documented in `B028_NAVIGATION_WORK_ACTIONS_AND_CUSTOMER_TYPE_UX.md`.
+
 ## Functional freeze status
 
 The current product is functionally frozen for the purpose of beginning B-013.

@@ -159,8 +159,6 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDashboardGateway
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAttentionRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopVersionRow
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconAction
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as OutlinedTextField
@@ -255,15 +253,6 @@ internal fun RootScaffold(nav: NavHostController, selected: RootDestination, con
             }
         },
         bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
-        floatingActionButton = {
-            if (selected == RootDestination.WORK && !compactRootActions) {
-                Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.testTag("new-visit-work")) {
-                    ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
-                    Spacer(Modifier.width(ServiceLoopUiTokens.Space.xs))
-                    Text("New visit")
-                }
-            }
-        },
         content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } },
     )
 }

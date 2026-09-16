@@ -591,6 +591,7 @@ class ServiceLoopViewModel(
     fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.reviseTemplate(id, name, items); id }, onSuccess)
     fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)
     fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, adHocWork, state, date, scheduledAt) }, onSuccess)
+    fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createNewCustomerVisit(input, adHocWork, state, date, scheduledAt) }, onSuccess)
     fun createOneTimeVisit(input: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createOneTimeVisit(input, adHocWork, state, date, scheduledAt) }, onSuccess)
     fun makeCustomerStandard(customerId: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.makeCustomerStandard(customerId); customerId }) { id -> refreshRootDataNonBlocking(); loadCustomer(id); onSuccess(id) }
     fun startVisit(id: String, onSuccess: (String) -> Unit) {

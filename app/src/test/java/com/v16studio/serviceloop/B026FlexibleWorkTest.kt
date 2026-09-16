@@ -77,6 +77,66 @@ class B026FlexibleWorkTest {
         assertEquals(beforeVisits + 1, db.serviceLoopDao().visitCount())
     }
 
+    @Test fun newCustomerVisitAndRegisterCreationPersistTheRequestedCustomerType() = runTest {
+        val standardVisit = repo.createNewCustomerVisit(
+            NewCustomerVisitInput("Quick standard", locationLabel = "Standard site", customerType = CustomerType.STANDARD),
+            listOf(AdHocWorkInput("Inspect standard", WorkSubjectType.SITE)),
+            "BOOKED",
+            "2026-09-06",
+        )
+        val oneTimeVisit = repo.createNewCustomerVisit(
+            NewCustomerVisitInput("Quick one-time", locationLabel = "One-time site", customerType = CustomerType.ONE_TIME),
+            listOf(AdHocWorkInput("Inspect one-time", WorkSubjectType.SITE)),
+            "BOOKED",
+            "2026-09-07",
+        )
+        val oneTimeCustomer = repo.createCustomerWithFirstSite(
+            CustomerInput("Register one-time", customerType = CustomerType.ONE_TIME),
+            SiteInput("Registered site", "1 Test Street", isDefault = true),
+        ).first
+
+        assertEquals(CustomerType.STANDARD.code, db.serviceLoopDao().customer(db.serviceLoopDao().visit(standardVisit)!!.customerId)!!.customerType)
+        assertEquals(CustomerType.ONE_TIME.code, db.serviceLoopDao().customer(db.serviceLoopDao().visit(oneTimeVisit)!!.customerId)!!.customerType)
+        assertEquals(CustomerType.ONE_TIME.code, db.serviceLoopDao().customer(oneTimeCustomer)!!.customerType)
+        assertEquals(1, db.serviceLoopDao().visitWorkItems(standardVisit).size)
+        assertEquals(1, db.serviceLoopDao().visitWorkItems(oneTimeVisit).size)
+    }
+
+    @Test fun customerTypeEditPreservesTheBranchAndAllowsOneTimeToStandard() = runTest {
+        val customer = repo.createCustomer(CustomerInput("Convertible customer"))
+        val site = repo.createSite(customer, SiteInput("Main site", "1 Test Street", isDefault = true))
+        val equipment = repo.createEquipment(site, EquipmentInput("Unit"))
+
+        repo.updateCustomer(customer, CustomerInput("Convertible customer", customerType = CustomerType.ONE_TIME))
+        assertEquals(CustomerType.ONE_TIME, repo.customer(customer)!!.customerType)
+        assertEquals(site, db.serviceLoopDao().sitesForCustomer(customer).single().id)
+        assertEquals(site, db.serviceLoopDao().equipment(equipment)!!.siteId)
+
+        repo.updateCustomer(customer, CustomerInput("Convertible customer", customerType = CustomerType.STANDARD))
+        assertEquals(CustomerType.STANDARD, repo.customer(customer)!!.customerType)
+        assertEquals(site, db.serviceLoopDao().sitesForCustomer(customer).single().id)
+        assertEquals(equipment, db.serviceLoopDao().equipmentForSite(site).single().id)
+    }
+
+    @Test fun standardToOneTimeIsBlockedForAnyPersistedPlanStateWithoutPartialMutation() = runTest {
+        val ids = seedBranch()
+        val planId = repo.createPlan(ids.equipment, PlanInput("Annual", 1, "YEARS", "2026-09-01"))
+        val originalCustomer = db.serviceLoopDao().customer(ids.customer)!!
+        val originalPlan = db.serviceLoopDao().plan(planId)!!
+
+        listOf("ACTIVE", "PAUSED", "ENDED").forEach { planState ->
+            db.serviceLoopDao().updatePlan(originalPlan.copy(state = planState))
+            val failure = runCatching {
+                repo.updateCustomer(ids.customer, CustomerInput("Customer", customerType = CustomerType.ONE_TIME))
+            }.exceptionOrNull()
+            assertEquals("A customer with recurring service plans cannot be marked one-time", failure?.message)
+            assertEquals(originalCustomer, db.serviceLoopDao().customer(ids.customer))
+            assertEquals(planState, db.serviceLoopDao().plan(planId)!!.state)
+            assertEquals(originalPlan.currentObligationId, db.serviceLoopDao().plan(planId)!!.currentObligationId)
+        }
+        assertEquals("This customer has recurring service plans and cannot be marked one-time.", repo.customer(ids.customer)!!.oneTimeBlockReason)
+    }
+
     @Test fun oneTimeSiteNameUsesAddressThenCustomerFallback() = runTest {
         val withAddress = repo.createOneTimeVisit(OneTimeVisitInput("Ion Popescu", address = "Strada Exemplu 10"), listOf(AdHocWorkInput("Inspect", WorkSubjectType.SITE)), "BOOKED", "2026-09-06")
         val withoutAddress = repo.createOneTimeVisit(OneTimeVisitInput("Ion Popescu"), listOf(AdHocWorkInput("Inspect", WorkSubjectType.SITE)), "BOOKED", "2026-09-07")

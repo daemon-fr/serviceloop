@@ -138,8 +138,10 @@ interface ServiceLoopRepository {
     suspend fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>): Long = error("Template editor unavailable")
     suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun addAdHocWork(visitId: String, input: AdHocWorkInput): String = error("Ad-hoc work unavailable")
+    @Deprecated("Use updateCustomer with CustomerInput.customerType")
     suspend fun makeCustomerStandard(customerId: String): Long = error("Customer promotion unavailable")
     suspend fun equipmentLinkContext(workItemId: String): EquipmentLinkContext = error("Equipment linking unavailable")
     suspend fun linkWorkItemEquipment(workItemId: String, equipmentId: String): Long = error("Equipment linking unavailable")
@@ -349,7 +351,8 @@ class RoomServiceLoopRepository(
         val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, customerType) } }
         val followUps = dao.followUpsForCustomer(id).filter { it.state == "OPEN" }.map { followUpDetail(it) }
         val contacts = dao.contactNotesForCustomer(id).take(5).map { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
-        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts, customer.state, CustomerType.fromCode(customer.customerType))
+        val hasServicePlans = dao.servicePlanCountForCustomer(id) > 0
+        return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts, customer.state, customerType, canMarkOneTime = customerType == CustomerType.ONE_TIME || !hasServicePlans, oneTimeBlockReason = if (customerType == CustomerType.STANDARD && hasServicePlans) "This customer has recurring service plans and cannot be marked one-time." else null)
     }
 
     override suspend fun site(id: String): SiteDetail? {
@@ -432,7 +435,7 @@ class RoomServiceLoopRepository(
 
     override suspend fun createCustomer(input: CustomerInput): String {
         validateCustomer(input); writeGate.beforeWrite(); val id = UUID.randomUUID().toString()
-        dao.insertCustomers(listOf(CustomerEntity(id, reference("CU", dao.customerCount() + 1), input.name.trim(), clean(input.contactName), clean(input.phone), clean(input.email), clean(input.privateNote))))
+        dao.insertCustomers(listOf(CustomerEntity(id, reference("CU", dao.customerCount() + 1), input.name.trim(), clean(input.contactName), clean(input.phone), clean(input.email), clean(input.privateNote), customerType = input.customerType.code)))
         return id
     }
 
@@ -440,7 +443,7 @@ class RoomServiceLoopRepository(
         validateCustomer(customer); validateSite(site); writeGate.beforeWrite()
         val customerId = UUID.randomUUID().toString()
         val siteId = UUID.randomUUID().toString()
-        val customerValue = CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customer.name.trim(), clean(customer.contactName), clean(customer.phone), clean(customer.email), clean(customer.privateNote))
+        val customerValue = CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customer.name.trim(), clean(customer.contactName), clean(customer.phone), clean(customer.email), clean(customer.privateNote), customerType = customer.customerType.code)
         val siteValue = SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), site.name.trim(), clean(site.address), clean(site.privateAccessNote), clean(site.contactName), clean(site.phone), clean(site.email), true)
         database.withTransaction {
             dao.insertCustomers(listOf(customerValue))
@@ -450,10 +453,19 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun updateCustomer(id: String, input: CustomerInput): Long {
-        validateCustomer(input); val old = dao.customer(id) ?: error("Customer no longer exists")
-        val value = old.copy(name = input.name.trim(), contactName = clean(input.contactName), phone = clean(input.phone), email = clean(input.email), privateNote = clean(input.privateNote))
-        if (value == old) return businessTime.instant().toEpochMilli()
-        writeGate.beforeWrite(); dao.updateCustomer(value); return businessTime.instant().toEpochMilli()
+        validateCustomer(input)
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val old = dao.customer(id) ?: error("Customer no longer exists")
+            val oldType = CustomerType.fromCode(old.customerType)
+            if (oldType == CustomerType.STANDARD && input.customerType == CustomerType.ONE_TIME) {
+                require(dao.servicePlanCountForCustomer(id) == 0) { "A customer with recurring service plans cannot be marked one-time" }
+            }
+            val value = old.copy(name = input.name.trim(), contactName = clean(input.contactName), phone = clean(input.phone), email = clean(input.email), privateNote = clean(input.privateNote), customerType = input.customerType.code)
+            if (value != old) dao.updateCustomer(value)
+        }
+        return now
     }
 
     override suspend fun createSite(customerId: String, input: SiteInput): String {
@@ -540,8 +552,8 @@ class RoomServiceLoopRepository(
         return database.withTransaction { createVisitForSiteInTransaction(siteId, planIds, adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = true) }
     }
 
-    override suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
-        validateOneTimeVisitInput(oneTime)
+    override suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
+        validateNewCustomerVisitInput(input)
         require(adHocWork.isNotEmpty()) { "Add at least one task" }
         require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
         LocalDate.parse(serviceDate)
@@ -549,14 +561,17 @@ class RoomServiceLoopRepository(
         return database.withTransaction {
             val customerId = UUID.randomUUID().toString()
             val siteId = UUID.randomUUID().toString()
-            val customerName = oneTime.customerName.trim()
-            val address = clean(oneTime.address)
-            val siteName = oneTime.locationLabel.trim().ifBlank { address ?: customerName }
-            dao.insertCustomers(listOf(CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customerName, phone = clean(oneTime.phone), email = clean(oneTime.email), customerType = CustomerType.ONE_TIME.code)))
-            dao.insertSites(listOf(SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), siteName, address, null, isDefault = true)))
-            createVisitForSiteInTransaction(siteId, emptyList(), adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = false)
-        }
+             val customerName = input.customerName.trim()
+             val address = clean(input.address)
+             val siteName = input.locationLabel.trim().ifBlank { address ?: customerName }
+             dao.insertCustomers(listOf(CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customerName, phone = clean(input.phone), email = clean(input.email), customerType = input.customerType.code)))
+             dao.insertSites(listOf(SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), siteName, address, null, isDefault = true)))
+             createVisitForSiteInTransaction(siteId, emptyList(), adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = false)
+         }
     }
+
+    override suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String =
+        createNewCustomerVisit(NewCustomerVisitInput(oneTime.customerName, oneTime.phone, oneTime.email, oneTime.locationLabel, oneTime.address, CustomerType.ONE_TIME), adHocWork, state, serviceDate, scheduledAtEpochMillis)
 
     override suspend fun addAdHocWork(visitId: String, input: AdHocWorkInput): String {
         writeGate.beforeWrite()
@@ -572,6 +587,7 @@ class RoomServiceLoopRepository(
         }
     }
 
+    @Deprecated("Use updateCustomer with CustomerInput.customerType")
     override suspend fun makeCustomerStandard(customerId: String): Long {
         val customer = dao.customer(customerId) ?: error("Customer no longer exists")
         if (CustomerType.fromCode(customer.customerType) == CustomerType.STANDARD) return businessTime.instant().toEpochMilli()
@@ -798,7 +814,7 @@ class RoomServiceLoopRepository(
         return input.copy(taskName = taskName, equipmentDescription = description)
     }
 
-    private fun validateOneTimeVisitInput(input: OneTimeVisitInput) {
+    private fun validateNewCustomerVisitInput(input: NewCustomerVisitInput) {
         require(input.customerName.trim().isNotBlank()) { "Customer name is required" }
         require(input.customerName.trim().length <= 200) { "Customer name must be 200 characters or fewer" }
         require(input.phone.trim().length <= 100) { "Phone must be 100 characters or fewer" }
@@ -806,6 +822,8 @@ class RoomServiceLoopRepository(
         require(input.locationLabel.trim().length <= 200) { "Location label must be 200 characters or fewer" }
         require(input.address.trim().length <= 500) { "Address must be 500 characters or fewer" }
     }
+
+    private fun validateOneTimeVisitInput(input: OneTimeVisitInput) = validateNewCustomerVisitInput(NewCustomerVisitInput(input.customerName, input.phone, input.email, input.locationLabel, input.address, CustomerType.ONE_TIME))
 
     private suspend fun validateLinkableWorkItem(workItemId: String): WorkItemEntity {
         val item = dao.workItem(workItemId) ?: error("Work item no longer exists")

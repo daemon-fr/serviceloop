@@ -25,14 +25,11 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -81,13 +78,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.platform.LocalDensity
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
@@ -147,7 +142,6 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
@@ -242,8 +236,6 @@ internal fun WorkScreen(
         ?: if (initialVisitStatus == VisitStatusFilter.ALL) VisitDateFilter.TODAY else VisitDateFilter.ALL
     val initialFollowUpDate = FollowUpDateFilter.entries.firstOrNull { it.name == contextualFilter } ?: FollowUpDateFilter.ALL
     val colors = LocalServiceLoopTokens.current
-    val compactRootActions = LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold ||
-        LocalConfiguration.current.screenWidthDp.dp < ServiceLoopUiTokens.Size.narrowThreshold
     val operationalProjection = state.operationalDashboard?.takeIf { it.scope == scope }
     val operationalStateFor: (OperationalWorkKind, String) -> OperationalWorkState? = { kind, recordId ->
         operationalProjection?.stateFor(kind, recordId)
@@ -252,16 +244,6 @@ internal fun WorkScreen(
         state.customer?.takeIf { it.id == customerScope.customerId }?.name
             ?: state.customerList.firstOrNull { it.id == customerScope.customerId }?.name
     }
-    val inlineNewVisit: (@Composable () -> Unit)? = if (compactRootActions) {
-        {
-            ServiceLoopPrimaryButton(
-                "New visit",
-                { nav.navigate("visit/new") },
-                Modifier.fillMaxWidth().testTag("new-visit-work"),
-                leadingIcon = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
-            )
-        }
-    } else null
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp)) {
             ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
@@ -284,10 +266,10 @@ internal fun WorkScreen(
                     nav = nav,
                     modifier = Modifier.weight(1f),
                     initialBucket = contextualDueBucket,
-                    topContent = inlineNewVisit,
                     initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.SERVICE }?.second,
                     scope = scope,
                     operationalStateFor = { due -> operationalStateFor(OperationalWorkKind.SERVICE, due.planId) },
+                    onNewVisit = { nav.navigate("visit/new") },
                 )
             }
             WorkTab.VISITS -> VisitsWorkScreen(
@@ -298,10 +280,10 @@ internal fun WorkScreen(
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialVisitDate,
                 initialStatusFilter = initialVisitStatus,
-                topContent = inlineNewVisit,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.VISIT }?.second,
                 scope = scope,
                 operationalStateFor = { visit -> operationalStateFor(OperationalWorkKind.VISIT, visit.id) },
+                onNewVisit = { nav.navigate("visit/new") },
             )
             WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
                 values = state.followUps,
@@ -310,11 +292,11 @@ internal fun WorkScreen(
                 nav = nav,
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialFollowUpDate,
-                topContent = inlineNewVisit,
                 dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.FOLLOW_UP }?.second,
                 scope = scope,
                 operationalStateFor = { followUp -> operationalStateFor(OperationalWorkKind.FOLLOW_UP, followUp.id) },
+                onNewVisit = { nav.navigate("visit/new") },
             )
         }
     }
@@ -337,10 +319,10 @@ internal fun VisitsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
-    topContent: (@Composable () -> Unit)? = null,
     initialOperationalState: OperationalWorkState? = null,
     scope: WorkScope = WorkScope.Global,
     operationalStateFor: (VisitSummary) -> OperationalWorkState? = { null },
+    onNewVisit: () -> Unit = {},
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -350,12 +332,15 @@ internal fun VisitsWorkScreen(
         operationalStateFor(visit) == initialOperationalState &&
             (query.isBlank() || listOf(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, visit.customerName).any { it.contains(query, true) })
     }
-    LazyColumn(
-        modifier.padding(padding).testTag("work-visits-list"),
-        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        topContent?.let { action -> item { action() } }
+    val listState = rememberLazyListState()
+    val docked = rememberWorkNewVisitDocked(listState)
+    Box(modifier.padding(padding)) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("work-visits-list"),
+            state = listState,
+            contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, WorkNewVisitListBottomPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             ServiceLoopTextField(query, { query = it }, "Search visits", modifier = Modifier.testTag("visit-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
@@ -387,6 +372,9 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
+        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(docked, onNewVisit) }
+        }
+        WorkNewVisitFloatingAction(docked, onNewVisit)
     }
 }
 
@@ -399,13 +387,13 @@ internal fun FollowUpsWorkScreen(
     modifier: Modifier = Modifier,
     initialDateFilter: FollowUpDateFilter = FollowUpDateFilter.ALL,
     initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
-    topContent: (@Composable () -> Unit)? = null,
     dueSoonHorizonDays: Int = 14,
     initialOperationalState: OperationalWorkState? = null,
     scope: WorkScope = WorkScope.Global,
     operationalStateFor: (com.v16studio.serviceloop.domain.FollowUpDetail) -> OperationalWorkState? = { followUp ->
         OperationalWorkClassifier.classifyFollowUp(followUp.state, followUp.dueDate, businessDate, dueSoonHorizonDays)
     },
+    onNewVisit: () -> Unit = {},
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
@@ -415,12 +403,15 @@ internal fun FollowUpsWorkScreen(
         operationalStateFor(followUp) == initialOperationalState &&
             (query.isBlank() || listOfNotNull(followUp.reference, followUp.title, followUp.customerName, followUp.siteName, followUp.equipmentName, followUp.dueDate).any { it.contains(query, true) })
     }
-    LazyColumn(
-        modifier.padding(padding).testTag("work-follow-ups-list"),
-        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        topContent?.let { action -> item { action() } }
+    val listState = rememberLazyListState()
+    val docked = rememberWorkNewVisitDocked(listState)
+    Box(modifier.padding(padding)) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("work-follow-ups-list"),
+            state = listState,
+            contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, WorkNewVisitListBottomPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             ServiceLoopTextField(query, { query = it }, "Search follow-ups", modifier = Modifier.testTag("follow-up-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
@@ -456,5 +447,8 @@ internal fun FollowUpsWorkScreen(
                 operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
+        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(docked, onNewVisit) }
+        }
+        WorkNewVisitFloatingAction(docked, onNewVisit)
     }
 }

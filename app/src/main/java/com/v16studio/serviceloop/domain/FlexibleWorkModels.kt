@@ -30,6 +30,17 @@ data class AdHocWorkInput(
     val reusableTemplateId: String? = null,
 )
 
+data class NewCustomerVisitInput(
+    val customerName: String,
+    val phone: String = "",
+    val email: String = "",
+    val locationLabel: String = "",
+    val address: String = "",
+    val customerType: CustomerType = CustomerType.STANDARD,
+)
+
+/** Compatibility input for the adopted Dispatch one-time branch. */
+@Deprecated("Use NewCustomerVisitInput for technician-created Visits")
 data class OneTimeVisitInput(
     val customerName: String,
     val phone: String = "",

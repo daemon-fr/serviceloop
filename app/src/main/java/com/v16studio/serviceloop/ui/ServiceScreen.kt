@@ -60,7 +60,6 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPinnedBar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
@@ -472,9 +471,8 @@ internal fun ServiceScreen(
             if (viewState.error != null) item { Text(viewState.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("service-operation-error")) }
             if (movePrimaryActionIntoList) item { PrimaryServiceAction(Modifier.fillMaxWidth()) }
         }
-        ServiceLoopPinnedBar {
-            ServiceLoopSecondaryButton("Back to visit", { leaveService() }, Modifier.fillMaxWidth().testTag("service-visit-overview"))
-            if (!movePrimaryActionIntoList) PrimaryServiceAction(Modifier.fillMaxWidth())
+        if (!movePrimaryActionIntoList) {
+            ServiceLoopPinnedBar { PrimaryServiceAction(Modifier.fillMaxWidth()) }
         }
         }
     }

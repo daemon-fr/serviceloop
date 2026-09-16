@@ -540,6 +540,7 @@ fun ServiceLoopEntityRecord(
                         .testTag("entity-record-title"),
                 )
                 status?.takeIf(String::isNotBlank)?.let { ServiceLoopStatusBadge(it) }
+                ServiceLoopIcon(ServiceLoopIcons.Disclosure, null, Modifier.size(ServiceLoopUiTokens.Size.icon), c.icon)
             }
             context?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.supporting, color = c.textSecondary, modifier = Modifier.fillMaxWidth().testTag("entity-record-context")) }
             metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted, modifier = Modifier.fillMaxWidth()) }
