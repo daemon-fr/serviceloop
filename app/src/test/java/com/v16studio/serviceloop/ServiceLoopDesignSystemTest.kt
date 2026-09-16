@@ -173,7 +173,7 @@ class ServiceLoopDesignSystemTest {
         assertEquals("Dispatched",dispatched.label);assertEquals(c.infoContainer,dispatched.container)
         assertNotEquals(c.selection,draft.container);assertNotEquals(c.selection,dispatched.container)
         assertEquals("Read-only",serviceLoopStateStyle("READ_ONLY",c).label)
-        assertEquals("Unavailable",serviceLoopStateStyle("DISABLED",c).label)
+        assertEquals("Disabled",serviceLoopStateStyle("DISABLED",c).label)
         assertEquals("Open",serviceLoopStateStyle("OPEN",c).label)
         assertEquals("Closed",serviceLoopStateStyle("CLOSED",c).label)
         assertEquals(ServiceLoopVisualState.History,serviceLoopStateStyle("CANCELED",c).state)

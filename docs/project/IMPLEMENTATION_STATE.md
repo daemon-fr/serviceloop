@@ -152,6 +152,12 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 4. **Pilot fixes / final hardening**
 5. **Release preparation and submission**
 
+## B029 implementation state
+
+- Work queues use the one-way unresolved/floating/docked New visit action state and device-local SharedPreferences filter memory described in `B029_WORK_FILTERS_VISIT_SETUP_AND_TEMPLATE_UX.md`.
+- Reusable inspection templates retain immutable revisions and support active/disabled/deleted master state. Disabled assignments already held by a plan remain executable and capture the current immutable revision; new assignments require Active.
+- Current branch work is intentionally unaccepted and remains on `codex/b013-ui-overhaul` until the B029 review gate is complete.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

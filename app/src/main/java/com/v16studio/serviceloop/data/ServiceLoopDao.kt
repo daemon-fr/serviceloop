@@ -216,6 +216,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM reusable_template_revisions WHERE id=:id") suspend fun reusableTemplateRevision(id: String): ReusableTemplateRevisionEntity?
     @Query("SELECT * FROM reusable_template_revisions WHERE templateId=:templateId ORDER BY revisionNumber DESC") suspend fun reusableTemplateRevisions(templateId: String): List<ReusableTemplateRevisionEntity>
     @Query("SELECT * FROM reusable_template_items WHERE revisionId=:revisionId ORDER BY position") suspend fun reusableTemplateItems(revisionId: String): List<ReusableTemplateItemEntity>
+    @Query("SELECT COUNT(*) FROM service_plans WHERE reusableTemplateId=:templateId") suspend fun servicePlanCountForTemplate(templateId: String): Int
     @Query("SELECT * FROM part_entries WHERE workItemId=:workItemId ORDER BY modifiedAtEpochMillis, id") suspend fun parts(workItemId: String): List<PartEntryEntity>
     @Query("SELECT * FROM attachments WHERE ownerType='WORK_ITEM' AND ownerId=:workItemId ORDER BY id") suspend fun workItemAttachments(workItemId: String): List<AttachmentEntity>
     @Query("SELECT COUNT(*) FROM attachments a JOIN work_items wi ON a.ownerType='WORK_ITEM' AND a.ownerId=wi.id WHERE wi.visitId=:visitId AND wi.equipmentId=:equipmentId") suspend fun machinePhotoCount(visitId: String, equipmentId: String): Int
@@ -507,6 +508,7 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM visit_claims WHERE visitId=:visitId") suspend fun claimCountForVisit(visitId: String): Int
     @Query("SELECT COUNT(*) FROM visit_claims WHERE visitId=:visitId AND obligationId=:obligationId") suspend fun visitOwnsClaim(visitId: String, obligationId: String): Int
     @Query("UPDATE reusable_templates SET name=:name, currentRevisionId=:revisionId, modifiedAtEpochMillis=:modified WHERE id=:id") suspend fun publishTemplateRevision(id: String, name: String, revisionId: String, modified: Long): Int
+    @Query("UPDATE reusable_templates SET state=:state, modifiedAtEpochMillis=:modified WHERE id=:id AND state=:expectedState") suspend fun updateTemplateState(id: String, expectedState: String, state: String, modified: Long): Int
     @Query("UPDATE contact_notes SET enteredInError=1, errorReason=:reason, editedAtEpochMillis=:modified WHERE id=:id AND enteredInError=0") suspend fun markContactNoteEnteredInError(id: String, reason: String, modified: Long): Int
     @Query("UPDATE final_records SET currentRevisionId=:revisionId WHERE id=:recordId AND currentRevisionId=:expectedRevisionId AND voided=0") suspend fun advanceRecordRevision(recordId: String, expectedRevisionId: String, revisionId: String): Int
     @Query("UPDATE final_records SET voided=1, voidedAtEpochMillis=:at, publicVoidReason=:publicReason, privateVoidReason=:privateReason WHERE id=:recordId AND voided=0") suspend fun markRecordVoided(recordId: String, at: Long, publicReason: String, privateReason: String?): Int

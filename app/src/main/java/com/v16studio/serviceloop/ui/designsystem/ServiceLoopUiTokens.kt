@@ -185,7 +185,7 @@ fun serviceLoopStateStyle(code: String, colors: ServiceLoopColorRoles): ServiceL
         "VALUE" -> "Value recorded" to ServiceLoopVisualState.Neutral
         "REVIEWED" -> "Reviewed" to ServiceLoopVisualState.Success
         "READ_ONLY" -> "Read-only" to ServiceLoopVisualState.Neutral
-        "DISABLED" -> "Unavailable" to ServiceLoopVisualState.Neutral
+        "DISABLED" -> "Disabled" to ServiceLoopVisualState.Neutral
         else -> "State unavailable" to ServiceLoopVisualState.Error
     }
     val pair = when (family) {

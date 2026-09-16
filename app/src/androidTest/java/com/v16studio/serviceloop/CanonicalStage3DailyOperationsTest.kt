@@ -60,7 +60,7 @@ class CanonicalStage3DailyOperationsTest {
         compose.onNodeWithText("Publish new revision",substring=true).assertDoesNotExist()
         compose.onNodeWithText("Save template").performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.reusableTemplates().any{it.name==templateName}}}
-        waitForText("Revision 1")
+        waitForText("(v1)")
         back(); back(); back()
 
         compose.onNodeWithText("Register").performClick()

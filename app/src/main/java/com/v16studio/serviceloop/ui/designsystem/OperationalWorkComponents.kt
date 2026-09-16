@@ -74,6 +74,7 @@ fun OperationalDashboard(
     onViewAll: (OperationalDashboardSection) -> Unit,
     modifier: Modifier = Modifier,
     showCustomerTitle: String? = null,
+    showTitle: Boolean = true,
 ) {
     val sectionKeys = projection.sections.map(::operationalSectionKey)
     var initialized by rememberSaveable(scopeKey(projection.scope)) { mutableStateOf(false) }
@@ -90,7 +91,7 @@ fun OperationalDashboard(
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
         showCustomerTitle?.let { Text(it, style = ServiceLoopUiTokens.Type.screenTitle, modifier = Modifier.semantics { heading() }.testTag("scoped-dashboard-customer")) }
-        Text("Work items", style = ServiceLoopUiTokens.Type.sectionTitle, modifier = Modifier.semantics { heading() }.testTag("operational-dashboard-title"))
+        if (showTitle) Text("Work items", style = ServiceLoopUiTokens.Type.sectionTitle, modifier = Modifier.semantics { heading() }.testTag("operational-dashboard-title"))
         if (projection.sections.isEmpty()) {
             Text("No current work needs attention.", color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("operational-dashboard-empty"))
         } else {

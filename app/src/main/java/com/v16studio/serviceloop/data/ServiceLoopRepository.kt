@@ -136,6 +136,11 @@ interface ServiceLoopRepository {
     suspend fun updatePlan(id: String, input: PlanInput): Long = error("Plan editor unavailable")
     suspend fun createTemplate(name: String, items: List<TemplateItemDraft>): String = error("Template editor unavailable")
     suspend fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>): Long = error("Template editor unavailable")
+    suspend fun templateRevisions(id: String): List<TemplateRevisionDetail> = emptyList()
+    suspend fun templateServicePlanReferenceCount(id: String): Int = 0
+    suspend fun setTemplateState(id: String, state: String): Long = error("Template state unavailable")
+    suspend fun deleteTemplate(id: String): Long = error("Template deletion unavailable")
+    suspend fun cloneTemplate(id: String): String = error("Template clone unavailable")
     suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
@@ -407,7 +412,10 @@ class RoomServiceLoopRepository(
         return PlanDetail(plan.id, equipment.id, equipment.name, plan.reference, plan.name, plan.intervalCount, plan.intervalUnit, plan.currentDueDate, plan.state, plan.reusableTemplateId)
     }
 
-    override suspend fun templates(): List<TemplateSummary> = dao.reusableTemplates().map { template ->
+    override suspend fun templates(): List<TemplateSummary> = dao.reusableTemplates()
+        .filter { it.state != "DELETED" }
+        .sortedWith(compareBy<ReusableTemplateEntity> { it.state != "ACTIVE" }.thenBy { it.name.lowercase() }.thenBy { it.reference })
+        .map { template ->
         val revision = dao.reusableTemplateRevision(template.currentRevisionId)
         TemplateSummary(template.id, template.reference, template.name, revision?.revisionNumber ?: 0, revision?.let { dao.reusableTemplateItems(it.id).size } ?: 0, template.state)
     }
@@ -501,7 +509,7 @@ class RoomServiceLoopRepository(
         val site = dao.site(equipment.siteId) ?: error("Site no longer exists")
         val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
         require(CustomerType.fromCode(customer.customerType) == CustomerType.STANDARD) { "Recurring service requires a Standard customer" }
-        input.reusableTemplateId?.let { require(dao.reusableTemplate(it)?.state == "ACTIVE") { "Template is unavailable" } }
+        input.reusableTemplateId?.let { templateId -> require(dao.reusableTemplate(templateId)?.state == "ACTIVE") { "Template is unavailable" } }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val id = UUID.randomUUID().toString(); val obligationId = UUID.randomUUID().toString()
         database.withTransaction { dao.insertPlans(listOf(ServicePlanEntity(id, equipmentId, reference("P", dao.planCount() + 1), input.name.trim(), input.intervalCount, input.intervalUnit, input.dueDate, "ACTIVE", obligationId, reusableTemplateId = input.reusableTemplateId))); dao.insertObligations(listOf(ServiceObligationEntity(obligationId, id, 1, input.dueDate, now))) }
         return id
@@ -511,7 +519,10 @@ class RoomServiceLoopRepository(
         validatePlan(input); val old = dao.plan(id) ?: error("Plan no longer exists"); val oldEquipment = dao.equipment(old.equipmentId) ?: error("Equipment no longer exists"); val oldSite = dao.site(oldEquipment.siteId) ?: error("Site no longer exists"); val oldCustomer = dao.customer(oldSite.customerId) ?: error("Customer no longer exists")
         require(CustomerType.fromCode(oldCustomer.customerType) == CustomerType.STANDARD) { "Recurring service requires a Standard customer" }
         val obligation = old.currentObligationId?.let { dao.obligation(it) } ?: error("Current obligation missing")
-        input.reusableTemplateId?.let { require(dao.reusableTemplate(it)?.state == "ACTIVE") { "Template is unavailable" } }
+        input.reusableTemplateId?.let { templateId ->
+            val template = dao.reusableTemplate(templateId)
+            require(template?.state == "ACTIVE" || (templateId == old.reusableTemplateId && template?.state == "DISABLED")) { "Template is unavailable" }
+        }
         if (input.dueDate != old.currentDueDate) require(input.dueDateChangeReason.trim().isNotEmpty()) { "Explain why the due date changed" }
         require(obligation.consumedAtEpochMillis == null); val value = old.copy(name = input.name.trim(), intervalCount = input.intervalCount, intervalUnit = input.intervalUnit, currentDueDate = input.dueDate, reusableTemplateId = input.reusableTemplateId)
         if (value == old) return businessTime.instant().toEpochMilli(); writeGate.beforeWrite(); val now=businessTime.instant().toEpochMilli(); database.withTransaction { check(dao.updateCurrentObligationDueDate(obligation.id, input.dueDate) == 1); dao.updatePlan(value); if(input.dueDate!=old.currentDueDate) dao.insertPlanScheduleChange(PlanScheduleChangeEntity(UUID.randomUUID().toString(),id,old.currentDueDate,input.dueDate,input.dueDateChangeReason.trim(),now)) }; return now
@@ -524,8 +535,62 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>): Long {
-        validateTemplate(name, items); val template = dao.reusableTemplate(id) ?: error("Template no longer exists"); val revisionNumber = (dao.reusableTemplateRevisions(id).maxOfOrNull { it.revisionNumber } ?: 0) + 1
+        validateTemplate(name, items); val template = dao.reusableTemplate(id) ?: error("Template no longer exists"); require(template.state != "DELETED") { "Deleted templates cannot be revised" }; val revisionNumber = (dao.reusableTemplateRevisions(id).maxOfOrNull { it.revisionNumber } ?: 0) + 1
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); val revisionId = UUID.randomUUID().toString(); database.withTransaction { dao.insertReusableTemplateRevision(ReusableTemplateRevisionEntity(revisionId, id, revisionNumber, name.trim(), now)); dao.insertReusableTemplateItems(items.mapIndexed { index, item -> reusableItem(revisionId, index, item) }); check(dao.publishTemplateRevision(template.id, name.trim(), revisionId, now) == 1) }; return now
+    }
+
+    override suspend fun templateRevisions(id: String): List<TemplateRevisionDetail> = dao.reusableTemplateRevisions(id).map { revision ->
+        TemplateRevisionDetail(
+            id = revision.id,
+            revisionNumber = revision.revisionNumber,
+            name = revision.nameSnapshot,
+            createdAtEpochMillis = revision.createdAtEpochMillis,
+            items = dao.reusableTemplateItems(revision.id).map { item ->
+                TemplateItemDraft(item.label, item.responseType, item.unit.orEmpty(), item.required, item.privateGuidance.orEmpty())
+            },
+        )
+    }
+
+    override suspend fun templateServicePlanReferenceCount(id: String): Int = dao.servicePlanCountForTemplate(id)
+
+    override suspend fun setTemplateState(id: String, state: String): Long {
+        require(state == "ACTIVE" || state == "DISABLED") { "Unsupported template state" }
+        val template = dao.reusableTemplate(id) ?: error("Template no longer exists")
+        require(template.state != "DELETED") { "Deleted templates cannot be enabled" }
+        if (template.state == state) return businessTime.instant().toEpochMilli()
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        check(dao.updateTemplateState(id, template.state, state, now) == 1) { "Template changed — reload it before updating" }
+        return now
+    }
+
+    override suspend fun deleteTemplate(id: String): Long {
+        val template = dao.reusableTemplate(id) ?: error("Template no longer exists")
+        require(template.state != "DELETED") { "Template is already deleted" }
+        require(dao.servicePlanCountForTemplate(id) == 0) { "This template is still used by a service plan. Remove it from those plans before deleting it." }
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        check(dao.updateTemplateState(id, template.state, "DELETED", now) == 1) { "Template changed — reload it before deleting" }
+        return now
+    }
+
+    override suspend fun cloneTemplate(id: String): String {
+        val source = dao.reusableTemplate(id) ?: error("Template no longer exists")
+        require(source.state != "DELETED") { "Deleted templates cannot be cloned" }
+        val revision = dao.reusableTemplateRevision(source.currentRevisionId) ?: error("Template revision missing")
+        val items = dao.reusableTemplateItems(revision.id)
+        val clonedName = "${revision.nameSnapshot} copy"
+        validateTemplate(clonedName, items.map { TemplateItemDraft(it.label, it.responseType, it.unit.orEmpty(), it.required, it.privateGuidance.orEmpty()) })
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        val newId = UUID.randomUUID().toString()
+        val newRevisionId = UUID.randomUUID().toString()
+        database.withTransaction {
+            dao.insertReusableTemplate(ReusableTemplateEntity(newId, reference("IT", dao.reusableTemplateCount() + 1), clonedName, newRevisionId, modifiedAtEpochMillis = now))
+            dao.insertReusableTemplateRevision(ReusableTemplateRevisionEntity(newRevisionId, newId, 1, clonedName, now))
+            dao.insertReusableTemplateItems(items.mapIndexed { index, item -> reusableItem(newRevisionId, index, TemplateItemDraft(item.label, item.responseType, item.unit.orEmpty(), item.required, item.privateGuidance.orEmpty())) })
+        }
+        return newId
     }
 
     override suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
@@ -541,7 +606,7 @@ class RoomServiceLoopRepository(
         plans.forEachIndexed { index, plan ->
             val eq = equipment[index]; val obligation = obligations[index]
             if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, id, now))
-            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
+            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now, allowDisabled = true)
             val workId = UUID.randomUUID().toString(); dao.insertWorkItems(listOf(WorkItemEntity(workId, id, eq.id, plan.id, if (historical) null else obligation.id, snapshotId, eq.name, eq.reference, plan.name, plan.reference, obligation.dueDate, plan.intervalCount, plan.intervalUnit, false, null, null, equipmentIdentifierSnapshot = eq.technicianIdentifier, equipmentMakeSnapshot = eq.make, equipmentModelSnapshot = eq.model, equipmentSerialSnapshot = eq.serialNumber))); dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(workId, ""))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(workId, "")))
         }
         return@withTransaction id
@@ -717,7 +782,7 @@ class RoomServiceLoopRepository(
             val equipment = planEquipment[index]
             val obligation = obligations[index]
             if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, visitId, now))
-            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, visitId, plan.id, now)
+            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, visitId, plan.id, now, allowDisabled = true)
             val workId = UUID.randomUUID().toString()
             val item = WorkItemEntity(
                 id = workId,
@@ -866,7 +931,7 @@ class RoomServiceLoopRepository(
                 val preserveSnapshot = existingSnapshot?.takeIf { snapshot ->
                     snapshot.sourceTemplateId == null || (snapshot.sourceTemplateId == plan.reusableTemplateId && snapshot.revision == currentRevision?.revisionNumber && snapshot.templateName == currentRevision.nameSnapshot)
                 }?.id
-                preserveSnapshot ?: captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now)
+                preserveSnapshot ?: captureTemplateSnapshot(plan.reusableTemplateId, id, plan.id, now, allowDisabled = true)
             }
             if (eq != null) {
                 check(dao.refreshWorkItemSnapshot(item.id,snapshot,eq.name,eq.reference,eq.technicianIdentifier,eq.make,eq.model,eq.serialNumber,plan?.name ?: item.serviceNameSnapshot,plan?.reference,plan?.currentDueDate,item.intervalCountSnapshot?.let{plan?.intervalCount},item.intervalUnitSnapshot?.let{plan?.intervalUnit})==1)
@@ -1888,9 +1953,9 @@ class RoomServiceLoopRepository(
     private fun reusableItem(revisionId: String, index: Int, item: TemplateItemDraft) = ReusableTemplateItemEntity(UUID.randomUUID().toString(), revisionId, index + 1, item.label.trim(), item.responseType, clean(item.unit).takeIf { item.responseType == "NUMBER" }, item.required, clean(item.privateGuidance))
     private suspend fun followUpDetail(value: FollowUpEntity) = FollowUpDetail(value.id, value.reference, value.type, value.title, value.dueDate, value.state, value.customerId, value.siteId, value.equipmentId, value.privatePlanningNote.orEmpty(), value.closureReason, dao.customer(value.customerId)?.name.orEmpty(), value.siteId?.let { dao.site(it)?.name }, value.equipmentId?.let { dao.equipment(it)?.name }, value.updatedAtEpochMillis)
 
-    private suspend fun captureTemplateSnapshot(templateId: String?, visitId: String, planId: String, now: Long): String? {
+    private suspend fun captureTemplateSnapshot(templateId: String?, visitId: String, planId: String, now: Long, allowDisabled: Boolean = false): String? {
         val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
-        require(master.state == "ACTIVE") { "Template is unavailable" }
+        require(master.state == "ACTIVE" || (allowDisabled && master.state == "DISABLED")) { "Template is unavailable" }
         val revision = dao.reusableTemplateRevision(master.currentRevisionId) ?: error("Template revision missing")
         val revisionItems=dao.reusableTemplateItems(revision.id)
         val content = DispatchInspectionSnapshot("", revision.nameSnapshot, master.reference, revision.revisionNumber, revisionItems.map { item -> DispatchInspectionItem(item.position,item.label,item.responseType,item.unit,item.required,item.privateGuidance) })

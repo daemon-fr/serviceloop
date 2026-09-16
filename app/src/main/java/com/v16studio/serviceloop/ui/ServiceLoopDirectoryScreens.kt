@@ -183,7 +183,9 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
-    var showOneTime by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val filterPreferences = remember(context) { UiFilterPreferences(context) }
+    var showOneTime by rememberSaveable { mutableStateOf(filterPreferences.showOneTimeCustomers()) }
     val colors = LocalServiceLoopTokens.current
     val visibleCustomers = customers.filter { showOneTime || it.customerType == CustomerType.STANDARD }
     val visibleSites = sites.filter { showOneTime || it.customerType == CustomerType.STANDARD }
@@ -191,7 +193,7 @@ internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteR
     LazyColumn(contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}) } }
         item { Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
-        item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
+        item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it; filterPreferences.saveShowOneTimeCustomers(it) }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
         item {
             when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-equipment-from-register")); else -> Unit }
         }

@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop.ui
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,9 +25,11 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as But
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoicePair
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelectorRow
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPresetChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
@@ -51,16 +55,24 @@ internal fun DueServicesScreen(
     modifier: Modifier = Modifier,
     initialBucket: DueBucket? = null,
     initialOperationalState: OperationalWorkState? = null,
+    contextualFilter: String? = null,
     scope: WorkScope = WorkScope.Global,
     operationalStateFor: (DueService) -> OperationalWorkState? = { due ->
         OperationalWorkClassifier.classifyService(due.dueDate, state.businessDate, state.home?.dueSoonHorizonDays ?: 14)
     },
     onNewVisit: () -> Unit = {},
 ) {
-    var dateFilter by rememberSaveable(initialBucket) {
-        mutableStateOf(DueServiceDateFilter.entries.firstOrNull { it.bucket == initialBucket } ?: DueServiceDateFilter.ALL)
+    val context = LocalContext.current
+    val filterPreferences = remember(context) { UiFilterPreferences(context) }
+    val contextualEntry = contextualFilter != null || initialBucket != null || initialOperationalState != null
+    val remembersFilters = !contextualEntry
+    val defaultDateFilter = DueServiceDateFilter.entries.firstOrNull { it.bucket == initialBucket } ?: DueServiceDateFilter.ALL
+    var dateFilter by rememberSaveable(remembersFilters, initialBucket) {
+        mutableStateOf(if (remembersFilters) filterPreferences.dueDate(defaultDateFilter) else defaultDateFilter)
     }
-    var visitFilter by rememberSaveable { mutableStateOf(DueServiceVisitFilter.ALL) }
+    var visitFilter by rememberSaveable(remembersFilters) {
+        mutableStateOf(if (remembersFilters) filterPreferences.dueVisit(DueServiceVisitFilter.ALL) else DueServiceVisitFilter.ALL)
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
     if (!state.dueServicesReady) {
@@ -89,7 +101,7 @@ internal fun DueServicesScreen(
     val selectionSite = selectedRows.firstOrNull()?.siteId
     val selectionEnabled = selectedRows.isNotEmpty() && selectedRows.all { it.claimedVisitId == null && it.siteId == selectionSite } && !state.operationInProgress
     val listState = rememberLazyListState()
-    val docked = rememberWorkNewVisitDocked(listState)
+    val actionState = rememberWorkNewVisitActionState(listState)
     Column(modifier.fillMaxSize().padding(padding)) {
         Box(Modifier.weight(1f)) {
         LazyColumn(Modifier.fillMaxSize().testTag("due-services-list"), state = listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, WorkNewVisitListBottomPadding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -100,10 +112,10 @@ internal fun DueServicesScreen(
                 } else {
                     ServiceLoopFilterSelectorRow(
                         first = {
-                            ServiceLoopFilterSelector("Due date", dateFilter, DueServiceDateFilter.entries.map { it to it.label }, { dateFilter = it }, testTag = "due-date-selector")
+                            ServiceLoopFilterSelector("Due date", dateFilter, DueServiceDateFilter.entries.map { it to it.label }, { dateFilter = it; if (remembersFilters) filterPreferences.saveDueDate(it) }, testTag = "due-date-selector")
                         },
                         second = {
-                            ServiceLoopFilterSelector("Visit", visitFilter, DueServiceVisitFilter.entries.map { it to it.label }, { visitFilter = it }, testTag = "due-visit-selector")
+                            ServiceLoopFilterSelector("Visit", visitFilter, DueServiceVisitFilter.entries.map { it to it.label }, { visitFilter = it; if (remembersFilters) filterPreferences.saveDueVisit(it) }, testTag = "due-visit-selector")
                         },
                     )
                 }
@@ -124,9 +136,9 @@ internal fun DueServicesScreen(
                     operationalState = operationalStateFor(due),
                 )
             }
-            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(docked, onNewVisit) }
+            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
         }
-        WorkNewVisitFloatingAction(docked, onNewVisit, WorkNewVisitDueBottomInset)
+        WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset)
         }
         DueServiceSelectionActions(selected, selectionEnabled, state, viewModel, nav)
     }
@@ -178,24 +190,81 @@ private val NewVisitTaskDraftListSaver = listSaver<List<NewVisitTaskDraft>, Stri
 )
 
 @Composable
-private fun InspectionChecklistSelector(
+internal fun InspectionChecklistSelector(
     templates: List<TemplateSummary>,
     selectedTemplateId: String?,
     onSelected: (String?) -> Unit,
     testTag: String,
+    onCreateTemplate: () -> Unit = {},
+    label: String = "Inspection checklist",
 ) {
     val active = templates.filter { it.state == "ACTIVE" }
-    if (active.isEmpty()) {
-        Text("Inspection checklist • None available", modifier = Modifier.testTag("$testTag-none-available"))
-    } else {
-        val options = listOf<Pair<String?, String>>(null to "None") + active.map { it.id to "${it.name} • r${it.revisionNumber}" }
-        ServiceLoopFilterSelector(
-            label = "Inspection checklist",
-            selected = selectedTemplateId,
-            options = options,
-            onSelected = onSelected,
-            testTag = "$testTag-selector",
+    val selectedDisabled = templates.firstOrNull { it.id == selectedTemplateId && it.state == "DISABLED" }
+    val options = buildList<Pair<String?, String>> {
+        add(null to "None")
+        addAll(active.map { it.id to "${it.name} (v${it.revisionNumber})" })
+        selectedDisabled?.let { add(it.id to "${it.name} (v${it.revisionNumber}) · Disabled") }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (active.isEmpty() && selectedDisabled == null) {
+                Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            } else {
+                ServiceLoopFilterSelector(label, selectedTemplateId, options, onSelected, Modifier.weight(1f), "$testTag-selector")
+            }
+            ServiceLoopIconAction(
+                "Create inspection template",
+                onCreateTemplate,
+                Modifier.testTag("$testTag-create"),
+                content = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) },
+            )
+        }
+        if (active.isEmpty() && selectedDisabled == null) Text("No inspection templates yet", modifier = Modifier.testTag("$testTag-none-available"), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+@Suppress("NonObservableLocale")
+internal fun VisitDateInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    defaultDate: LocalDate,
+    modifier: Modifier = Modifier,
+) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    val parsedDate = runCatching { LocalDate.parse(value) }.getOrNull()
+    val weekday = parsedDate?.dayOfWeek?.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+        Text(weekday ?: "—", style = MaterialTheme.typography.labelLarge, modifier = Modifier.widthIn(min = 52.dp).testTag("appointment-date-weekday"))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text("Appointment date") },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.weight(1f).testTag("field-appointment-service-date-yyyy-mm-dd"),
         )
+        ServiceLoopIconAction(
+            "Choose appointment date",
+            { showPicker = true },
+            Modifier.testTag("appointment-date-picker"),
+            content = { ServiceLoopIcon(ServiceLoopIcons.Calendar, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) },
+        )
+    }
+    if (showPicker) {
+        val initial = parsedDate ?: defaultDate
+        val context = LocalContext.current
+        val dialog = remember(context, initial) {
+            DatePickerDialog(context, { _, year, month, day ->
+                onValueChange(LocalDate.of(year, month + 1, day).toString())
+                showPicker = false
+            }, initial.year, initial.monthValue - 1, initial.dayOfMonth)
+        }
+        DisposableEffect(dialog) {
+            dialog.setOnCancelListener { showPicker = false }
+            dialog.show()
+            onDispose { dialog.dismiss() }
+        }
     }
 }
 
@@ -217,6 +286,7 @@ private fun NewVisitTaskEditor(
     valid: Boolean,
     editing: Boolean,
     onSave: () -> Unit,
+    onCreateTemplate: () -> Unit = {},
 ) {
     Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -233,7 +303,7 @@ private fun NewVisitTaskEditor(
                     if (equipmentId == null) DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional")
                 }
             }
-            InspectionChecklistSelector(templates, templateId, onTemplateId, "task-template")
+            InspectionChecklistSelector(templates, templateId, onTemplateId, "task-template", onCreateTemplate)
             OutlinedButton(onSave, enabled = valid, modifier = Modifier.fillMaxWidth().testTag(if (editing) "update-task" else "add-task")) { Text(if (editing) "Update task" else "Add task") }
         }
     }
@@ -247,7 +317,7 @@ private fun NewVisitTaskRow(index: Int, task: NewVisitTaskDraft, templates: List
             WorkSubjectType.SITE -> "Site"
             WorkSubjectType.EQUIPMENT -> task.equipmentId?.let { id -> equipment.firstOrNull { it.id == id }?.name } ?: task.equipmentDescription.ifBlank { "Equipment not specified" }
         },
-        metadata = task.templateId?.let { id -> templates.firstOrNull { it.id == id }?.let { "Inspection checklist · ${it.name} · r${it.revisionNumber}" } } ?: "No checklist",
+        metadata = task.templateId?.let { id -> templates.firstOrNull { it.id == id }?.let { "Inspection checklist · ${it.name} (v${it.revisionNumber})" } } ?: "No checklist",
         modifier = Modifier.testTag("visit-task-$index"),
         onClick = onEdit,
     )
@@ -280,6 +350,8 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
     var pendingSiteId by remember { mutableStateOf<String?>(null) }
     var pendingSiteChange by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf<String?>(null) }
+    val colors = LocalServiceLoopTokens.current
+    val createdTemplateId = nav.currentBackStackEntry?.savedStateHandle?.getStateFlow<String?>("created-inspection-template-id", null)?.collectAsState()
     val site = sites.firstOrNull { it.id == siteId }
     val setupRoute = nav.currentBackStackEntry?.destination?.route ?: "visit/new"
     val initialSite = dueServices.firstOrNull { it.planId in initialPlanIds }?.siteId
@@ -296,6 +368,13 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
     val newCustomerDraftDirty = customerName.isNotBlank() || phone.isNotBlank() || email.isNotBlank() || locationLabel.isNotBlank() || address.isNotBlank() || oneTimeCustomer
     val visitValid = validDate && !state.operationInProgress && if (mode == "NEW") customerName.trim().isNotBlank() && tasks.isNotEmpty() else site != null && (selectedPlans.isNotEmpty() || tasks.isNotEmpty())
     LaunchedEffect(initialPlanIds, dueServices) { if (siteId == null && initialPlanIds.isNotEmpty()) siteId = dueServices.firstOrNull { it.planId in initialPlanIds }?.siteId }
+    LaunchedEffect(createdTemplateId?.value) {
+        createdTemplateId?.value?.let { createdId ->
+            templateId = createdId
+            nav.currentBackStackEntry?.savedStateHandle?.remove<String>("created-inspection-template-id")
+            viewModel.loadVisitSetup()
+        }
+    }
     UnsavedChangesGuard(mode != "EXISTING" || siteId != initialSite || selectedPlans != initialPlanIds || date != state.businessDate.plusDays(1).toString() || siteQuery.isNotBlank() || newCustomerDraftDirty || tasks.isNotEmpty() || taskName.isNotBlank(), nav)
     fun resetTask() { taskName = ""; subjectType = WorkSubjectType.SITE; equipmentId = null; equipmentDescription = ""; templateId = null; editingIndex = null }
     fun changeSite(nextSiteId: String) { if (tasks.isEmpty()) { siteId = nextSiteId; selectedPlans = emptyList(); resetTask() } else { pendingSiteId = nextSiteId; pendingSiteChange = true } }
@@ -353,19 +432,36 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         AlertDialog(onDismissRequest = { pendingMode = null }, title = { Text("Switch visit setup?") }, text = { Text(consequence) }, confirmButton = { TextButton({ applyMode(requested); pendingMode = null }) { Text("Switch") } }, dismissButton = { TextButton({ pendingMode = null }) { Text("Cancel") } })
     }
     EditorColumn(padding, state, tag = "new-visit-form") {
-        item { DailyHeading("Set up visit"); Text("Create local tasks for one site, or start with a new customer.") }
-        item { ServiceLoopChoicePair(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode") }
-        if (mode == "NEW") item { DailyHeading("New customer"); DailyField(customerName, { customerName = it }, "Customer name · Required"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email"); DailyField(locationLabel, { locationLabel = it }, "Location label"); DailyField(address, { address = it }, "Service address"); Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("new-visit-customer-type")) { Checkbox(oneTimeCustomer, { oneTimeCustomer = it }, modifier = Modifier.testTag("new-visit-one-time-customer")); Text("One-time customer (no contract)") } }
+        item { Box(Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 16.dp, vertical = 12.dp)) { Text("Choose a customer.", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("choose-visit-customer")) } }
+        item { Box(Modifier.fillMaxWidth().background(colors.canvas).testTag("visit-mode-tabs")) { ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode") } }
+        if (mode == "NEW") item { DailyHeading("New customer"); DailyField(customerName, { customerName = it }, "Customer name · Required"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email"); DailyField(locationLabel, { locationLabel = it }, "Location label"); DailyField(address, { address = it }, "Service address"); Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("new-visit-customer-type")) { Checkbox(oneTimeCustomer, { oneTimeCustomer = it }, modifier = Modifier.testTag("new-visit-one-time-customer")); Text("One-time customer (no contract)") }; DailyHeading("Set up visit") }
         else {
             item { Text("Customer / site", fontWeight = FontWeight.Bold); if (site != null) Row(verticalAlignment = Alignment.CenterVertically) { Text("${site.customerName} · ${site.name}", Modifier.weight(1f)); if (initialPlanIds.isEmpty()) TextButton(::requestSiteChange) { Text("Change") } } else DailyField(siteQuery, { siteQuery = it }, "Find customer or site") }
             if (site == null) items(matchingSites, key = { "visit-site-${it.id}" }) { option -> ServiceLoopEntityRecord("${option.reference} · ${option.name}", option.customerName, if (option.customerType == CustomerType.ONE_TIME) "One-time" else null, modifier = Modifier.testTag("visit-site-${option.id}"), onClick = { changeSite(option.id) }) }
             if (site == null && matchingSites.isEmpty()) item { Text(if (sites.isEmpty()) "Add a customer site before creating a visit." else "No matching customer sites.") }
             if (site != null && site.customerType == CustomerType.ONE_TIME) item { Text("One-time customers use ad-hoc work.") }
             if (site != null && site.customerType == CustomerType.STANDARD) item { Text("Planned work", fontWeight = FontWeight.Bold); if (!state.dueServicesReady) { Text("Planned services are unavailable.", color = MaterialTheme.colorScheme.error); state.dueServicesError?.let { OutlinedButton({ viewModel.retryDueServices() }, Modifier.fillMaxWidth()) { Text("Retry") } } }; available.forEach { due -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(due.planId in selectedPlans, { checked -> selectedPlans = if (checked) selectedPlans + due.planId else selectedPlans - due.planId }); Text("${due.equipmentName} · ${due.planName} · Due ${due.dueDate}") } }; if (state.dueServicesReady && available.isEmpty()) Text("No unclaimed current plans at this site.") }
+            item { DailyHeading("Set up visit") }
         }
-        if (mode == "NEW" || site != null) item { NewVisitTaskEditor(taskName, { taskName = it }, subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } }, equipmentId, { equipmentId = it; equipmentDescription = "" }, equipmentDescription, { equipmentDescription = it }, state.templates, templateId, { templateId = it }, equipment, allowKnownEquipment, taskValid, editingIndex != null) { val draft = NewVisitTaskDraft(taskName.trim(), subjectType, equipmentId, equipmentDescription.trim(), templateId); tasks = if (editingIndex == null) tasks + draft else tasks.mapIndexed { index, old -> if (index == editingIndex) draft else old }; resetTask() } }
-        if (tasks.isNotEmpty()) item { DailyHeading("Tasks"); tasks.forEachIndexed { index, task -> NewVisitTaskRow(index, task, state.templates, equipment, { taskName = task.taskName; subjectType = task.subjectType; equipmentId = task.equipmentId; equipmentDescription = task.equipmentDescription; templateId = task.templateId; editingIndex = index }, { tasks = tasks.filterIndexed { itemIndex, _ -> itemIndex != index } }) } }
-        item { DailyField(date, { date = it }, "Appointment / service date · YYYY-MM-DD"); Text("Date-only booking in the ${state.businessZoneId} business zone."); val parsed = runCatching { LocalDate.parse(date) }.getOrNull(); val primary = when { parsed == null || parsed.isAfter(state.businessDate) -> "BOOKED"; parsed == state.businessDate -> "WORKING"; else -> "HISTORICAL" }; @Composable fun action(kind: String, label: String) { val enabled = visitValid && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate)); val click = { save(kind) }; if (primary == kind) ServiceLoopPrimaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("primary-visit-action-$kind")) else ServiceLoopSecondaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth()) }; ServiceLoopActionStack { action("BOOKED", "Book visit"); action("WORKING", "Start now"); action("HISTORICAL", "Record past visit") } }
+        item {
+            DailyHeading("Set date")
+            VisitDateInput(date, { date = it }, state.businessDate.plusDays(1))
+            if (mode == "NEW" || site != null) {
+                NewVisitTaskEditor(taskName, { taskName = it }, subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } }, equipmentId, { equipmentId = it; equipmentDescription = "" }, equipmentDescription, { equipmentDescription = it }, state.templates, templateId, { templateId = it }, equipment, allowKnownEquipment, taskValid, editingIndex != null, onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") }, onSave = { val draft = NewVisitTaskDraft(taskName.trim(), subjectType, equipmentId, equipmentDescription.trim(), templateId); tasks = if (editingIndex == null) tasks + draft else tasks.mapIndexed { index, old -> if (index == editingIndex) draft else old }; resetTask() })
+            }
+            if (tasks.isNotEmpty()) {
+                DailyHeading("Tasks")
+                tasks.forEachIndexed { index, task -> NewVisitTaskRow(index, task, state.templates, equipment, { taskName = task.taskName; subjectType = task.subjectType; equipmentId = task.equipmentId; equipmentDescription = task.equipmentDescription; templateId = task.templateId; editingIndex = index }, { tasks = tasks.filterIndexed { itemIndex, _ -> itemIndex != index } }) }
+            }
+            val parsed = runCatching { LocalDate.parse(date) }.getOrNull()
+            val primary = when { parsed == null || parsed.isAfter(state.businessDate) -> "BOOKED"; parsed == state.businessDate -> "WORKING"; else -> "HISTORICAL" }
+            @Composable fun action(kind: String, label: String) {
+                val enabled = visitValid && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate))
+                val click = { save(kind) }
+                if (primary == kind) ServiceLoopPrimaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("primary-visit-action-$kind")) else ServiceLoopSecondaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth())
+            }
+            ServiceLoopActionStack { action("BOOKED", "Book visit"); action("WORKING", "Start now"); action("HISTORICAL", "Record past visit") }
+        }
     }
 }
 
@@ -376,12 +472,21 @@ private fun AdHocWorkEditor(
     allowKnownEquipment: Boolean,
     busy: Boolean,
     onAdd: (AdHocWorkInput) -> Unit,
+    onCreateTemplate: () -> Unit = {},
+    nav: NavHostController? = null,
 ) {
     var taskName by rememberSaveable { mutableStateOf("") }
     var subjectType by rememberSaveable { mutableStateOf(WorkSubjectType.SITE) }
     var equipmentId by rememberSaveable { mutableStateOf<String?>(null) }
     var equipmentDescription by rememberSaveable { mutableStateOf("") }
     var templateId by rememberSaveable { mutableStateOf<String?>(null) }
+    val createdTemplateId = nav?.currentBackStackEntry?.savedStateHandle?.getStateFlow<String?>("created-inspection-template-id", null)?.collectAsState()
+    LaunchedEffect(createdTemplateId?.value) {
+        createdTemplateId?.value?.let { createdId ->
+            templateId = createdId
+            nav.currentBackStackEntry?.savedStateHandle?.remove<String>("created-inspection-template-id")
+        }
+    }
     val valid = taskName.isNotBlank() && taskName.length <= 200 && when {
         subjectType == WorkSubjectType.SITE -> equipmentId == null && equipmentDescription.isBlank()
         !allowKnownEquipment -> equipmentId == null && equipmentDescription.length <= 500
@@ -398,7 +503,7 @@ private fun AdHocWorkEditor(
                 else ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "No specific equipment yet") + equipment.map { it.id to "${it.name} · ${it.reference}" }, equipmentId, { equipmentId = it; equipmentDescription = "" }, testTagPrefix = "visit-task-equipment")
                 if (!allowKnownEquipment || equipmentId == null) DailyField(equipmentDescription, { equipmentDescription = it }, "Equipment description · Optional")
             }
-            InspectionChecklistSelector(templates, templateId, { templateId = it }, "visit-task-template")
+            InspectionChecklistSelector(templates, templateId, { templateId = it }, "visit-task-template", onCreateTemplate)
             ServiceLoopPrimaryButton("Add task", { val input = AdHocWorkInput(taskName.trim(), subjectType, equipmentId, equipmentDescription.trim(), templateId); onAdd(input); taskName = ""; subjectType = WorkSubjectType.SITE; equipmentId = null; equipmentDescription = ""; templateId = null }, Modifier.fillMaxWidth().testTag("add-visit-task"), enabled = valid && !busy)
              if (!allowKnownEquipment) Text("This task will remain local to the new visit.", style = MaterialTheme.typography.bodySmall)
         }
@@ -481,7 +586,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         } else {
             items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){nav.navigate("inspection/${line.workItemId}")} }
         }
-        if(detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress) { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } } }
+        if(detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
         if (detail.state == "BOOKED") item {
             var rescheduleSaved by rememberSaveable(detail.id) { mutableStateOf(false) }
             Button(

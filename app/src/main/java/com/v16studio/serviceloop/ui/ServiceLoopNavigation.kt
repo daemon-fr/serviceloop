@@ -169,9 +169,30 @@ internal fun ServiceLoopNavGraph(
         composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
         composable("plan/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} }
         composable("template/list") { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel,incomingInspectionTemplates)} }
-        composable("template/new") { DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav)} }
-        composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
-        composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
+        composable(
+            "template/new?cloneFrom={cloneFrom}&returnTo={returnTo}",
+            arguments = listOf(
+                navArgument("cloneFrom") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("returnTo") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { entry ->
+            val cloneFrom = entry.arguments?.getString("cloneFrom")
+            val returnTo = entry.arguments?.getString("returnTo")
+            LaunchedEffect(cloneFrom) { cloneFrom?.takeIf(String::isNotBlank)?.let(viewModel::loadTemplate) }
+            DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav,state.template?.takeIf { template -> template.id == cloneFrom },returnTo)}
+        }
+        composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id);viewModel.loadTemplateHistory(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav,viewModel,state.templatePlanReferenceCount ?: 0,state.templateVersions)} }
+        composable(
+            "template/edit/{id}?focusItem={focusItem}",
+            arguments = listOf(navArgument("focusItem") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { entry ->
+            val id=entry.arguments?.getString("id").orEmpty()
+            val focusItem=entry.arguments?.getString("focusItem")?.toIntOrNull()
+            LaunchedEffect(id){viewModel.loadTemplate(id)}
+            DetailScaffold("Edit template",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav,focusItem = focusItem)}
+        }
+        composable("template/history/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplateHistory(id)}; DetailScaffold("Version history",nav){TemplateHistoryScreen(state.templateVersions,it,id,nav)} }
+        composable("template/version/{templateId}/{revisionId}") { entry -> val templateId=entry.arguments?.getString("templateId").orEmpty(); val revisionId=entry.arguments?.getString("revisionId").orEmpty(); LaunchedEffect(templateId){viewModel.loadTemplateHistory(templateId)}; DetailScaffold("Template version",nav){TemplateVersionScreen(state.templateVersions.firstOrNull { it.id == revisionId },it)} }
         composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id);viewModel.loadReminderSettings()}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
         composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
         composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }

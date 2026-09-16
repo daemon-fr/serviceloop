@@ -118,6 +118,7 @@ fun <T> ServiceLoopContentTabs(
     selected: T,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
+    testTagPrefix: String? = null,
 ) {
     val c = LocalServiceLoopTokens.current
     val gap = ServiceLoopUiTokens.Space.xs
@@ -127,7 +128,7 @@ fun <T> ServiceLoopContentTabs(
                 val active = value == selected
                 val interactionSource = remember { MutableInteractionSource() }
                 Box(
-                    Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag("content-tab-$label")
+                    Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).testTag(testTagPrefix?.let { "$it-$value" } ?: "content-tab-$label")
                         .clip(RoundedCornerShape(topStart = ServiceLoopUiTokens.Radius.field, topEnd = ServiceLoopUiTokens.Radius.field))
                         .background(if (active) c.canvas else Color.Transparent)
                         .drawBehind {

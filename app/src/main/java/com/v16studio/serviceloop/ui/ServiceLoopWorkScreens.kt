@@ -191,6 +191,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                     onOpenItem = { openOperationalWork(nav, it) },
                     onViewAll = { openOperationalSection(nav, it, projection.scope) },
                     modifier = Modifier.testTag("home-operational-dashboard"),
+                    showTitle = false,
                 )
             }
         } ?: item {
@@ -267,6 +268,7 @@ internal fun WorkScreen(
                     modifier = Modifier.weight(1f),
                     initialBucket = contextualDueBucket,
                     initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.SERVICE }?.second,
+                    contextualFilter = contextualFilter,
                     scope = scope,
                     operationalStateFor = { due -> operationalStateFor(OperationalWorkKind.SERVICE, due.planId) },
                     onNewVisit = { nav.navigate("visit/new") },
@@ -281,6 +283,7 @@ internal fun WorkScreen(
                 initialDateFilter = initialVisitDate,
                 initialStatusFilter = initialVisitStatus,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.VISIT }?.second,
+                contextualFilter = contextualFilter,
                 scope = scope,
                 operationalStateFor = { visit -> operationalStateFor(OperationalWorkKind.VISIT, visit.id) },
                 onNewVisit = { nav.navigate("visit/new") },
@@ -294,6 +297,7 @@ internal fun WorkScreen(
                 initialDateFilter = initialFollowUpDate,
                 dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
                 initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.FOLLOW_UP }?.second,
+                contextualFilter = contextualFilter,
                 scope = scope,
                 operationalStateFor = { followUp -> operationalStateFor(OperationalWorkKind.FOLLOW_UP, followUp.id) },
                 onNewVisit = { nav.navigate("visit/new") },
@@ -320,12 +324,16 @@ internal fun VisitsWorkScreen(
     initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
     initialOperationalState: OperationalWorkState? = null,
+    contextualFilter: String? = null,
     scope: WorkScope = WorkScope.Global,
     operationalStateFor: (VisitSummary) -> OperationalWorkState? = { null },
     onNewVisit: () -> Unit = {},
 ) {
-    var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
-    var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
+    val context = LocalContext.current
+    val filterPreferences = remember(context) { UiFilterPreferences(context) }
+    val remembersFilters = contextualFilter == null && initialOperationalState == null
+    var dateFilter by rememberSaveable(remembersFilters, initialDateFilter) { mutableStateOf(if (remembersFilters) filterPreferences.visitDate(initialDateFilter) else initialDateFilter) }
+    var statusFilter by rememberSaveable(remembersFilters, initialStatusFilter) { mutableStateOf(if (remembersFilters) filterPreferences.visitStatus(initialStatusFilter) else initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
     val scopedValues = values.filter { scope.includesCustomer(it.customerId) }
     val filtered = if (initialOperationalState == null) filterVisits(scopedValues, dateFilter, statusFilter, businessDate, query) else scopedValues.filter { visit ->
@@ -333,7 +341,7 @@ internal fun VisitsWorkScreen(
             (query.isBlank() || listOf(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, visit.customerName).any { it.contains(query, true) })
     }
     val listState = rememberLazyListState()
-    val docked = rememberWorkNewVisitDocked(listState)
+    val actionState = rememberWorkNewVisitActionState(listState)
     Box(modifier.padding(padding)) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("work-visits-list"),
@@ -351,7 +359,7 @@ internal fun VisitsWorkScreen(
                         label = "Date",
                         selected = dateFilter,
                         options = VisitDateFilter.entries.map { it to it.label },
-                        onSelected = { dateFilter = it },
+                        onSelected = { dateFilter = it; if (remembersFilters) filterPreferences.saveVisitDate(it) },
                         testTag = "visit-date-selector",
                     )
                 },
@@ -360,7 +368,7 @@ internal fun VisitsWorkScreen(
                         label = "Status",
                         selected = statusFilter,
                         options = VisitStatusFilter.entries.map { it to it.label },
-                        onSelected = { statusFilter = it },
+                        onSelected = { statusFilter = it; if (remembersFilters) filterPreferences.saveVisitStatus(it) },
                         testTag = "visit-status-selector",
                     )
                 },
@@ -372,9 +380,9 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(docked, onNewVisit) }
+        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
         }
-        WorkNewVisitFloatingAction(docked, onNewVisit)
+        WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }
 
@@ -389,14 +397,18 @@ internal fun FollowUpsWorkScreen(
     initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
     dueSoonHorizonDays: Int = 14,
     initialOperationalState: OperationalWorkState? = null,
+    contextualFilter: String? = null,
     scope: WorkScope = WorkScope.Global,
     operationalStateFor: (com.v16studio.serviceloop.domain.FollowUpDetail) -> OperationalWorkState? = { followUp ->
         OperationalWorkClassifier.classifyFollowUp(followUp.state, followUp.dueDate, businessDate, dueSoonHorizonDays)
     },
     onNewVisit: () -> Unit = {},
 ) {
-    var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
-    var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
+    val context = LocalContext.current
+    val filterPreferences = remember(context) { UiFilterPreferences(context) }
+    val remembersFilters = contextualFilter == null && initialOperationalState == null
+    var dateFilter by rememberSaveable(remembersFilters, initialDateFilter) { mutableStateOf(if (remembersFilters) filterPreferences.followUpDate(initialDateFilter) else initialDateFilter) }
+    var statusFilter by rememberSaveable(remembersFilters, initialStatusFilter) { mutableStateOf(if (remembersFilters) filterPreferences.followUpStatus(initialStatusFilter) else initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
     val scopedValues = values.filter { scope.includesCustomer(it.customerId) }
     val filtered = if (initialOperationalState == null) filterFollowUps(scopedValues, dateFilter, statusFilter, businessDate, query) else scopedValues.filter { followUp ->
@@ -404,7 +416,7 @@ internal fun FollowUpsWorkScreen(
             (query.isBlank() || listOfNotNull(followUp.reference, followUp.title, followUp.customerName, followUp.siteName, followUp.equipmentName, followUp.dueDate).any { it.contains(query, true) })
     }
     val listState = rememberLazyListState()
-    val docked = rememberWorkNewVisitDocked(listState)
+    val actionState = rememberWorkNewVisitActionState(listState)
     Box(modifier.padding(padding)) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("work-follow-ups-list"),
@@ -422,7 +434,7 @@ internal fun FollowUpsWorkScreen(
                         label = "Due date",
                         selected = dateFilter,
                         options = FollowUpDateFilter.entries.map { it to it.label },
-                        onSelected = { dateFilter = it },
+                        onSelected = { dateFilter = it; if (remembersFilters) filterPreferences.saveFollowUpDate(it) },
                         testTag = "follow-up-date-selector",
                     )
                 },
@@ -431,7 +443,7 @@ internal fun FollowUpsWorkScreen(
                         label = "Status",
                         selected = statusFilter,
                         options = FollowUpStatusFilter.entries.map { it to it.label },
-                        onSelected = { statusFilter = it },
+                        onSelected = { statusFilter = it; if (remembersFilters) filterPreferences.saveFollowUpStatus(it) },
                         testTag = "follow-up-status-selector",
                     )
                 },
@@ -447,8 +459,8 @@ internal fun FollowUpsWorkScreen(
                 operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
-        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(docked, onNewVisit) }
+        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
         }
-        WorkNewVisitFloatingAction(docked, onNewVisit)
+        WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }

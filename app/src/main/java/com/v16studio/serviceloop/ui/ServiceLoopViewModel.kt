@@ -98,6 +98,8 @@ data class UiState(
     val visitSites: List<VisitSiteOption> = emptyList(),
     val templates: List<TemplateSummary> = emptyList(),
     val template: TemplateDetail? = null,
+    val templateVersions: List<TemplateRevisionDetail> = emptyList(),
+    val templatePlanReferenceCount: Int? = null,
     val equipmentLinkContext: EquipmentLinkContext? = null,
     val visit: VisitDetail? = null,
     val followUps: List<FollowUpDetail> = emptyList(),
@@ -473,7 +475,19 @@ class ServiceLoopViewModel(
     fun loadTemplates() { val request=issueRequest("templates"); launchLoad { val values = repository.templates(); if(isCurrent(request)) _state.update { it.copy(templates = values) } } }
     fun loadTemplate(id: String) {
         val request = issueRequest("template")
-        launchLoad { val value = repository.template(id); if (isCurrent(request)) _state.update { it.copy(template = value) } }
+        launchLoad {
+            val value = repository.template(id)
+            val usage = value?.let { repository.templateServicePlanReferenceCount(id) }
+            if (isCurrent(request)) _state.update { it.copy(template = value, templateVersions = emptyList(), templatePlanReferenceCount = usage) }
+        }
+    }
+    fun loadTemplateHistory(id: String) {
+        val request = issueRequest("templateHistory")
+        launchLoad { val values = repository.templateRevisions(id); if (isCurrent(request)) _state.update { it.copy(templateVersions = values) } }
+    }
+    fun loadTemplatePlanUsage(id: String) {
+        val request = issueRequest("templateUsage")
+        launchLoad { val value = repository.templateServicePlanReferenceCount(id); if (isCurrent(request)) _state.update { it.copy(templatePlanReferenceCount = value) } }
     }
     fun loadVisit(id: String) {
         val request = issueRequest("visit")
@@ -589,6 +603,9 @@ class ServiceLoopViewModel(
     fun updatePlan(id: String, input: PlanInput, onSuccess: (String) -> Unit) = runOperation({ repository.updatePlan(id, input); id }, onSuccess)
     fun createTemplate(name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.createTemplate(name, items) }, onSuccess)
     fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.reviseTemplate(id, name, items); id }, onSuccess)
+    fun setTemplateState(id: String, state: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.setTemplateState(id, state); id }) { value -> loadTemplate(value); loadTemplates(); onSuccess(value) }
+    fun deleteTemplate(id: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.deleteTemplate(id); id }) { value -> loadTemplates(); onSuccess(value) }
+    fun cloneTemplate(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.cloneTemplate(id) }, onSuccess)
     fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)
     fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisitForSite(siteId, planIds, adHocWork, state, date, scheduledAt) }, onSuccess)
     fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createNewCustomerVisit(input, adHocWork, state, date, scheduledAt) }, onSuccess)

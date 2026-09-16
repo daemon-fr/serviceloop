@@ -115,6 +115,7 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
         require(templateIds.isNotEmpty()) { "Select at least one inspection template" }
         val templates = templateIds.toList().sorted().map { id ->
             val template = dao.reusableTemplate(id) ?: error("Inspection template no longer exists")
+            require(template.state != "DELETED") { "Deleted inspection templates cannot be exported" }
             val revision = dao.reusableTemplateRevision(template.currentRevisionId) ?: error("Inspection template revision is missing")
             InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) })
         }

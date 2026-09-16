@@ -61,6 +61,13 @@ enum class DueBucket { OVERDUE, TODAY, DUE_SOON, UPCOMING }
 data class TemplateSummary(val id: String, val reference: String, val name: String, val revisionNumber: Int, val itemCount: Int, val state: String)
 data class TemplateItemDraft(val label: String, val responseType: String, val unit: String = "", val required: Boolean = false, val privateGuidance: String = "")
 data class TemplateDetail(val id: String, val reference: String, val name: String, val revisionNumber: Int, val state: String, val items: List<TemplateItemDraft>)
+data class TemplateRevisionDetail(
+    val id: String,
+    val revisionNumber: Int,
+    val name: String,
+    val createdAtEpochMillis: Long,
+    val items: List<TemplateItemDraft>,
+)
 
 data class VisitDetail(
     val id: String, val reference: String, val state: String, val customerId: String,
