@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop
 
+import android.content.Context
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
@@ -144,7 +146,9 @@ class B026DispatchV5UiTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("One-time customer", substring = false, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("dispatch-choose-site").performClick()
         compose.onNodeWithTag("dispatch-site-search").performTextInput("One-time")
-        compose.onNodeWithTag("dispatch-site-one-time-site").performClick()
+        hideKeyboard()
+        compose.onNodeWithTag("dispatch-site-picker-list").performScrollToNode(hasTestTag("dispatch-site-one-time-site"))
+        compose.onNodeWithTag("dispatch-site-one-time-site").assertIsDisplayed().performClick()
         compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("dispatch-add-item"))
         compose.onNodeWithTag("dispatch-add-item").performClick()
         compose.onNodeWithTag("dispatch-work-item-editor", useUnmergedTree = true).performScrollToNode(hasTestTag("dispatch-equipment-one-time-equipment"))
@@ -170,5 +174,13 @@ class B026DispatchV5UiTest {
             }
         }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag(if (visitId == null) "dispatch-new-visit" else "dispatch-visit-editor").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun hideKeyboard() {
+        compose.runOnUiThread {
+            val manager = compose.activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            manager.hideSoftInputFromWindow(compose.activity.currentFocus?.windowToken, 0)
+        }
+        compose.waitForIdle()
     }
 }

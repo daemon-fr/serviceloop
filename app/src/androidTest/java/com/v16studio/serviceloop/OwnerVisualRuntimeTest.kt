@@ -39,6 +39,7 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 
 class OwnerVisualRuntimeTest {
@@ -208,8 +209,8 @@ class OwnerVisualRuntimeTest {
     @Test
     fun inspectionResponseDraftsSwitchWithoutWarningAndRestoreSavedAndLocalBuffers() {
         val database = Room.inMemoryDatabaseBuilder(composeRule.activity, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        val dao = database.serviceLoopDao()
         runBlocking {
-            val dao = database.serviceLoopDao()
             dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
             dao.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", null, null)))
             dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-1", null, "Equipment", null, null, null, null)))
@@ -246,6 +247,9 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("visit-detail-list").assertIsDisplayed()
         composeRule.onAllNodesWithText("Reading saved service book").assertCountEquals(0)
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("visit-line-w").fetchSemanticsNodes().isNotEmpty() }
+        val durableFinding = runBlocking { dao.responses("w").single { it.checklistItemSnapshotId == "check-belt" } }
+        assertEquals("Belt edge wear observed during inspection", durableFinding.reason)
+        assertEquals("Belt edge wear observed during inspection", durableFinding.issueFoundReasonDraft)
         composeRule.onNodeWithTag("visit-line-w").performClick()
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
@@ -260,6 +264,14 @@ class OwnerVisualRuntimeTest {
         val naField=composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true)
         naField.performTextInput("Guard unavailable")
         composeRule.onNodeWithTag("response-check-belt-ISSUE_FOUND", useUnmergedTree = true).performClick()
+        composeRule.waitUntil(5_000) {
+            runBlocking { dao.responses("w").single { it.checklistItemSnapshotId == "check-belt" }.disposition == ResponseDisposition.ISSUE_FOUND.name }
+        }
+        val preservedNaReason = runBlocking { dao.responses("w").single { it.checklistItemSnapshotId == "check-belt" }.notApplicableReasonDraft }
+        assertEquals("Guard unavailable", preservedNaReason)
+        composeRule.waitUntil(5_000) {
+            viewModel.state.value.inspection?.questions?.firstOrNull { it.snapshotItemId == "check-belt" }?.disposition == ResponseDisposition.ISSUE_FOUND
+        }
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-finding-description"))
         val restored=composeRule.onNodeWithTag("long-text-public-finding-description", useUnmergedTree = true).assertTextContains("Belt edge wear observed during inspection")
         restored.performTextInput("; local unsaved note")

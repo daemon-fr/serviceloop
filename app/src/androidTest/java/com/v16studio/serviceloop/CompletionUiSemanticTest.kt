@@ -563,7 +563,8 @@ class CompletionUiSemanticTest {
         compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
         compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag("finalize-record"))
         compose.onNodeWithTag("finalize-record").performClick()
-        compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.finalRecord != null }
+        compose.waitUntil(timeoutMillis = 15_000) { runBlocking { database.serviceLoopDao().finalRecordForVisit("v") != null } }
+        compose.waitUntil(timeoutMillis = 15_000) { viewModel.state.value.finalRecord != null }
         compose.onNodeWithText("Final service record").assertIsDisplayed()
     }
 

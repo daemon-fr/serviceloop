@@ -45,6 +45,31 @@ class Sl2IntegrityTest {
         assertEquals(LocalDate.parse("2026-09-08"), RecurrenceCalculator.nextDate(LocalDate.parse("2026-09-05"), 3, "DAYS"))
     }
 
+    @Test fun recurrenceBoundaryTableClipsOnlyAsCalendarArithmeticRequires() {
+        val cases = listOf(
+            Triple("2024-01-31", 1 to "MONTHS", "2024-02-29"),
+            Triple("2025-01-31", 1 to "MONTHS", "2025-02-28"),
+            Triple("2024-02-29", 12 to "MONTHS", "2025-02-28"),
+            Triple("2024-02-29", 4 to "YEARS", "2028-02-29"),
+            Triple("2026-12-31", 2 to "MONTHS", "2027-02-28"),
+            Triple("2026-04-30", 1 to "MONTHS", "2026-05-30"),
+            Triple("2026-12-31", 1 to "DAYS", "2027-01-01"),
+            Triple("2026-12-31", 1 to "WEEKS", "2027-01-07"),
+        )
+        cases.forEach { (start, interval, expected) ->
+            assertEquals(start, expected, LocalDate.parse(expected).let { _ ->
+                RecurrenceCalculator.nextDate(LocalDate.parse(start), interval.first, interval.second).toString()
+            })
+        }
+
+        val maxMonths = Int.MAX_VALUE
+        val expectedLargeMonthDate = LocalDate.of(1 + maxMonths / 12, 1 + maxMonths % 12, 1)
+        assertEquals(expectedLargeMonthDate, RecurrenceCalculator.nextDate(LocalDate.of(1, 1, 1), maxMonths, "MONTHS"))
+        assertEquals(LocalDate.of(999_999_999, 1, 1), RecurrenceCalculator.nextDate(LocalDate.of(1, 1, 1), 999_999_998, "YEARS"))
+        assertTrue(runCatching { RecurrenceCalculator.nextDate(LocalDate.of(2026, 1, 1), 0, "MONTHS") }.isFailure)
+        assertTrue(runCatching { RecurrenceCalculator.nextDate(LocalDate.of(2026, 1, 1), 1, "FORTNIGHTS") }.isFailure)
+    }
+
     @Test fun missingNextDueRecoveryIsConditionalDateOnlyAndDuplicateSafe() = runTest {
         seed(); val dao = db.serviceLoopDao(); val repository = repo()
         suspend fun missing(outcome: String) {
@@ -128,6 +153,27 @@ class Sl2IntegrityTest {
         val failing = RoomServiceLoopRepository(db, time, finalizationWriteGate = FinalizationWriteGate { error("controlled") })
         try { failing.finalizeVisit("visit-1"); fail("Expected failure") } catch (_: IllegalStateException) {}
         assertEquals(0, dao.finalRecordCount()); assertEquals(1, dao.obligationCount("plan-1")); assertEquals("obligation-1", dao.plan("plan-1")!!.currentObligationId); assertEquals("2026-09-01", dao.plan("plan-1")!!.currentDueDate); assertEquals("WORKING", dao.visit("visit-1")!!.state)
+    }
+
+    @Test fun failureAfterFinalWorkInsertRollsBackHistoryAndRetryIsExact() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_after_final_work",
+            "CREATE TRIGGER fail_after_final_work AFTER INSERT ON final_work_items BEGIN SELECT RAISE(ABORT, 'injected after final work'); END",
+        )
+    }
+
+    @Test fun failureDuringPlanAdvanceRollsBackConsumedAndNewObligation() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_plan_advance",
+            "CREATE TRIGGER fail_plan_advance BEFORE UPDATE ON service_plans WHEN OLD.id='plan-1' BEGIN SELECT RAISE(ABORT, 'injected plan advance'); END",
+        )
+    }
+
+    @Test fun failureAfterPlanAdvanceRollsBackWhenVisitCompletionIsBlocked() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_visit_completion",
+            "CREATE TRIGGER fail_visit_completion BEFORE UPDATE ON working_visits WHEN OLD.id='visit-1' BEGIN SELECT RAISE(ABORT, 'injected visit completion'); END",
+        )
     }
 
     @Test fun partlyNotPerformedUnfulfilledAndOneOffRemainHistoryOnly() = runTest {
@@ -424,6 +470,44 @@ class Sl2IntegrityTest {
     }
 
     private fun repo() = RoomServiceLoopRepository(db, time)
+
+    private suspend fun assertFinalizationFaultRollsBackAndRetries(triggerName: String, createTriggerSql: String) {
+        seed()
+        val dao = db.serviceLoopDao()
+        val repository = repo()
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        val planBefore = dao.plan("plan-1")!!
+        val obligationBefore = dao.obligation("obligation-1")!!
+        val claimBefore = dao.claimForObligation("obligation-1")
+        db.openHelper.writableDatabase.execSQL(createTriggerSql)
+
+        assertTrue(runCatching { repository.finalizeVisit("visit-1") }.isFailure)
+        assertEquals(0, dao.finalRecordCount())
+        assertEquals(0, dao.finalRevisionCount())
+        assertEquals(0, finalWorkItemCount())
+        assertEquals(planBefore, dao.plan("plan-1"))
+        assertEquals(obligationBefore, dao.obligation("obligation-1"))
+        assertEquals(claimBefore, dao.claimForObligation("obligation-1"))
+        assertEquals("WORKING", dao.visit("visit-1")!!.state)
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER $triggerName")
+        val finalized = repository.finalizeVisit("visit-1") as FinalizeResult.Success
+        assertEquals(1, dao.finalRecordCount())
+        assertEquals(1, dao.finalRevisionCount())
+        assertEquals(1, finalWorkItemCount())
+        assertEquals("COMPLETED", dao.visit("visit-1")!!.state)
+        assertEquals("2026-12-05", dao.plan("plan-1")!!.currentDueDate)
+        assertEquals(2, dao.obligationCount("plan-1"))
+        assertNotNull(dao.obligation("obligation-1")!!.consumedByRevisionId)
+        assertEquals(finalized.recordId, repository.finalizeVisit("visit-1").let { (it as FinalizeResult.Success).recordId })
+        assertEquals(1, dao.finalRecordCount())
+        assertEquals(1, dao.finalRevisionCount())
+        assertEquals(2, dao.obligationCount("plan-1"))
+    }
+
+    private fun finalWorkItemCount(): Int = db.openHelper.readableDatabase
+        .query("SELECT COUNT(*) FROM final_work_items")
+        .use { cursor -> check(cursor.moveToFirst()); cursor.getInt(0) }
 
     private fun testImageBytes(color: Int): ByteArray = ByteArrayOutputStream().also { output -> Bitmap.createBitmap(16, 12, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }.compress(Bitmap.CompressFormat.PNG, 100, output) }.toByteArray()
 
