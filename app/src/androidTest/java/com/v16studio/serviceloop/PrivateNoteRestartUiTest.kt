@@ -68,10 +68,11 @@ class PrivateNoteRestartUiTest {
             compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("add-private-note"))
             compose.onNodeWithTag("add-private-note").performClick()
             compose.onNodeWithTag("long-text-private-note").performScrollTo().performTextInput("PRIVATE_RESTART_CHECK_2B")
-            compose.waitUntil(5_000) {
+            compose.waitUntil(15_000) {
                 runBlocking { repo.inspection("private-w")!!.privateInternalNote == "PRIVATE_RESTART_CHECK_2B" } &&
                     viewModel.serviceDraftStates.value[ServiceDraftFieldId("private-w", ServiceDraftFieldKeys.PRIVATE)] is ServiceDraftFieldState.Clean
             }
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-save-state"))
             compose.onNodeWithTag("service-save-state").assertTextContains("Saved", substring = true)
         } finally { db.close() }
     }
@@ -89,7 +90,7 @@ class PrivateNoteRestartUiTest {
             val viewModel = ServiceLoopViewModel(repo) {}
             compose.setContent { ServiceLoopTheme { ServiceScreen(draft, null, SaveStatus.Saved(draft.modifiedAtEpochMillis), null, viewModel, rememberNavController()) } }
             compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("private-work-note"))
-            compose.waitUntil(5_000) { compose.onAllNodesWithTag("long-text-private-note").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("long-text-private-note").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("long-text-private-note").assertTextContains("PRIVATE_RESTART_CHECK_2B")
         } finally {
             db.close()

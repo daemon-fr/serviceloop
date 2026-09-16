@@ -27,6 +27,7 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.report.AndroidReportService
 import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
@@ -270,7 +271,15 @@ class OwnerVisualRuntimeTest {
         composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithTag("not-applicable-reason-check-belt", useUnmergedTree = true).assertTextContains("Guard unavailable") }.isSuccess }
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("value-check-note"))
         val valueField=composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("not-applicable-check-note"))
         composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
+        composeRule.waitUntil(5_000) {
+            runBlocking { database.serviceLoopDao().responses("w").firstOrNull { it.checklistItemSnapshotId == "check-note" }?.disposition == ResponseDisposition.NOT_APPLICABLE.name }
+        }
+        composeRule.waitUntil(5_000) {
+            viewModel.state.value.inspection?.questions?.firstOrNull { it.snapshotItemId == "check-note" }?.disposition == ResponseDisposition.NOT_APPLICABLE
+        }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("not-applicable-reason-check-note", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).performTextInput("Cabinet isolated")
         valueField.assertTextContains("Initial cabinet note")
         composeRule.onNodeWithText("Back").performClick()
@@ -279,7 +288,15 @@ class OwnerVisualRuntimeTest {
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("value-check-note"))
         composeRule.onNodeWithTag("value-check-note").assertTextContains("Initial cabinet note")
+        composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("not-applicable-check-note"))
         composeRule.onNodeWithTag("not-applicable-check-note", useUnmergedTree = true).performClick()
+        composeRule.waitUntil(5_000) {
+            runBlocking { database.serviceLoopDao().responses("w").firstOrNull { it.checklistItemSnapshotId == "check-note" }?.disposition == ResponseDisposition.NOT_APPLICABLE.name }
+        }
+        composeRule.waitUntil(5_000) {
+            viewModel.state.value.inspection?.questions?.firstOrNull { it.snapshotItemId == "check-note" }?.disposition == ResponseDisposition.NOT_APPLICABLE
+        }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("not-applicable-reason-check-note", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).assertTextContains("Cabinet isolated")
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-photos"))
         composeRule.onNodeWithTag("service-photos").assertIsDisplayed()

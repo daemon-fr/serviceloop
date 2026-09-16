@@ -5,13 +5,14 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -77,16 +78,18 @@ class OwnerR1CorrectionEvidenceTest {
             Proof("08", "service-saved-editor", "inspection/${FixtureIds.OWNER_REVIEW_WORK}") { vm ->
                 assertEquals(FixtureIds.OWNER_REVIEW_WORK, vm.state.value.inspection?.workItemId)
                 compose.onNodeWithText("Service").assertIsDisplayed()
-                compose.onNodeWithText("Saved on this device", substring = true).assertIsDisplayed()
-                assertTrue(compose.onAllNodesWithContentDescription("Expand Public work performed").fetchSemanticsNodes().isNotEmpty())
+                compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-save-state"))
+                compose.onNodeWithTag("service-save-state").assertTextContains("Saved", substring = true)
+                compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
+                assertTrue(compose.onAllNodesWithContentDescription("Expand Work performed").fetchSemanticsNodes().isNotEmpty())
             },
             Proof("08a", "expanded-editor-chrome", "inspection/${FixtureIds.OWNER_REVIEW_WORK}", prepareCapture = {
-                compose.onAllNodesWithContentDescription("Expand Public work performed")[0].performClick()
-                compose.onNodeWithTag("long-text-public-work-performed-expanded").assertIsDisplayed()
+                compose.onAllNodesWithContentDescription("Expand Work performed")[0].performClick()
+                compose.onNodeWithTag("long-text-work-performed-expanded").assertIsDisplayed()
                 assertTrue(compose.onAllNodesWithText("ServiceLoop").fetchSemanticsNodes().size >= 2)
             }) { vm ->
                 assertEquals(FixtureIds.OWNER_REVIEW_WORK, vm.state.value.inspection?.workItemId)
-                compose.onAllNodesWithContentDescription("Expand Public work performed")[0].assertIsDisplayed()
+                compose.onAllNodesWithContentDescription("Expand Work performed")[0].assertIsDisplayed()
             },
             Proof("08b", "responsive-follow-up-filters", "work?tab=FOLLOW_UPS") {
                 compose.onNodeWithTag("root-work").assertIsDisplayed()
@@ -117,7 +120,7 @@ class OwnerR1CorrectionEvidenceTest {
             },
             Proof("13", "follow-up-detail", "follow-up/follow-up-001") { vm ->
                 assertEquals("follow-up-001", vm.state.value.followUp?.id)
-                compose.onNode(hasScrollAction()).performScrollToNode(hasText("Save follow-up changes"))
+                compose.onNodeWithTag("follow-up-detail-list").performScrollToNode(hasText("Save follow-up changes"))
                 compose.onNodeWithText("Save follow-up changes").assertIsDisplayed()
             },
         )

@@ -4,13 +4,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -22,6 +26,8 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.platform.testTag
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -155,7 +161,8 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required"))
         compose.onNodeWithTag("field-task-name-required").performTextInput("Start maintenance")
         compose.onNodeWithTag("add-task").performClick()
-        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").performScrollTo().performTextReplacement("2026-09-05")
+        compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-appointment-service-date-yyyy-mm-dd"))
+        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").performTextReplacement("2026-09-05")
         compose.onNodeWithTag("primary-visit-action-WORKING").performScrollTo().assertIsEnabled().performClick()
 
         compose.waitUntil(10_000) { repository.createdVisitId != null }
@@ -271,8 +278,9 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("link-equipment").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("link-equipment-known-equipment").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("link-equipment-known-equipment").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Known equipment", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Known equipment", substring = true).assertIsDisplayed()
+        compose.waitUntil(10_000) { viewModel.state.value.inspection?.equipmentName == "Known equipment" }
+        compose.waitForIdle()
+        compose.onNodeWithTag("service-identity").assert(hasAnyDescendant(hasText("Known equipment", substring = true)))
         assertEquals("working-unidentified", repository.lastInspectedWorkItemId)
         assertEquals("known-equipment", repository.inspectedDraft?.equipmentId)
     }
@@ -287,8 +295,9 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("field-equipment-name-required").performTextInput("Created equipment")
         compose.onNodeWithTag("save-and-link-equipment").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { repository.createdEquipment && repository.inspectedDraft?.equipmentId == "created-equipment" }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Created equipment", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Created equipment", substring = true).assertIsDisplayed()
+        compose.waitUntil(10_000) { viewModel.state.value.inspection?.equipmentName == "Created equipment" }
+        compose.waitForIdle()
+        compose.onNodeWithTag("service-identity").assert(hasAnyDescendant(hasText("Created equipment", substring = true)))
         assertTrue(repository.createdEquipment)
         assertTrue(repository.createdEquipmentPlanCount == 0)
     }
@@ -330,7 +339,7 @@ class B026LocalFlexibleWorkUiTest {
                     val state by viewModel.state.collectAsState()
                     LaunchedEffect(Unit) { viewModel.loadInspection(repository.inspectedDraft!!.workItemId) }
                     NavHost(nav, "service") {
-                        composable("service") { InspectionScreen(state.inspection ?: repository.inspectedDraft!!, state.saveStatus, state.inspectionFocus, viewModel, nav) }
+                        composable("service") { TestServiceRoute(repository, viewModel, nav) }
                         composable("work/{workItemId}/link-equipment") { entry ->
                             val id = entry.arguments?.getString("workItemId").orEmpty()
                             LaunchedEffect(id) { viewModel.loadEquipmentLinkContext(id) }
@@ -340,6 +349,13 @@ class B026LocalFlexibleWorkUiTest {
                 }
             }
         }
+    }
+
+    @Composable
+    private fun TestServiceRoute(repository: FakeRepository, viewModel: ServiceLoopViewModel, nav: androidx.navigation.NavHostController) {
+        val state by viewModel.state.collectAsState()
+        val draft = state.inspection ?: repository.inspectedDraft ?: return
+        key(draft.equipmentId) { InspectionScreen(draft, state.saveStatus, state.inspectionFocus, viewModel, nav) }
     }
 
     private fun assertAbsentText(text: String) = assertTrue(compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty())
