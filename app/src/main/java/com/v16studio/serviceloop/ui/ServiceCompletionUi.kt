@@ -77,7 +77,7 @@ internal fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDra
                 FulfillmentEligibility.NO_CURRENT_OBLIGATION -> Text("No recurring due date for this Service.")
                 FulfillmentEligibility.CHECKLIST_INCOMPLETE -> Text("Complete all required checklist questions")
                 FulfillmentEligibility.PLAN_INELIGIBLE -> Text("This plan is no longer active; it cannot advance the due date.")
-                FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("The current obligation changed; review this Service before finalizing.")
+                FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED -> Text("The service due date has changed. Review this Service before finalizing.")
                 FulfillmentEligibility.OUTCOME_INELIGIBLE -> Unit
             }
             if (line.fulfillsCurrentObligation == true && line.confirmedNextDueDate != null) {

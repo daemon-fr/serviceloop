@@ -32,6 +32,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceSectionStripe
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldId
 import com.v16studio.serviceloop.ui.service.ServiceDraftFieldState
 
@@ -111,12 +112,5 @@ internal fun PrivateWorkContext(rows: List<Pair<String, String>>) {
 
 @Composable
 internal fun ServiceCompletionLandmark() {
-    val colors = LocalServiceLoopTokens.current
-    Surface(
-        modifier = Modifier.fillMaxWidth().testTag("service-completion-landmark"),
-        color = colors.surfaceSubtle,
-        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
-    ) {
-        Text("Service completion", style = ServiceLoopUiTokens.Type.sectionTitle, modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm))
-    }
+    ServiceSectionStripe("Service completion", modifier = Modifier.testTag("service-completion-landmark"), testTag = "service-completion-stripe")
 }

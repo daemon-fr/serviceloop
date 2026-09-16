@@ -184,7 +184,7 @@ internal fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>
         if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
         else item { AccentCard { Text("Report identity", style = MaterialTheme.typography.titleMedium); Text("${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); TextButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.testTag("refresh-report-identity")) { Text("Update from current profile") } } }
         items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav) }
-        item { ServiceLoopSurfaceCard { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Public work, explicit unanswered responses, due effects, and findings will be included. Private notes stay excluded.") } }
+        item { ServiceLoopSurfaceCard { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Review what will appear in the customer record. Private notes are never included.") } }
         state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
         item { ServiceLoopPrimaryButton(label = if (state.finalizing) "Finalizing record" else "Finalize record", onClick = { viewModel.finalizeVisit(visitId) }, enabled = state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, busy = state.finalizing, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) }
     }
@@ -202,6 +202,12 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             else -> "Not chosen"
         })
         if (line.workPerformed.isNotBlank()) Text(line.workPerformed)
+        if (line.checklistResults.isNotEmpty()) {
+            Text("Checklist", style = MaterialTheme.typography.labelLarge)
+            line.checklistResults.forEachIndexed { index, item ->
+                Text("${item.label} — ${item.result}", modifier = Modifier.testTag("review-checklist-item-${line.workItemId}-$index"))
+            }
+        }
         if (!line.notPerformedReason.isNullOrBlank()) Text("Reason · ${line.notPerformedReason}")
         when (line.fulfillsCurrentObligation) {
             true -> Text("Next due · ${line.confirmedNextDueDate?.let(::formatServiceLoopDate) ?: "Needs attention"}")
@@ -218,6 +224,5 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
                 Text(blocker.message, color = MaterialTheme.colorScheme.error)
             }
         }
-        ServiceLoopSecondaryButton("Open service", { nav.navigate("inspection/${line.workItemId}") }, Modifier.fillMaxWidth().testTag("review-open-service-${line.workItemId}"))
     }
 }

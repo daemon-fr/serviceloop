@@ -66,6 +66,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
+import com.v16studio.serviceloop.domain.OperationalWorkState
 
 @Composable
 fun ServiceLoopSectionHeading(title: String, trailing: (@Composable () -> Unit)? = null, modifier: Modifier = Modifier) {
@@ -204,6 +205,24 @@ fun <T> ServiceLoopChoiceGroup(
                 modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
             )
         }
+    }
+}
+
+@Composable
+fun ServiceSectionStripe(title: String, modifier: Modifier = Modifier, testTag: String? = null) {
+    val tokens = LocalServiceLoopTokens.current
+    val dark = tokens.canvas == ServiceLoopUiTokens.DarkColors.canvas
+    val background = if (dark) Color(0xFFD5DFE2) else Color(0xFF182A30)
+    val ink = if (dark) Color(0xFF10191C) else Color.White
+    Box(
+        modifier.fillMaxWidth().background(background)
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.xs)
+            .semantics { heading() }
+            .then(if (testTag == null) Modifier else Modifier.testTag(testTag)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(title, color = ink, style = ServiceLoopUiTokens.Type.label, textAlign = TextAlign.Center)
     }
 }
 /** A compact, wrapped single-choice family for short numeric, time, and unit presets. */
@@ -483,20 +502,25 @@ fun ServiceLoopEntityRecord(
     actionDescription: String? = null,
     selectionChecked: Boolean? = null,
     onSelectionChange: ((Boolean) -> Unit)? = null,
+    operationalState: OperationalWorkState? = null,
     onClick: () -> Unit,
 ) {
     val c = LocalServiceLoopTokens.current
+    val operationalPalette = operationalState?.let { OperationalWorkColors.forState(it, c) }
     val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
     Box(
         modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
             .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clip(shape)
-            .background(if (selected) c.selection else c.surface)
+            .background(if (selected && operationalPalette == null) c.selection else c.surface)
             .drawWithContent {
                 drawContent()
                 drawRoundRect(
-                    color = if (selected) c.selectionOutline else c.recordBorder,
+                    color = operationalPalette?.accent ?: if (selected) c.selectionOutline else c.recordBorder,
                     cornerRadius = CornerRadius(ServiceLoopUiTokens.Radius.field.toPx()),
-                    style = Stroke(width = if (selected) ServiceLoopUiTokens.Stroke.selected.toPx() else ServiceLoopUiTokens.Stroke.record.toPx(), pathEffect = if (selected) null else PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
+                    style = Stroke(
+                        width = if (selected && operationalPalette == null) ServiceLoopUiTokens.Stroke.selected.toPx() else ServiceLoopUiTokens.Stroke.record.toPx(),
+                        pathEffect = if (selected && operationalPalette == null) null else PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+                    ),
                 )
             }
             .testTag("entity-record-card")
@@ -614,12 +638,13 @@ fun ServiceLoopDenseNavigableRow(
     modifier:Modifier=Modifier,leadingIcon:Int?=null,
     leadingContent:(@Composable RowScope.()->Unit)?=null,
     showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,showDivider:Boolean=true,
+    selectedBackground:Boolean=true,
     contentPadding: PaddingValues = PaddingValues(vertical = ServiceLoopUiTokens.Space.md), onClick:(()->Unit)?,
 ) {
     val c=LocalServiceLoopTokens.current
     Row(
         modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.listRowMin)
-            .then(if (selected) Modifier.background(c.selection, RoundedCornerShape(ServiceLoopUiTokens.Radius.field)) else Modifier)
+            .then(if (selected && selectedBackground) Modifier.background(c.selection, RoundedCornerShape(ServiceLoopUiTokens.Radius.field)) else Modifier)
             .then(if (onClick != null) Modifier.serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field).clickable(role=Role.Button,onClick=onClick).focusable() else Modifier)
             .semantics { this.selected = selected }
             .then(if (showDivider) Modifier.drawBehind{drawLine(c.outlineDecorative,Offset(0f,size.height),Offset(size.width,size.height),ServiceLoopUiTokens.Stroke.divider.toPx())} else Modifier)

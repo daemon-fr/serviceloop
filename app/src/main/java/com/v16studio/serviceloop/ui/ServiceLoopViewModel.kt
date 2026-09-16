@@ -66,6 +66,8 @@ data class UiState(
     val recoveryCheckComplete: Boolean = true,
     val restrictedRecoveryState: Boolean = false,
     val home: HomeSummary? = null,
+    val operationalDashboard: OperationalDashboardProjection? = null,
+    val operationalDashboardError: String? = null,
     val equipment: EquipmentDetail? = null,
     val equipmentList: List<EquipmentSummary> = emptyList(),
     val customerList: List<CustomerSummary> = emptyList(),
@@ -177,6 +179,8 @@ class ServiceLoopViewModel(
     private val serviceDraftAutosaveCoordinator = ServiceDraftAutosaveCoordinator(repository, viewModelScope)
     val serviceDraftStates: StateFlow<Map<ServiceDraftFieldId, ServiceDraftFieldState>> = serviceDraftAutosaveCoordinator.states
     private var rootRefreshJob: Job? = null
+    private var operationalDashboardJob: Job? = null
+    private var operationalDashboardScope: WorkScope? = null
     private var searchJob: Job? = null
     private var dueServicesJob: Job? = null
     private val activeLoads = AtomicInteger(0)
@@ -387,6 +391,27 @@ class ServiceLoopViewModel(
         val request = issueRequest("customer")
         launchLoad { val value = repository.customer(id); if (isCurrent(request)) _state.update { it.copy(customer = value) } }
     }
+
+    fun observeOperationalDashboard(scope: WorkScope) {
+        if (operationalDashboardScope == scope && operationalDashboardJob?.isActive == true) return
+        operationalDashboardScope = scope
+        operationalDashboardJob?.cancel()
+        val request = issueRequest("operationalDashboard")
+        _state.update { current -> current.copy(operationalDashboard = null, operationalDashboardError = null) }
+        operationalDashboardJob = viewModelScope.launch {
+            try {
+                repository.observeOperationalDashboard(scope).collect { projection ->
+                    if (isCurrent(request) && operationalDashboardScope == scope) {
+                        _state.update { current -> current.copy(operationalDashboard = projection, operationalDashboardError = null) }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (isCurrent(request)) _state.update { current -> current.copy(operationalDashboardError = failure.message ?: "Unable to read current work") }
+            }
+        }
+    }
     fun loadSite(id: String) {
         val request = issueRequest("site")
         launchLoad { val value = repository.site(id); if (isCurrent(request)) _state.update { it.copy(site = value) } }
@@ -596,7 +621,7 @@ class ServiceLoopViewModel(
         viewModelScope.launch {
             try {
                 repository.rescheduleVisit(id, date, scheduledAt, reason)
-                val refreshed = repository.visit(id) ?: error("Visit was saved but could not be reloaded")
+                val refreshed = repository.visit(id) ?: error("Visit was saved, but its details could not be refreshed")
                 val site = repository.site(refreshed.siteId)
                 if (isCurrent(request)) _state.update { it.copy(visit = refreshed, site = site, operationInProgress = false, operationMessage = "Saved on this device") }
                 refreshRootDataNonBlocking(); onSuccess(id)

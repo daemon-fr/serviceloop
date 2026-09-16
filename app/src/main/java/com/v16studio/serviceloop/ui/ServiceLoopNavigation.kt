@@ -25,6 +25,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as But
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.OperationalDashboard
+import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.ui.theme.AppearancePreferences
 
 private const val HOME = "home"
@@ -81,7 +83,7 @@ internal fun ServiceLoopNavGraph(
         composable(HOME) {
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.HOME) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { HomeScreen(state, state.home, state.equipmentList, state.visits, state.attention, nav, viewModel) }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-home", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { HomeScreen(state, nav, viewModel) }
             }
         }
         composable(
@@ -94,7 +96,7 @@ internal fun ServiceLoopNavGraph(
             val requested = runCatching { WorkTab.valueOf(entry.arguments?.getString("tab").orEmpty()) }.getOrDefault(WorkTab.DUE_SERVICES)
             val contextualFilter = entry.arguments?.getString("filter")
             var workTab by androidx.compose.runtime.saveable.rememberSaveable(requested, contextualFilter) { mutableStateOf(requested) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadFollowUps() }
+            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking(); viewModel.loadVisits(); viewModel.loadFollowUps(); viewModel.observeOperationalDashboard(WorkScope.Global) }
             RootScaffold(nav, RootDestination.WORK) { padding ->
                 ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-work", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) {
                     WorkScreen(state, nav, workTab, viewModel, contextualFilter) { workTab = it }
@@ -116,7 +118,35 @@ internal fun ServiceLoopNavGraph(
             }
         }
         composable("customer/new") { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } }
-        composable("customer/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Customer",nav){CustomerDetailScreen(state.customer,it,nav,viewModel)} }
+        composable("customer/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id);viewModel.observeOperationalDashboard(WorkScope.Customer(id))}; DetailScaffold("Customer",nav){CustomerDetailScreen(state.customer,it,nav,viewModel,state.operationalDashboard?.takeIf { projection -> projection.scope == WorkScope.Customer(id) },state.businessDate,state.home?.dueSoonHorizonDays ?: 14)} }
+        composable("work-dashboard/customer/{id}") { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            LaunchedEffect(id) { viewModel.loadCustomer(id); viewModel.observeOperationalDashboard(WorkScope.Customer(id)) }
+            val customer = state.customer?.takeIf { it.id == id }
+            DetailScaffold(customer?.name ?: "Customer", nav) { padding ->
+                val projection = state.operationalDashboard?.takeIf { it.scope == WorkScope.Customer(id) }
+                if (projection == null) {
+                    androidx.compose.foundation.layout.Column(Modifier.padding(padding).padding(16.dp)) {
+                        androidx.compose.material3.Text(state.operationalDashboardError ?: "Reading current work")
+                    }
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.padding(padding),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(ServiceLoopUiTokens.Space.md),
+                    ) {
+                        item {
+                            OperationalDashboard(
+                                projection = projection,
+                                onOpenItem = { openOperationalWork(nav, it) },
+                                onViewAll = { openOperationalSection(nav, it) },
+                                modifier = Modifier.testTag("customer-work-dashboard"),
+                            )
+                        }
+                    }
+                }
+            }
+        }
         composable("customer/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Edit customer",nav){CustomerEditorScreen(state.customer,it,state,viewModel,nav)} }
         composable("site/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId"); DetailScaffold("Add site",nav){SiteEditorScreen(id,null,it,state,viewModel,nav)} }
         composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav,viewModel)} }
@@ -131,7 +161,7 @@ internal fun ServiceLoopNavGraph(
         composable("template/new") { DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav)} }
         composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav)} }
         composable("template/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id)}; DetailScaffold("New template revision",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav)} }
-        composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id)}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
+        composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id);viewModel.loadReminderSettings()}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
         composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
         composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
         composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }

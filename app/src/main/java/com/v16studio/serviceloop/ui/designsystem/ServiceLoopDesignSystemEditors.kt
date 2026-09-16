@@ -111,6 +111,49 @@ fun ServiceLoopResponsivePair(first: @Composable () -> Unit, second: @Composable
 }
 
 @Composable
+fun <T> ServiceLoopChoicePair(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    testTagPrefix: String? = null,
+) {
+    require(options.size == 2) { "A paired choice requires exactly two options" }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stack = maxWidth < 260.dp || LocalDensity.current.fontScale >= 1.8f
+        val first = options[0]
+        val second = options[1]
+        val firstChoice: @Composable () -> Unit = {
+            ServiceLoopSelectionOption(
+                selected = first.first == selected,
+                onClick = { onSelected(first.first) },
+                label = first.second,
+                modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-${first.first}"),
+            )
+        }
+        val secondChoice: @Composable () -> Unit = {
+            ServiceLoopSelectionOption(
+                selected = second.first == selected,
+                onClick = { onSelected(second.first) },
+                label = second.second,
+                modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-${second.first}"),
+            )
+        }
+        if (stack) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.pairGap)) {
+                firstChoice()
+                secondChoice()
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.pairGap)) {
+                Box(Modifier.weight(1f)) { firstChoice() }
+                Box(Modifier.weight(1f)) { secondChoice() }
+            }
+        }
+    }
+}
+
+@Composable
 fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
     var restoreCompactFocus by remember { mutableStateOf(false) }

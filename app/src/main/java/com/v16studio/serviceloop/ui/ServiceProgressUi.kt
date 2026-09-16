@@ -98,10 +98,11 @@ internal fun ServiceProgressNavigator(
                             title = item.serviceName,
                             context = null,
                             statusContent = { ServiceProgressBadge(item) },
-                            modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.sm).testTag("$rowTagPrefix-${item.workItemId}"),
+                            modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}"),
                             selected = selected,
+                            selectedBackground = false,
                             showDisclosure = true,
-                            contentPadding = PaddingValues(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.md),
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = ServiceLoopUiTokens.Space.md),
                             onClick = { onSelect(item) },
                             showDivider = index < group.items.lastIndex,
                         )

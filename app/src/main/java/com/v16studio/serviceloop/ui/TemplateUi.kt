@@ -109,7 +109,7 @@ internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingV
             if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) {
                 Spacer(Modifier.height(8.dp))
                 Text("Inspection templates", style = MaterialTheme.typography.titleMedium)
-                Text("Share reusable inspection definitions only. A work package still carries the immutable snapshot used by its Visit.", style = MaterialTheme.typography.bodySmall)
+                Text("Share inspection templates only. Visits already created with a template keep their checklist.", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
                     OutlinedButton({ scope.launch { runCatching { val export = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { InspectionTemplateCodec.encode(export) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slinsp", INSPECTION_TEMPLATES_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onFailure { message = it.message } } }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("export-inspection-templates")) { Text("Export selected") }
@@ -130,7 +130,7 @@ internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingV
 @Composable
 internal fun TemplateDetailScreen(detail: TemplateDetail?, padding: PaddingValues, nav: NavHostController) {
     if (detail == null) return DailyEmpty(padding, "Reading template")
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Text("${detail.reference} · ${detail.name}", style = MaterialTheme.typography.headlineSmall); Text("Revision ${detail.revisionNumber} · ${detail.state}"); Text("Changing this template publishes a new revision. Existing work keeps its captured snapshot."); Button({ nav.navigate("template/edit/${detail.id}") }, Modifier.fillMaxWidth()) { Text("New revision") } }; items(detail.items.withIndex().toList()) { (index,item) -> Text("${index+1}. ${item.label} · ${item.responseType} · ${if (item.required) "Required" else "Optional"}${item.unit.ifBlank { "" }.let { if (it.isBlank()) "" else " · $it" }}") } }
+    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Text("${detail.reference} · ${detail.name}", style = MaterialTheme.typography.headlineSmall); Text("Revision ${detail.revisionNumber} · ${detail.state}"); Text("Changes create a new version. Existing Visit tasks keep the checklist they were created with."); Button({ nav.navigate("template/edit/${detail.id}") }, Modifier.fillMaxWidth()) { Text("New revision") } }; items(detail.items.withIndex().toList()) { (index,item) -> Text("${index+1}. ${item.label} · ${item.responseType} · ${if (item.required) "Required" else "Optional"}${item.unit.ifBlank { "" }.let { if (it.isBlank()) "" else " · $it" }}") } }
 }
 
 @Composable

@@ -80,7 +80,7 @@ data class FollowUpDetail(
     val id: String, val reference: String, val type: String, val title: String, val dueDate: String,
     val state: String, val customerId: String, val siteId: String?, val equipmentId: String?,
     val privatePlanningNote: String, val closureReason: String?, val customerName: String = "",
-    val siteName: String? = null, val equipmentName: String? = null,
+    val siteName: String? = null, val equipmentName: String? = null, val updatedAtEpochMillis: Long = 0L,
 )
 data class FollowUpInput(val type: String, val title: String, val dueDate: String, val customerId: String, val siteId: String? = null, val equipmentId: String? = null, val privatePlanningNote: String = "", val sourceVisitId: String? = null, val sourceWorkItemId: String? = null)
 

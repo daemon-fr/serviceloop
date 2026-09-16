@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-15
+**Updated:** 2026-09-16
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -27,6 +27,10 @@ The explicitly authorized active implementation/review branch is `codex/b013-ui-
 - **SL-5B — optional Android Calendar integration:** IMPLEMENTED, corrected, source-reviewed and banked under B-016.
 - **SL-5C — final functional completion/hardening:** IMPLEMENTED and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`; no known ordinary-workflow functional placeholder remains before B-013.
 - **B-008 real-technician pilot:** outstanding and still a release-validity gate.
+
+## B-027 — operational dashboard and UI corrections
+
+Implemented on `codex/b013-ui-overhaul` from `f9f1fc16b7878015232ecfb687b514a50e7f34bf`. The shared derived operational classifier/projection now drives Home, Customer Work items, contextual Work filters, and state-colored live work rows. Home uses expandable non-empty buckets with the adopted urgency/order, full-height semantic rails, normal-surface child rows, dashed state borders, and five-item previews. Customer detail has an ID-scoped Work items gateway and shared customer dashboard route. Visit creation/Add Task, Due Services actions, reminders, Visit Progress, service stripes, Review checklist projection/privacy, and technician-facing copy were corrected without changing business invariants or Room schema. Detailed behavior and verification scope are documented in `B027_OPERATIONAL_DASHBOARD_AND_UI_CORRECTIONS.md`.
 
 ## Functional freeze status
 

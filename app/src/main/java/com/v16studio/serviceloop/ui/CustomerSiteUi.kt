@@ -27,11 +27,24 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.OperationalWorkGateway
+import com.v16studio.serviceloop.domain.OperationalDashboardProjection
+import com.v16studio.serviceloop.domain.OperationalWorkClassifier
+import com.v16studio.serviceloop.domain.OperationalWorkState
+import java.time.LocalDate
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 
 @Composable
-internal fun CustomerDetailScreen(detail: CustomerDetail?, padding: PaddingValues, nav: NavHostController, viewModel: ServiceLoopViewModel) {
+internal fun CustomerDetailScreen(
+    detail: CustomerDetail?,
+    padding: PaddingValues,
+    nav: NavHostController,
+    viewModel: ServiceLoopViewModel,
+    workDashboard: OperationalDashboardProjection? = null,
+    businessDate: LocalDate = LocalDate.now(),
+    dueSoonHorizonDays: Int = 14,
+) {
     if (detail == null) return DailyEmpty(padding, "Reading customer")
     val context = LocalContext.current
     var handoffStatus by rememberSaveable { mutableStateOf<String?>(null) }
@@ -49,10 +62,15 @@ internal fun CustomerDetailScreen(detail: CustomerDetail?, padding: PaddingValue
                 ServiceLoopContentTabs(listOf("SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it})
             }
         }
+        workDashboard?.takeIf { it.totalItemCount > 0 }?.mostUrgentState?.let { urgency ->
+            item {
+                OperationalWorkGateway(workDashboard.totalItemCount, urgency, onClick = { nav.navigate("work-dashboard/customer/${detail.id}") }, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+        }
         if (tab == "SITES") { item { Column(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Sites"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); Button({ nav.navigate("site/new/${detail.id}") }, Modifier.fillMaxWidth().testTag("add-site")) { Text("Add site") } } }; items(detail.sites) { site -> ServiceLoopEntityRecord("${site.reference} · ${site.name}",site.address,"${site.equipmentCount} equipment${if(site.isDefault) " · Default" else ""}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("site/${site.id}")} } }
         else { item { Box(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Equipment") } }; items(detail.equipment) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",item.siteName,"Next due ${item.nearestDueDate ?: "not scheduled"}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("equipment/${item.id}")} } }
         item { Column(Modifier.padding(horizontal = 16.dp)) { ServiceLoopSectionDivider(); DailyHeading("Active follow-ups"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopPrimaryButton("Add follow-up",{nav.navigate("follow-up/new/${detail.id}")},Modifier.fillMaxWidth()) } }
-        items(detail.openFollowUps) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",metadata="Due ${follow.dueDate}", modifier = Modifier.padding(horizontal = 16.dp)){nav.navigate("follow-up/${follow.id}")} }
+        items(detail.openFollowUps) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",metadata="Due ${follow.dueDate}", modifier = Modifier.padding(horizontal = 16.dp), operationalState = OperationalWorkClassifier.classifyFollowUp(follow.state, follow.dueDate, businessDate, dueSoonHorizonDays)){nav.navigate("follow-up/${follow.id}")} }
         if (detail.recentContacts.isNotEmpty()) item { Box(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Recent contact") } }
         items(detail.recentContacts) { note -> var errorReason by rememberSaveable(note.id){mutableStateOf("")}; Column(Modifier.padding(horizontal = 16.dp)) { Text("${note.reference} · ${note.channel} · ${note.outcome}${if (note.enteredInError) " · Entered in error: ${note.errorReason}" else ""}"); if(!note.enteredInError){ DailyField(errorReason,{errorReason=it},"Entered-in-error reason"); TextButton({viewModel.markContactNoteEnteredInError(note.id,errorReason){viewModel.loadCustomer(detail.id)}},enabled=errorReason.isNotBlank()){Text("Mark entered in error")} } } }
         if (detail.privateNote.isNotBlank()) item { Box(Modifier.padding(horizontal = 16.dp)) { PrivateBlock("Private customer note", detail.privateNote) } }

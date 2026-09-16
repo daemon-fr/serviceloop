@@ -28,6 +28,7 @@ import com.v16studio.serviceloop.domain.ResponseDisposition
 import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
 import com.v16studio.serviceloop.ui.designsystem.InspectionStatusChoice
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceSectionStripe
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChecklistChoice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopInspectionStatusGrid
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
@@ -42,9 +43,9 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 internal fun ChecklistSectionHeader(draft: InspectionDraft) {
     val colors = LocalServiceLoopTokens.current
     Column(Modifier.testTag("checklist-section"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Checklist", style = MaterialTheme.typography.titleLarge)
+        ServiceSectionStripe("Checklist", testTag = "service-checklist-stripe")
         if (draft.questions.isNotEmpty()) {
-            Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}", color = if (draft.checklistComplete) colors.successInk else colors.errorInk)
+            Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}", color = if (draft.checklistComplete) colors.successInk else colors.errorInk, modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.xs).testTag("checklist-completeness"))
         }
     }
 }

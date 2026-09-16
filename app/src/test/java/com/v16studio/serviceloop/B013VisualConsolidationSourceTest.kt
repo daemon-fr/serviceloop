@@ -77,7 +77,10 @@ class B013VisualConsolidationSourceTest {
         assertTrue(components.contains("ServiceLoopUiTokens.Radius.pill"))
         assertTrue(productionKotlinSourceContaining("ServiceLoopPresetChoiceGroup(listOf(1 to \"1 day\"").isNotEmpty())
         assertTrue(reminders.contains("ServiceLoopPresetChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS"))
-        assertTrue(production.contains("ServiceLoopPresetChoiceGroup(listOf(null to \"Default\",0 to \"Off\") + ReminderPreferences.APPOINTMENT_LEAD_PRESETS"))
+        assertTrue(production.contains("AppointmentReminderSelector("))
+        assertTrue(production.contains("label = \"Appointment reminder\""))
+        assertTrue(production.contains("defaultAppointmentLeadMinutes"))
+        assertFalse(production.contains("ServiceLoopPresetChoiceGroup(listOf(null to \"Default\",0 to \"Off\") + ReminderPreferences.APPOINTMENT_LEAD_PRESETS"))
         assertTrue(production.contains("ServiceLoopPresetChoiceGroup(listOf(\"DAYS\",\"WEEKS\",\"MONTHS\",\"YEARS\")"))
         assertTrue(appearance.contains("options = AppearanceMode.entries.map"))
     }

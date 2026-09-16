@@ -78,7 +78,21 @@ data class CustomerSummaryRow(
     val customerType: String,
 )
 
-data class VisitSummaryRow(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String?)
+data class VisitSummaryRow(
+    val id: String,
+    val reference: String,
+    val siteName: String,
+    val actualServiceDate: String,
+    val state: String,
+    val finalRecordId: String?,
+    val resumeWorkItemId: String?,
+    val customerId: String,
+    val customerName: String,
+    val siteId: String,
+    val equipmentId: String?,
+    val scheduledAtEpochMillis: Long?,
+    val modifiedAtEpochMillis: Long,
+)
 
 data class DueServiceRow(
     val planId: String, val planReference: String, val planName: String, val dueDate: String,
@@ -326,7 +340,13 @@ interface ServiceLoopDao {
                END actualServiceDate,
                v.state,
                f.id finalRecordId,
-                (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.rowid LIMIT 1) resumeWorkItemId
+               (SELECT wi.id FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.rowid LIMIT 1) resumeWorkItemId,
+               v.customerId,
+               v.customerNameSnapshot customerName,
+               v.siteId,
+               (SELECT wi.equipmentId FROM work_items wi WHERE wi.visitId=v.id ORDER BY wi.rowid LIMIT 1) equipmentId,
+               v.scheduledAtEpochMillis,
+               v.modifiedAtEpochMillis
         FROM working_visits v
         LEFT JOIN final_records f ON f.visitId=v.id
         ORDER BY actualServiceDate DESC, v.reference

@@ -290,6 +290,67 @@ class DailyOperationsIntegrityTest {
         assertEquals("2027-09-05", ready.confirmedNextDueDate)
     }
 
+    @Test fun reviewProjectsNaturalChecklistResultsAndHidesUnansweredOptionalAndPrivateDrafts() = runTest {
+        val ids = foundation()
+        val template = repo.createTemplate(
+            "Review checklist",
+            listOf(
+                TemplateItemDraft("Power cable", "STATUS", required = true, privateGuidance = "PRIVATE_GUIDANCE"),
+                TemplateItemDraft("Emergency stop", "STATUS", required = true),
+                TemplateItemDraft("Belt condition", "STATUS", required = true),
+                TemplateItemDraft("Rear cover", "STATUS"),
+                TemplateItemDraft("Site voltage", "TEXT", required = true),
+                TemplateItemDraft("Clearance", "TEXT"),
+                TemplateItemDraft("Motor temperature", "NUMBER", "°C", required = true),
+                TemplateItemDraft("Rear bearing", "NUMBER", "mm"),
+                TemplateItemDraft("Optional guard", "STATUS"),
+                TemplateItemDraft("Required reading", "TEXT", required = true),
+                TemplateItemDraft("Optional note", "TEXT"),
+            ),
+        )
+        repo.updatePlan(ids.plan, PlanInput("Annual service", 1, "YEARS", "2026-09-01", template))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val questions = repo.inspection(work)!!.questions.associateBy { it.label }
+        suspend fun answer(label: String, disposition: ResponseDisposition, value: String? = null, reason: String? = null) {
+            repo.saveResponse(work, questions.getValue(label).snapshotItemId, disposition, value, reason)
+        }
+
+        answer("Power cable", ResponseDisposition.OK)
+        answer("Emergency stop", ResponseDisposition.NOT_CHECKED)
+        answer("Belt condition", ResponseDisposition.ISSUE_FOUND, reason = "slight edge wear")
+        answer("Rear cover", ResponseDisposition.NOT_APPLICABLE, reason = "sealed unit")
+        answer("Site voltage", ResponseDisposition.VALUE, "220 V")
+        answer("Clearance", ResponseDisposition.NOT_APPLICABLE, reason = "not accessible")
+        answer("Motor temperature", ResponseDisposition.VALUE, "42")
+        answer("Rear bearing", ResponseDisposition.NOT_APPLICABLE, reason = "sealed bearing")
+        val activeAnswer = db.serviceLoopDao().responses(work).first { it.checklistItemSnapshotId == questions.getValue("Power cable").snapshotItemId }
+        db.serviceLoopDao().updateResponse(activeAnswer.id, "OK", null, null, null, activeAnswer.modifiedAtEpochMillis, "INACTIVE_ISSUE_PRIVATE", "INACTIVE_NA_PRIVATE")
+        repo.savePrivateNote(work, "PRIVATE_TECHNICIAN_NOTE")
+        repo.saveWorkingInputBuffer(work, ServiceDraftFieldKeys.WORK, "RAW_WORKING_BUFFER")
+        repo.savePublicWork(work, "Inspected electrical connections")
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+
+        val line = repo.completionLines(visit).single()
+        assertEquals(
+            listOf(
+                "Power cable" to "OK",
+                "Emergency stop" to "Not checked",
+                "Belt condition" to "Issue found: slight edge wear",
+                "Rear cover" to "Not applicable: sealed unit",
+                "Site voltage" to "220 V",
+                "Clearance" to "Not applicable: not accessible",
+                "Motor temperature" to "42 °C",
+                "Rear bearing" to "Not applicable: sealed bearing",
+                "Required reading" to "Not answered",
+            ),
+            line.checklistResults.map { it.label to it.result },
+        )
+        assertTrue(line.blockers.any { it.kind == CompletionBlockerKind.CHECKLIST_INCOMPLETE })
+        assertFalse(line.checklistResults.any { (label, result) -> listOf(label, result).any { it.contains("PRIVATE") || it.contains("RAW_") } })
+        assertFalse(line.checklistResults.any { it.label in setOf("Optional guard", "Optional note") })
+    }
+
     @Test fun partlyPerformedIsReadyWithoutBlanketChecklistGateAndNeedsWorkWhenMissing() = runTest {
         val ids = foundation()
         val template = repo.createTemplate("Optional for partial", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))

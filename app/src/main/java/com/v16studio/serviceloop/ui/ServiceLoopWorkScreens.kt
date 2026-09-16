@@ -109,6 +109,13 @@ import com.v16studio.serviceloop.domain.EquipmentDetail
 import com.v16studio.serviceloop.domain.EquipmentSummary
 import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.HomeSummary
+import com.v16studio.serviceloop.domain.OperationalDashboardSection
+import com.v16studio.serviceloop.domain.OperationalDashboardProjection
+import com.v16studio.serviceloop.domain.OperationalWorkItem
+import com.v16studio.serviceloop.domain.OperationalWorkKind
+import com.v16studio.serviceloop.domain.OperationalWorkState
+import com.v16studio.serviceloop.domain.OperationalWorkClassifier
+import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
@@ -155,6 +162,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSectionDivider
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
+import com.v16studio.serviceloop.ui.designsystem.OperationalDashboard
+import com.v16studio.serviceloop.ui.designsystem.OperationalWorkRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDashboardGateway
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAttentionRow
@@ -178,45 +187,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun HomeScreen(state: UiState, home: HomeSummary?, equipment: List<EquipmentSummary>, visits: List<VisitSummary>, attention: List<com.v16studio.serviceloop.domain.AttentionItem>, nav: NavHostController, viewModel: ServiceLoopViewModel) {
-    LaunchedEffect(Unit) { viewModel.loadAttention() }
-    if (home == null) { LazyColumn(contentPadding = PaddingValues(16.dp)) { item { CoordinatorHomeActions(nav) }; item { Text("Add a customer to create your first service obligation.") } }; return }
+internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: ServiceLoopViewModel) {
+    LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { CoordinatorHomeActions(nav) }
-        if (home.workingVisitId != null) item {
-            SectionTitle("Unfinished visits · ${home.workingVisitCount}")
-            AccentCard {
-                Text(home.workingSite.orEmpty(), style = MaterialTheme.typography.titleMedium)
-                Text("${home.workingVisitReference} · Working", color = LocalServiceLoopColors.current.workflowInk)
-                home.savedAtEpochMillis?.let { ServiceLoopSavedStatus(it, iconSize = ServiceLoopUiTokens.Size.iconSmall) }
-                Button(onClick = {
-                    val sessionItem = state.activeServiceWorkItemId?.takeIf { state.activeServiceVisitId == home.workingVisitId && state.serviceProgress?.items?.any { item -> item.workItemId == it } == true }
-                    val target = sessionItem ?: home.inspectionWorkItemId
-                    if (target != null) nav.navigate("inspection/$target") else nav.navigate("visit/${home.workingVisitId}")
-                }, modifier = Modifier.fillMaxWidth().testTag("resume-service")) { Text("Resume service") }
-                TextButton(onClick = { nav.navigate(workRoute(WorkTab.VISITS, "WORKING")) }) { Text("View all unfinished") }
+        state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
+            item {
+                OperationalDashboard(
+                    projection = projection,
+                    onOpenItem = { openOperationalWork(nav, it) },
+                    onViewAll = { openOperationalSection(nav, it) },
+                    modifier = Modifier.testTag("home-operational-dashboard"),
+                )
             }
+        } ?: item {
+            Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
         }
-        item {
-            SectionTitle("Booked visits · ${home.bookedVisitCount}")
-            val bookedVisit = visits.firstOrNull { it.state == "BOOKED" && it.reference == home.bookedVisitReference }
-            if (bookedVisit == null) Text("No booked visits")
-            else ServiceLoopEntityRecord(bookedVisit.reference, bookedVisit.siteName, bookedVisit.actualServiceDate, bookedVisit.state) { nav.navigate("visit/${bookedVisit.id}") }
-        }
-        item { ServiceLoopDashboardGateway("Overdue services",home.overdueCount,"Booked work remains due until fulfilled",ServiceLoopIcons.Warning,true){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "OVERDUE"))} }
-        items(equipment.take(3)) { item -> ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}",metadata="Due ${item.nearestDueDate ?: "not scheduled"}"){nav.navigate("equipment/${item.id}")} }
-        item { ServiceLoopDashboardGateway("Due soon",home.dueSoonCount,"Next ${home.dueSoonHorizonDays} business-local days",ServiceLoopIcons.Time){nav.navigate(workRoute(WorkTab.DUE_SERVICES, "DUE_SOON"))} }
-        item { ServiceLoopDashboardGateway("Follow-ups due",home.dueFollowUpCount,listOfNotNull(home.dueFollowUpReference, home.dueFollowUpTitle).joinToString(" · ").ifBlank { "No follow-ups due" },ServiceLoopIcons.Work){nav.navigate(workRoute(WorkTab.FOLLOW_UPS))} }
-        item { SectionTitle("Records needing attention · ${attention.size}"); if(attention.isEmpty()) Text("No correction or report-file attention needed.") }
-        items(attention) { item -> ServiceLoopAttentionRow(item.title,item.detail){nav.navigate(item.route)} }
         item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
     }
 }
 
+internal fun openOperationalWork(nav: NavHostController, item: OperationalWorkItem) {
+    when (item.kind) {
+        OperationalWorkKind.VISIT -> {
+            if (item.state == OperationalWorkState.IN_PROGRESS && item.workItemId != null) nav.navigate("inspection/${item.workItemId}")
+            else nav.navigate("visit/${item.recordId}")
+        }
+        OperationalWorkKind.SERVICE -> nav.navigate("plan/${item.recordId}")
+        OperationalWorkKind.FOLLOW_UP -> nav.navigate("follow-up/${item.recordId}")
+    }
+}
+
+internal fun openOperationalSection(nav: NavHostController, section: OperationalDashboardSection) {
+    val tab = when (section.kind) {
+        OperationalWorkKind.VISIT -> WorkTab.VISITS
+        OperationalWorkKind.SERVICE -> WorkTab.DUE_SERVICES
+        OperationalWorkKind.FOLLOW_UP -> WorkTab.FOLLOW_UPS
+    }
+    nav.navigate(workRoute(tab, "OP_${section.kind.name}_${section.state.name}"))
+}
+
 @Composable
 internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, viewModel: ServiceLoopViewModel, contextualFilter: String? = null, onTabSelected: (WorkTab) -> Unit) {
-    val initialVisitStatus = VisitStatusFilter.entries.firstOrNull { it.name == contextualFilter } ?: VisitStatusFilter.ALL
-    val initialVisitDate = VisitDateFilter.entries.firstOrNull { it.name == contextualFilter }
+    val parsedOperationalFilter = parseOperationalFilter(contextualFilter)
+    val initialVisitStatus = if (parsedOperationalFilter?.first == OperationalWorkKind.VISIT) VisitStatusFilter.ALL else VisitStatusFilter.entries.firstOrNull { it.name == contextualFilter } ?: VisitStatusFilter.ALL
+    val initialVisitDate = if (parsedOperationalFilter?.first == OperationalWorkKind.VISIT) VisitDateFilter.ALL else VisitDateFilter.entries.firstOrNull { it.name == contextualFilter }
         ?: if (initialVisitStatus == VisitStatusFilter.ALL) VisitDateFilter.TODAY else VisitDateFilter.ALL
     val initialFollowUpDate = FollowUpDateFilter.entries.firstOrNull { it.name == contextualFilter } ?: FollowUpDateFilter.ALL
     val colors = LocalServiceLoopTokens.current
@@ -239,7 +254,7 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
         when (tab) {
             WorkTab.DUE_SERVICES -> {
                 val contextualDueBucket = runCatching { com.v16studio.serviceloop.domain.DueBucket.valueOf(contextualFilter.orEmpty()) }.getOrNull()
-                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket, inlineNewVisit)
+                DueServicesScreen(state.dueServices, PaddingValues(), state, viewModel, nav, Modifier.weight(1f), contextualDueBucket, inlineNewVisit, parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.SERVICE }?.second)
             }
             WorkTab.VISITS -> VisitsWorkScreen(
                 values = state.visits,
@@ -250,6 +265,9 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
                 initialDateFilter = initialVisitDate,
                 initialStatusFilter = initialVisitStatus,
                 topContent = inlineNewVisit,
+                initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.VISIT }?.second,
+                dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
+                businessZoneId = state.businessZoneId,
             )
             WorkTab.FOLLOW_UPS -> FollowUpsWorkScreen(
                 values = state.followUps,
@@ -259,9 +277,19 @@ internal fun WorkScreen(state: UiState, nav: NavHostController, tab: WorkTab, vi
                 modifier = Modifier.weight(1f),
                 initialDateFilter = initialFollowUpDate,
                 topContent = inlineNewVisit,
+                dueSoonHorizonDays = state.home?.dueSoonHorizonDays ?: 14,
+                initialOperationalState = parsedOperationalFilter?.takeIf { it.first == OperationalWorkKind.FOLLOW_UP }?.second,
             )
         }
     }
+}
+
+private fun parseOperationalFilter(value: String?): Pair<OperationalWorkKind, OperationalWorkState>? {
+    val encoded = value?.removePrefix("OP_")?.takeIf { it != value } ?: return null
+    val kind = OperationalWorkKind.entries.firstOrNull { encoded.startsWith("${it.name}_") } ?: return null
+    val stateName = encoded.removePrefix("${kind.name}_")
+    val state = runCatching { OperationalWorkState.valueOf(stateName) }.getOrNull() ?: return null
+    return kind to state
 }
 
 @Composable
@@ -274,11 +302,19 @@ internal fun VisitsWorkScreen(
     initialDateFilter: VisitDateFilter = VisitDateFilter.TODAY,
     initialStatusFilter: VisitStatusFilter = VisitStatusFilter.ALL,
     topContent: (@Composable () -> Unit)? = null,
+    initialOperationalState: OperationalWorkState? = null,
+    dueSoonHorizonDays: Int = 14,
+    businessZoneId: String = ZoneId.systemDefault().id,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
-    val filtered = filterVisits(values, dateFilter, statusFilter, businessDate, query)
+    val zone = runCatching { ZoneId.of(businessZoneId) }.getOrDefault(ZoneId.systemDefault())
+    val now = Instant.now()
+    val filtered = if (initialOperationalState == null) filterVisits(values, dateFilter, statusFilter, businessDate, query) else values.filter { visit ->
+        OperationalWorkClassifier.classifyVisit(visit, businessDate, now, zone, dueSoonHorizonDays) == initialOperationalState &&
+            (query.isBlank() || listOf(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, visit.customerName).any { it.contains(query, true) })
+    }
     LazyColumn(
         modifier.padding(padding).testTag("work-visits-list"),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
@@ -288,7 +324,8 @@ internal fun VisitsWorkScreen(
         item {
             ServiceLoopTextField(query, { query = it }, "Search visits", modifier = Modifier.testTag("visit-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
-            ServiceLoopFilterSelectorRow(
+            if (initialOperationalState != null) Text(OperationalWorkClassifier.sectionTitle(OperationalWorkKind.VISIT, initialOperationalState), style = MaterialTheme.typography.titleMedium)
+            if (initialOperationalState == null) ServiceLoopFilterSelectorRow(
                 first = {
                     ServiceLoopFilterSelector(
                         label = "Date",
@@ -311,7 +348,7 @@ internal fun VisitsWorkScreen(
         }
         if (filtered.isEmpty()) item { Text("No visits match these filters.") }
         items(filtered) { visit ->
-            ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state) {
+            ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, operationalState = OperationalWorkClassifier.classifyVisit(visit, businessDate, now, zone, dueSoonHorizonDays)) {
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
@@ -328,11 +365,16 @@ internal fun FollowUpsWorkScreen(
     initialDateFilter: FollowUpDateFilter = FollowUpDateFilter.ALL,
     initialStatusFilter: FollowUpStatusFilter = FollowUpStatusFilter.OPEN,
     topContent: (@Composable () -> Unit)? = null,
+    dueSoonHorizonDays: Int = 14,
+    initialOperationalState: OperationalWorkState? = null,
 ) {
     var dateFilter by rememberSaveable(initialDateFilter) { mutableStateOf(initialDateFilter) }
     var statusFilter by rememberSaveable(initialStatusFilter) { mutableStateOf(initialStatusFilter) }
     var query by rememberSaveable { mutableStateOf("") }
-    val filtered = filterFollowUps(values, dateFilter, statusFilter, businessDate, query)
+    val filtered = if (initialOperationalState == null) filterFollowUps(values, dateFilter, statusFilter, businessDate, query) else values.filter { followUp ->
+        OperationalWorkClassifier.classifyFollowUp(followUp.state, followUp.dueDate, businessDate, dueSoonHorizonDays) == initialOperationalState &&
+            (query.isBlank() || listOfNotNull(followUp.reference, followUp.title, followUp.customerName, followUp.siteName, followUp.equipmentName, followUp.dueDate).any { it.contains(query, true) })
+    }
     LazyColumn(
         modifier.padding(padding).testTag("work-follow-ups-list"),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
@@ -342,7 +384,8 @@ internal fun FollowUpsWorkScreen(
         item {
             ServiceLoopTextField(query, { query = it }, "Search follow-ups", modifier = Modifier.testTag("follow-up-search"))
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
-            ServiceLoopFilterSelectorRow(
+            if (initialOperationalState != null) Text(OperationalWorkClassifier.sectionTitle(OperationalWorkKind.FOLLOW_UP, initialOperationalState), style = MaterialTheme.typography.titleMedium)
+            if (initialOperationalState == null) ServiceLoopFilterSelectorRow(
                 first = {
                     ServiceLoopFilterSelector(
                         label = "Due date",
@@ -370,6 +413,7 @@ internal fun FollowUpsWorkScreen(
                 listOfNotNull(follow.customerName, follow.siteName, follow.equipmentName).filter { it.isNotBlank() }.joinToString(" · "),
                 "Due ${follow.dueDate}",
                 follow.state,
+                operationalState = OperationalWorkClassifier.classifyFollowUp(follow.state, follow.dueDate, businessDate, dueSoonHorizonDays),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
     }

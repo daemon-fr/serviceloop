@@ -125,7 +125,21 @@ data class InspectionDraft(
     val dispatchDocumentationDisposition: String? = null,
 )
 
-data class VisitSummary(val id: String, val reference: String, val siteName: String, val actualServiceDate: String, val state: String, val finalRecordId: String?, val resumeWorkItemId: String? = null)
+data class VisitSummary(
+    val id: String,
+    val reference: String,
+    val siteName: String,
+    val actualServiceDate: String,
+    val state: String,
+    val finalRecordId: String?,
+    val resumeWorkItemId: String? = null,
+    val customerId: String = "",
+    val customerName: String = "",
+    val siteId: String = "",
+    val equipmentId: String? = null,
+    val scheduledAtEpochMillis: Long? = null,
+    val modifiedAtEpochMillis: Long = 0L,
+)
 
 data class BusinessProfile(
     val businessName: String,
@@ -163,7 +177,10 @@ data class CompletionLine(
     val equipmentDescription: String? = null,
     val currentObligationOutstanding: Boolean = false,
     val capturedObligationId: String? = null,
+    val checklistResults: List<ReviewChecklistResult> = emptyList(),
 )
+
+data class ReviewChecklistResult(val label: String, val result: String)
 
 enum class CompletionBlockerKind { OUTCOME, WORK_PERFORMED, NOT_PERFORMED_REASON, CHECKLIST_INCOMPLETE, FINDING_DESCRIPTION, NEXT_DUE }
 data class CompletionBlocker(val kind: CompletionBlockerKind, val message: String, val questionId: String? = null, val questionLabel: String? = null)

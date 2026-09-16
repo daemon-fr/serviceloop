@@ -4,6 +4,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -74,6 +76,33 @@ class WorkFilterSelectorUiTest {
         compose.onNodeWithContentDescription("Visit, No visit").assertIsDisplayed()
         compose.onNodeWithText("P-no-visit · Service no-visit").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("P-has-visit · Service has-visit").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun dueServiceActionsStayVisibleAndEnableOnlyForValidSelection() {
+        val values = listOf(due("selectable", null))
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(values),
+            businessDate = LocalDate.of(2026, 9, 11),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(EmptyRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    DueServicesScreen(values, PaddingValues(), state, viewModel, rememberNavController())
+                }
+            }
+        }
+
+        compose.onNodeWithTag("book-selected-services").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithTag("start-selected-services").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithTag("entity-record-selection").performClick()
+        compose.onNodeWithTag("book-selected-services").assertIsEnabled()
+        compose.onNodeWithTag("start-selected-services").assertIsEnabled()
+        compose.onNodeWithTag("entity-record-selection").performClick()
+        compose.onNodeWithTag("book-selected-services").assertIsNotEnabled()
+        compose.onNodeWithTag("start-selected-services").assertIsNotEnabled()
     }
 
     @Test fun visitsAndFollowUpsExposeAdoptedDefaultsAndNoSupersededFilterCopy() {

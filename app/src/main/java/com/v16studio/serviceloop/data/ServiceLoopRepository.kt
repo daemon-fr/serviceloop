@@ -15,10 +15,28 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.sync.withLock
 
 interface ServiceLoopRepository {
     suspend fun home(): HomeSummary
+    suspend fun operationalDashboard(scope: WorkScope): OperationalDashboardProjection = OperationalDashboardProjector.project(
+        scope = scope,
+        visits = visits(),
+        dueServices = dueServices(),
+        followUps = followUps(),
+        today = LocalDate.now(),
+        now = java.time.Instant.now(),
+        businessZone = ZoneId.systemDefault(),
+        dueSoonHorizonDays = 14,
+    )
+    fun observeOperationalDashboard(scope: WorkScope): Flow<OperationalDashboardProjection> = flow { emit(operationalDashboard(scope)) }
     suspend fun equipment(id: String): EquipmentDetail?
     suspend fun equipmentList(): List<EquipmentSummary>
     suspend fun customerList(): List<CustomerSummary>
@@ -260,7 +278,60 @@ class RoomServiceLoopRepository(
     override suspend fun visits() = dao.visits().map { row ->
         val state = VisitLifecycleState.normalize(row.state)
         val resume = if (state == VisitLifecycleState.WORKING.code) serviceVisitProgress(row.id).preferredResumeItem()?.workItemId ?: row.resumeWorkItemId else row.resumeWorkItemId
-        VisitSummary(row.id, row.reference, row.siteName, row.actualServiceDate, state, row.finalRecordId, resume)
+        VisitSummary(
+            id = row.id,
+            reference = row.reference,
+            siteName = row.siteName,
+            actualServiceDate = row.actualServiceDate,
+            state = state,
+            finalRecordId = row.finalRecordId,
+            resumeWorkItemId = resume,
+            customerId = row.customerId,
+            customerName = row.customerName,
+            siteId = row.siteId,
+            equipmentId = row.equipmentId,
+            scheduledAtEpochMillis = row.scheduledAtEpochMillis,
+            modifiedAtEpochMillis = row.modifiedAtEpochMillis,
+        )
+    }
+
+    override suspend fun operationalDashboard(scope: WorkScope): OperationalDashboardProjection {
+        val preferences = reminderPreferences()
+        val visits = visits()
+        val dueServices = mapDueServices(dao.dueServices(), preferences.dueSoonHorizonDays)
+        val followUps = dao.followUps().map { followUpDetail(it) }
+        return OperationalDashboardProjector.project(
+            scope = scope,
+            visits = visits,
+            dueServices = dueServices,
+            followUps = followUps,
+            today = businessTime.today(),
+            now = businessTime.instant(),
+            businessZone = businessTime.zoneId,
+            dueSoonHorizonDays = preferences.dueSoonHorizonDays,
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeOperationalDashboard(scope: WorkScope): Flow<OperationalDashboardProjection> = flow {
+        val invalidations = database.invalidationTracker.createFlow(
+            "working_visits", "work_items", "service_plans", "service_obligations", "visit_claims",
+            "follow_ups", "equipment", "sites", "customers", "reminder_preferences", emitInitialState = true,
+        )
+        val dateChanges = businessDateSignal?.tokens ?: flowOf(null)
+        merge(invalidations.map { Unit }, dateChanges.map { Unit }).onStart { emit(Unit) }.transformLatest {
+            val projection = operationalDashboard(scope)
+            emit(projection)
+            val nowMillis = businessTime.instant().toEpochMilli()
+            val nextAppointment = projection.sections.asSequence()
+                .flatMap { it.items.asSequence() }
+                .filter { it.kind == OperationalWorkKind.VISIT && it.scheduledAtEpochMillis != null }
+                .mapNotNull { it.scheduledAtEpochMillis }
+                .filter { it > nowMillis }
+                .minOrNull()
+            if (nextAppointment == null) awaitCancellation()
+            delay((nextAppointment - nowMillis).coerceAtLeast(1L))
+        }.collect { emit(it) }
     }
     override suspend fun equipmentList() = dao.equipmentList().map { EquipmentSummary(it.id, it.name, it.reference, it.technicianIdentifier, it.siteName, it.customerName, it.nearestDueDate, CustomerType.fromCode(it.customerType)) }
     override suspend fun customerList() = dao.customerList().map { CustomerSummary(it.id, it.name, it.reference, it.siteCount, it.equipmentCount, CustomerType.fromCode(it.customerType)) }
@@ -1133,7 +1204,43 @@ class RoomServiceLoopRepository(
                 equipmentDescription = item.equipmentDescriptionSnapshot,
                 currentObligationOutstanding = evaluation.currentObligationOutstanding,
                 capturedObligationId = item.capturedObligationId,
+                checklistResults = work.reviewChecklistResults(),
             )
+        }
+    }
+
+    private fun LoadedServiceWork.reviewChecklistResults(): List<ReviewChecklistResult> {
+        val answers = responses.associateBy { it.checklistItemSnapshotId }
+        return checklistItems.mapNotNull { question ->
+            val answer = answers[question.id]
+            val disposition = answer?.disposition ?: "UNANSWERED"
+            val reason = answer?.reason?.trim()?.takeIf(String::isNotEmpty)
+            val result = when (question.responseType) {
+                "STATUS" -> when (disposition) {
+                    "OK" -> "OK"
+                    "NOT_CHECKED" -> "Not checked"
+                    "UNANSWERED" -> if (question.required) "Not answered" else null
+                    "ISSUE_FOUND" -> reason?.let { "Issue found: $it" } ?: "Issue found"
+                    "NOT_APPLICABLE" -> reason?.let { "Not applicable: $it" } ?: "Not applicable"
+                    else -> null
+                }
+                "TEXT" -> when (disposition) {
+                    "VALUE" -> answer?.textValue?.trim()?.takeIf(String::isNotEmpty)
+                    "NOT_APPLICABLE" -> reason?.let { "Not applicable: $it" } ?: "Not applicable"
+                    "UNANSWERED" -> if (question.required) "Not answered" else null
+                    else -> null
+                }
+                "NUMBER" -> when (disposition) {
+                    "VALUE" -> answer?.numberValue?.trim()?.takeIf(String::isNotEmpty)?.let { value ->
+                        value + question.unit?.trim()?.takeIf(String::isNotEmpty)?.let { " $it" }.orEmpty()
+                    }
+                    "NOT_APPLICABLE" -> reason?.let { "Not applicable: $it" } ?: "Not applicable"
+                    "UNANSWERED" -> if (question.required) "Not answered" else null
+                    else -> null
+                }
+                else -> null
+            }
+            result?.let { ReviewChecklistResult(question.label, it) }
         }
     }
 
@@ -1757,7 +1864,7 @@ class RoomServiceLoopRepository(
     private fun validatePlan(input: PlanInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.intervalCount > 0); require(input.intervalUnit in setOf("DAYS", "WEEKS", "MONTHS", "YEARS")); LocalDate.parse(input.dueDate) }
     private fun validateTemplate(name: String, items: List<TemplateItemDraft>) { require(name.trim().isNotEmpty() && name.length <= 200); require(items.isNotEmpty()); items.forEach { require(it.label.trim().isNotEmpty() && it.label.length <= 300); require(it.responseType in setOf("STATUS", "TEXT", "NUMBER")); require(it.unit.length <= 30 && it.privateGuidance.length <= 2000) } }
     private fun reusableItem(revisionId: String, index: Int, item: TemplateItemDraft) = ReusableTemplateItemEntity(UUID.randomUUID().toString(), revisionId, index + 1, item.label.trim(), item.responseType, clean(item.unit).takeIf { item.responseType == "NUMBER" }, item.required, clean(item.privateGuidance))
-    private suspend fun followUpDetail(value: FollowUpEntity) = FollowUpDetail(value.id, value.reference, value.type, value.title, value.dueDate, value.state, value.customerId, value.siteId, value.equipmentId, value.privatePlanningNote.orEmpty(), value.closureReason, dao.customer(value.customerId)?.name.orEmpty(), value.siteId?.let { dao.site(it)?.name }, value.equipmentId?.let { dao.equipment(it)?.name })
+    private suspend fun followUpDetail(value: FollowUpEntity) = FollowUpDetail(value.id, value.reference, value.type, value.title, value.dueDate, value.state, value.customerId, value.siteId, value.equipmentId, value.privatePlanningNote.orEmpty(), value.closureReason, dao.customer(value.customerId)?.name.orEmpty(), value.siteId?.let { dao.site(it)?.name }, value.equipmentId?.let { dao.equipment(it)?.name }, value.updatedAtEpochMillis)
 
     private suspend fun captureTemplateSnapshot(templateId: String?, visitId: String, planId: String, now: Long): String? {
         val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
