@@ -154,7 +154,7 @@ fun <T> ServiceLoopChoicePair(
 }
 
 @Composable
-fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null) {
+fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, fieldTestTag: String? = null, onFocusLost: (() -> Unit)? = null, compact: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
     var restoreCompactFocus by remember { mutableStateOf(false) }
     var wasFocused by remember { mutableStateOf(false) }
@@ -186,13 +186,15 @@ fun ServiceLoopLongTextEditor(value: String, onValueChange: (String) -> Unit, la
     Column(modifier.fillMaxWidth().padding(bottom = ServiceLoopUiTokens.Space.lg), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
     Box(Modifier.fillMaxWidth()) {
         OutlinedTextField(
-            state = editorState, label = { Text(label) }, lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3), enabled = enabled, isError = isError,
+            state = editorState, label = { Text(label) }, lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = if (compact) 2 else 3), enabled = enabled, isError = isError,
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.focus, unfocusedBorderColor = c.outlineControl, cursorColor = c.action, errorBorderColor = c.errorInk, errorCursorColor = c.errorInk, disabledTextColor = c.disabledText, disabledBorderColor = c.disabledContainer, disabledLabelColor = c.disabledText),
             textStyle = ServiceLoopUiTokens.Type.body,
             // Keep the final line clear of the 48dp expand target without reserving
             // a full-width suffix on every line of ordinary text.
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 52.dp),
+             contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 52.dp)
+                .takeUnless { compact }
+                ?: PaddingValues(start = 16.dp, top = 10.dp, end = 52.dp, bottom = 10.dp),
             modifier = Modifier.fillMaxWidth().focusRequester(compactFocusRequester)
                 .onFocusChanged { focusState ->
                     if (wasFocused && !focusState.isFocused) onFocusLost?.invoke()

@@ -603,7 +603,32 @@ class ServiceLoopViewModel(
     fun updatePlan(id: String, input: PlanInput, onSuccess: (String) -> Unit) = runOperation({ repository.updatePlan(id, input); id }, onSuccess)
     fun createTemplate(name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.createTemplate(name, items) }, onSuccess)
     fun reviseTemplate(id: String, name: String, items: List<TemplateItemDraft>, onSuccess: (String) -> Unit) = runOperation({ repository.reviseTemplate(id, name, items); id }, onSuccess)
-    fun setTemplateState(id: String, state: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.setTemplateState(id, state); id }) { value -> loadTemplate(value); loadTemplates(); onSuccess(value) }
+    fun setTemplateState(id: String, state: String, onSuccess: (String) -> Unit = {}) {
+        if (_state.value.operationInProgress) return
+        val request = issueRequest("template")
+        _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
+        viewModelScope.launch {
+            try {
+                repository.setTemplateState(id, state)
+                val refreshed = repository.template(id) ?: error("Template state was saved, but its details could not be refreshed")
+                val usage = repository.templateServicePlanReferenceCount(id)
+                if (isCurrent(request)) _state.update {
+                    it.copy(
+                        template = refreshed,
+                        templatePlanReferenceCount = usage,
+                        operationInProgress = false,
+                        operationMessage = "Saved on this device",
+                    )
+                }
+                refreshRootDataNonBlocking()
+                loadTemplates()
+                onSuccess(id)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (isCurrent(request)) _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Not saved") }
+            }
+        }
+    }
     fun deleteTemplate(id: String, onSuccess: (String) -> Unit = {}) = runOperation({ repository.deleteTemplate(id); id }) { value -> loadTemplates(); onSuccess(value) }
     fun cloneTemplate(id: String, onSuccess: (String) -> Unit) = runOperation({ repository.cloneTemplate(id) }, onSuccess)
     fun createVisit(planIds: List<String>, state: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.createVisit(planIds, state, date, scheduledAt) }, onSuccess)

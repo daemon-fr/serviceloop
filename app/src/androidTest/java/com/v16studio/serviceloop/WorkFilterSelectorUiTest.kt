@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 import java.time.LocalDate
@@ -45,6 +47,24 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class WorkFilterSelectorUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Before
+    fun clearPersistedFilterPreferences() {
+        compose.activity.applicationContext
+            .getSharedPreferences("serviceloop_ui_filter_preferences", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
+
+    @After
+    fun clearPersistedFilterPreferencesAfterTest() {
+        compose.activity.applicationContext
+            .getSharedPreferences("serviceloop_ui_filter_preferences", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
 
     @Test fun dueVisitSelectorUsesSelectedMenuStateAndUpdatesResultsImmediately() {
         val state = UiState(

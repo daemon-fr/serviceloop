@@ -3,9 +3,11 @@ package com.v16studio.serviceloop.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,7 +40,9 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopStatusBadge
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconAction
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCompactIconLabelAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
@@ -161,11 +165,11 @@ internal fun TemplateDetailScreen(
                 Text("${detail.reference} · ${detail.name} (v${detail.revisionNumber})", style = MaterialTheme.typography.headlineSmall)
                 ServiceLoopStatusBadge(detail.state)
                 ServiceLoopResponsivePair(
-                    first = { ServiceLoopDestructiveButton("Delete", { if (planReferenceCount > 0) showDeleteBlocked = true else showDeleteConfirmation = true }, Modifier.fillMaxWidth(), enabled = viewModel != null) },
+                    first = { ServiceLoopDestructiveButton("Delete", { if (planReferenceCount > 0) showDeleteBlocked = true else showDeleteConfirmation = true }, Modifier.fillMaxWidth(), enabled = viewModel != null, showIcon = false) },
                     second = { ServiceLoopSecondaryButton("Clone", { nav.navigate("template/new?cloneFrom=${detail.id}") }, Modifier.fillMaxWidth()) },
                 )
                 ServiceLoopResponsivePair(
-                    first = { ServiceLoopSecondaryButton(if (detail.state == "DISABLED") "Enable" else "Disable", { viewModel?.setTemplateState(detail.id, if (detail.state == "DISABLED") "ACTIVE" else "DISABLED") }, Modifier.fillMaxWidth(), enabled = viewModel != null) },
+                    first = { ServiceLoopSecondaryButton(if (detail.state == "DISABLED") "Activate" else "Disable", { viewModel?.setTemplateState(detail.id, if (detail.state == "DISABLED") "ACTIVE" else "DISABLED") }, Modifier.fillMaxWidth(), enabled = viewModel != null) },
                     second = { ServiceLoopPrimaryButton("Edit", { nav.navigate("template/edit/${detail.id}") }, Modifier.fillMaxWidth(), enabled = detail.state != "DELETED") },
                 )
             }
@@ -176,17 +180,16 @@ internal fun TemplateDetailScreen(
                 title = "${index + 1}. ${item.label}",
                 context = item.responseType,
                 metadata = buildString { append(if (item.required) "Required" else "Optional"); item.unit.takeIf(String::isNotBlank)?.let { append(" · $it") } },
-                showDisclosure = true,
-                onClick = { nav.navigate("template/edit/${detail.id}?focusItem=$index") },
+                showDisclosure = false,
+                onClick = null,
                 modifier = Modifier.testTag("template-detail-item-$index"),
             )
         }
         item {
-            ServiceLoopDenseNavigableRow(
-                title = "Version history (${versions.size.coerceAtLeast(1)})",
-                context = "Read-only revisions",
+            ServiceLoopNavigationButton(
+                label = "Version history (${versions.size.coerceAtLeast(1)})",
                 onClick = { nav.navigate("template/history/${detail.id}") },
-                modifier = Modifier.testTag("template-version-history"),
+                modifier = Modifier.fillMaxWidth().testTag("template-version-history"),
             )
         }
     }
@@ -240,10 +243,27 @@ internal fun TemplateVersionScreen(version: TemplateRevisionDetail?, padding: Pa
 
 @Composable
 private fun TemplateTypeChoice(type: String, selected: Boolean, description: String, onSelected: () -> Unit) {
-    Card(Modifier.fillMaxWidth().testTag("new-template-type-$type").clickable(onClick = onSelected).semantics { this.role = Role.RadioButton; this.selected = selected }) {
+    val colors = LocalServiceLoopTokens.current
+    Surface(
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .selectable(selected = selected, enabled = true, role = Role.RadioButton, onClick = onSelected)
+            .testTag("new-template-type-$type"),
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+        color = if (selected) colors.selection else colors.surface,
+        border = BorderStroke(
+            if (selected) ServiceLoopUiTokens.Stroke.selected else ServiceLoopUiTokens.Stroke.outline,
+            if (selected) colors.selectionOutline else colors.outlineControl,
+        ),
+    ) {
         Column(Modifier.padding(ServiceLoopUiTokens.Space.md), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-            Text(type, style = MaterialTheme.typography.labelLarge, color = if (selected) LocalServiceLoopTokens.current.action else LocalServiceLoopTokens.current.textSecondary)
-            Text(description, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                type,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (selected) colors.selectionInk else colors.textSecondary,
+            )
+            Text(description, maxLines = 2, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
         }
     }
 }
@@ -269,26 +289,71 @@ private fun TemplateItemDraftEditor(
                 showDisclosure = true,
                 onClick = onToggle,
                 contentPadding = PaddingValues(0.dp),
+                disclosureIcon = if (expanded) ServiceLoopIcons.CaretDown else ServiceLoopIcons.CaretRight,
+                disclosureTestTag = "template-item-caret-${if (expanded) "down" else "right"}-$index",
             )
             if (expanded) {
                 DailyField(item.label, { onChange(item.copy(label = it)) }, "Item label")
                 ServiceLoopFilterSelector("Response type", item.responseType, listOf("STATUS", "TEXT", "NUMBER").map { it to it }, { onChange(item.copy(responseType = it)) }, testTag = "template-item-type-$index")
                 if (item.responseType == "NUMBER") DailyField(item.unit, { onChange(item.copy(unit = it)) }, "Unit")
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(item.required, { onChange(item.copy(required = it)) }); Text("Required") }
-                ServiceLoopLongTextEditor(item.privateGuidance, { onChange(item.copy(privateGuidance = it)) }, "Private technician guidance", true, fieldTestTag = "template-item-guidance-$index")
-                ServiceLoopResponsivePair(
-                    first = { TextButton(onMoveUp, Modifier.fillMaxWidth().testTag("template-item-move-up-$index"), enabled = index > 0) { Text("Move up") } },
-                    second = { TextButton(onMoveDown, Modifier.fillMaxWidth().testTag("template-item-move-down-$index"), enabled = index < lastIndex) { Text("Move down") } },
-                )
-                ServiceLoopResponsivePair(
-                    first = { TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Done") } },
-                    second = { TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") } },
-                )
+                ServiceLoopLongTextEditor(item.privateGuidance, { onChange(item.copy(privateGuidance = it)) }, "Private technician guidance", true, fieldTestTag = "template-item-guidance-$index", compact = true)
+                val colors = LocalServiceLoopTokens.current
+                Row(
+                    Modifier.fillMaxWidth().testTag("template-item-tool-strip-$index"),
+                    horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+                ) {
+                    ServiceLoopCompactIconLabelAction(
+                        accessibleName = "Remove item",
+                        icon = ServiceLoopIcons.XCircle,
+                        label = "Remove",
+                        onClick = onRemove,
+                        modifier = Modifier.weight(1f).testTag("template-item-remove-$index"),
+                        containerColor = colors.destructive,
+                        contentColor = colors.onDestructive,
+                    )
+                    ServiceLoopCompactIconLabelAction(
+                        accessibleName = "Move item up",
+                        icon = ServiceLoopIcons.ArrowCircleUp,
+                        label = "Move up",
+                        onClick = onMoveUp,
+                        enabled = index > 0,
+                        modifier = Modifier.weight(1f).testTag("template-item-move-up-$index"),
+                        containerColor = colors.selection,
+                        contentColor = colors.action,
+                    )
+                    ServiceLoopCompactIconLabelAction(
+                        accessibleName = "Move item down",
+                        icon = ServiceLoopIcons.ArrowCircleDown,
+                        label = "Move down",
+                        onClick = onMoveDown,
+                        enabled = index < lastIndex,
+                        modifier = Modifier.weight(1f).testTag("template-item-move-down-$index"),
+                        containerColor = colors.selection,
+                        contentColor = colors.action,
+                    )
+                    ServiceLoopCompactIconLabelAction(
+                        accessibleName = "Done editing item",
+                        icon = ServiceLoopIcons.CheckCircle,
+                        label = "Done",
+                        onClick = onToggle,
+                        modifier = Modifier.weight(1f).testTag("template-item-done-$index"),
+                        containerColor = colors.action,
+                        contentColor = colors.onAction,
+                    )
+                }
             } else {
-                ServiceLoopResponsivePair(
-                    first = { TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Edit") } },
-                    second = { TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") } },
-                )
+                Row(
+                    Modifier.fillMaxWidth().testTag("template-item-collapsed-actions-$index"),
+                    horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") }
+                    }
+                    Box(Modifier.weight(1f)) {
+                        TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Edit") }
+                    }
+                }
             }
         }
     }
@@ -342,14 +407,33 @@ internal fun TemplateEditorScreen(
                 expanded = expandedIndex == index,
                 onToggle = { expandedIndex = if (expandedIndex == index) null else index },
                 onChange = { value -> draftItems = draftItems.toMutableList().also { it[index] = value } },
-                onMoveUp = { if (index > 0) draftItems = draftItems.toMutableList().also { it[index] = it[index - 1].also { previous -> it[index - 1] = it[index] } } },
-                onMoveDown = { if (index < draftItems.lastIndex) draftItems = draftItems.toMutableList().also { it[index] = it[index + 1].also { next -> it[index + 1] = it[index] } } },
+                onMoveUp = {
+                    if (index > 0) {
+                        draftItems = draftItems.toMutableList().also { list ->
+                            val moved = list[index]
+                            list[index] = list[index - 1]
+                            list[index - 1] = moved
+                        }
+                        if (expandedIndex == index) expandedIndex = index - 1
+                    }
+                },
+                onMoveDown = {
+                    if (index < draftItems.lastIndex) {
+                        draftItems = draftItems.toMutableList().also { list ->
+                            val moved = list[index]
+                            list[index] = list[index + 1]
+                            list[index + 1] = moved
+                        }
+                        if (expandedIndex == index) expandedIndex = index + 1
+                    }
+                },
                 onRemove = { draftItems = draftItems.filterIndexed { itemIndex, _ -> itemIndex != index }; expandedIndex = null },
             )
         }
         item {
             Text("Add new item", style = MaterialTheme.typography.titleMedium)
             DailyField(label, { label = it }, "Item label")
+            Text("Item type", style = ServiceLoopUiTokens.Type.label, color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("new-template-item-type-label"))
             Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                 TemplateTypeChoice("STATUS", type == "STATUS", "Record whether the check is satisfactory, needs attention, or cannot be completed.") { type = "STATUS" }
                 TemplateTypeChoice("TEXT", type == "TEXT", "Record a written observation, note, or result.") { type = "TEXT" }
@@ -357,7 +441,7 @@ internal fun TemplateEditorScreen(
             }
             if (type == "NUMBER") DailyField(unit, { unit = it }, "Unit")
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(required, { required = it }); Text("Required") }
-            ServiceLoopLongTextEditor(guidance, { guidance = it }, "Private technician guidance", true, fieldTestTag = "new-template-private-guidance")
+            ServiceLoopLongTextEditor(guidance, { guidance = it }, "Private technician guidance", true, fieldTestTag = "new-template-private-guidance", compact = true)
             ServiceLoopSecondaryButton("Add item", { draftItems = draftItems + TemplateItemDraft(label.trim(), type, unit.trim(), required, guidance.trim()); label = ""; unit = ""; guidance = ""; required = true }, enabled = label.trim().isNotBlank(), modifier = Modifier.fillMaxWidth().testTag("add-template-item"))
         }
         item {

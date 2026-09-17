@@ -187,6 +187,76 @@ fun <T> ServiceLoopContentTabs(
     }
 }
 
+/** Keeps a small action family readable by giving longer labels the width they need. */
+@Composable
+fun ServiceLoopAdaptiveActionRow(
+    actions: List<@Composable () -> Unit>,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stack = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.8f
+        if (stack) {
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+            ) {
+                actions.forEach { action -> action() }
+            }
+        } else {
+            val gap = ServiceLoopUiTokens.Space.sm
+            Layout(
+                content = { actions.forEach { action -> action() } },
+                modifier = Modifier.fillMaxWidth(),
+            ) { measurables, constraints ->
+                if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
+                val gapPx = gap.roundToPx()
+                val available = (constraints.maxWidth - gapPx * (measurables.size - 1)).coerceAtLeast(0)
+                val minimum = measurables.map { it.minIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
+                val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
+                val minimumTotal = minimum.sum()
+                val widths = if (minimumTotal >= available) {
+                    minimum.map { (available.toLong() * it / minimumTotal).toInt().coerceAtLeast(1) }.toMutableList()
+                } else {
+                    val allocated = minimum.toMutableList()
+                    var remaining = available - minimumTotal
+                    val desiredExtras = natural.mapIndexed { index, width -> (width - minimum[index]).coerceAtLeast(0) }
+                    val desiredTotal = desiredExtras.sum()
+                    val towardNatural = minOf(remaining, desiredTotal)
+                    if (towardNatural > 0 && desiredTotal > 0) {
+                        desiredExtras.forEachIndexed { index, extra ->
+                            allocated[index] += (towardNatural.toLong() * extra / desiredTotal).toInt()
+                        }
+                        remaining -= allocated.sum() - minimumTotal
+                    }
+                    if (remaining > 0) {
+                        allocated.indices.forEach { index ->
+                            allocated[index] += remaining / allocated.size + if (index < remaining % allocated.size) 1 else 0
+                        }
+                    }
+                    allocated
+                }.also { allocated ->
+                    val difference = available - allocated.sum()
+                    if (allocated.isNotEmpty()) allocated[allocated.lastIndex] = (allocated.last() + difference).coerceAtLeast(1)
+                }
+                val height = measurables.mapIndexed { index, measurable -> measurable.maxIntrinsicHeight(widths[index]) }
+                    .maxOrNull()
+                    ?.coerceIn(constraints.minHeight, constraints.maxHeight)
+                    ?: constraints.minHeight
+                val placeables = measurables.mapIndexed { index, measurable ->
+                    measurable.measure(Constraints.fixed(widths[index], height))
+                }
+                layout(constraints.maxWidth, height) {
+                    var x = 0
+                    placeables.forEach { placeable ->
+                        placeable.placeRelative(x, 0)
+                        x += placeable.width + gapPx
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun <T> ServiceLoopChoiceGroup(
     options: List<Pair<T, String>>,
@@ -641,7 +711,10 @@ fun ServiceLoopDenseNavigableRow(
     leadingContent:(@Composable RowScope.()->Unit)?=null,
     showDisclosure:Boolean=true,selected:Boolean=false,statusContent:(@Composable ()->Unit)?=null,showDivider:Boolean=true,
     selectedBackground:Boolean=true,
-    contentPadding: PaddingValues = PaddingValues(vertical = ServiceLoopUiTokens.Space.md), onClick:(()->Unit)?,
+    contentPadding: PaddingValues = PaddingValues(vertical = ServiceLoopUiTokens.Space.md),
+    disclosureIcon: Int = ServiceLoopIcons.Disclosure,
+    disclosureTestTag: String? = null,
+    onClick:(()->Unit)?,
 ) {
     val c=LocalServiceLoopTokens.current
     Row(
@@ -662,7 +735,7 @@ fun ServiceLoopDenseNavigableRow(
             statusContent?.invoke() ?: status?.takeIf{it.isNotBlank()}?.let{ServiceLoopStatusBadge(it)}
             actionLabel?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.action)}
         }
-        if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon).testTag("service-loop-disclosure-icon"),c.icon)
+        if(showDisclosure) ServiceLoopIcon(disclosureIcon,null,Modifier.size(ServiceLoopUiTokens.Size.icon).testTag(disclosureTestTag ?: "service-loop-disclosure-icon"),c.icon)
     }
 }
 

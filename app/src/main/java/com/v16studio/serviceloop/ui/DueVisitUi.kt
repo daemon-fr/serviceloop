@@ -102,7 +102,6 @@ internal fun DueServicesScreen(
     val selectionEnabled = selectedRows.isNotEmpty() && selectedRows.all { it.claimedVisitId == null && it.siteId == selectionSite } && !state.operationInProgress
     val listState = rememberLazyListState()
     val actionState = rememberWorkNewVisitActionState(listState)
-    val dockedBottomSpacer = rememberWorkNewVisitDockedBottomSpacer(listState, actionState)
     Column(modifier.fillMaxSize().padding(padding)) {
         Box(Modifier.weight(1f)) {
         LazyColumn(Modifier.fillMaxSize().testTag("due-services-list"), state = listState, contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, workNewVisitListBottomPadding(actionState)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -137,8 +136,7 @@ internal fun DueServicesScreen(
                     operationalState = operationalStateFor(due),
                 )
             }
-            item(key = WORK_NEW_VISIT_SHORT_PAGE_SPACER_KEY) { Spacer(Modifier.height(dockedBottomSpacer)) }
-            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
+            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
         WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
         }

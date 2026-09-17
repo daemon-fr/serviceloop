@@ -1,5 +1,6 @@
 package com.v16studio.serviceloop.ui
 
+import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,7 +15,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -39,6 +43,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
@@ -49,6 +54,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.io.FileOutputStream
 import java.time.LocalDate
 import com.v16studio.serviceloop.calendar.VisitCalendarState
 
@@ -200,6 +207,41 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("command-edit").assertIsDisplayed()
         compose.onNodeWithTag("command-create").assertIsDisplayed()
         assertTrue(navigated)
+        val navigationBounds = compose.onNodeWithTag("relationship-navigation").fetchSemanticsNode().boundsInRoot
+        val customerLabelBounds = compose.onNodeWithText("Customer", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val disclosureBounds = compose.onNodeWithTag("service-loop-disclosure-icon", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertEquals(navigationBounds.center.x, customerLabelBounds.center.x, 2f)
+        assertTrue(disclosureBounds.center.x > customerLabelBounds.center.x)
+    }
+
+    @Test fun siteActionsGiveLongerNavigationLabelsMoreWidth() {
+        val detail = SiteDetail(
+            id = "site-layout",
+            customerId = "customer-layout",
+            customerName = "Customer layout",
+            reference = "ST-LAYOUT",
+            name = "Main site",
+            address = "123 Main Street",
+            contactName = "",
+            phone = "",
+            email = "",
+            privateAccessNote = "",
+            isDefault = true,
+            equipment = emptyList(),
+        )
+        val viewModel = ServiceLoopViewModel(FakeRepository(site = detail)) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme { SiteDetailScreen(detail, PaddingValues(), rememberNavController(), viewModel) }
+            }
+        }
+        val customer = compose.onNodeWithTag("site-customer-link").fetchSemanticsNode().boundsInRoot
+        val edit = compose.onNodeWithTag("site-edit-link").fetchSemanticsNode().boundsInRoot
+        val maps = compose.onNodeWithTag("site-maps-link").fetchSemanticsNode().boundsInRoot
+        assertTrue("Customer action should receive the widest natural slot", customer.width >= edit.width)
+        assertTrue("Customer action should receive the widest natural slot", customer.width >= maps.width)
+        assertTrue(customer.right <= edit.left)
+        assertTrue(edit.right <= maps.left)
     }
 
     @Test fun customerEditShowsTheSameCheckboxAndExplainsAPlanBlock() {
@@ -239,7 +281,7 @@ class B026LocalFlexibleWorkUiTest {
         assertTrue("Plan actions need breathing room", firstActionTop - explanationBottom >= 16f)
     }
 
-    @Test fun shortAndLongVisitsListsUseSharedNewVisitDocking() {
+    @Test fun shortAndLongVisitsListsKeepNaturalNewVisitStableAndFloatOnlyForLongLists() {
         val short = listOf(VisitSummary("short", "V-SHORT", "Site", "2026-09-05", "BOOKED", null, customerId = "customer", customerName = "Customer"))
         val long = (1..24).map { index -> VisitSummary("visit-$index", "V-$index", "Site $index", "2026-09-05", "BOOKED", null, customerId = "customer", customerName = "Customer") }
         compose.runOnUiThread {
@@ -251,10 +293,9 @@ class B026LocalFlexibleWorkUiTest {
         }
         compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
-        val density = compose.activity.resources.displayMetrics.density
-        val shortListBottom = compose.onNodeWithTag("work-visits-list").fetchSemanticsNode().boundsInRoot.bottom
-        val shortButtonBottom = compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.bottom
-        assertTrue("Short docked Work should end with only normal spacing", shortListBottom - shortButtonBottom <= 24f * density)
+        val shortButtonTop = compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.top
+        compose.waitForIdle()
+        assertEquals(shortButtonTop, compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.top, 0.5f)
 
         compose.runOnUiThread {
             compose.activity.setContent {
@@ -264,13 +305,10 @@ class B026LocalFlexibleWorkUiTest {
             }
         }
         compose.onNodeWithTag("new-visit-work-floating").assertIsDisplayed()
-        compose.onAllNodesWithTag("new-visit-work-bottom").assertCountEquals(0)
         compose.onNodeWithTag("work-visits-list").performScrollToNode(hasTestTag("new-visit-slot"))
         compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
+        compose.onAllNodesWithTag("new-visit-work-bottom").assertCountEquals(1)
         assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
-        val dockedListBottom = compose.onNodeWithTag("work-visits-list").fetchSemanticsNode().boundsInRoot.bottom
-        val dockedButtonBottom = compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.bottom
-        assertTrue("Docked Work should end with only normal spacing", dockedListBottom - dockedButtonBottom <= 24f * density)
     }
 
     @Test fun dueServicesFloatingActionSitsAbovePersistentSelectionActions() {
@@ -301,7 +339,7 @@ class B026LocalFlexibleWorkUiTest {
         assertTrue("Due Services floater should remain near the list right edge", list.right - floating.right <= 32f * density)
     }
 
-    @Test fun templateDetailChecklistRowsShowDisclosureAndOpenFocusedEditor() {
+    @Test fun templateDetailChecklistRowsAreQuietReadOnlyRowsAndOnlyHistoryNavigates() {
         val detail = TemplateDetail(
             "template-1",
             "IT-001",
@@ -316,6 +354,7 @@ class B026LocalFlexibleWorkUiTest {
                     val nav = rememberNavController()
                     NavHost(nav, "template") {
                         composable("template") { TemplateDetailScreen(detail, PaddingValues(), nav, versions = listOf(TemplateRevisionDetail("revision-2", 2, "Safety checks", 1L, detail.items))) }
+                        composable("template/history/{id}") { androidx.compose.material3.Text("Version history destination", modifier = androidx.compose.ui.Modifier.testTag("template-history-destination")) }
                         composable(
                             "template/edit/{id}?focusItem={focusItem}",
                             arguments = listOf(
@@ -329,13 +368,14 @@ class B026LocalFlexibleWorkUiTest {
                 }
             }
         }
-        compose.onNodeWithTag("template-detail-item-0", useUnmergedTree = true).assert(hasAnyDescendant(hasTestTag("service-loop-disclosure-icon")))
-        compose.onAllNodesWithTag("service-loop-disclosure-icon", useUnmergedTree = true).assertCountEquals(2)
-        compose.onNodeWithTag("template-detail-item-0").performClick()
-        compose.onNodeWithTag("template-editor-destination").assertIsDisplayed().assertTextContains("Focused item 0")
+        compose.onNodeWithTag("template-detail-item-0", useUnmergedTree = true).assertHasNoClickAction()
+        compose.onAllNodesWithTag("service-loop-disclosure-icon", useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithTag("template-version-history").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("template-history-destination").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("template-editor-destination").fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun templateItemUsesEditWhenCollapsedAndDoneWhenExpanded() {
+    @Test fun templateItemUsesRemoveEditRowAndCompactOrderedToolStrip() {
         val detail = TemplateDetail(
             "template-1",
             "IT-001",
@@ -360,17 +400,71 @@ class B026LocalFlexibleWorkUiTest {
             }
         }
 
+        val removeCollapsed = compose.onNodeWithTag("template-item-remove-0").fetchSemanticsNode().boundsInRoot
+        val editCollapsed = compose.onNodeWithTag("template-item-toggle-0").fetchSemanticsNode().boundsInRoot
+        assertTrue("Remove must be left of Edit", removeCollapsed.right <= editCollapsed.left)
         compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Edit")
         assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("template-item-toggle-0").performClick()
-        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Done")
-        assertTrue(compose.onAllNodesWithText("Edit").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("template-item-caret-down-0", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Move up").assertIsDisplayed()
         compose.onNodeWithText("Move down").assertIsDisplayed()
         compose.onNodeWithText("Remove").assertIsDisplayed()
-        compose.onNodeWithTag("template-item-toggle-0").performClick()
-        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Edit")
+        captureRendered("b030-template-item-expanded.png")
+        compose.onNodeWithText("Done").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("template-item-caret-right-0", useUnmergedTree = true).assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun templateStateActionReloadsSynchronousPairWithoutChangingRevision() {
+        val repository = FakeRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    val state by viewModel.state.collectAsState()
+                    LaunchedEffect(Unit) { viewModel.loadTemplate("template-state") }
+                    TemplateDetailScreen(state.template, PaddingValues(), rememberNavController(), viewModel, planReferenceCount = state.templatePlanReferenceCount ?: 0)
+                }
+            }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Disable").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Disable").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Activate").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(compose.onAllNodesWithText("Enable").fetchSemanticsNodes().isEmpty())
+        assertEquals("DISABLED", repository.templateDetail.state)
+        assertEquals(2, repository.templateDetail.revisionNumber)
+    }
+
+    @Test fun newTemplateShowsItemTypeCardsWithRadioSelectionAndCompactGuidance() {
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
+                        TemplateEditorScreen(null, PaddingValues(), UiState(loading = false), viewModel, rememberNavController())
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("new-template-item-type-label").assertIsDisplayed()
+        listOf("STATUS", "TEXT", "NUMBER").forEach { type ->
+            compose.onNodeWithTag("new-template-type-$type").assertIsDisplayed()
+            compose.onNodeWithText(
+                when (type) {
+                    "STATUS" -> "Record whether the check is satisfactory, needs attention, or cannot be completed."
+                    "TEXT" -> "Record a written observation, note, or result."
+                    else -> "Record a measured value, with a unit when needed."
+                },
+            ).assertIsDisplayed()
+        }
+        compose.onNodeWithTag("new-template-type-STATUS").assertIsSelected()
+        compose.onNodeWithTag("long-text-private-technician-guidance-expand", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("new-template-type-TEXT").performClick()
+        compose.onNodeWithTag("new-template-type-TEXT").assertIsSelected()
+        compose.onNodeWithTag("new-template-type-STATUS").assertIsNotSelected()
+        captureRendered("b030-template-new.png")
     }
 
     @Test fun startNowCreatesWorkingVisitAndOpensItsFirstService() {
@@ -618,6 +712,17 @@ class B026LocalFlexibleWorkUiTest {
     private fun assertAbsentText(text: String) = assertTrue(compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty())
     private fun assertAbsentTag(tag: String) = assertTrue(compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty())
 
+    private fun captureRendered(name: String) {
+        compose.waitForIdle()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b030-rendered")
+        check(directory.exists() || directory.mkdirs())
+        val screenshot = instrumentation.uiAutomation.takeScreenshot()
+        FileOutputStream(File(directory, name)).use { check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        screenshot.recycle()
+    }
+
     private fun equipment(id: String, name: String) = EquipmentSummary(id, name, "EQ-$id", "ID-$id", "Site", "Customer", null, CustomerType.STANDARD)
     private fun site(id: String, name: String, type: CustomerType, equipment: List<EquipmentSummary> = emptyList()) = VisitSiteOption(id, "ST-$id", name, "Customer $id", equipment, type)
     private fun VisitSiteOption.toDetail() = SiteDetail(id, "customer-$id", customerName, reference, name, "", "", "", "", "", true, equipment, customerType = customerType)
@@ -639,6 +744,7 @@ class B026LocalFlexibleWorkUiTest {
         var workingProgress: VisitServiceProgress? = null
         @Volatile var createdVisitId: String? = null
         @Volatile var createdCustomerType: CustomerType? = null
+        var templateDetail = TemplateDetail("template-state", "IT-STATE", "State template", 2, "ACTIVE", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
 
         override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
         override suspend fun equipment(id: String) = equipmentDetail
@@ -652,6 +758,12 @@ class B026LocalFlexibleWorkUiTest {
         override suspend fun visit(id: String) = visit
         override suspend fun serviceVisitProgress(visitId: String) = workingProgress ?: error("No progress")
         override suspend fun templates() = emptyList<TemplateSummary>()
+        override suspend fun template(id: String) = templateDetail.takeIf { it.id == id }
+        override suspend fun templateServicePlanReferenceCount(id: String) = 0
+        override suspend fun setTemplateState(id: String, state: String): Long {
+            templateDetail = templateDetail.copy(state = state)
+            return 1L
+        }
         override suspend fun equipmentLinkContext(workItemId: String) = linkContext
         override suspend fun linkWorkItemEquipment(workItemId: String, equipmentId: String): Long {
             inspectedDraft = inspectedDraft?.copy(equipmentId = equipmentId, equipmentName = "Known equipment", equipmentReference = "EQ-KNOWN", equipmentDescription = null)

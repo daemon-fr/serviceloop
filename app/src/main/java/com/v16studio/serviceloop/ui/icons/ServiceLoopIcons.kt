@@ -14,6 +14,8 @@ import com.v16studio.serviceloop.R
 object ServiceLoopIcons {
     @DrawableRes val Add = R.drawable.ic_sl_add
     @DrawableRes val Appearance = R.drawable.ic_sl_appearance
+    @DrawableRes val ArrowCircleDown = R.drawable.ic_sl_arrow_circle_down
+    @DrawableRes val ArrowCircleUp = R.drawable.ic_sl_arrow_circle_up
     @DrawableRes val Back = R.drawable.ic_sl_back
     @DrawableRes val Backup = R.drawable.ic_sl_backup
     @DrawableRes val Calendar = R.drawable.ic_sl_calendar

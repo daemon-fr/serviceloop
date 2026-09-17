@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAdaptiveActionRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
@@ -119,7 +120,14 @@ internal fun SiteDetailScreen(detail: SiteDetail?, padding: PaddingValues, nav: 
             Text(detail.address.ifBlank { "No address" })
             Text(listOf(detail.effectiveContactName, detail.effectivePhone, detail.effectiveEmail).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "No contact details" })
             if (detail.usesCustomerContact) Text("Inherited from customer", style = MaterialTheme.typography.bodySmall)
-             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopNavigationButton("Customer",{nav.navigate("customer/${detail.customerId}")},Modifier.weight(1f).fillMaxHeight().testTag("site-customer-link")); ServiceLoopSecondaryButton("Edit",{nav.navigate("site/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Maps",{handoffStatus=handoff(context,Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(detail.address)}")),"maps")},Modifier.weight(1f).fillMaxHeight(),enabled=detail.address.isNotBlank()) }
+             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); ServiceLoopAdaptiveActionRow(
+                actions = listOf(
+                    { ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.testTag("site-customer-link")) },
+                    { ServiceLoopSecondaryButton("Edit", { nav.navigate("site/edit/${detail.id}") }, Modifier.testTag("site-edit-link")) },
+                    { ServiceLoopSecondaryButton("Maps", { handoffStatus = handoff(context, Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(detail.address)}")), "maps") }, Modifier.testTag("site-maps-link"), enabled = detail.address.isNotBlank()) },
+                ),
+                modifier = Modifier.testTag("site-top-actions"),
+             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_DIAL,Uri.parse("tel:${Uri.encode(detail.effectivePhone)}")),"dialer")},enabled=detail.effectivePhone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Call,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("Call")}
                 TextButton({handoffStatus=handoff(context,Intent(Intent.ACTION_SENDTO,Uri.parse("smsto:${Uri.encode(detail.effectivePhone)}")),"SMS composer")},enabled=detail.effectivePhone.isNotBlank()){ServiceLoopIcon(ServiceLoopIcons.Sms,null,Modifier.size(24.dp));Spacer(Modifier.width(4.dp));Text("SMS")}

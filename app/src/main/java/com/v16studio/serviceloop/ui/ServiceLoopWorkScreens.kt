@@ -342,7 +342,6 @@ internal fun VisitsWorkScreen(
     }
     val listState = rememberLazyListState()
     val actionState = rememberWorkNewVisitActionState(listState)
-    val dockedBottomSpacer = rememberWorkNewVisitDockedBottomSpacer(listState, actionState)
     Box(modifier.padding(padding)) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("work-visits-list"),
@@ -381,8 +380,7 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-        item(key = WORK_NEW_VISIT_SHORT_PAGE_SPACER_KEY) { Spacer(Modifier.height(dockedBottomSpacer)) }
-        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
+            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
         WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
@@ -419,7 +417,6 @@ internal fun FollowUpsWorkScreen(
     }
     val listState = rememberLazyListState()
     val actionState = rememberWorkNewVisitActionState(listState)
-    val dockedBottomSpacer = rememberWorkNewVisitDockedBottomSpacer(listState, actionState)
     Box(modifier.padding(padding)) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("work-follow-ups-list"),
@@ -462,8 +459,7 @@ internal fun FollowUpsWorkScreen(
                 operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
-        item(key = WORK_NEW_VISIT_SHORT_PAGE_SPACER_KEY) { Spacer(Modifier.height(dockedBottomSpacer)) }
-        item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(actionState, onNewVisit) }
+            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
         WorkNewVisitFloatingAction(actionState, onNewVisit)
     }

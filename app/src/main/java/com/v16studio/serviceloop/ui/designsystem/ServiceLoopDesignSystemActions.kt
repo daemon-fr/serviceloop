@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -96,17 +97,13 @@ internal fun ServiceLoopButtonContent(
                 if (trailingIcon == null) {
                     content()
                 } else {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
-                    ) {
+                    Box(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.weight(1f),
+                            Modifier.align(Alignment.Center).wrapContentWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start,
+                            horizontalArrangement = Arrangement.Center,
                         ) { content() }
-                        trailingIcon()
+                        Box(Modifier.align(Alignment.CenterEnd)) { trailingIcon() }
                     }
                 }
             }
@@ -149,12 +146,65 @@ fun ServiceLoopNavigationButton(
     ) { ProvideTextStyle(ServiceLoopButtonContract.textStyle) { Text(label,color=if(enabled)c.errorInk else c.disabledText) } }
 }
 
-@Composable fun ServiceLoopDestructiveButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
+@Composable fun ServiceLoopDestructiveButton(label:String,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true,showIcon:Boolean=true) {
     val c=LocalServiceLoopTokens.current
     Button(onClick,modifier.heightIn(min=ServiceLoopButtonContract.primaryMinHeight).serviceLoopFocusRing(ServiceLoopButtonContract.radius),enabled,
         shape=RoundedCornerShape(ServiceLoopButtonContract.radius),colors=ButtonDefaults.buttonColors(containerColor=c.destructive,contentColor=c.onDestructive,disabledContainerColor=c.disabledContainer,disabledContentColor=c.disabledText),
         contentPadding=PaddingValues(horizontal=ServiceLoopButtonContract.horizontalPadding,vertical=ServiceLoopButtonContract.verticalPadding)) {
-        ProvideTextStyle(ServiceLoopButtonContract.textStyle){ServiceLoopIcon(ServiceLoopIcons.Delete,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(label)}
+        ProvideTextStyle(ServiceLoopButtonContract.textStyle){
+            if (showIcon) {
+                ServiceLoopIcon(ServiceLoopIcons.Delete,null,Modifier.size(ServiceLoopUiTokens.Size.icon))
+                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
+            }
+            Text(label)
+        }
+    }
+}
+
+/** Compact icon-over-label action for dense, ordered tool strips. */
+@Composable
+fun ServiceLoopCompactIconLabelAction(
+    accessibleName: String,
+    icon: Int,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    containerColor: Color = LocalServiceLoopTokens.current.action,
+    contentColor: Color = LocalServiceLoopTokens.current.onAction,
+) {
+    val c = LocalServiceLoopTokens.current
+    val iconContainer = if (enabled) containerColor else c.disabledContainer
+    val iconInk = if (enabled) contentColor else c.disabledText
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+            .clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .focusable(enabled)
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = accessibleName
+                if (!enabled) disabled()
+            }
+            .padding(vertical = ServiceLoopUiTokens.Space.xs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+    ) {
+        Box(
+            Modifier.size(40.dp).background(iconContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            ServiceLoopIcon(icon, null, Modifier.size(ServiceLoopUiTokens.Size.icon), iconInk)
+        }
+        Text(
+            label,
+            style = ServiceLoopUiTokens.Type.meta,
+            color = if (enabled) c.textPrimary else c.disabledText,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+        )
     }
 }
 

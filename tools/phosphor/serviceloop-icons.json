@@ -6,6 +6,8 @@
   "icons": {
     "Add": "plus",
     "Appearance": "circle-half",
+    "ArrowCircleDown": "arrow-circle-down",
+    "ArrowCircleUp": "arrow-circle-up",
     "Backup": "floppy-disk",
     "Back": "arrow-left",
     "Calendar": "calendar-dots",

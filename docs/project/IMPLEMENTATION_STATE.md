@@ -158,6 +158,14 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Reusable inspection templates retain immutable revisions and support active/disabled/deleted master state. Disabled assignments already held by a plan remain executable and capture the current immutable revision; new assignments require Active.
 - Current branch work is intentionally unaccepted and remains on `codex/b013-ui-overhaul` until the B029 review gate is complete.
 
+## B030 implementation state
+
+- Template editor polish is implemented: explicit item-type cards with radio semantics, compact private technician guidance, collapsed `Remove | Edit` rows, expanded `Remove | Move up | Move down | Done` controls, synchronized Activate/Disable state actions, quiet checklist rows, text-only detail Delete, and `Version history (N)` navigation.
+- Work Visits, Follow-ups, and Due Services now keep a real active natural `New visit` slot. The floating action is conditional on the natural slot being offscreen after meaningful layout and dismisses when any portion becomes visible; no synthetic spacer or layout feedback loop remains.
+- Site action rows use content-aware widths, and navigation-button labels are centered across their full buttons with the disclosure caret trailing. Work filter instrumentation clears its presentation preferences between tests.
+- Local verification for B030: 415 unit tests passed; debug/release APK assembly, lint, and Android-test APK compilation passed. Focused canonical AVD UI instrumentation passed 29/29, and the retained B013 owner render suite passed 3/3. Rendered template and Work surfaces were inspected in light/dark appearances. Detailed evidence is in `B030_TEMPLATE_WORK_AND_NAVIGATION_POLISH.md`.
+- This is implemented review-branch work only. Protected `master` remains unchanged, and owner acceptance plus the B-008 technician pilot remain separate gates.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`
