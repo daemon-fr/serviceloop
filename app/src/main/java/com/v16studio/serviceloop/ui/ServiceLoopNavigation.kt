@@ -118,7 +118,7 @@ internal fun ServiceLoopNavGraph(
             var equipmentMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
             RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav) }
+                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav, state.templates, viewModel) }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -202,7 +202,10 @@ internal fun ServiceLoopNavGraph(
         composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
         composable("contact/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Record contact",nav){ContactNoteEditorScreen(id,it,state,viewModel,nav)} }
         composable("contact/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadContactNote(id)}; DetailScaffold("Contact note",nav){padding -> ContactNoteScreen(state.contactNote,padding)} }
-        composable("search") { DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav)} }
+        composable("search") {
+            LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
+            DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav,state.operationalDashboard)}
+        }
         composable("inspection/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }

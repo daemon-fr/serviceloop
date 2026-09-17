@@ -101,7 +101,17 @@ data class DueServiceRow(
     val customerId: String, val customerName: String, val claimedVisitId: String?,
 )
 
-data class SearchRow(val type: String, val id: String, val reference: String, val title: String, val subtitle: String, val customerType: String)
+data class SearchRow(
+    val type: String,
+    val id: String,
+    val reference: String,
+    val title: String,
+    val subtitle: String,
+    val customerType: String,
+    val status: String?,
+    val revisionNumber: Int?,
+    val itemCount: Int?,
+)
 
     data class VisitSiteRow(val id: String, val reference: String, val name: String, val customerName: String, val address: String?, val customerType: String)
 
@@ -411,12 +421,13 @@ interface ServiceLoopDao {
     fun observeDueServices(): Flow<List<DueServiceRow>>
 
     @Query("""
-        SELECT 'CUSTOMER' type, c.id, c.reference, c.name title, COALESCE(c.contactName,'') subtitle, c.customerType FROM customers c WHERE c.name LIKE :pattern OR c.reference LIKE :pattern OR COALESCE(c.contactName,'') LIKE :pattern
-        UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name, c.customerType FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
-        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name, c.customerType FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern OR COALESCE(e.make,'') LIKE :pattern OR COALESCE(e.model,'') LIKE :pattern
-        UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name, c.customerType FROM service_plans p JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
-        UNION ALL SELECT CASE WHEN v.state='COMPLETED' AND f.id IS NOT NULL THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, v.state, c.customerType FROM working_visits v JOIN customers c ON c.id=v.customerId LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
-        UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, fu.state, c.customerType FROM follow_ups fu JOIN customers c ON c.id=fu.customerId WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
+        SELECT 'CUSTOMER' type, c.id, c.reference, c.name title, COALESCE(c.contactName,'') subtitle, c.customerType, NULL status, CAST(NULL AS INTEGER) revisionNumber, CAST(NULL AS INTEGER) itemCount FROM customers c WHERE c.name LIKE :pattern OR c.reference LIKE :pattern OR COALESCE(c.contactName,'') LIKE :pattern
+        UNION ALL SELECT 'SITE', s.id, s.reference, s.name, c.name || CASE WHEN COALESCE(s.address,'') = '' THEN '' ELSE ' · ' || s.address END, c.customerType, NULL, CAST(NULL AS INTEGER), CAST(NULL AS INTEGER) FROM sites s JOIN customers c ON c.id=s.customerId WHERE s.name LIKE :pattern OR s.reference LIKE :pattern OR COALESCE(s.address,'') LIKE :pattern
+        UNION ALL SELECT 'EQUIPMENT', e.id, e.reference, e.name, c.name || ' · ' || s.name, c.customerType, NULL, CAST(NULL AS INTEGER), CAST(NULL AS INTEGER) FROM equipment e JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE e.name LIKE :pattern OR e.reference LIKE :pattern OR COALESCE(e.technicianIdentifier,'') LIKE :pattern OR COALESCE(e.serialNumber,'') LIKE :pattern OR COALESCE(e.make,'') LIKE :pattern OR COALESCE(e.model,'') LIKE :pattern
+        UNION ALL SELECT 'TEMPLATE', t.id, t.reference, t.name || ' (v' || r.revisionNumber || ')', CAST(COUNT(i.id) AS TEXT) || ' items', 'STANDARD', t.state, r.revisionNumber, CAST(COUNT(i.id) AS INTEGER) FROM reusable_templates t JOIN reusable_template_revisions r ON r.id=t.currentRevisionId LEFT JOIN reusable_template_items i ON i.revisionId=r.id WHERE t.state <> 'DELETED' AND (t.name LIKE :pattern OR t.reference LIKE :pattern) GROUP BY t.id, t.reference, t.name, t.state, r.revisionNumber
+        UNION ALL SELECT 'PLAN', p.id, p.reference, p.name, e.name || ' · ' || s.name, c.customerType, NULL, CAST(NULL AS INTEGER), CAST(NULL AS INTEGER) FROM service_plans p JOIN equipment e ON e.id=p.equipmentId JOIN sites s ON s.id=e.siteId JOIN customers c ON c.id=s.customerId WHERE p.name LIKE :pattern OR p.reference LIKE :pattern
+        UNION ALL SELECT CASE WHEN v.state='COMPLETED' AND f.id IS NOT NULL THEN 'FINAL_RECORD' ELSE 'VISIT' END, COALESCE(f.id,v.id), v.reference, v.siteNameSnapshot, c.name || ' · ' || v.actualServiceDate, c.customerType, NULL, CAST(NULL AS INTEGER), CAST(NULL AS INTEGER) FROM working_visits v JOIN customers c ON c.id=v.customerId LEFT JOIN final_records f ON f.visitId=v.id WHERE v.reference LIKE :pattern OR v.customerNameSnapshot LIKE :pattern OR v.siteNameSnapshot LIKE :pattern
+        UNION ALL SELECT 'FOLLOW_UP', fu.id, fu.reference, fu.title, c.name || ' · Due ' || fu.dueDate, c.customerType, NULL, CAST(NULL AS INTEGER), CAST(NULL AS INTEGER) FROM follow_ups fu JOIN customers c ON c.id=fu.customerId WHERE fu.reference LIKE :pattern OR fu.title LIKE :pattern
         ORDER BY reference, title
     """)
     suspend fun search(pattern: String): List<SearchRow>

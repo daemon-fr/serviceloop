@@ -121,6 +121,7 @@ import com.v16studio.serviceloop.domain.ReportVersionSummary
 import com.v16studio.serviceloop.domain.PublicPhoto
 import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.domain.SiteRegisterSummary
+import com.v16studio.serviceloop.domain.TemplateSummary
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
 import com.v16studio.serviceloop.domain.FollowUpDateFilter
 import com.v16studio.serviceloop.domain.FollowUpStatusFilter
@@ -181,7 +182,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteRegisterSummary>, equipment: List<EquipmentSummary>, nav: NavHostController) {
+internal fun CustomersScreen(
+    customers: List<CustomerSummary>,
+    sites: List<SiteRegisterSummary>,
+    equipment: List<EquipmentSummary>,
+    nav: NavHostController,
+    templates: List<TemplateSummary> = emptyList(),
+    viewModel: ServiceLoopViewModel? = null,
+) {
     var tab by rememberSaveable { mutableStateOf("CUSTOMERS") }
     val context = LocalContext.current
     val filterPreferences = remember(context) { UiFilterPreferences(context) }
@@ -190,12 +198,18 @@ internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteR
     val visibleCustomers = customers.filter { showOneTime || it.customerType == CustomerType.STANDARD }
     val visibleSites = sites.filter { showOneTime || it.customerType == CustomerType.STANDARD }
     val visibleEquipment = equipment.filter { showOneTime || it.customerType == CustomerType.STANDARD }
+    LaunchedEffect(tab) { if (tab == "TEMPLATES") viewModel?.loadTemplates() }
     LazyColumn(contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it}) } }
-        item { Text("${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
-        item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it; filterPreferences.saveShowOneTimeCustomers(it) }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
+        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment", "TEMPLATES" to "Templates"),tab,{tab=it}) } }
+        item { Text(if (tab == "TEMPLATES") "Inspection templates" else "${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
+        if (tab != "TEMPLATES") item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it; filterPreferences.saveShowOneTimeCustomers(it) }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
         item {
-            when (tab) { "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-customer")); "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-equipment-from-register")); else -> Unit }
+            when (tab) {
+                "CUSTOMERS" -> ServiceLoopPrimaryButton("Add customer",{ nav.navigate("customer/new") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-customer"))
+                "EQUIPMENT" -> ServiceLoopPrimaryButton("Add equipment",{ nav.navigate("equipment/select-site") },Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("add-equipment-from-register"))
+                "TEMPLATES" -> InspectionTemplateLibraryContent(templates, PaddingValues(horizontal = 16.dp), nav, viewModel, showHeading = false, createReturnTo = "customers")
+                else -> Unit
+            }
         }
         when (tab) {
             "CUSTOMERS" -> {
@@ -213,10 +227,12 @@ internal fun CustomersScreen(customers: List<CustomerSummary>, sites: List<SiteR
                 }
             }
             else -> {
-                if (visibleEquipment.isEmpty()) item { Text(if (equipment.isEmpty()) "Add an equipment item to begin." else "No standard customer equipment matches this filter.", Modifier.padding(horizontal = 16.dp)) }
-                items(visibleEquipment) { item ->
-                    val metadata = buildString { if (item.customerType == CustomerType.ONE_TIME) append("One-time · "); append("Next due ${item.nearestDueDate ?: "not scheduled"}") }
-                    ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}", "${item.customerName} · ${item.siteName}", metadata, modifier = Modifier.padding(horizontal = 16.dp)) { nav.navigate("equipment/${item.id}") }
+                if (tab == "EQUIPMENT") {
+                    if (visibleEquipment.isEmpty()) item { Text(if (equipment.isEmpty()) "Add an equipment item to begin." else "No standard customer equipment matches this filter.", Modifier.padding(horizontal = 16.dp)) }
+                    items(visibleEquipment) { item ->
+                        val metadata = buildString { if (item.customerType == CustomerType.ONE_TIME) append("One-time · "); append("Next due ${item.nearestDueDate ?: "not scheduled"}") }
+                        ServiceLoopEntityRecord("${item.technicianIdentifier ?: item.reference} · ${item.name}", "${item.customerName} · ${item.siteName}", metadata, modifier = Modifier.padding(horizontal = 16.dp)) { nav.navigate("equipment/${item.id}") }
+                    }
                 }
             }
         }

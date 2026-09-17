@@ -438,7 +438,19 @@ class RoomServiceLoopRepository(
     override suspend fun search(query: String): List<SearchTarget> {
         val normalized = query.trim()
         if (normalized.isEmpty()) return emptyList()
-        return dao.search("%${normalized.replace("%", "\\%").replace("_", "\\_")}%").map { SearchTarget(it.type, it.id, it.reference, it.title, it.subtitle, CustomerType.fromCode(it.customerType)) }
+        return dao.search("%${normalized.replace("%", "\\%").replace("_", "\\_")}%").map {
+            SearchTarget(
+                type = it.type,
+                id = it.id,
+                reference = it.reference,
+                title = it.title,
+                subtitle = it.subtitle,
+                customerType = CustomerType.fromCode(it.customerType),
+                status = it.status,
+                revisionNumber = it.revisionNumber,
+                itemCount = it.itemCount,
+            )
+        }
     }
 
     override suspend fun createCustomer(input: CustomerInput): String {

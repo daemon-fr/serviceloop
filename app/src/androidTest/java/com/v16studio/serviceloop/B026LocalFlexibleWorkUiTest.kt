@@ -103,8 +103,63 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithText("Unique one-time customer", substring = true).assertIsDisplayed()
         compose.onNodeWithTag("field-search-names-and-references").performTextInput("Unique one-time")
         compose.onNodeWithText("Unique one-time customer", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("One-time · CUSTOMER", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("One-time", substring = true).assertIsDisplayed()
         assertAbsentTag("show-one-time-customers")
+    }
+
+    @Test fun b031RegisterExposesTemplatesAsFourthTabWithoutOneTimeFilter() {
+        val template = TemplateSummary("template-1", "TPL-1", "Pressure inspection", 2, 3, "ACTIVE")
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    CustomersScreen(
+                        customers = emptyList(),
+                        sites = emptyList(),
+                        equipment = emptyList(),
+                        nav = rememberNavController(),
+                        templates = listOf(template),
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("content-tab-Templates").performClick()
+        compose.onNodeWithText("Inspection templates").assertIsDisplayed()
+        compose.onNodeWithText("TPL-1 · Pressure inspection (v2)").assertIsDisplayed()
+        compose.onNodeWithText("3 items").assertIsDisplayed()
+        compose.onNodeWithTag("create-inspection-template").assertIsDisplayed()
+        assertAbsentTag("show-one-time-customers")
+        captureRendered("b031-register-templates.png")
+    }
+
+    @Test fun b031SearchUsesFixedGroupsAndPersistsRecentQueries() {
+        val preferences = SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
+        preferences.clearRecentQueries()
+        listOf("CUSTOMER", "TEMPLATE", "VISIT").forEach { preferences.setCategoryExpanded(it, true) }
+        preferences.recordQuery("Boiler  12")
+        val results = listOf(
+            SearchTarget("CUSTOMER", "customer-1", "CU-1", "Boiler customer", "Primary contact"),
+            SearchTarget("TEMPLATE", "template-1", "TPL-1", "Pressure inspection", "", status = "ACTIVE", revisionNumber = 2, itemCount = 3),
+            SearchTarget("VISIT", "visit-1", "V-1", "Boiler visit", "Customer · Site"),
+        )
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    SearchScreen(results, PaddingValues(), viewModel, rememberNavController())
+                }
+            }
+        }
+        compose.onNodeWithText("Customers (1)").assertIsDisplayed()
+        compose.onNodeWithText("Templates (1)").assertIsDisplayed()
+        compose.onNodeWithText("Visits (1)").assertIsDisplayed()
+        compose.onNodeWithText("3 items").assertIsDisplayed()
+        compose.onNodeWithTag("search-category-CUSTOMER").performClick()
+        assertAbsentTag("search-result-CUSTOMER-customer-1")
+        compose.onNodeWithTag("search-result-TEMPLATE-template-1").assertIsDisplayed()
+        compose.onNodeWithTag("field-search-names-and-references").performClick()
+        compose.onNodeWithTag("search-recent-panel").assertIsDisplayed()
+        compose.onNodeWithText("Boiler 12").assertIsDisplayed()
+        captureRendered("b031-search-groups-and-history.png")
     }
 
     @Test fun newVisitRemainsUsableWhenDueServicesFail() {

@@ -116,6 +116,25 @@ class ServiceLoopDesignSystemTest {
         assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f)
     }
 
+    @Test fun b031TemplateToolsUseLayeredIconsWithoutAnOuterCircle() {
+        val actions = productionKotlinSourceContaining("ServiceLoopCompactIconLabelAction")
+        val template = productionKotlinSourceContaining("baseIcon = ServiceLoopIcons.Circle", "foregroundIcon = ServiceLoopIcons.X")
+        assertTrue(actions.contains("baseIcon: Int? = null"))
+        assertFalse(actions.contains("background(iconContainer"))
+        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.ArrowUp"))
+        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.ArrowDown"))
+        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.Check"))
+    }
+
+    @Test fun b031RegisterAndSearchKeepTheirFixedProductOrder() {
+        val directory = productionKotlinSourceContaining("ServiceLoopContentTabs(listOf(\"CUSTOMERS\"")
+        val search = productionKotlinSourceContaining("private enum class SearchCategory")
+        assertTrue(directory.contains("\"TEMPLATES\" to \"Templates\""))
+        assertTrue(search.indexOf("CUSTOMER(\"CUSTOMER\"") < search.indexOf("SITE(\"SITE\"") )
+        assertTrue(search.indexOf("TEMPLATE(\"TEMPLATE\"") < search.indexOf("PLAN(\"PLAN\"") )
+        assertTrue(search.indexOf("PLAN(\"PLAN\"") < search.indexOf("VISIT(\"VISIT\"") )
+    }
+
     @Test fun ownerR1SharedVisualContractsStayStructural() {
         val components = productionKotlinSourceContaining("maxIntrinsicWidth")
         val app = productionKotlinSourceContaining("DetailScaffold(\"Service\", nav)")

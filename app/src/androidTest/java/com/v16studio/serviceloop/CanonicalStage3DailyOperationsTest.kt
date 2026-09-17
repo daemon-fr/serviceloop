@@ -50,8 +50,8 @@ class CanonicalStage3DailyOperationsTest {
         val planName="SL3 Runtime Service $suffix"
         val followTitle="SL3 Runtime Follow-up $suffix"
 
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Inspection templates").performClick()
+        compose.onNodeWithText("Register").performClick()
+        compose.onNodeWithText("Templates").performClick()
         compose.onNodeWithText("Create inspection template").performClick()
         compose.onNodeWithText("Template name · Required").performTextInput(templateName)
         compose.onNodeWithText("Item label").performTextInput("Runtime safety check")
@@ -61,7 +61,7 @@ class CanonicalStage3DailyOperationsTest {
         compose.onNodeWithText("Save template").performScrollTo().performClick()
         compose.waitUntil(15_000){runBlocking{dao.reusableTemplates().any{it.name==templateName}}}
         waitForText("(v1)")
-        back(); back(); back()
+        back()
 
         compose.onNodeWithText("Register").performClick()
         waitForText("Add customer")

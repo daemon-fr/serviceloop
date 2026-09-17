@@ -8,6 +8,8 @@
     "Appearance": "circle-half",
     "ArrowCircleDown": "arrow-circle-down",
     "ArrowCircleUp": "arrow-circle-up",
+    "ArrowDown": "arrow-down",
+    "ArrowUp": "arrow-up",
     "Backup": "floppy-disk",
     "Back": "arrow-left",
     "Calendar": "calendar-dots",
@@ -15,6 +17,7 @@
     "CaretRight": "caret-right",
     "Call": "phone",
     "CheckCircle": "check-circle",
+    "Check": "check",
     "Circle": "circle",
     "Camera": "camera",
     "Copy": "copy",
@@ -51,6 +54,7 @@
     "Warning": "warning",
     "WarningCircle": "warning-circle",
     "Work": "clipboard-text",
+    "X": "x",
     "XCircle": "x-circle"
   }
 }

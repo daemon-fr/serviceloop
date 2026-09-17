@@ -540,6 +540,20 @@ class DailyOperationsIntegrityTest {
 
     @Test fun equipmentSearchIncludesMakeAndModel() = runTest { val ids=foundation(); repo.updateEquipment(ids.equipment,EquipmentInput("Compressor","C-01","Kaeser","Sigma 7","S1")); assertEquals(ids.equipment,repo.search("Kaeser").single().id); assertEquals(ids.equipment,repo.search("Sigma 7").single().id) }
 
+    @Test fun templateSearchReturnsOneCurrentLogicalTemplateWithCurrentRevisionMetadata() = runTest {
+        foundation()
+        val template = repo.createTemplate("Treadmill inspection", listOf(TemplateItemDraft("Guard", "STATUS", required = true)))
+        repo.reviseTemplate(template, "Treadmill inspection", listOf(TemplateItemDraft("Guard", "STATUS", required = true), TemplateItemDraft("Notes", "TEXT")))
+
+        val results = repo.search("Treadmill")
+
+        assertEquals(1, results.size)
+        assertEquals("TEMPLATE", results.single().type)
+        assertEquals(2, results.single().revisionNumber)
+        assertEquals(2, results.single().itemCount)
+        assertTrue(results.single().title.endsWith("(v2)"))
+    }
+
     @Test fun correctionAppendsImmutableRevisionAndTextOnlyChangeDoesNotAdvanceSchedule() = runTest {
         val ids = foundation(); val recordId = finalizedRecord(ids); val beforePlan = db.serviceLoopDao().plan(ids.plan)!!
         val original = repo.finalRecord(recordId)!!; val draft = repo.openCorrection(recordId)

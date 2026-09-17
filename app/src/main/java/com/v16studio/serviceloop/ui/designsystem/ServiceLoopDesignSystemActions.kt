@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -172,9 +171,11 @@ fun ServiceLoopCompactIconLabelAction(
     enabled: Boolean = true,
     containerColor: Color = LocalServiceLoopTokens.current.action,
     contentColor: Color = LocalServiceLoopTokens.current.onAction,
+    baseIcon: Int? = null,
+    foregroundIcon: Int? = null,
 ) {
     val c = LocalServiceLoopTokens.current
-    val iconContainer = if (enabled) containerColor else c.disabledContainer
+    val circleColor = if (enabled) containerColor else c.disabledContainer
     val iconInk = if (enabled) contentColor else c.disabledText
     Column(
         modifier = modifier
@@ -192,11 +193,13 @@ fun ServiceLoopCompactIconLabelAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
     ) {
-        Box(
-            Modifier.size(40.dp).background(iconContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            ServiceLoopIcon(icon, null, Modifier.size(ServiceLoopUiTokens.Size.icon), iconInk)
+        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+            if (baseIcon != null && foregroundIcon != null) {
+                ServiceLoopIcon(baseIcon, null, Modifier.fillMaxSize(), circleColor)
+                ServiceLoopIcon(foregroundIcon, null, Modifier.size(16.dp), iconInk)
+            } else {
+                ServiceLoopIcon(icon, null, Modifier.fillMaxSize(), iconInk)
+            }
         }
         Text(
             label,

@@ -56,6 +56,19 @@ import androidx.compose.ui.platform.LocalContext
 
 @Composable
 internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingValues, nav: NavHostController, viewModel: ServiceLoopViewModel? = null, incomingTemplates: String? = null) {
+    InspectionTemplateLibraryContent(values, padding, nav, viewModel, incomingTemplates, showHeading = false)
+}
+
+@Composable
+internal fun InspectionTemplateLibraryContent(
+    values: List<TemplateSummary>,
+    padding: PaddingValues,
+    nav: NavHostController,
+    viewModel: ServiceLoopViewModel? = null,
+    incomingTemplates: String? = null,
+    showHeading: Boolean = true,
+    createReturnTo: String? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exchange = remember { InspectionTemplateExchangeService((context.applicationContext as ServiceLoopApplication).container.database) }
@@ -123,27 +136,27 @@ internal fun TemplateListScreen(values: List<TemplateSummary>, padding: PaddingV
             },
         )
     }
-    LazyColumn(Modifier.padding(padding).testTag("inspection-templates"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Button({ nav.navigate("template/new") }, Modifier.fillMaxWidth()) { Text("Create inspection template") }
-            if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) {
-                Spacer(Modifier.height(8.dp))
-                Text("Inspection templates", style = MaterialTheme.typography.titleMedium)
-                Text("Share inspection templates only. Visits already created with a template keep their checklist.", style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
-                    OutlinedButton({ scope.launch { runCatching { val export = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { InspectionTemplateCodec.encode(export) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slinsp", INSPECTION_TEMPLATES_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onFailure { message = it.message } } }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("export-inspection-templates")) { Text("Export selected") }
+    Column(Modifier.padding(padding).testTag("inspection-templates"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (showHeading) Text("Inspection templates", style = MaterialTheme.typography.titleLarge)
+        Button({ nav.navigate(if (createReturnTo == null) "template/new" else "template/new?returnTo=$createReturnTo") }, Modifier.fillMaxWidth().testTag("create-inspection-template")) { Text("Create inspection template") }
+        if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) {
+            Text("Share inspection templates only. Visits already created with a template keep their checklist.", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
+                OutlinedButton({ scope.launch { runCatching { val export = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { InspectionTemplateCodec.encode(export) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slinsp", INSPECTION_TEMPLATES_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onFailure { message = it.message } } }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("export-inspection-templates")) { Text("Export selected") }
+            }
+        }
+        message?.let { Text(it, color = if (it.startsWith("Imported")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, modifier = Modifier.testTag("inspection-template-message")) }
+        if (values.none { it.state != "DELETED" }) Text("No inspection templates yet")
+        values.asSequence()
+            .filter { it.state != "DELETED" }
+            .sortedWith(compareBy<TemplateSummary> { it.state != "ACTIVE" }.thenBy { it.name.lowercase() }.thenBy { it.reference })
+            .forEach { template ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
+                    ServiceLoopEntityRecord("${template.reference} · ${template.name} (v${template.revisionNumber})", metadata = "${template.itemCount} items", status = template.state, modifier = Modifier.weight(1f)) { nav.navigate("template/${template.id}") }
                 }
             }
-            message?.let { Text(it, color = if (it.startsWith("Imported")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, modifier = Modifier.testTag("inspection-template-message")) }
-        }
-        if (values.isEmpty()) item { Text("No inspection templates yet") }
-        items(values.sortedWith(compareBy<TemplateSummary> { it.state != "ACTIVE" }.thenBy { it.name.lowercase() }.thenBy { it.reference }), key = { it.id }) { template ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
-                ServiceLoopEntityRecord("${template.reference} · ${template.name} (v${template.revisionNumber})", metadata = "${template.itemCount} items", status = template.state, modifier = Modifier.weight(1f)) { nav.navigate("template/${template.id}") }
-            }
-        }
     }
 }
 
@@ -305,41 +318,49 @@ private fun TemplateItemDraftEditor(
                 ) {
                     ServiceLoopCompactIconLabelAction(
                         accessibleName = "Remove item",
-                        icon = ServiceLoopIcons.XCircle,
+                        icon = ServiceLoopIcons.X,
                         label = "Remove",
                         onClick = onRemove,
                         modifier = Modifier.weight(1f).testTag("template-item-remove-$index"),
                         containerColor = colors.destructive,
                         contentColor = colors.onDestructive,
+                        baseIcon = ServiceLoopIcons.Circle,
+                        foregroundIcon = ServiceLoopIcons.X,
                     )
                     ServiceLoopCompactIconLabelAction(
                         accessibleName = "Move item up",
-                        icon = ServiceLoopIcons.ArrowCircleUp,
+                        icon = ServiceLoopIcons.ArrowUp,
                         label = "Move up",
                         onClick = onMoveUp,
                         enabled = index > 0,
                         modifier = Modifier.weight(1f).testTag("template-item-move-up-$index"),
                         containerColor = colors.selection,
                         contentColor = colors.action,
+                        baseIcon = ServiceLoopIcons.Circle,
+                        foregroundIcon = ServiceLoopIcons.ArrowUp,
                     )
                     ServiceLoopCompactIconLabelAction(
                         accessibleName = "Move item down",
-                        icon = ServiceLoopIcons.ArrowCircleDown,
+                        icon = ServiceLoopIcons.ArrowDown,
                         label = "Move down",
                         onClick = onMoveDown,
                         enabled = index < lastIndex,
                         modifier = Modifier.weight(1f).testTag("template-item-move-down-$index"),
                         containerColor = colors.selection,
                         contentColor = colors.action,
+                        baseIcon = ServiceLoopIcons.Circle,
+                        foregroundIcon = ServiceLoopIcons.ArrowDown,
                     )
                     ServiceLoopCompactIconLabelAction(
                         accessibleName = "Done editing item",
-                        icon = ServiceLoopIcons.CheckCircle,
+                        icon = ServiceLoopIcons.Check,
                         label = "Done",
                         onClick = onToggle,
                         modifier = Modifier.weight(1f).testTag("template-item-done-$index"),
                         containerColor = colors.action,
                         contentColor = colors.onAction,
+                        baseIcon = ServiceLoopIcons.Circle,
+                        foregroundIcon = ServiceLoopIcons.Check,
                     )
                 }
             } else {

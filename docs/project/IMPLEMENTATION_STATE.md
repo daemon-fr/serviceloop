@@ -166,6 +166,14 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Local verification for B030: 415 unit tests passed; debug/release APK assembly, lint, and Android-test APK compilation passed. Focused canonical AVD UI instrumentation passed 29/29, and the retained B013 owner render suite passed 3/3. Rendered template and Work surfaces were inspected in light/dark appearances. Detailed evidence is in `B030_TEMPLATE_WORK_AND_NAVIGATION_POLISH.md`.
 - This is implemented review-branch work only. Protected `master` remains unchanged, and owner acceptance plus the B-008 technician pilot remain separate gates.
 
+## B031 implementation state
+
+- Register now contains the discoverable Customers / Sites / Equipment / Templates tab set. Templates uses the shared library body, loads on demand, hides the one-time filter, retains current lifecycle/detail/create behavior, and leaves `template/list` available for `.slinsp` import/deep links. Settings no longer presents the ordinary duplicate library entry.
+- Master Search is grouped in fixed category order with counts, persisted expansion state, local ten-query history, IME/result/suggestion recording, clear-history affordance, template-master search support, cleaned context projection, and global-only operational urgency state. Search preference data remains presentation-only SharedPreferences.
+- Template editor tools use generated layered Phosphor circle/foreground compositions without an external circular container. Detailed scope and verification evidence are in `B031_REGISTER_TEMPLATES_AND_GROUPED_SEARCH.md`.
+- B031 verification: 420 unit tests passed; debug/release APK assembly, lint, and Android-test APK assembly passed; the two focused canonical-AVD B031 Compose tests passed, and controlled Register/Templates plus grouped Search/recent-history renders were visually inspected. The standalone Phosphor helper suite retains two pre-existing baseline assertion failures documented in the B031 evidence note.
+- This is implemented review-branch work only. Protected `master` remains unchanged, and owner acceptance plus the B-008 technician pilot remain separate gates.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

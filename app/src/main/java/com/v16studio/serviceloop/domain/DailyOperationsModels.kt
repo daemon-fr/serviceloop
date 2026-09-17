@@ -103,7 +103,17 @@ data class FollowUpInput(val type: String, val title: String, val dueDate: Strin
 data class ContactNoteDetail(val id: String, val reference: String, val channel: String, val occurredAtEpochMillis: Long, val outcome: String, val privateNote: String, val enteredInError: Boolean, val errorReason: String? = null)
 data class ContactNoteInput(val customerId: String, val siteId: String? = null, val equipmentId: String? = null, val channel: String, val outcome: String, val privateNote: String = "")
 
-data class SearchTarget(val type: String, val id: String, val reference: String, val title: String, val subtitle: String, val customerType: CustomerType = CustomerType.STANDARD)
+data class SearchTarget(
+    val type: String,
+    val id: String,
+    val reference: String,
+    val title: String,
+    val subtitle: String,
+    val customerType: CustomerType = CustomerType.STANDARD,
+    val status: String? = null,
+    val revisionNumber: Int? = null,
+    val itemCount: Int? = null,
+)
 
 /**
  * The one technician-side Visit lifecycle. Persisted legacy spellings are
