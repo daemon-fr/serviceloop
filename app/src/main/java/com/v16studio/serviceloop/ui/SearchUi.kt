@@ -80,8 +80,8 @@ internal fun SearchScreen(
 
     LaunchedEffect(query) { viewModel.search(query) }
 
-    fun recordCurrentQuery() {
-        recentQueries = preferences.recordQuery(query)
+    fun recordCurrentQuery(value: String = query) {
+        recentQueries = preferences.recordQuery(value)
         keyboard?.hide()
     }
 
@@ -112,8 +112,7 @@ internal fun SearchScreen(
                     queries = recentQueries,
                     onSelect = { selected ->
                         query = selected
-                        recentQueries = preferences.recordQuery(selected)
-                        keyboard?.hide()
+                        recordCurrentQuery(selected)
                     },
                     onClear = {
                         preferences.clearRecentQueries()
@@ -140,8 +139,7 @@ internal fun SearchScreen(
                         ) {
                             categoryResults.forEach { result ->
                                 SearchResultRow(result, category, globalOperationalDashboard) {
-                                    preferences.recordQuery(query)
-                                    recentQueries = preferences.recentQueries()
+                                    recordCurrentQuery()
                                     nav.navigate(result.route())
                                 }
                             }

@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.room.Room
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -725,7 +726,7 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag("share-pdf").assertIsNotEnabled()
     }
 
-    @Test fun homeRendersTrueMultipleWorkingAndBookedCounts() {
+    @Test fun homeRendersTrueMultipleWorkingAndDueSoonCounts() {
         runBlocking {
             database.serviceLoopDao().insertVisits(listOf(
                 WorkingVisitEntity("v2", "V-UI-2", "c", "s", "2026-09-06", "Customer", "Site", null, "WORKING", 3),
@@ -737,9 +738,22 @@ class CompletionUiSemanticTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         compose.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-        compose.waitUntil(5_000){compose.onAllNodesWithText("Unfinished visits · 2").fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithText("Unfinished visits · 2").assertIsDisplayed()
-        compose.onNodeWithText("Booked visits · 3").assertIsDisplayed()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("operational-section-header-visit-in_progress").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithTag("operational-section-header-visit-due_soon").fetchSemanticsNodes().isNotEmpty()
+        }
+        val inProgress = compose.onNodeWithTag("operational-section-header-visit-in_progress")
+        val dueSoon = compose.onNodeWithTag("operational-section-header-visit-due_soon")
+        inProgress.assertIsDisplayed()
+        dueSoon.assertIsDisplayed()
+        org.junit.Assert.assertEquals(
+            listOf("Visits - In progress · 2; Collapse section"),
+            inProgress.fetchSemanticsNode().config[SemanticsProperties.ContentDescription],
+        )
+        org.junit.Assert.assertEquals(
+            listOf("Visits - Due soon · 3; Expand section"),
+            dueSoon.fetchSemanticsNode().config[SemanticsProperties.ContentDescription],
+        )
     }
 
     @Test fun historyDateFieldsShowErrorsAndClearWithoutApplyingInvalidRanges() {

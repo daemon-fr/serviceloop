@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,11 +33,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.state.ToggleableState
@@ -53,6 +57,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -64,6 +69,14 @@ import com.v16studio.serviceloop.calendar.VisitCalendarState
 @RunWith(AndroidJUnit4::class)
 class B026LocalFlexibleWorkUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Before
+    fun resetSearchUiPreferences() {
+        val preferences = SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
+        preferences.clearRecentQueries()
+        listOf("CUSTOMER", "SITE", "EQUIPMENT", "TEMPLATE", "PLAN", "VISIT", "FOLLOW_UP", "FINAL_RECORD")
+            .forEach { preferences.setCategoryExpanded(it, true) }
+    }
 
     @Test fun registerHidesOneTimeRowsByDefaultAcrossAllPanes() {
         showRegister()
@@ -107,6 +120,65 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithText("Unique one-time customer", substring = true).assertIsDisplayed()
         compose.onNodeWithText("One-time", substring = true).assertIsDisplayed()
         assertAbsentTag("show-one-time-customers")
+    }
+
+    @Test fun liveSearchResultPromotesPartialQueryBeforeNavigationAndReentry() {
+        val result = SearchTarget("CUSTOMER", "one-time-customer", "CU-OT", "Unique one-time customer", "Unique one-time site", CustomerType.ONE_TIME)
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        lateinit var nav: androidx.navigation.NavHostController
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    nav = rememberNavController()
+                    NavHost(nav, "search") {
+                        composable("search") {
+                            SearchScreen(listOf(result), PaddingValues(), viewModel, nav)
+                        }
+                        composable("customer/one-time-customer") {
+                            Button(onClick = { nav.navigate("search") }, modifier = Modifier.testTag("return-to-search")) { Text("Return to search") }
+                        }
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("field-search-names-and-references").performTextInput("Unique one-time")
+        compose.onNodeWithTag("search-result-CUSTOMER-one-time-customer").performClick()
+        compose.onNodeWithTag("return-to-search").performClick()
+        compose.onNodeWithTag("field-search-names-and-references").performClick()
+        compose.onNodeWithTag("search-recent-0").assertTextContains("Unique one-time")
+    }
+
+    @Test fun typingWithoutSearchActionDoesNotCreateRecentQuery() {
+        showSearch()
+        compose.onNodeWithTag("field-search-names-and-references").performTextInput("harb")
+        assertTrue(SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext).recentQueries().isEmpty())
+    }
+
+    @Test fun imeSearchPromotesTheCurrentPartialQuery() {
+        showSearch()
+        compose.onNodeWithTag("field-search-names-and-references").performTextInput("harb")
+        compose.onNodeWithTag("field-search-names-and-references").performImeAction()
+        assertEquals(listOf("harb"), SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext).recentQueries())
+    }
+
+    @Test fun selectingRecentQueryPromotesItWithoutDuplicatingHistory() {
+        val preferences = SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
+        preferences.recordQuery("customer")
+        preferences.recordQuery("harbor")
+        showSearch()
+        compose.onNodeWithTag("field-search-names-and-references").performClick()
+        compose.onNodeWithTag("search-recent-1").performClick()
+        assertEquals(listOf("customer", "harbor"), preferences.recentQueries())
+    }
+
+    @Test fun liveResultClickDeduplicatesCaseInsensitiveExistingQuery() {
+        val preferences = SearchUiPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
+        preferences.recordQuery("Harbor")
+        showSearch(listOf(SearchTarget("CUSTOMER", "customer-1", "CU-1", "Harbor customer", "Primary contact")))
+        compose.onNodeWithTag("field-search-names-and-references").performTextInput("harbor")
+        compose.onNodeWithTag("search-result-CUSTOMER-customer-1").performClick()
+        assertEquals(listOf("harbor"), preferences.recentQueries())
     }
 
     @Test fun b031RegisterExposesTemplatesAsFourthTabWithoutOneTimeFilter() {
@@ -154,7 +226,7 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithText("Customers (1)").assertIsDisplayed()
         compose.onNodeWithText("Templates (1)").assertIsDisplayed()
         compose.onNodeWithText("Visits (1)").assertIsDisplayed()
-        compose.onNodeWithText("3 items").assertIsDisplayed()
+        compose.onAllNodesWithText("3 items").assertCountEquals(1)
         compose.onNodeWithTag("search-category-CUSTOMER").performClick()
         assertAbsentTag("search-result-CUSTOMER-customer-1")
         compose.onNodeWithTag("search-result-TEMPLATE-template-1").assertIsDisplayed()
@@ -750,6 +822,21 @@ class B026LocalFlexibleWorkUiTest {
             compose.activity.setContent {
                 ServiceLoopTheme {
                     CustomersScreen(listOf(standardCustomer, oneTimeCustomer), listOf(standardSite, oneTimeSite), listOf(standardEquipment, oneTimeEquipment), rememberNavController())
+                }
+            }
+        }
+    }
+
+    private fun showSearch(results: List<SearchTarget> = emptyList()) {
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    val nav = rememberNavController()
+                    NavHost(nav, "search") {
+                        composable("search") { SearchScreen(results, PaddingValues(), viewModel, nav) }
+                        composable("customer/{id}") { Text("Customer destination") }
+                    }
                 }
             }
         }

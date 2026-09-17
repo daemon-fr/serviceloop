@@ -122,11 +122,11 @@ class Stage3DailyOperationsUiTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; compose.waitUntil(5_000){runCatching{compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()}.isSuccess}; compose.onNodeWithText("Discard changes").performClick()
         compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Guard customer"); compose.onNodeWithText("Site name · Required").performTextInput("Guard site"); compose.onNodeWithTag("customer-editor").performScrollToNode(hasTestTag("save-customer")); compose.onNodeWithTag("save-customer").performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{database.serviceLoopDao().customerCount()==1}}; compose.onNodeWithText("Discard unsaved changes?").assertDoesNotExist()
-        compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard edited")
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Edit", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithText("Edit", useUnmergedTree = true).performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard edited")
         compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Guard edited").assertIsDisplayed()
         compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Discard changes").performClick()
         assertEquals("Guard customer",repository.customer(database.serviceLoopDao().customerList().single().id)!!.name)
-        compose.onNodeWithText("Edit").performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard saved"); compose.onNodeWithText("Save customer").performScrollTo().performClick()
+        compose.onNodeWithText("Edit", useUnmergedTree = true).performClick(); compose.onNodeWithText("Customer name · Required").performTextReplacement("Guard saved"); compose.onNodeWithTag("customer-editor").performScrollToNode(hasTestTag("save-customer")); compose.onNodeWithTag("save-customer").performClick()
         compose.waitUntil(5_000){kotlinx.coroutines.runBlocking{repository.customer(database.serviceLoopDao().customerList().single().id)?.name=="Guard saved"}}; compose.onNodeWithText("Discard unsaved changes?").assertDoesNotExist(); Unit
     }
 

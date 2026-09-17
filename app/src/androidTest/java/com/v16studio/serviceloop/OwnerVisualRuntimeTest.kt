@@ -224,8 +224,8 @@ class OwnerVisualRuntimeTest {
         val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
         val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, time)) {}
         composeRule.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } }
-        composeRule.waitUntil(5_000) { runCatching { composeRule.onNodeWithText("Resume service").fetchSemanticsNode() }.isSuccess }
-        composeRule.onNodeWithText("Resume service").performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("operational-work-row-v").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("operational-work-row-v").performClick()
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("long-text-public-work-performed"))
         captureRenderedEvidence("public-work-expand-icon")
