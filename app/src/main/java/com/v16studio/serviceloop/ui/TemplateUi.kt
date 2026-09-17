@@ -176,7 +176,7 @@ internal fun TemplateDetailScreen(
                 title = "${index + 1}. ${item.label}",
                 context = item.responseType,
                 metadata = buildString { append(if (item.required) "Required" else "Optional"); item.unit.takeIf(String::isNotBlank)?.let { append(" · $it") } },
-                showDisclosure = false,
+                showDisclosure = true,
                 onClick = { nav.navigate("template/edit/${detail.id}?focusItem=$index") },
                 modifier = Modifier.testTag("template-detail-item-$index"),
             )
@@ -277,12 +277,17 @@ private fun TemplateItemDraftEditor(
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(item.required, { onChange(item.copy(required = it)) }); Text("Required") }
                 ServiceLoopLongTextEditor(item.privateGuidance, { onChange(item.copy(privateGuidance = it)) }, "Private technician guidance", true, fieldTestTag = "template-item-guidance-$index")
                 ServiceLoopResponsivePair(
-                    first = { TextButton(onMoveUp, Modifier.fillMaxWidth(), enabled = index > 0) { Text("Move up") } },
-                    second = { TextButton(onMoveDown, Modifier.fillMaxWidth(), enabled = index < lastIndex) { Text("Move down") } },
+                    first = { TextButton(onMoveUp, Modifier.fillMaxWidth().testTag("template-item-move-up-$index"), enabled = index > 0) { Text("Move up") } },
+                    second = { TextButton(onMoveDown, Modifier.fillMaxWidth().testTag("template-item-move-down-$index"), enabled = index < lastIndex) { Text("Move down") } },
                 )
                 ServiceLoopResponsivePair(
-                    first = { TextButton(onToggle, Modifier.fillMaxWidth()) { Text("Edit") } },
-                    second = { TextButton(onRemove, Modifier.fillMaxWidth()) { Text("Remove") } },
+                    first = { TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Done") } },
+                    second = { TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") } },
+                )
+            } else {
+                ServiceLoopResponsivePair(
+                    first = { TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Edit") } },
+                    second = { TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") } },
                 )
             }
         }

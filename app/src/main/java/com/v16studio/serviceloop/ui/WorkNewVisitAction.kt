@@ -31,6 +31,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
@@ -38,9 +41,29 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 internal const val WORK_NEW_VISIT_SLOT_KEY = "work-new-visit-slot"
+internal const val WORK_NEW_VISIT_SHORT_PAGE_SPACER_KEY = "work-new-visit-short-page-spacer"
 private val WorkNewVisitFloatingClearance = ServiceLoopUiTokens.Size.touchMin + ServiceLoopUiTokens.Space.lg
 
 internal enum class WorkNewVisitActionState { UNRESOLVED, FLOATING, DOCKED }
+
+internal data class WorkNewVisitLayout(
+    val totalItemsCount: Int,
+    val visibleItemsCount: Int,
+    val slotFullyVisible: Boolean,
+) {
+    val isMeaningful: Boolean
+        get() = totalItemsCount > 0 && visibleItemsCount > 0
+}
+
+internal fun resolveWorkNewVisitActionState(
+    current: WorkNewVisitActionState,
+    layout: WorkNewVisitLayout,
+): WorkNewVisitActionState = when {
+    current == WorkNewVisitActionState.UNRESOLVED && !layout.isMeaningful -> WorkNewVisitActionState.UNRESOLVED
+    current == WorkNewVisitActionState.UNRESOLVED -> if (layout.slotFullyVisible) WorkNewVisitActionState.DOCKED else WorkNewVisitActionState.FLOATING
+    current == WorkNewVisitActionState.FLOATING && layout.slotFullyVisible -> WorkNewVisitActionState.DOCKED
+    else -> current
+}
 
 /** Resolves once from the first meaningful list layout, then only moves from FLOATING to DOCKED. */
 @Composable
@@ -50,17 +73,48 @@ internal fun rememberWorkNewVisitActionState(listState: LazyListState): WorkNewV
         snapshotFlow {
             val layout = listState.layoutInfo
             val slot = layout.visibleItemsInfo.firstOrNull { it.key == WORK_NEW_VISIT_SLOT_KEY }
-            slot != null && slot.offset >= layout.viewportStartOffset &&
-                slot.offset + slot.size <= layout.viewportEndOffset
+            WorkNewVisitLayout(
+                totalItemsCount = layout.totalItemsCount,
+                visibleItemsCount = layout.visibleItemsInfo.size,
+                slotFullyVisible = slot != null && slot.offset >= layout.viewportStartOffset &&
+                    slot.offset + slot.size <= layout.viewportEndOffset,
+            )
         }.distinctUntilChanged().collect { fullyVisible ->
-            actionState = when {
-                actionState == WorkNewVisitActionState.UNRESOLVED -> if (fullyVisible) WorkNewVisitActionState.DOCKED else WorkNewVisitActionState.FLOATING
-                actionState == WorkNewVisitActionState.FLOATING && fullyVisible -> WorkNewVisitActionState.DOCKED
-                else -> actionState
-            }
+            actionState = resolveWorkNewVisitActionState(actionState, fullyVisible)
         }
     }
     return actionState
+}
+
+/** Fills only the unused viewport before a docked slot on a genuinely short, non-scrollable page. */
+@Composable
+internal fun rememberWorkNewVisitDockedBottomSpacer(
+    listState: LazyListState,
+    actionState: WorkNewVisitActionState,
+): Dp {
+    val density = LocalDensity.current
+    var spacerHeightPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(listState, actionState, density) {
+        if (actionState != WorkNewVisitActionState.DOCKED) {
+            spacerHeightPx = 0
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val slot = layout.visibleItemsInfo.firstOrNull { it.key == WORK_NEW_VISIT_SLOT_KEY }
+            val currentSpacer = layout.visibleItemsInfo
+                .firstOrNull { it.key == WORK_NEW_VISIT_SHORT_PAGE_SPACER_KEY }
+                ?.size ?: 0
+            if (listState.firstVisibleItemIndex == 0 && slot != null) {
+                val slotBottomWithoutSpacer = slot.offset + slot.size - currentSpacer
+                val normalBottomPadding = with(density) { ServiceLoopUiTokens.Space.sm.toPx().toInt() }
+                (layout.viewportEndOffset - slotBottomWithoutSpacer - normalBottomPadding).coerceAtLeast(0)
+            } else {
+                0
+            }
+        }.distinctUntilChanged().collect { spacerHeightPx = it }
+    }
+    return with(density) { spacerHeightPx.toDp() }
 }
 
 @Composable
@@ -90,6 +144,7 @@ internal fun WorkNewVisitFloatingAction(
     actionState: WorkNewVisitActionState,
     onClick: () -> Unit,
     bottomInset: Dp = 0.dp,
+    respectNavigationBars: Boolean = true,
 ) {
     AnimatedVisibility(
         visible = actionState == WorkNewVisitActionState.FLOATING,
@@ -97,11 +152,13 @@ internal fun WorkNewVisitFloatingAction(
         exit = fadeOut(tween(120)) + slideOutVertically(tween(120)) { it / 3 },
     ) {
         Box(
-            Modifier.fillMaxSize().navigationBarsPadding().padding(
-                start = ServiceLoopUiTokens.Space.md,
-                end = ServiceLoopUiTokens.Space.md,
-                bottom = bottomInset + ServiceLoopUiTokens.Space.md,
-            ),
+            Modifier.fillMaxSize()
+                .then(if (respectNavigationBars) Modifier.navigationBarsPadding() else Modifier)
+                .padding(
+                    start = ServiceLoopUiTokens.Space.md,
+                    end = ServiceLoopUiTokens.Space.md,
+                    bottom = bottomInset + ServiceLoopUiTokens.Space.md,
+                ),
             contentAlignment = Alignment.BottomEnd,
         ) {
             Surface(
@@ -121,5 +178,7 @@ internal fun WorkNewVisitFloatingAction(
     }
 }
 
-internal val WorkNewVisitListBottomPadding: Dp = WorkNewVisitFloatingClearance
+internal fun workNewVisitListBottomPadding(actionState: WorkNewVisitActionState): Dp =
+    if (actionState == WorkNewVisitActionState.FLOATING) WorkNewVisitFloatingClearance else ServiceLoopUiTokens.Space.sm
+
 internal val WorkNewVisitDueBottomInset: Dp = 0.dp

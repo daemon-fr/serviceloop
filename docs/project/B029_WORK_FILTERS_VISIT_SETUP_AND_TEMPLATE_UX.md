@@ -29,3 +29,21 @@ Start now still writes the business date, and one-time customer/task semantics r
 ## Verification intent
 
 The acceptance gate is the repository’s B029 unit/build/lint/android-test suite plus targeted UI/runtime evidence where available. Reports must distinguish automated tests, domain instrumentation, UI instrumentation, system handoff, and rendered/human inspection.
+
+## B029 correction and visual acceptance pass
+
+The initial Work action decision now waits for meaningful `LazyListLayoutInfo`: `totalItemsCount > 0` and a non-empty `visibleItemsInfo`. The pure reducer keeps `UNRESOLVED` while layout is not ready, resolves a meaningful short page directly to `DOCKED`, resolves a meaningful long page to `FLOATING`, and permits only the one-way `FLOATING -> DOCKED` transition. This prevents the pre-layout `UNRESOLVED -> FLOATING -> DOCKED` flash.
+
+Work list bottom spacing is state-aware. `FLOATING` keeps only the temporary floating-action clearance needed to scroll the last record above the floater; `DOCKED` uses normal bottom spacing beyond the real full-width reserved slot. Short, non-scrollable pages fill only the unused viewport before that docked slot. Due Services keeps `WorkNewVisitDueBottomInset = 0.dp` and its floater remains inside the weighted list area, above the persistent Book selected / Start selected actions.
+
+Template detail checklist rows now use the existing disclosure caret treatment, as does Version history, while command buttons remain command actions. Draft checklist items expose `Edit` while collapsed and `Done` while expanded; movement, Remove, private guidance, response type, number unit, Required, and save-as-one-new-revision semantics remain unchanged.
+
+Automated and connected evidence for this correction:
+
+- Source-reviewed: `WorkNewVisitAction.kt`, the three Work list screens, `TemplateUi.kt`, the disclosure component, and the focused B026 UI tests.
+- Unit: 415 tests, 0 failures, 0 errors.
+- Local gate: `:app:testDebugUnitTest`, `:app:assembleDebug`, `:app:assembleRelease`, `:app:lintDebug`, and `:app:assembleDebugAndroidTest` all PASS; `git diff --check` PASS.
+- Focused connected UI instrumentation on the dynamically resolved canonical `Pixel_10a_ServiceLoop` AVD: 22 tests, 22 PASS. Coverage includes short/long Work docking, Due Services floater geometry, checklist disclosure routing, and Edit/Done semantics.
+- Broader connected coverage previously run: 20 tests, 19 PASS and 1 FAIL. The isolated failure is the pre-existing `WorkFilterSelectorUiTest` expectation that the remembered Due visit filter starts at `All`; the canonical emulator retained another valid SharedPreferences filter and the isolated rerun reproduced the same setup-sensitive failure. No app data was cleared.
+
+Rendered/human evidence was captured from the canonical AVD and inspected in light and dark themes: Home, Work Due floating, Work Due docked, short Visits, template detail, and the expanded template editor. The isolated fixture rendering was used for template screens because the preserved pilot dataset has no saved inspection templates; no canonical business data was mutated. Short Visits and Follow-ups were checked for direct docked presentation and compact bottom spacing; the long Due page was scrolled to confirm docking and one-way behavior. A representative Work screen was also inspected at approximately 320dp width with font scale 2.0, then the emulator was restored to 1080x2424 and font scale 1.0. Large text reflows the Work header/actions and filter controls without overlap; template action pairs remain vertically adaptable at narrow widths.

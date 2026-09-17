@@ -662,7 +662,7 @@ fun ServiceLoopDenseNavigableRow(
             statusContent?.invoke() ?: status?.takeIf{it.isNotBlank()}?.let{ServiceLoopStatusBadge(it)}
             actionLabel?.takeIf{it.isNotBlank()}?.let{Text(it,style=ServiceLoopUiTokens.Type.meta,color=c.action)}
         }
-        if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon),c.icon)
+        if(showDisclosure) ServiceLoopIcon(ServiceLoopIcons.Disclosure,null,Modifier.size(ServiceLoopUiTokens.Size.icon).testTag("service-loop-disclosure-icon"),c.icon)
     }
 }
 

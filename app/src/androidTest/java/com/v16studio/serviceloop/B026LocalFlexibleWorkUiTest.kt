@@ -36,6 +36,8 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.domain.*
@@ -249,6 +251,10 @@ class B026LocalFlexibleWorkUiTest {
         }
         compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
+        val density = compose.activity.resources.displayMetrics.density
+        val shortListBottom = compose.onNodeWithTag("work-visits-list").fetchSemanticsNode().boundsInRoot.bottom
+        val shortButtonBottom = compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.bottom
+        assertTrue("Short docked Work should end with only normal spacing", shortListBottom - shortButtonBottom <= 24f * density)
 
         compose.runOnUiThread {
             compose.activity.setContent {
@@ -262,6 +268,109 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("work-visits-list").performScrollToNode(hasTestTag("new-visit-slot"))
         compose.onNodeWithTag("new-visit-work-bottom").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
+        val dockedListBottom = compose.onNodeWithTag("work-visits-list").fetchSemanticsNode().boundsInRoot.bottom
+        val dockedButtonBottom = compose.onNodeWithTag("new-visit-work-bottom").fetchSemanticsNode().boundsInRoot.bottom
+        assertTrue("Docked Work should end with only normal spacing", dockedListBottom - dockedButtonBottom <= 24f * density)
+    }
+
+    @Test fun dueServicesFloatingActionSitsAbovePersistentSelectionActions() {
+        val site = site("due-site", "Due site", CustomerType.STANDARD, equipment = listOf(equipment("due-equipment", "Due equipment")))
+        val dueRows = (1..24).map { index -> due(site, "due-plan-$index") }
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(dueRows),
+            businessDate = LocalDate.of(2026, 9, 5),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    DueServicesScreen(dueRows, PaddingValues(), state, viewModel, rememberNavController(), initialBucket = DueBucket.TODAY)
+                }
+            }
+        }
+
+        compose.onNodeWithTag("new-visit-work-floating").assertIsDisplayed()
+        val density = compose.activity.resources.displayMetrics.density
+        val floating = compose.onNodeWithTag("new-visit-work-floating").fetchSemanticsNode().boundsInRoot
+        val selectionTop = compose.onNodeWithTag("book-selected-services").fetchSemanticsNode().boundsInRoot.top
+        val list = compose.onNodeWithTag("due-services-list").fetchSemanticsNode().boundsInRoot
+        assertTrue("Due Services floater must not overlap selection actions", floating.bottom <= selectionTop)
+        assertTrue("Due Services floater should sit just above selection actions", selectionTop - floating.bottom <= 32f * density)
+        assertTrue("Due Services floater should remain near the list right edge", list.right - floating.right <= 32f * density)
+    }
+
+    @Test fun templateDetailChecklistRowsShowDisclosureAndOpenFocusedEditor() {
+        val detail = TemplateDetail(
+            "template-1",
+            "IT-001",
+            "Safety checks",
+            2,
+            "ACTIVE",
+            listOf(TemplateItemDraft("Belt tension", "NUMBER", "mm", required = true)),
+        )
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    val nav = rememberNavController()
+                    NavHost(nav, "template") {
+                        composable("template") { TemplateDetailScreen(detail, PaddingValues(), nav, versions = listOf(TemplateRevisionDetail("revision-2", 2, "Safety checks", 1L, detail.items))) }
+                        composable(
+                            "template/edit/{id}?focusItem={focusItem}",
+                            arguments = listOf(
+                                navArgument("id") { type = NavType.StringType },
+                                navArgument("focusItem") { type = NavType.IntType },
+                            ),
+                        ) { entry ->
+                            androidx.compose.material3.Text("Focused item ${entry.arguments?.getInt("focusItem")}", modifier = androidx.compose.ui.Modifier.testTag("template-editor-destination"))
+                        }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("template-detail-item-0", useUnmergedTree = true).assert(hasAnyDescendant(hasTestTag("service-loop-disclosure-icon")))
+        compose.onAllNodesWithTag("service-loop-disclosure-icon", useUnmergedTree = true).assertCountEquals(2)
+        compose.onNodeWithTag("template-detail-item-0").performClick()
+        compose.onNodeWithTag("template-editor-destination").assertIsDisplayed().assertTextContains("Focused item 0")
+    }
+
+    @Test fun templateItemUsesEditWhenCollapsedAndDoneWhenExpanded() {
+        val detail = TemplateDetail(
+            "template-1",
+            "IT-001",
+            "Safety checks",
+            2,
+            "ACTIVE",
+            listOf(TemplateItemDraft("Belt tension", "NUMBER", "mm", required = true)),
+        )
+        val viewModel = ServiceLoopViewModel(FakeRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                ServiceLoopTheme {
+                    val nav = rememberNavController()
+                    NavHost(nav, "editor") {
+                        composable("editor") {
+                            CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
+                                TemplateEditorScreen(detail, PaddingValues(), UiState(loading = false), viewModel, nav)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Edit")
+        assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("template-item-toggle-0").performClick()
+        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Done")
+        assertTrue(compose.onAllNodesWithText("Edit").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("Move up").assertIsDisplayed()
+        compose.onNodeWithText("Move down").assertIsDisplayed()
+        compose.onNodeWithText("Remove").assertIsDisplayed()
+        compose.onNodeWithTag("template-item-toggle-0").performClick()
+        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Edit")
+        assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun startNowCreatesWorkingVisitAndOpensItsFirstService() {
