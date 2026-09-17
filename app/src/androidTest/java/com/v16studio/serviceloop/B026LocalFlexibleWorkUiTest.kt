@@ -23,8 +23,10 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -265,8 +267,10 @@ class B026LocalFlexibleWorkUiTest {
         val navigationBounds = compose.onNodeWithTag("relationship-navigation").fetchSemanticsNode().boundsInRoot
         val customerLabelBounds = compose.onNodeWithText("Customer", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val disclosureBounds = compose.onNodeWithTag("service-loop-disclosure-icon", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertEquals(navigationBounds.center.x, customerLabelBounds.center.x, 2f)
+        assertTrue("Navigation labels should reserve the caret area", customerLabelBounds.center.x < navigationBounds.center.x)
+        assertTrue("Disclosure caret should have a clear trailing gap", disclosureBounds.left - customerLabelBounds.right >= 8f * compose.activity.resources.displayMetrics.density - 1f)
         assertTrue(disclosureBounds.center.x > customerLabelBounds.center.x)
+        captureRendered("b032-navigation-button.png")
     }
 
     @Test fun siteActionsGiveLongerNavigationLabelsMoreWidth() {
@@ -297,6 +301,7 @@ class B026LocalFlexibleWorkUiTest {
         assertTrue("Customer action should receive the widest natural slot", customer.width >= maps.width)
         assertTrue(customer.right <= edit.left)
         assertTrue(edit.right <= maps.left)
+        captureRendered("b032-site-top-actions.png")
     }
 
     @Test fun customerEditShowsTheSameCheckboxAndExplainsAPlanBlock() {
@@ -430,14 +435,17 @@ class B026LocalFlexibleWorkUiTest {
         assertTrue(compose.onAllNodesWithTag("template-editor-destination").fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun templateItemUsesRemoveEditRowAndCompactOrderedToolStrip() {
+    @Test fun templateItemUsesIconOnlyGroupedActionsInViewAndEditModes() {
         val detail = TemplateDetail(
             "template-1",
             "IT-001",
             "Safety checks",
             2,
             "ACTIVE",
-            listOf(TemplateItemDraft("Belt tension", "NUMBER", "mm", required = true)),
+            listOf(
+                TemplateItemDraft("Belt tension", "NUMBER", "mm", required = true),
+                TemplateItemDraft("Filter condition", "STATUS", required = false),
+            ),
         )
         val viewModel = ServiceLoopViewModel(FakeRepository()) {}
         compose.runOnUiThread {
@@ -455,20 +463,36 @@ class B026LocalFlexibleWorkUiTest {
             }
         }
 
-        val removeCollapsed = compose.onNodeWithTag("template-item-remove-0").fetchSemanticsNode().boundsInRoot
-        val editCollapsed = compose.onNodeWithTag("template-item-toggle-0").fetchSemanticsNode().boundsInRoot
-        assertTrue("Remove must be left of Edit", removeCollapsed.right <= editCollapsed.left)
-        compose.onNodeWithTag("template-item-toggle-0").assertTextContains("Edit")
+        val delete = compose.onNodeWithTag("template-item-delete-0").fetchSemanticsNode().boundsInRoot
+        val moveUp = compose.onNodeWithTag("template-item-move-up-0").fetchSemanticsNode().boundsInRoot
+        val moveDown = compose.onNodeWithTag("template-item-move-down-0").fetchSemanticsNode().boundsInRoot
+        val edit = compose.onNodeWithTag("template-item-edit-0").fetchSemanticsNode().boundsInRoot
+        assertTrue("Delete must be left of the movement pair", delete.right <= moveUp.left)
+        assertTrue("Movement controls must be adjacent", moveUp.right <= moveDown.left)
+        assertTrue("Edit must be right of the movement pair", moveDown.right <= edit.left)
+        assertTrue("Icon actions must be larger than the minimum touch target", delete.height >= 56f * compose.activity.resources.displayMetrics.density - 1f)
+        compose.onAllNodesWithContentDescription("Delete item").assertCountEquals(2)
+        compose.onNodeWithTag("template-item-move-up-0").assertIsNotEnabled()
+        compose.onNodeWithTag("template-item-move-down-0").assertIsEnabled().performClick()
+        compose.onNodeWithText("1. Filter condition").assertIsDisplayed()
+        compose.onNodeWithText("2. Belt tension").assertIsDisplayed()
+        captureRendered("b032-template-item-view.png")
+        assertTrue(compose.onAllNodesWithText("Remove").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithText("Move up").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithText("Move down").fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
-        compose.onNodeWithTag("template-item-toggle-0").performClick()
+        compose.onNodeWithTag("template-item-edit-0").performClick()
         compose.onNodeWithTag("template-item-caret-down-0", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("Move up").assertIsDisplayed()
-        compose.onNodeWithText("Move down").assertIsDisplayed()
-        compose.onNodeWithText("Remove").assertIsDisplayed()
-        captureRendered("b030-template-item-expanded.png")
-        compose.onNodeWithText("Done").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("template-item-caret-right-0", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Save item changes").assertIsDisplayed()
+        compose.onNodeWithTag("template-item-move-up-0").assertIsNotEnabled()
+        compose.onNodeWithTag("template-item-move-down-0").assertIsEnabled().performClick()
+        compose.onNodeWithText("1. Belt tension").assertIsDisplayed()
+        compose.onNodeWithText("2. Filter condition").assertIsDisplayed()
+        captureRendered("b032-template-item-edit.png")
+        compose.onNodeWithContentDescription("Save item changes").performClick()
+        compose.onNodeWithTag("template-item-caret-right-1", useUnmergedTree = true).assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("Done").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithText("Edit").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun templateStateActionReloadsSynchronousPairWithoutChangingRevision() {
@@ -504,6 +528,7 @@ class B026LocalFlexibleWorkUiTest {
         }
 
         compose.onNodeWithTag("new-template-item-type-label").assertIsDisplayed()
+        val typeLabel = compose.onNodeWithTag("new-template-item-type-label").fetchSemanticsNode().boundsInRoot
         listOf("STATUS", "TEXT", "NUMBER").forEach { type ->
             compose.onNodeWithTag("new-template-type-$type").assertIsDisplayed()
             compose.onNodeWithText(
@@ -514,6 +539,8 @@ class B026LocalFlexibleWorkUiTest {
                 },
             ).assertIsDisplayed()
         }
+        val firstType = compose.onNodeWithTag("new-template-type-STATUS").fetchSemanticsNode().boundsInRoot
+        assertTrue("Item type needs a small separation before the first option", firstType.top - typeLabel.bottom >= 4f * compose.activity.resources.displayMetrics.density - 1f)
         compose.onNodeWithTag("new-template-type-STATUS").assertIsSelected()
         compose.onNodeWithTag("long-text-private-technician-guidance-expand", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("new-template-type-TEXT").performClick()
@@ -675,6 +702,10 @@ class B026LocalFlexibleWorkUiTest {
         assertAbsentTag("make-standard-and-add-plan")
         compose.onNodeWithText("Recurring service requires a Standard customer.").assertIsDisplayed()
         compose.onNodeWithTag("equipment-actions").assertIsDisplayed()
+        val equipmentInfo = compose.onNodeWithText("Promoted customer\nOne-time site", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val equipmentCustomer = compose.onNodeWithTag("equipment-customer-link").fetchSemanticsNode().boundsInRoot
+        assertTrue("Equipment relationship actions need separation from the info block", equipmentCustomer.top - equipmentInfo.bottom >= 8f * compose.activity.resources.displayMetrics.density - 1f)
+        captureRendered("b032-equipment-top-actions.png")
     }
 
     @Test fun linkExistingEquipmentReturnsToSameServiceWithTheSameWorkItem() {
@@ -771,6 +802,7 @@ class B026LocalFlexibleWorkUiTest {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
+        Thread.sleep(500)
         val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b030-rendered")
         check(directory.exists() || directory.mkdirs())
         val screenshot = instrumentation.uiAutomation.takeScreenshot()

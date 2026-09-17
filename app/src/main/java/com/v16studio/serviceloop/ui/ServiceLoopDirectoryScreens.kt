@@ -262,6 +262,7 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             Text(if (detail.makeModel.isBlank()) "Make/model not supplied" else detail.makeModel)
             Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("equipment-customer-link"))
                 ServiceLoopNavigationButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("equipment-site-link"), enabled = detail.siteId.isNotBlank())

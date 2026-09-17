@@ -17,6 +17,8 @@ object ServiceLoopIcons {
     @DrawableRes val ArrowCircleDown = R.drawable.ic_sl_arrow_circle_down
     @DrawableRes val ArrowCircleUp = R.drawable.ic_sl_arrow_circle_up
     @DrawableRes val ArrowDown = R.drawable.ic_sl_arrow_down
+    @DrawableRes val ArrowFatLineDown = R.drawable.ic_sl_arrow_fat_line_down
+    @DrawableRes val ArrowFatLineUp = R.drawable.ic_sl_arrow_fat_line_up
     @DrawableRes val ArrowUp = R.drawable.ic_sl_arrow_up
     @DrawableRes val Back = R.drawable.ic_sl_back
     @DrawableRes val Backup = R.drawable.ic_sl_backup
@@ -27,6 +29,7 @@ object ServiceLoopIcons {
     @DrawableRes val CaretRight = R.drawable.ic_sl_caret_right
     @DrawableRes val Check = R.drawable.ic_sl_check
     @DrawableRes val CheckCircle = R.drawable.ic_sl_check_circle
+    @DrawableRes val CheckFat = R.drawable.ic_sl_check_fat
     @DrawableRes val Circle = R.drawable.ic_sl_circle
     @DrawableRes val Copy = R.drawable.ic_sl_copy
     @DrawableRes val Customers = R.drawable.ic_sl_customers
@@ -46,6 +49,7 @@ object ServiceLoopIcons {
     @DrawableRes val Lock = R.drawable.ic_sl_lock
     @DrawableRes val Mail = R.drawable.ic_sl_mail
     @DrawableRes val More = R.drawable.ic_sl_more
+    @DrawableRes val PencilSimple = R.drawable.ic_sl_pencil_simple
     @DrawableRes val Photo = R.drawable.ic_sl_photo
     @DrawableRes val Report = R.drawable.ic_sl_report
     @DrawableRes val Restore = R.drawable.ic_sl_restore

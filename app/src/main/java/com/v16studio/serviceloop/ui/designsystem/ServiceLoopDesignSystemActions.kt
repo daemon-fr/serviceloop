@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,11 +99,14 @@ internal fun ServiceLoopButtonContent(
                 } else {
                     Box(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.align(Alignment.Center).wrapContentWidth(),
+                            Modifier
+                                .align(Alignment.Center)
+                                .fillMaxWidth()
+                                .padding(end = ServiceLoopUiTokens.Size.icon + ServiceLoopUiTokens.Space.md),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
                         ) { content() }
-                        Box(Modifier.align(Alignment.CenterEnd)) { trailingIcon() }
+                        Box(Modifier.align(Alignment.CenterEnd).padding(end = ServiceLoopUiTokens.Space.xs)) { trailingIcon() }
                     }
                 }
             }
@@ -208,6 +212,38 @@ fun ServiceLoopCompactIconLabelAction(
             textAlign = TextAlign.Center,
             maxLines = 2,
         )
+    }
+}
+
+/** Icon-only circular action for compact grouped controls. The accessible name remains explicit. */
+@Composable
+fun ServiceLoopIconOnlyAction(
+    accessibleName: String,
+    icon: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    containerColor: Color = LocalServiceLoopTokens.current.action,
+    contentColor: Color = LocalServiceLoopTokens.current.onAction,
+    testTag: String? = null,
+) {
+    val colors = LocalServiceLoopTokens.current
+    val background = if (enabled) containerColor else colors.disabledContainer
+    val ink = if (enabled) contentColor else colors.disabledText
+    val actionModifier = modifier
+        .size(56.dp)
+        .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+        .clip(CircleShape)
+        .background(background)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .focusable(enabled)
+        .semantics(mergeDescendants = true) {
+            this.contentDescription = accessibleName
+            if (!enabled) disabled()
+        }
+        .let { if (testTag == null) it else it.testTag(testTag) }
+    Box(actionModifier, contentAlignment = Alignment.Center) {
+        ServiceLoopIcon(icon, null, Modifier.size(ServiceLoopUiTokens.Size.icon), ink)
     }
 }
 

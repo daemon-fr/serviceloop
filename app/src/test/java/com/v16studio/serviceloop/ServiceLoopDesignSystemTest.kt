@@ -116,14 +116,29 @@ class ServiceLoopDesignSystemTest {
         assertEquals(48f,ServiceLoopButtonContract.secondaryMinHeight.value,0f)
     }
 
-    @Test fun b031TemplateToolsUseLayeredIconsWithoutAnOuterCircle() {
-        val actions = productionKotlinSourceContaining("ServiceLoopCompactIconLabelAction")
-        val template = productionKotlinSourceContaining("baseIcon = ServiceLoopIcons.Circle", "foregroundIcon = ServiceLoopIcons.X")
-        assertTrue(actions.contains("baseIcon: Int? = null"))
-        assertFalse(actions.contains("background(iconContainer"))
-        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.ArrowUp"))
-        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.ArrowDown"))
-        assertTrue(template.contains("foregroundIcon = ServiceLoopIcons.Check"))
+    @Test fun b032TemplateToolsUseCircularIconOnlyActionsWithExactSemantics() {
+        val actions = productionKotlinSourceContaining("fun ServiceLoopIconOnlyAction")
+        val template = productionKotlinSourceContaining("primaryAccessibleName = \"Save item changes\"")
+        assertTrue(actions.contains(".size(56.dp)"))
+        assertTrue(actions.contains(".clip(CircleShape)"))
+        assertTrue(actions.contains("if (!enabled) disabled()"))
+        assertTrue(template.contains("ServiceLoopIcons.Delete"))
+        assertTrue(template.contains("ServiceLoopIcons.ArrowFatLineUp"))
+        assertTrue(template.contains("ServiceLoopIcons.ArrowFatLineDown"))
+        assertTrue(template.contains("ServiceLoopIcons.CheckFat"))
+        assertTrue(template.contains("ServiceLoopIcons.PencilSimple"))
+        assertFalse(template.contains("ServiceLoopCompactIconLabelAction("))
+    }
+
+    @Test fun b032TemplateIconManifestUsesTheRequestedPhosphorFillAssets() {
+        val workingDirectory = java.io.File(requireNotNull(System.getProperty("user.dir")))
+        val repositoryRoot = if (workingDirectory.name == "app") workingDirectory.parentFile else workingDirectory
+        val manifest = repositoryRoot.resolve("tools/phosphor/serviceloop-icons.json").readText()
+        assertTrue(manifest.contains("\"ArrowFatLineUp\": \"arrow-fat-line-up\""))
+        assertTrue(manifest.contains("\"ArrowFatLineDown\": \"arrow-fat-line-down\""))
+        assertTrue(manifest.contains("\"CheckFat\": \"check-fat\""))
+        assertTrue(manifest.contains("\"PencilSimple\": \"pencil-simple\""))
+        assertTrue(manifest.contains("\"Delete\": \"trash\""))
     }
 
     @Test fun b031RegisterAndSearchKeepTheirFixedProductOrder() {

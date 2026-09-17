@@ -39,8 +39,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopStatusBadge
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconAction
-import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCompactIconLabelAction
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopIconOnlyAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
@@ -282,6 +281,64 @@ private fun TemplateTypeChoice(type: String, selected: Boolean, description: Str
 }
 
 @Composable
+private fun TemplateItemActionRow(
+    index: Int,
+    lastIndex: Int,
+    primaryAccessibleName: String,
+    primaryIcon: Int,
+    primaryTestTag: String,
+    onPrimary: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        ServiceLoopIconOnlyAction(
+            accessibleName = "Delete item",
+            icon = ServiceLoopIcons.Delete,
+            onClick = onDelete,
+            containerColor = colors.destructive,
+            contentColor = colors.onDestructive,
+            testTag = "template-item-delete-$index",
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+            ServiceLoopIconOnlyAction(
+                accessibleName = "Move item up",
+                icon = ServiceLoopIcons.ArrowFatLineUp,
+                onClick = onMoveUp,
+                enabled = index > 0,
+                containerColor = colors.selection,
+                contentColor = colors.action,
+                testTag = "template-item-move-up-$index",
+            )
+            ServiceLoopIconOnlyAction(
+                accessibleName = "Move item down",
+                icon = ServiceLoopIcons.ArrowFatLineDown,
+                onClick = onMoveDown,
+                enabled = index < lastIndex,
+                containerColor = colors.selection,
+                contentColor = colors.action,
+                testTag = "template-item-move-down-$index",
+            )
+        }
+        ServiceLoopIconOnlyAction(
+            accessibleName = primaryAccessibleName,
+            icon = primaryIcon,
+            onClick = onPrimary,
+            containerColor = colors.action,
+            contentColor = colors.onAction,
+            testTag = primaryTestTag,
+        )
+    }
+}
+
+@Composable
 private fun TemplateItemDraftEditor(
     index: Int,
     lastIndex: Int,
@@ -311,70 +368,31 @@ private fun TemplateItemDraftEditor(
                 if (item.responseType == "NUMBER") DailyField(item.unit, { onChange(item.copy(unit = it)) }, "Unit")
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(item.required, { onChange(item.copy(required = it)) }); Text("Required") }
                 ServiceLoopLongTextEditor(item.privateGuidance, { onChange(item.copy(privateGuidance = it)) }, "Private technician guidance", true, fieldTestTag = "template-item-guidance-$index", compact = true)
-                val colors = LocalServiceLoopTokens.current
-                Row(
-                    Modifier.fillMaxWidth().testTag("template-item-tool-strip-$index"),
-                    horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
-                ) {
-                    ServiceLoopCompactIconLabelAction(
-                        accessibleName = "Remove item",
-                        icon = ServiceLoopIcons.X,
-                        label = "Remove",
-                        onClick = onRemove,
-                        modifier = Modifier.weight(1f).testTag("template-item-remove-$index"),
-                        containerColor = colors.destructive,
-                        contentColor = colors.onDestructive,
-                        baseIcon = ServiceLoopIcons.Circle,
-                        foregroundIcon = ServiceLoopIcons.X,
-                    )
-                    ServiceLoopCompactIconLabelAction(
-                        accessibleName = "Move item up",
-                        icon = ServiceLoopIcons.ArrowUp,
-                        label = "Move up",
-                        onClick = onMoveUp,
-                        enabled = index > 0,
-                        modifier = Modifier.weight(1f).testTag("template-item-move-up-$index"),
-                        containerColor = colors.selection,
-                        contentColor = colors.action,
-                        baseIcon = ServiceLoopIcons.Circle,
-                        foregroundIcon = ServiceLoopIcons.ArrowUp,
-                    )
-                    ServiceLoopCompactIconLabelAction(
-                        accessibleName = "Move item down",
-                        icon = ServiceLoopIcons.ArrowDown,
-                        label = "Move down",
-                        onClick = onMoveDown,
-                        enabled = index < lastIndex,
-                        modifier = Modifier.weight(1f).testTag("template-item-move-down-$index"),
-                        containerColor = colors.selection,
-                        contentColor = colors.action,
-                        baseIcon = ServiceLoopIcons.Circle,
-                        foregroundIcon = ServiceLoopIcons.ArrowDown,
-                    )
-                    ServiceLoopCompactIconLabelAction(
-                        accessibleName = "Done editing item",
-                        icon = ServiceLoopIcons.Check,
-                        label = "Done",
-                        onClick = onToggle,
-                        modifier = Modifier.weight(1f).testTag("template-item-done-$index"),
-                        containerColor = colors.action,
-                        contentColor = colors.onAction,
-                        baseIcon = ServiceLoopIcons.Circle,
-                        foregroundIcon = ServiceLoopIcons.Check,
-                    )
-                }
+                TemplateItemActionRow(
+                    index = index,
+                    lastIndex = lastIndex,
+                    primaryAccessibleName = "Save item changes",
+                    primaryIcon = ServiceLoopIcons.CheckFat,
+                    primaryTestTag = "template-item-save-$index",
+                    onPrimary = onToggle,
+                    onMoveUp = onMoveUp,
+                    onMoveDown = onMoveDown,
+                    onDelete = onRemove,
+                    modifier = Modifier.testTag("template-item-tool-strip-$index"),
+                )
             } else {
-                Row(
-                    Modifier.fillMaxWidth().testTag("template-item-collapsed-actions-$index"),
-                    horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
-                ) {
-                    Box(Modifier.weight(1f)) {
-                        TextButton(onRemove, Modifier.fillMaxWidth().testTag("template-item-remove-$index")) { Text("Remove") }
-                    }
-                    Box(Modifier.weight(1f)) {
-                        TextButton(onToggle, Modifier.fillMaxWidth().testTag("template-item-toggle-$index")) { Text("Edit") }
-                    }
-                }
+                TemplateItemActionRow(
+                    index = index,
+                    lastIndex = lastIndex,
+                    primaryAccessibleName = "Edit item",
+                    primaryIcon = ServiceLoopIcons.PencilSimple,
+                    primaryTestTag = "template-item-edit-$index",
+                    onPrimary = onToggle,
+                    onMoveUp = onMoveUp,
+                    onMoveDown = onMoveDown,
+                    onDelete = onRemove,
+                    modifier = Modifier.testTag("template-item-collapsed-actions-$index"),
+                )
             }
         }
     }
@@ -455,6 +473,7 @@ internal fun TemplateEditorScreen(
             Text("Add new item", style = MaterialTheme.typography.titleMedium)
             DailyField(label, { label = it }, "Item label")
             Text("Item type", style = ServiceLoopUiTokens.Type.label, color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("new-template-item-type-label"))
+            Spacer(Modifier.height(ServiceLoopUiTokens.Space.xs))
             Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                 TemplateTypeChoice("STATUS", type == "STATUS", "Record whether the check is satisfactory, needs attention, or cannot be completed.") { type = "STATUS" }
                 TemplateTypeChoice("TEXT", type == "TEXT", "Record a written observation, note, or result.") { type = "TEXT" }

@@ -174,6 +174,15 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - B031 verification: 420 unit tests passed; debug/release APK assembly, lint, and Android-test APK assembly passed; the two focused canonical-AVD B031 Compose tests passed, and controlled Register/Templates plus grouped Search/recent-history renders were visually inspected. The standalone Phosphor helper suite retains two pre-existing baseline assertion failures documented in the B031 evidence note.
 - This is implemented review-branch work only. Protected `master` remains unchanged, and owner acceptance plus the B-008 technician pilot remain separate gates.
 
+## B032 implementation state
+
+- Inspection-template draft rows now use the shared larger icon-only action layout: Delete at left, adjacent Move up/Move down controls in the middle, and Edit or Save item changes at right. Accessible labels and first/last movement disabled semantics remain explicit. The template detail checklist stays quiet and non-navigating.
+- Generated Phosphor mappings/assets cover `trash`, `arrow-fat-line-up`, `arrow-fat-line-down`, `check-fat`, and `pencil-simple`. The shared navigation-button primitive now reserves trailing caret space so Site and Equipment redirect labels remain centered and visually separated from their carets.
+- The new-template item-type spacing and Equipment information-to-action spacing were tightened by small fixed design-system gaps; compact private guidance was preserved.
+- B032 verification: required unit, debug/release assembly, lint, and Android-test assembly gates passed. Focused canonical-AVD tests for action rows, movement, semantics, caret direction, form spacing, and Site/Equipment layouts passed individually. Representative light/dark renders were inspected. The retained full B026 UI class had one unrelated pre-existing fixture/search failure (26/27); the six relevant tests passed.
+- Detailed scope and evidence are in `B032_TEMPLATE_ACTION_AND_NAVIGATION_SPACING_POLISH.md`. A separate approximately 320dp run was not performed.
+- This is implemented review-branch work only. Protected `master` remains unchanged and owner acceptance plus the B-008 technician pilot remain separate gates.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`
