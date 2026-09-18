@@ -69,10 +69,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,6 +113,9 @@ import com.v16studio.serviceloop.domain.OperationalWorkItem
 import com.v16studio.serviceloop.domain.OperationalWorkKind
 import com.v16studio.serviceloop.domain.OperationalWorkState
 import com.v16studio.serviceloop.domain.OperationalWorkClassifier
+import com.v16studio.serviceloop.domain.AgendaItem
+import com.v16studio.serviceloop.domain.AgendaProjector
+import com.v16studio.serviceloop.domain.formatAppointmentTime
 import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.domain.includesCustomer
 import com.v16studio.serviceloop.domain.InspectionDraft
@@ -132,6 +138,7 @@ import com.v16studio.serviceloop.domain.VisitStatusFilter
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import com.v16studio.serviceloop.domain.filterFollowUps
 import com.v16studio.serviceloop.domain.filterVisits
+import com.v16studio.serviceloop.domain.sortVisitsForDisplay
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
 import com.v16studio.serviceloop.ui.theme.AppearanceMode
 import com.v16studio.serviceloop.ui.theme.AppearancePreferences
@@ -173,6 +180,7 @@ import com.v16studio.serviceloop.ui.designsystem.serviceLoopAdaptiveScaffoldPadd
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.io.File
@@ -182,22 +190,99 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: ServiceLoopViewModel) {
     LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
-    LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { CoordinatorHomeActions(nav) }
-        state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
-            item {
-                OperationalDashboard(
-                    projection = projection,
-                    onOpenItem = { openOperationalWork(nav, it) },
-                    onViewAll = { openOperationalSection(nav, it, projection.scope) },
-                    modifier = Modifier.testTag("home-operational-dashboard"),
-                    showTitle = false,
-                )
-            }
-        } ?: item {
-            Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
+    var tab by rememberSaveable { mutableStateOf("DASHBOARD") }
+    Column(Modifier.fillMaxSize().background(LocalServiceLoopTokens.current.canvas)) {
+        Box(Modifier.fillMaxWidth().background(LocalServiceLoopTokens.current.surface).padding(top = ServiceLoopUiTokens.Space.xs)) {
+            ServiceLoopContentTabs(
+                listOf("DASHBOARD" to "Dashboard", "AGENDA" to "Agenda"),
+                tab,
+                { tab = it },
+                testTagPrefix = "home-tab",
+            )
         }
-        item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
+        if (tab == "DASHBOARD") {
+            LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                item { CoordinatorHomeActions(nav) }
+                state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
+                    item {
+                        OperationalDashboard(
+                            projection = projection,
+                            onOpenItem = { openOperationalWork(nav, it) },
+                            onViewAll = { openOperationalSection(nav, it, projection.scope) },
+                            modifier = Modifier.testTag("home-operational-dashboard"),
+                            showTitle = false,
+                        )
+                    }
+                } ?: item {
+                    Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
+                }
+                item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
+            }
+        } else {
+            HomeAgendaScreen(state, nav, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+internal fun HomeAgendaScreen(state: UiState, nav: NavHostController, modifier: Modifier = Modifier) {
+    val projection = AgendaProjector.project(
+        visits = state.visits,
+        dueServices = state.dueServices,
+        followUps = state.followUps,
+        today = state.businessDate,
+        businessZone = runCatching { ZoneId.of(state.businessZoneId) }.getOrDefault(ZoneId.systemDefault()),
+    )
+    LazyColumn(
+        modifier = modifier.fillMaxWidth().testTag("home-agenda"),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
+    ) {
+        agendaSection("Unresolved", projection.unresolved, state.businessZoneId, nav)
+        agendaSection("Upcoming", projection.upcoming, state.businessZoneId, nav)
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
+    title: String,
+    items: List<AgendaItem>,
+    zoneId: String,
+    nav: NavHostController,
+) {
+    item(key = "agenda-heading-$title") {
+        Text(title + " (" + items.size + ")", style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("agenda-section-${title.lowercase()}"))
+    }
+    if (items.isEmpty()) {
+        item(key = "agenda-empty-$title") { Text("Nothing here.", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textMuted) }
+    } else {
+        items(items, key = { "agenda-${it.kind.name}-${it.recordId}" }) { agendaItem ->
+            val zone = runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault())
+            val tokens = LocalServiceLoopTokens.current
+            val date = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH).format(agendaItem.date)
+            val dateAndTime = listOfNotNull(date, formatAppointmentTime(agendaItem.scheduledAtEpochMillis, zone)).joinToString(" ")
+            val inline = listOf(dateAndTime, agendaItem.kind.title, agendaItem.identity, agendaItem.context)
+                .filter(String::isNotBlank)
+                .joinToString(" · ")
+            Row(
+                Modifier.fillMaxWidth()
+                    .heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
+                    .clickable(role = Role.Button) {
+                        when (agendaItem.kind) {
+                            OperationalWorkKind.VISIT -> nav.navigate("visit/${agendaItem.recordId}")
+                            OperationalWorkKind.SERVICE -> nav.navigate("plan/${agendaItem.recordId}")
+                            OperationalWorkKind.FOLLOW_UP -> nav.navigate("follow-up/${agendaItem.recordId}")
+                        }
+                    }
+                    .semantics { contentDescription = inline }
+                    .drawBehind { drawLine(tokens.outlineDecorative, Offset(0f, size.height), Offset(size.width, size.height), ServiceLoopUiTokens.Stroke.divider.toPx()) }
+                    .padding(vertical = ServiceLoopUiTokens.Space.sm)
+                    .testTag("agenda-item-${agendaItem.recordId}"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+            ) {
+                Text(inline, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = ServiceLoopUiTokens.Type.itemTitle)
+                ServiceLoopIcon(ServiceLoopIcons.Disclosure, null, Modifier.size(ServiceLoopUiTokens.Size.icon), tokens.icon)
+            }
+        }
     }
 }
 
@@ -340,6 +425,7 @@ internal fun VisitsWorkScreen(
         operationalStateFor(visit) == initialOperationalState &&
             (query.isBlank() || listOf(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, visit.customerName).any { it.contains(query, true) })
     }
+    val ordered = sortVisitsForDisplay(filtered, dateFilter, statusFilter)
     val listState = rememberLazyListState()
     val actionState = rememberWorkNewVisitActionState(listState)
     Box(modifier.padding(padding)) {
@@ -374,8 +460,8 @@ internal fun VisitsWorkScreen(
                 },
             )
         }
-        if (filtered.isEmpty()) item { Text("No visits match these filters.") }
-        items(filtered) { visit ->
+        if (ordered.isEmpty()) item { Text("No visits match these filters.") }
+        items(ordered) { visit ->
             ServiceLoopEntityRecord(visit.reference, visit.siteName, visit.actualServiceDate, visit.state, operationalState = operationalStateFor(visit)) {
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }

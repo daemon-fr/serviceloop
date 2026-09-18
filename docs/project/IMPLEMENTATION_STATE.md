@@ -183,6 +183,16 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Detailed scope and evidence are in `B032_TEMPLATE_ACTION_AND_NAVIGATION_SPACING_POLISH.md`. A separate approximately 320dp run was not performed.
 - This is implemented review-branch work only. Protected `master` remains unchanged and owner acceptance plus the B-008 technician pilot remain separate gates.
 
+## B036 / ServiceLoop 1.0.1 implementation state
+
+- Implemented on `codex/v1.0.1-agenda-polish` from start SHA `74c129dfa0c7ec4bf5f7b564498c69d6c0a572d0`. Android metadata is `versionCode 2` / `versionName "1.0.1"`; no release tag or protected-branch change was made.
+- The effective ServiceLoop appearance now centrally drives light status-bar and navigation-bar icon contrast through the window passed into `ServiceLoopTheme`, including runtime Light/Dark changes while edge-to-edge remains enabled.
+- Shared preset pills center their content; field-adjacent template, date, and time actions use the common 48dp square treatment. Inspection-template creation uses generated Phosphor `plus` Bold (`PlusBold`), not `plus-square`.
+- Create Visit now separates customer selection, Set up visit, appointment date/time, task editing/listing, and visit actions. Follow-up Contact/Corrective choices remain equal-width and side-by-side at large font scale.
+- Optional appointment time reuses `WorkingVisitEntity.scheduledAtEpochMillis` and `appointmentZoneId`; no Room migration was needed. Booking, rescheduling, restore, detail display, and same-date queue ordering preserve date-only semantics and never manufacture midnight.
+- Home retains Dashboard as its default tab and adds an in-memory Agenda projection with exact `Unresolved (N)` and `Upcoming (N)` sections. Agenda rows are compact, max two lines, timed Visits first on a date, and navigate to Visit, Follow-up, or Service Plan truth.
+- B036 verification is documented in `B036_V1_0_1_AGENDA_APPOINTMENT_TIME_AND_UI_POLISH.md`: 427 JVM tests passed, debug/release assembly, lint, and Android-test APK assembly passed, and focused canonical AVD UI/system-bar coverage passed 5/5. This is implemented development-branch work for owner review, not a released version.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

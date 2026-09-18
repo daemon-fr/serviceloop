@@ -229,15 +229,20 @@ object OperationalDashboardProjector {
         OperationalWorkState.IN_PROGRESS -> compareByDescending<OperationalWorkItem> { it.modifiedAtEpochMillis }
             .thenBy { it.displayReference }.thenBy { it.recordId }
         OperationalWorkState.OVERDUE -> compareBy<OperationalWorkItem> { sortDate(it) }
+            .thenBy { visitTimeRank(it) }
+            .thenBy { it.scheduledAtEpochMillis ?: Long.MAX_VALUE }
             .thenBy { it.displayReference }.thenBy { it.recordId }
         OperationalWorkState.DUE_SOON, OperationalWorkState.BOOKED -> compareBy<OperationalWorkItem> { sortDate(it) }
-            .thenBy { it.scheduledAtEpochMillis ?: Long.MIN_VALUE }
+            .thenBy { visitTimeRank(it) }
+            .thenBy { it.scheduledAtEpochMillis ?: Long.MAX_VALUE }
             .thenBy { it.displayReference }.thenBy { it.recordId }
     }
 
-    private fun sortDate(item: OperationalWorkItem): Long = item.scheduledAtEpochMillis
-        ?: item.dueDate?.toEpochDay()?.let { Math.multiplyExact(it, MILLIS_PER_DAY) }
+    private fun sortDate(item: OperationalWorkItem): Long = item.dueDate?.toEpochDay()?.let { Math.multiplyExact(it, MILLIS_PER_DAY) }
         ?: Long.MAX_VALUE
+
+    private fun visitTimeRank(item: OperationalWorkItem): Int =
+        if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) 0 else 1
 
     private fun String.toLocalDateOrNull(): LocalDate? = runCatching { LocalDate.parse(this) }.getOrNull()
 

@@ -1,7 +1,8 @@
 {
   "style": "fill",
   "style_exceptions": {
-    "Back": "bold"
+    "Back": "bold",
+    "PlusBold": "bold"
   },
   "icons": {
     "Add": "plus",
@@ -42,6 +43,7 @@
     "Mail": "envelope",
     "More": "dots-three",
     "Photo": "image",
+    "PlusBold": "plus",
     "PencilSimple": "pencil-simple",
     "Report": "file-text",
     "Restore": "arrow-counter-clockwise",

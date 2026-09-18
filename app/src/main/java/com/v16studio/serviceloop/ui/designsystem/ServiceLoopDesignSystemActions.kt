@@ -262,3 +262,29 @@ fun ServiceLoopIconOnlyAction(
         .let { if (testTag == null) it else it.testTag(testTag) }
     Box(actionModifier,contentAlignment=contentAlignment){Box(Modifier.size(ServiceLoopUiTokens.Size.icon),contentAlignment=Alignment.Center){content()}}
 }
+
+/** Square, bordered action used beside fields and selectors. */
+@Composable
+fun ServiceLoopFieldAction(
+    accessibleName: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+    testTag: String? = null,
+) {
+    val c = LocalServiceLoopTokens.current
+    val actionModifier = modifier
+        .size(ServiceLoopUiTokens.Size.touchMin)
+        .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+        .clip(RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+        .background(c.surface)
+        .border(BorderStroke(ServiceLoopUiTokens.Stroke.outline, c.outlineControl), RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .focusable(enabled)
+        .semantics { contentDescription = accessibleName }
+        .let { if (testTag == null) it else it.testTag(testTag) }
+    Box(actionModifier, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(ServiceLoopUiTokens.Size.icon), contentAlignment = Alignment.Center) { content() }
+    }
+}

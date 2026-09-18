@@ -16,6 +16,7 @@ MANIFEST = ROOT / "serviceloop-icons.json"
 OUTPUT = ROOT.parent.parent / "app" / "src" / "main" / "res" / "drawable"
 API = ROOT.parent.parent / "app" / "src" / "main" / "java" / "com" / "v16studio" / "serviceloop" / "ui" / "icons" / "ServiceLoopIcons.kt"
 STYLES = ("bold", "duotone", "fill", "light", "regular", "thin")
+ALLOWED_STYLE_EXCEPTIONS = {"Back": "bold", "PlusBold": "bold"}
 
 
 def tree_identity() -> tuple[int, str]:
@@ -140,8 +141,10 @@ def load_manifest(path: Path = MANIFEST) -> dict[str, tuple[str, str]]:
     if not isinstance(icons, dict) or not icons:
         raise ValueError("manifest icons must be a non-empty object")
     exceptions = payload.get("style_exceptions", {})
-    if exceptions != {"Back": "bold"}:
-        raise ValueError("the only permitted style exception is Back: bold")
+    if not isinstance(exceptions, dict) or exceptions != {alias: exceptions[alias] for alias in ALLOWED_STYLE_EXCEPTIONS if alias in exceptions} or any(
+        exceptions.get(alias) != style for alias, style in ALLOWED_STYLE_EXCEPTIONS.items() if alias in exceptions
+    ):
+        raise ValueError("style exceptions use only the permitted named aliases")
     resolved = {}
     for alias, source_name in icons.items():
         style = exceptions.get(alias, "fill")
@@ -196,7 +199,7 @@ fun ServiceLoopIcon(
 """
     API.parent.mkdir(parents=True, exist_ok=True)
     API.write_text(api, encoding="utf-8", newline="\n")
-    print(f"generated {len(icons)} icons (Fill default; Back Bold exception) and {API.relative_to(ROOT.parent.parent)}")
+    print(f"generated {len(icons)} icons (Fill default; style exceptions: {', '.join(f'{a}={s}' for a, (_, s) in sorted(icons.items()) if s != 'fill')}) and {API.relative_to(ROOT.parent.parent)}")
 
 
 if __name__ == "__main__":

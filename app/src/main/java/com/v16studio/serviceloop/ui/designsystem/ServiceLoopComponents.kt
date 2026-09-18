@@ -340,18 +340,22 @@ fun ServiceLoopPresetChoice(
         color = if (selected) c.selection else c.surface,
         border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
     ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
-            color = when {
-                !enabled -> c.disabledText
-                selected -> c.selectionInk
-                else -> c.textPrimary
-            },
-            style = ServiceLoopUiTokens.Type.label,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            softWrap = false,
-        )
+        Box(
+            Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin).padding(horizontal = ServiceLoopUiTokens.Space.md),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                color = when {
+                    !enabled -> c.disabledText
+                    selected -> c.selectionInk
+                    else -> c.textPrimary
+                },
+                style = ServiceLoopUiTokens.Type.label,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                softWrap = false,
+            )
+        }
     }
 }
 

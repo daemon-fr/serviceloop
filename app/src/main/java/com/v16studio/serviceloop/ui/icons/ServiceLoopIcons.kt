@@ -51,6 +51,7 @@ object ServiceLoopIcons {
     @DrawableRes val More = R.drawable.ic_sl_more
     @DrawableRes val PencilSimple = R.drawable.ic_sl_pencil_simple
     @DrawableRes val Photo = R.drawable.ic_sl_photo
+    @DrawableRes val PlusBold = R.drawable.ic_sl_plus_bold
     @DrawableRes val Report = R.drawable.ic_sl_report
     @DrawableRes val Restore = R.drawable.ic_sl_restore
     @DrawableRes val Search = R.drawable.ic_sl_search

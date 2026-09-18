@@ -19,7 +19,7 @@ class PhosphorToolTest(unittest.TestCase):
     def test_every_manifest_entry_resolves_to_declared_strict_style(self):
         manifest = json.loads(phosphor_tool.MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(manifest["style"], "fill")
-        self.assertEqual(manifest["style_exceptions"], {"Back": "bold"})
+        self.assertEqual(manifest["style_exceptions"], {"Back": "bold", "PlusBold": "bold"})
         for source_name in manifest["icons"].values():
             alias = next(alias for alias, value in manifest["icons"].items() if value == source_name)
             style = manifest["style_exceptions"].get(alias, "fill")
@@ -32,13 +32,13 @@ class PhosphorToolTest(unittest.TestCase):
             source = Path(directory) / "unsupported.svg"
             source.write_text(
                 '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
-                '<circle cx="128" cy="128" r="10"/></svg>',
+                '<ellipse cx="128" cy="128" rx="10" ry="10"/></svg>',
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "unsupported visible"):
                 phosphor_tool.svg_paths(source)
 
-    def test_aliases_are_unique_and_only_the_explicit_check_fat_semantics_share_a_source(self):
+    def test_aliases_are_unique_except_for_explicit_manifest_alias_groups(self):
         manifest = json.loads(phosphor_tool.MANIFEST.read_text(encoding="utf-8"))
         aliases = list(manifest["icons"])
         self.assertEqual(len(aliases), len(set(aliases)))
@@ -46,7 +46,17 @@ class PhosphorToolTest(unittest.TestCase):
         for alias, source in manifest["icons"].items():
             by_source.setdefault(source, set()).add(alias)
         duplicates = {source: aliases for source, aliases in by_source.items() if len(aliases) > 1}
-        self.assertEqual({"check-fat": {"LocalSaved", "SelectionCheck"}}, duplicates)
+        self.assertEqual(
+            {
+                "caret-down": {"CaretDown", "Dropdown"},
+                "caret-right": {"Disclosure", "CaretRight"},
+                "check-fat": {"CheckFat", "LocalSaved", "SelectionCheck"},
+                "check-square": {"SelectionChecked", "SelectionEmpty"},
+                "plus": {"Add", "PlusBold"},
+                "warning-circle": {"WarningCircle", "Error"},
+            },
+            duplicates,
+        )
 
     def test_wrong_style_is_rejected_by_generate(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,11 +72,11 @@ class PhosphorToolTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing fill icon"):
                 phosphor_tool.load_manifest(path)
 
-    def test_only_named_back_bold_exception_is_allowed(self):
+    def test_only_named_style_exceptions_are_allowed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manifest.json"
             path.write_text(json.dumps({"style": "fill", "style_exceptions": {"Home": "bold"}, "icons": {"Home": "house"}}))
-            with self.assertRaisesRegex(ValueError, "only permitted style exception"):
+            with self.assertRaisesRegex(ValueError, "permitted named aliases"):
                 phosphor_tool.load_manifest(path)
 
     def test_bold_back_preserves_upstream_stroke_geometry(self):

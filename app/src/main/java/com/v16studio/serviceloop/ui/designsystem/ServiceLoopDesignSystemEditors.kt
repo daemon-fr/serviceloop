@@ -117,10 +117,11 @@ fun <T> ServiceLoopChoicePair(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     testTagPrefix: String? = null,
+    stackWhenLargeFont: Boolean = true,
 ) {
     require(options.size == 2) { "A paired choice requires exactly two options" }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val stack = maxWidth < 260.dp || LocalDensity.current.fontScale >= 1.8f
+        val stack = maxWidth < 260.dp || (stackWhenLargeFont && LocalDensity.current.fontScale >= 1.8f)
         val first = options[0]
         val second = options[1]
         val firstChoice: @Composable () -> Unit = {

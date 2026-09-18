@@ -80,6 +80,31 @@ fun filterVisits(
         visit.matchesSearch(query)
 }
 
+/** Preserves the queue's direction while making real same-day Visit times meaningful. */
+fun sortVisitsForDisplay(
+    values: List<VisitSummary>,
+    dateFilter: VisitDateFilter,
+    statusFilter: VisitStatusFilter,
+): List<VisitSummary> {
+    val ascending = dateFilter in setOf(VisitDateFilter.OVERDUE, VisitDateFilter.TODAY, VisitDateFilter.UPCOMING) &&
+        statusFilter.lifecycle !in setOf(VisitLifecycleState.COMPLETED, VisitLifecycleState.CANCELED)
+    return values.sortedWith(Comparator { left, right ->
+        val leftDate = runCatching { LocalDate.parse(left.actualServiceDate) }.getOrNull()
+        val rightDate = runCatching { LocalDate.parse(right.actualServiceDate) }.getOrNull()
+        val dateResult = compareValues(leftDate, rightDate).let { if (ascending) it else -it }
+        if (dateResult != 0) return@Comparator dateResult
+        val leftTimed = if (left.scheduledAtEpochMillis == null) 1 else 0
+        val rightTimed = if (right.scheduledAtEpochMillis == null) 1 else 0
+        val timedResult = leftTimed.compareTo(rightTimed)
+        if (timedResult != 0) return@Comparator timedResult
+        val leftTime = left.scheduledAtEpochMillis ?: Long.MAX_VALUE
+        val rightTime = right.scheduledAtEpochMillis ?: Long.MAX_VALUE
+        val timeResult = leftTime.compareTo(rightTime).let { if (ascending) it else -it }
+        if (timeResult != 0) return@Comparator timeResult
+        compareValues(left.reference, right.reference).takeIf { it != 0 } ?: compareValues(left.id, right.id)
+    })
+}
+
 fun filterFollowUps(
     values: List<FollowUpDetail>,
     dateFilter: FollowUpDateFilter,

@@ -154,7 +154,7 @@ interface ServiceLoopRepository {
     suspend fun startVisit(id: String): Long = error("Visit unavailable")
     suspend fun rescheduleVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?, reason: String): Long = error("Visit unavailable")
     suspend fun cancelVisit(id: String, reason: String): Long = error("Visit unavailable")
-    suspend fun restoreVisit(id: String, serviceDate: String): Long = error("Visit unavailable")
+    suspend fun restoreVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): Long = error("Visit unavailable")
     suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String = error("Part entry unavailable")
     suspend fun updatePart(workItemId: String, partId: String, description: String, quantity: String, unit: String): Long = error("Part update unavailable")
     suspend fun removePart(workItemId: String, partId: String): Long = error("Part removal unavailable")
@@ -953,14 +953,14 @@ class RoomServiceLoopRepository(
     } }
 
     override suspend fun rescheduleVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?, reason: String): Long {
-        LocalDate.parse(serviceDate); require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be rescheduled"}; dao.updateVisit(visit.copy(actualServiceDate = serviceDate, scheduledAtEpochMillis = scheduledAtEpochMillis, scheduleChangeReason = reason.trim(), modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",visit.actualServiceDate,serviceDate,visit.scheduledAtEpochMillis,scheduledAtEpochMillis,reason.trim(),now)) }; return now
+        LocalDate.parse(serviceDate); require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be rescheduled"}; dao.updateVisit(visit.copy(actualServiceDate = serviceDate, scheduledAtEpochMillis = scheduledAtEpochMillis, appointmentZoneId = scheduledAtEpochMillis?.let { businessTime.zoneId.id } ?: visit.appointmentZoneId, scheduleChangeReason = reason.trim(), modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"RESCHEDULED",visit.actualServiceDate,serviceDate,visit.scheduledAtEpochMillis,scheduledAtEpochMillis,reason.trim(),now)) }; return now
     }
 
     override suspend fun cancelVisit(id: String, reason: String): Long {
         require(reason.trim().isNotEmpty()); writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli(); database.withTransaction { val visit=dao.visit(id)?:error("Visit no longer exists"); require(visit.state=="BOOKED"){"Only a booked visit can be cancelled"}; dao.updateVisit(visit.copy(state = VisitLifecycleState.CANCELED.code, cancellationReason = reason.trim(), cancellationOrigin = VisitCancellationOrigin.LOCAL.code, cancelledAtEpochMillis = now, modifiedAtEpochMillis = now)); dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(),id,"CANCELED",visit.actualServiceDate,null,visit.scheduledAtEpochMillis,null,reason.trim(),now)); dao.releaseVisitClaims(id) }; return now
     }
 
-    override suspend fun restoreVisit(id: String, serviceDate: String): Long {
+    override suspend fun restoreVisit(id: String, serviceDate: String, scheduledAtEpochMillis: Long?): Long {
         LocalDate.parse(serviceDate); require(!LocalDate.parse(serviceDate).isBefore(businessTime.today())) { "Choose today or a future appointment date" }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
         database.withTransaction {
@@ -975,11 +975,13 @@ class RoomServiceLoopRepository(
                 require(plan.state == "ACTIVE" && plan.currentObligationId == obligationId && obligation?.planId == plan.id && obligation.consumedAtEpochMillis == null && dao.claimForObligation(obligationId) == null) { "The old booking can no longer be restored because its service obligation changed or is already claimed" }
             }
             recurring.forEach { dao.insertVisitClaim(VisitClaimEntity(it.capturedObligationId!!, id, now)) }
-            dao.updateVisit(visit.copy(state = "BOOKED", actualServiceDate = serviceDate, scheduledAtEpochMillis = LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), cancellationOrigin = null, cancellationReason = visit.cancellationReason, modifiedAtEpochMillis = now))
-            dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(), id, "RESTORED", visit.actualServiceDate, serviceDate, visit.scheduledAtEpochMillis, LocalDate.parse(serviceDate).atStartOfDay(businessTime.zoneId).toInstant().toEpochMilli(), "Restored booking", now))
+            dao.updateVisit(visit.copy(state = "BOOKED", actualServiceDate = serviceDate, scheduledAtEpochMillis = scheduledAtEpochMillis, appointmentZoneId = scheduledAtEpochMillis?.let { businessTime.zoneId.id } ?: visit.appointmentZoneId, cancellationOrigin = null, cancellationReason = visit.cancellationReason, modifiedAtEpochMillis = now))
+            dao.insertVisitScheduleEvent(VisitScheduleEventEntity(UUID.randomUUID().toString(), id, "RESTORED", visit.actualServiceDate, serviceDate, visit.scheduledAtEpochMillis, scheduledAtEpochMillis, "Restored booking", now))
         }
         return now
     }
+
+    suspend fun restoreVisit(id: String, serviceDate: String): Long = restoreVisit(id, serviceDate, null)
 
     override suspend fun addPart(workItemId: String, description: String, quantity: String, unit: String): String {
         require(description.trim().isNotEmpty() && description.length <= 200); require(unit.trim().isNotEmpty() && unit.length <= 30); val numeric = runCatching { BigDecimal(quantity.trim()) }.getOrNull(); require(numeric != null && numeric > BigDecimal.ZERO) { "Quantity must be a finite positive number" }

@@ -164,6 +164,32 @@ class DailyOperationsIntegrityTest {
         assertNotNull(repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-10", 4))
     }
 
+    @Test fun appointmentTimePersistsReschedulesClearsAndRestoresWithoutMidnightSurrogate() = runTest {
+        val ids = foundation()
+        val original = appointmentEpochMillis("2026-09-06", "09:30", time.zoneId)!!
+        val visit = repo.createVisit(listOf(ids.plan), "BOOKED", "2026-09-06", original)
+        assertEquals(original, repo.visit(visit)!!.scheduledAtEpochMillis)
+        assertEquals(time.zoneId.id, db.serviceLoopDao().visit(visit)!!.appointmentZoneId)
+
+        val moved = appointmentEpochMillis("2026-09-10", "11:15", time.zoneId)!!
+        repo.rescheduleVisit(visit, "2026-09-10", moved, "Customer requested another day")
+        assertEquals(moved, repo.visit(visit)!!.scheduledAtEpochMillis)
+        val rescheduled = db.serviceLoopDao().visitScheduleEvents(visit).last()
+        assertEquals(original, rescheduled.oldScheduledAtEpochMillis)
+        assertEquals(moved, rescheduled.newScheduledAtEpochMillis)
+
+        repo.rescheduleVisit(visit, "2026-09-11", null, "Customer cleared appointment time")
+        assertNull(repo.visit(visit)!!.scheduledAtEpochMillis)
+        val cleared = db.serviceLoopDao().visitScheduleEvents(visit).last()
+        assertEquals(moved, cleared.oldScheduledAtEpochMillis)
+        assertNull(cleared.newScheduledAtEpochMillis)
+
+        repo.cancelVisit(visit, "Mistake")
+        repo.restoreVisit(visit, "2026-09-12", null)
+        assertNull(repo.visit(visit)!!.scheduledAtEpochMillis)
+        assertEquals("RESTORED", db.serviceLoopDao().visitScheduleEvents(visit).last().eventType)
+    }
+
     @Test fun cancelledBookingRestoresSameVisitAndClaimWithoutChangingDueDate() = runTest {
         val ids=foundation(); val due=db.serviceLoopDao().plan(ids.plan)!!.currentDueDate; val visit=repo.createVisit(listOf(ids.plan),"BOOKED","2026-09-06",1); val obligation=db.serviceLoopDao().visitWorkItems(visit).single().capturedObligationId!!
         repo.cancelVisit(visit,"Mistake"); repo.restoreVisit(visit,"2026-09-06")

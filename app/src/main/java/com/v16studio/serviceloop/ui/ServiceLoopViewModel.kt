@@ -222,6 +222,7 @@ class ServiceLoopViewModel(
         val customerList = repository.customerList()
         val siteList = repository.siteList()
         val visits = repository.visits()
+        val followUps = repository.followUps()
         val publishVisits = isCurrent(visitsRequest)
         if (isCurrent(request)) _state.update { current -> current.copy(
             home = home,
@@ -229,6 +230,7 @@ class ServiceLoopViewModel(
             customerList = customerList,
             siteList = siteList,
             visits = if (publishVisits) visits else current.visits,
+            followUps = followUps,
             rootDataReady = true,
             recoveryCheckComplete = true,
         ) }
@@ -239,6 +241,7 @@ class ServiceLoopViewModel(
         if (!_state.value.rootDataReady) return
         val request = issueRequest("root")
         val visitsRequest = issueRequest("visits")
+        val followUpsRequest = issueRequest("rootFollowUps")
         rootRefreshJob?.cancel()
         rootRefreshJob = viewModelScope.launch {
             try {
@@ -247,6 +250,7 @@ class ServiceLoopViewModel(
                 val customerList = repository.customerList()
                 val siteList = repository.siteList()
                 val visits = repository.visits()
+                val followUps = repository.followUps()
                 ensureActive()
                 val publishVisits = isCurrent(visitsRequest)
                 if (isCurrent(request)) _state.update { current -> current.copy(
@@ -255,6 +259,7 @@ class ServiceLoopViewModel(
                     customerList = customerList,
                     siteList = siteList,
                     visits = if (publishVisits) visits else current.visits,
+                    followUps = if (isCurrent(followUpsRequest)) followUps else current.followUps,
                     rootRefreshError = null,
                 ) }
             } catch (cancelled: CancellationException) {
@@ -673,7 +678,7 @@ class ServiceLoopViewModel(
         }
     }
     fun cancelVisit(id: String, reason: String, onSuccess: (String) -> Unit) = runOperation({ repository.cancelVisit(id, reason); id }, onSuccess)
-    fun restoreVisit(id: String, date: String, onSuccess: (String) -> Unit) = runOperation({ repository.restoreVisit(id, date); id }, onSuccess)
+    fun restoreVisit(id: String, date: String, scheduledAt: Long?, onSuccess: (String) -> Unit) = runOperation({ repository.restoreVisit(id, date, scheduledAt); id }, onSuccess)
     fun addAdHocWork(visitId: String, input: AdHocWorkInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.addAdHocWork(visitId, input) }) { workItemId -> loadVisit(visitId); onSuccess(workItemId) }
     fun loadEquipmentLinkContext(workItemId: String) {
         val request = issueRequest("equipmentLinkContext")
