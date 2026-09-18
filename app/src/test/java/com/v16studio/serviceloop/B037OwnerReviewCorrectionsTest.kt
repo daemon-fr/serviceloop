@@ -51,12 +51,23 @@ class B037OwnerReviewCorrectionsTest {
     fun ownerReviewSurfaceContractsAreCentralized() {
         val production = productionKotlinSource("com/v16studio/serviceloop/ui")
         val fieldAction = productionKotlinFunctionSource("fun ServiceLoopFieldAction", "@Composable fun ServiceLoopTextAction")
-        assertTrue(fieldAction.contains(".background(if (enabled) c.selection else c.disabledContainer)"))
+        assertTrue(fieldAction.contains("ServiceLoopButtonContract.secondaryContainer(c, enabled)"))
+        assertTrue(fieldAction.contains("ServiceLoopButtonContract.secondaryInk(c, enabled)"))
+        assertFalse(fieldAction.contains("c.selection"))
         assertFalse(fieldAction.contains(".border("))
         assertTrue(production.contains("singleRow: Boolean = false"))
         assertTrue(production.contains("singleRow = true"))
         assertTrue(production.contains("ServiceLoopIcons.PlusBold"))
         assertFalse(production.contains("Follow-up state never changes a service plan or historical report."))
+    }
+
+    @Test
+    fun createVisitCustomerTabsShareOneUpperSurfaceBand() {
+        val screen = productionKotlinFunctionSource("internal fun NewVisitScreen", "internal fun VisitDetailScreen")
+        assertTrue(screen.contains("Column(Modifier.fillMaxWidth().background(colors.surface)"))
+        assertTrue(screen.contains("VisitSetupSectionHeading(\"Choose a customer\", \"choose-visit-customer\")"))
+        assertTrue(screen.contains("Modifier.fillMaxWidth().testTag(\"visit-mode-tabs\")"))
+        assertFalse(screen.contains("background(colors.canvas).testTag(\"visit-mode-tabs\")"))
     }
 
     private fun snapshot(

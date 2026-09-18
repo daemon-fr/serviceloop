@@ -245,7 +245,7 @@ internal fun InspectionChecklistSelector(
                 "Create inspection template",
                 onCreateTemplate,
                 Modifier.testTag("$testTag-create"),
-                content = { ServiceLoopIcon(ServiceLoopIcons.PlusBold, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) },
+                content = { ServiceLoopIcon(ServiceLoopIcons.PlusBold, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
         }
         if (active.isEmpty() && selectedDisabled == null) Text("No inspection templates yet", modifier = Modifier.testTag("$testTag-none-available"), style = MaterialTheme.typography.bodySmall)
@@ -280,7 +280,7 @@ internal fun VisitDateInput(
                 "Choose appointment date",
                 { showPicker = true },
                 Modifier.testTag("appointment-date-picker"),
-                content = { ServiceLoopIcon(ServiceLoopIcons.Calendar, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) },
+                content = { ServiceLoopIcon(ServiceLoopIcons.Calendar, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
         }
     }
@@ -326,7 +326,7 @@ internal fun VisitTimeInput(
                 "Choose appointment time",
                 { showPicker = true },
                 Modifier.testTag("appointment-time-picker"),
-                content = { ServiceLoopIcon(ServiceLoopIcons.Time, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalServiceLoopTokens.current.action) },
+                content = { ServiceLoopIcon(ServiceLoopIcons.Time, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
         }
         if (value.isNotBlank() && parsed == null) {
@@ -625,8 +625,14 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         AlertDialog(onDismissRequest = { pendingMode = null }, title = { Text("Switch visit setup?") }, text = { Text(consequence) }, confirmButton = { TextButton({ applyMode(requested); pendingMode = null }) { Text("Switch") } }, dismissButton = { TextButton({ pendingMode = null }) { Text("Cancel") } })
     }
     EditorColumn(padding, state, tag = "new-visit-form") {
-        item { VisitSetupSectionHeading("Choose a customer", "choose-visit-customer") }
-        item { Box(Modifier.fillMaxWidth().background(colors.canvas).testTag("visit-mode-tabs")) { ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode") } }
+        item {
+            Column(Modifier.fillMaxWidth().background(colors.surface)) {
+                VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
+                Box(Modifier.fillMaxWidth().testTag("visit-mode-tabs")) {
+                    ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode")
+                }
+            }
+        }
         if (mode == "NEW") {
             item { DailyHeading("New customer"); DailyField(customerName, { customerName = it }, "Customer name · Required"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email"); DailyField(locationLabel, { locationLabel = it }, "Location label"); DailyField(address, { address = it }, "Service address"); Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("new-visit-customer-type")) { Checkbox(oneTimeCustomer, { oneTimeCustomer = it }, modifier = Modifier.testTag("new-visit-one-time-customer")); Text("One-time customer (no contract)") } }
             item { VisitSetupSectionHeading("Set up visit", "visit-setup-heading") }

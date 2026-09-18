@@ -263,7 +263,7 @@ fun ServiceLoopIconOnlyAction(
     Box(actionModifier,contentAlignment=contentAlignment){Box(Modifier.size(ServiceLoopUiTokens.Size.icon),contentAlignment=Alignment.Center){content()}}
 }
 
-/** Square, soft-teal action used beside fields and selectors. */
+/** Square field-side action using the same teal family as secondary navigation buttons. */
 @Composable
 fun ServiceLoopFieldAction(
     accessibleName: String,
@@ -275,16 +275,20 @@ fun ServiceLoopFieldAction(
 ) {
     val c = LocalServiceLoopTokens.current
     val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
+    val container = ServiceLoopButtonContract.secondaryContainer(c, enabled)
+    val ink = ServiceLoopButtonContract.secondaryInk(c, enabled)
     val actionModifier = modifier
         .size(ServiceLoopUiTokens.Size.touchMin)
         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
         .clip(shape)
-        .background(if (enabled) c.selection else c.disabledContainer)
+        .background(container)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .focusable(enabled)
         .semantics { contentDescription = accessibleName }
         .let { if (testTag == null) it else it.testTag(testTag) }
     Box(actionModifier, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(ServiceLoopUiTokens.Size.icon), contentAlignment = Alignment.Center) { content() }
+        CompositionLocalProvider(LocalContentColor provides ink) {
+            Box(Modifier.size(ServiceLoopUiTokens.Size.icon), contentAlignment = Alignment.Center) { content() }
+        }
     }
 }
