@@ -6,7 +6,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val appointmentTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
+private val appointmentTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT).withResolverStyle(java.time.format.ResolverStyle.STRICT)
 
 /** Combines an optional local appointment time with the existing business-date truth. */
 fun appointmentEpochMillis(date: String, time: String?, zoneId: ZoneId): Long? {

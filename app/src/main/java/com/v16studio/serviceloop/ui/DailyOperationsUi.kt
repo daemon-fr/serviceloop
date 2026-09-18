@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
@@ -43,9 +44,9 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
 internal fun EditorColumn(padding:PaddingValues,state:UiState,tag:String?=null,content:androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).fillMaxWidth().widthIn(max=com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens.Size.formMaxWidth).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
 
 @Composable
-internal fun DailyField(value:String,onChange:(String)->Unit,label:String){
+internal fun DailyField(value:String,onChange:(String)->Unit,label:String,bottomPadding:Dp=ServiceLoopUiTokens.Space.lg){
     val tag = "field-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag).padding(bottom=ServiceLoopUiTokens.Space.lg))
+    ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag).padding(bottom=bottomPadding))
 }
 
 @Composable

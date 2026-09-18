@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPresetChoiceGroup
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -36,5 +37,22 @@ class ServiceLoopPresetChoiceLayoutTest {
         assertTrue(heights.all { it >= 48f })
         assertTrue("large text should wrap instead of clipping", tops.size > 1)
         assertTrue(nodes.all { it.boundsInRoot.right <= 320f })
+    }
+
+    @Test fun intervalUnitsRemainInOneEqualHeightHorizontalBand() {
+        val options = listOf("DAYS", "WEEKS", "MONTHS", "YEARS").map { it to it.lowercase().replaceFirstChar(Char::uppercase) }
+        compose.setContent {
+            ServiceLoopTheme {
+                Box(Modifier.width(360.dp)) {
+                    ServiceLoopPresetChoiceGroup(options, "MONTHS", {}, testTagPrefix = "interval-unit", singleRow = true)
+                }
+            }
+        }
+        val nodes = options.map { compose.onNodeWithTag("interval-unit-${it.first}").fetchSemanticsNode() }
+        val bounds = nodes.map { it.boundsInRoot }
+        assertTrue(bounds.all { it.height >= 48f })
+        assertTrue(bounds.map { it.top }.distinct().size == 1)
+        assertEquals(1, bounds.map { it.height }.distinct().size)
+        assertTrue(bounds.zipWithNext().all { (left, right) -> left.left < right.left })
     }
 }

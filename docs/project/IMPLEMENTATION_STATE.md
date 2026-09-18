@@ -193,6 +193,15 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Home retains Dashboard as its default tab and adds an in-memory Agenda projection with exact `Unresolved (N)` and `Upcoming (N)` sections. Agenda rows are compact, max two lines, timed Visits first on a date, and navigate to Visit, Follow-up, or Service Plan truth.
 - B036 verification is documented in `B036_V1_0_1_AGENDA_APPOINTMENT_TIME_AND_UI_POLISH.md`: 427 JVM tests passed, debug/release assembly, lint, and Android-test APK assembly passed, and focused canonical AVD UI/system-bar coverage passed 5/5. This is implemented development-branch work for owner review, not a released version.
 
+## B037 / ServiceLoop 1.0.1 owner-review UI corrections
+
+- Implemented on `codex/v1.0.1-agenda-polish` from start SHA `eea7ca54e7a66d79e29fd7d4def2ebd800d18489`. Version remains `versionCode 2` / `versionName "1.0.1"`, Room remains v15, no release tag was created, and protected `master` remains unchanged.
+- Plan interval units now use one compact horizontal band with balanced editor spacing. Shared field-adjacent actions use the solid semantic teal selection treatment with 48dp targets and the common field/action gap across inspection template, visit date, visit time, reschedule, and restore.
+- Create Visit now has plain `Choose a customer` and `Set up visit` headings, editable date/time controls with strict optional-time validation, picker actions, manual editing/clearing, and the same appointment family in reschedule/restore. Read-only visit detail remains read-only.
+- New Visit back protection compares a meaningful draft snapshot to its initial route-aware baseline; search, mode, focus, picker dismissal, and restored values remain clean. The requested Follow-up explanatory sentence was removed without changing Contact/Corrective or private-content semantics.
+- B037 evidence is documented in `B037_V1_0_1_OWNER_REVIEW_UI_CORRECTIONS.md`. Final JVM unit tests: 431 PASS; required debug/release assembly, lint, and Android-test APK gates: PASS; focused canonical AVD checks: B036 field/action 3/3, interval layout 2/2, B037 render/back guard 2/2, and relevant B026 Create Visit 3/3. Fresh light/dark render screenshots were visually inspected.
+- This remains implemented owner-review work only. No release tag, protected-branch merge, backend, accounts, sync, invoicing, accounting, inventory, or customer portal scope was introduced.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

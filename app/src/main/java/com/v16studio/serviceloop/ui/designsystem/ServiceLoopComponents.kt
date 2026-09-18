@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -305,20 +307,41 @@ fun <T> ServiceLoopPresetChoiceGroup(
     modifier: Modifier = Modifier,
     testTagPrefix: String? = null,
     enabled: Boolean = true,
+    singleRow: Boolean = false,
 ) {
-    FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
-        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
-    ) {
-        options.forEach { (value, label) ->
-            ServiceLoopPresetChoice(
-                selected = value == selected,
-                onClick = { onSelected(value) },
-                label = label,
-                enabled = enabled,
-                modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
-            )
+    if (singleRow) {
+        BoxWithConstraints(modifier.fillMaxWidth()) {
+            val scroll = maxWidth < 280.dp || LocalDensity.current.fontScale > 1.3f
+            val rowModifier = Modifier.fillMaxWidth().then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+            Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                options.forEach { (value, label) ->
+                    ServiceLoopPresetChoice(
+                        selected = value == selected,
+                        onClick = { onSelected(value) },
+                        label = label,
+                        enabled = enabled,
+                        compact = true,
+                        modifier = (if (scroll) Modifier.widthIn(min = ServiceLoopUiTokens.Size.touchMin) else Modifier.weight(1f))
+                            .then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
+                    )
+                }
+            }
+        }
+    } else {
+        FlowRow(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+            verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
+        ) {
+            options.forEach { (value, label) ->
+                ServiceLoopPresetChoice(
+                    selected = value == selected,
+                    onClick = { onSelected(value) },
+                    label = label,
+                    enabled = enabled,
+                    modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
+                )
+            }
         }
     }
 }
@@ -330,6 +353,7 @@ fun ServiceLoopPresetChoice(
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    compact: Boolean = false,
 ) {
     val c = LocalServiceLoopTokens.current
     Surface(
@@ -341,7 +365,8 @@ fun ServiceLoopPresetChoice(
         border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
     ) {
         Box(
-            Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin).padding(horizontal = ServiceLoopUiTokens.Space.md),
+            Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                .padding(horizontal = if (compact) ServiceLoopUiTokens.Space.sm else ServiceLoopUiTokens.Space.md),
             contentAlignment = Alignment.Center,
         ) {
             Text(
