@@ -88,3 +88,26 @@ Recover the same canonical `Pixel_10a_ServiceLoop` AVD without wiping or recreat
 5. run the historical fixture check with `-e historicalFixture true` and record the known V-001 mismatch;
 6. rerun the final local gate after the last test edit;
 7. only then consider pushing `master` and creating annotated tag `v1.0`.
+
+## B035 bounded continuation — release remains blocked
+
+Date: 2026-09-18
+
+The exact committed B034 tree at `43966239fa98c43ab755c3bce0eef4e394279181` was checked without production-code edits. The canonical `Pixel_10a_ServiceLoop` AVD was recovered by one ordinary stop/start, without wipe, reset, recreation, or substitution. Its serial was resolved dynamically as `emulator-5554`; boot completion, unlocked credential storage, package service, and activity service all reported ready. The exact debug and Android-test APKs were built and explicitly installed with `adb -s emulator-5554 install -r`.
+
+Focused device evidence on that AVD:
+
+- `StageC1PortraitImeTest`: **BLOCKED**. The corrected lazy-list scroll reached the lower editor, but the IME wait timed out at `StageC1PortraitImeTest.kt:47`. One retry was performed after the ordinary AVD restart. It reproduced identically. Post-failure inspection showed `show_ime_with_hard_keyboard=0` and a focused SystemUI ANR window; no emulator keyboard setting was changed. This is classified as an emulator/IME infrastructure failure, not a product assertion.
+- `B026LocalFlexibleWorkUiTest`: **32/32 PASS**.
+- `WorkFilterSelectorUiTest`: **4/4 PASS** (the current committed class contains four tests).
+- `DueServicesProjectionUiTest`: **1/1 PASS**.
+- `Stage3DailyOperationsUiTest`: **12 total; 6 PASS and 6 explicit opt-in skips; 0 unexpected failures**.
+- `InspectionStatusChoiceGeometryTest#selectionDoesNotSwitchPairModeAtRepresentativeWidths`: **1/1 PASS**.
+
+The bounded rendered smoke reached and visually inspected Light Home, Work, Register, grouped live Search results, the Search recent-query panel, and the canonical empty Templates surface. The first Dark surface exposed an actual production visual blocker: Dark appearance leaves the Android status-bar time and system icons black on the near-black edge-to-edge background, so they are unreadable. Dark Search and the B032 expanded-template action row were not continued after this blocker was found. No compact/large-font smoke was run.
+
+The full 209-test monolithic inventory was **not rerun by design**. The decision used accumulated B033/B034 broad evidence plus focused verification of the final harness corrections; the release was stopped independently because the bounded smoke exposed the dark system-bar contrast defect and Stage C remained infrastructure-blocked.
+
+The initial exact-tree `:app:assembleDebug` and `:app:assembleDebugAndroidTest` build/install preparation passed. The final post-validation JVM/build/release/lint/androidTest gate was **NOT RUN** after the production visual blocker was found. `master` and `v1.0` remain untouched. ServiceLoop v1.0 was not released.
+
+**B035 decision: BLOCKED — fix the Dark system-bar contrast defect and separately restore a valid IME-capable canonical test environment before reconsidering release. Do not start another giant validation campaign automatically.**
