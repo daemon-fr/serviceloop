@@ -1,5 +1,6 @@
 package com.v16studio.serviceloop.ui
 
+import com.v16studio.serviceloop.BuildConfig
 import android.content.Intent
 import android.Manifest
 import android.os.Build
@@ -185,6 +186,18 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
         item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole,modifier=Modifier.testTag("settings-team-role")){nav.navigate("dispatch/settings")} }
         item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")} }
         item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Data and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+        item {
+            Column(Modifier.testTag("settings-about"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                SectionTitle("About")
+                Text("ServiceLoop", style = ServiceLoopUiTokens.Type.itemTitle)
+                Text(
+                    "Version ${BuildConfig.VERSION_NAME}",
+                    style = ServiceLoopUiTokens.Type.supporting,
+                    color = LocalServiceLoopTokens.current.textSecondary,
+                    modifier = Modifier.testTag("settings-about-version"),
+                )
+            }
+        }
     }
 }
 

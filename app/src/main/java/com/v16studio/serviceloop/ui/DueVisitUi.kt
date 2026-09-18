@@ -624,10 +624,11 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         val consequence = "Switching will clear ${discarded.joinToString(", ").ifBlank { "the current visit setup" }}."
         AlertDialog(onDismissRequest = { pendingMode = null }, title = { Text("Switch visit setup?") }, text = { Text(consequence) }, confirmButton = { TextButton({ applyMode(requested); pendingMode = null }) { Text("Switch") } }, dismissButton = { TextButton({ pendingMode = null }) { Text("Cancel") } })
     }
-    EditorColumn(padding, state, tag = "new-visit-form") {
+    EditorColumn(padding, state, tag = "new-visit-form", topContentPadding = 0.dp) {
         item {
             Column(Modifier.fillMaxWidth().background(colors.surface)) {
                 VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
+                Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
                 Box(Modifier.fillMaxWidth().testTag("visit-mode-tabs")) {
                     ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode")
                 }

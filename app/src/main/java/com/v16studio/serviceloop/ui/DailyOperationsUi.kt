@@ -41,7 +41,24 @@ internal fun UnsavedChangesGuard(changed:Boolean,nav:NavHostController) {
 }
 
 @Composable
-internal fun EditorColumn(padding:PaddingValues,state:UiState,tag:String?=null,content:androidx.compose.foundation.lazy.LazyListScope.()->Unit){ LazyColumn(Modifier.padding(padding).fillMaxWidth().widthIn(max=com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens.Size.formMaxWidth).then(if(tag==null) Modifier else Modifier.testTag(tag)),contentPadding=PaddingValues(16.dp,8.dp,16.dp,32.dp),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)){ if(state.error!=null)item{Text("Not saved — ${state.error}",color=MaterialTheme.colorScheme.error)}; if(state.operationMessage!=null)item{Text(state.operationMessage,color=MaterialTheme.colorScheme.primary)}; content() } }
+internal fun EditorColumn(
+    padding: PaddingValues,
+    state: UiState,
+    tag: String? = null,
+    topContentPadding: Dp = 8.dp,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    LazyColumn(
+        Modifier.padding(padding).fillMaxWidth().widthIn(max = com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens.Size.formMaxWidth)
+            .then(if (tag == null) Modifier else Modifier.testTag(tag)),
+        contentPadding = PaddingValues(16.dp, topContentPadding, 16.dp, 32.dp),
+        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section),
+    ) {
+        if (state.error != null) item { Text("Not saved — ${state.error}", color = MaterialTheme.colorScheme.error) }
+        if (state.operationMessage != null) item { Text(state.operationMessage, color = MaterialTheme.colorScheme.primary) }
+        content()
+    }
+}
 
 @Composable
 internal fun DailyField(value:String,onChange:(String)->Unit,label:String,bottomPadding:Dp=ServiceLoopUiTokens.Space.lg){
