@@ -1,7 +1,9 @@
 package com.v16studio.serviceloop
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
@@ -40,7 +42,7 @@ import org.junit.runner.RunWith
 /** Run writeCheckpoint, stop the app process, then run readCheckpointInFreshProcess. */
 @RunWith(AndroidJUnit4::class)
 class PrivateNoteRestartUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val dbName = "private-note-restart-2b.db"
     private val time = object : BusinessTime {
         override val zoneId = ZoneId.of("Europe/Bucharest")
@@ -74,7 +76,11 @@ class PrivateNoteRestartUiTest {
             }
             compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-save-state"))
             compose.onNodeWithTag("service-save-state").assertTextContains("Saved", substring = true)
-        } finally { db.close() }
+        } finally {
+            compose.runOnUiThread { compose.activity.setContent {} }
+            compose.waitForIdle()
+            db.close()
+        }
     }
 
     @Test fun readCheckpointInFreshProcess() {
@@ -93,6 +99,8 @@ class PrivateNoteRestartUiTest {
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("long-text-private-note").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("long-text-private-note").assertTextContains("PRIVATE_RESTART_CHECK_2B")
         } finally {
+            compose.runOnUiThread { compose.activity.setContent {} }
+            compose.waitForIdle()
             db.close()
             context.deleteDatabase(dbName)
         }

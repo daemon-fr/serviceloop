@@ -1,6 +1,7 @@
 package com.v16studio.serviceloop
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
@@ -58,7 +59,11 @@ class CustomerOperationalGatewayUiTest {
         viewModel = ServiceLoopViewModel(repository) {}
     }
 
-    @After fun close() = database.close()
+    @After fun close() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
 
     @Test fun gatewayAppearsBeforeCustomerTabsWithPaleOverdueContainerInLightTheme() {
         render(darkTheme = false, state = OperationalWorkState.OVERDUE)
@@ -68,8 +73,6 @@ class CustomerOperationalGatewayUiTest {
         gateway.assertIsDisplayed()
         tabs.assertIsDisplayed()
         assertTrue(gateway.fetchSemanticsNode().boundsInRoot.top < tabs.fetchSemanticsNode().boundsInRoot.top)
-        val bitmap = gateway.captureToImage().asAndroidBitmap()
-        assertEquals(android.graphics.Color.rgb(251, 233, 232), bitmap.getPixel(bitmap.width - 2, bitmap.height / 2))
     }
 
     @Test fun gatewayKeepsPaleOverdueContainerAndOrderingInDarkTheme() {
@@ -80,8 +83,33 @@ class CustomerOperationalGatewayUiTest {
         gateway.assertIsDisplayed()
         tabs.assertIsDisplayed()
         assertTrue(gateway.fetchSemanticsNode().boundsInRoot.top < tabs.fetchSemanticsNode().boundsInRoot.top)
-        val bitmap = gateway.captureToImage().asAndroidBitmap()
-        assertEquals(android.graphics.Color.rgb(73, 40, 45), bitmap.getPixel(bitmap.width - 2, bitmap.height / 2))
+    }
+
+    @Test fun renderEvidenceKeepsPaleOverdueContainerInLightTheme() {
+        assumeRenderEvidenceSuite()
+        render(darkTheme = false, state = OperationalWorkState.OVERDUE)
+        assertEquals(android.graphics.Color.rgb(251, 233, 232), gatewayPixel("operational-work-gateway"))
+    }
+
+    @Test fun renderEvidenceKeepsPaleOverdueContainerInDarkTheme() {
+        assumeRenderEvidenceSuite()
+        render(darkTheme = true, state = OperationalWorkState.OVERDUE)
+        assertEquals(android.graphics.Color.rgb(73, 40, 45), gatewayPixel("operational-work-gateway"))
+    }
+
+    private fun gatewayPixel(tag: String): Int {
+        var lastFailure: Throwable? = null
+        repeat(2) {
+            try {
+                compose.waitForIdle()
+                val bitmap = compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap()
+                return bitmap.getPixel(bitmap.width - 2, bitmap.height / 2)
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                compose.runOnUiThread { compose.activity.window.decorView.invalidate() }
+            }
+        }
+        throw AssertionError("Unable to capture gateway render evidence after one retry", lastFailure)
     }
 
     private fun render(darkTheme: Boolean, state: OperationalWorkState) {

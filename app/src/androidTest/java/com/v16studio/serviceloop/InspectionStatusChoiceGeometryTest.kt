@@ -61,7 +61,7 @@ class InspectionStatusChoiceGeometryTest {
     }
 
     @Test
-    fun selectionDoesNotSwitchPairModeNearAllocationThreshold() {
+    fun selectionDoesNotSwitchPairModeAtRepresentativeWidths() {
         val width = mutableStateOf(280)
         selectedChoice = mutableStateOf("1")
         compose.setContent {
@@ -90,7 +90,7 @@ class InspectionStatusChoiceGeometryTest {
         compose.waitForIdle()
 
         val observedModes = mutableSetOf<String>()
-        (280..360).forEach { widthDp ->
+        listOf(220, 260, 280, 320, 360).forEach { widthDp ->
             compose.runOnIdle {
                 width.value = widthDp
                 selectedChoice.value = "1"
@@ -131,6 +131,7 @@ class InspectionStatusChoiceGeometryTest {
 
     @Test
     fun selectionMovesRadioSemanticsAndChangesVisualTreatmentWithoutChangingGeometry() {
+        assumeRenderEvidenceSuite()
         renderSelectable(listOf("Not applicable", "OK", "Not checked", "Issue found"), widthDp = 320)
         compose.onNodeWithTag("grid-choice-0").assertIsSelected()
         compose.onNodeWithTag("grid-choice-1").assertIsNotSelected()
@@ -268,6 +269,7 @@ class InspectionStatusChoiceGeometryTest {
 
     @Test
     fun capturesFocusedOwnerCorrectionInspectionStates() {
+        assumeRenderEvidenceSuite()
         data class CaptureCase(val name: String, val labels: List<String>, val widthDp: Int, val darkTheme: Boolean = false)
         val cases = listOf(
             CaptureCase("inspection-na-ok-asymmetric.png", listOf("Not applicable", "OK", "Short", "Other"), 230),

@@ -59,6 +59,8 @@ class WorkFilterSelectorUiTest {
 
     @After
     fun clearPersistedFilterPreferencesAfterTest() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
         compose.activity.applicationContext
             .getSharedPreferences("serviceloop_ui_filter_preferences", android.content.Context.MODE_PRIVATE)
             .edit()

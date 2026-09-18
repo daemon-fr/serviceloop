@@ -57,12 +57,21 @@ class Stage3DailyOperationsUiTest {
         database=Room.inMemoryDatabaseBuilder(context,ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         val time=object:BusinessTime{override val zoneId=ZoneId.of("Europe/Bucharest");override fun instant()=Instant.parse("2026-09-06T10:00:00Z")}
         repository=RoomServiceLoopRepository(database,time,attachmentRoot=context.filesDir)
-        val viewModel=ServiceLoopViewModel(repository){}
-        compose.runOnUiThread { compose.activity.setContent{ServiceLoopTheme{ServiceLoopApp(viewModel)}} }
     }
-    @After fun close()=database.close()
+    @After fun close() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
+
+    private fun showApp() {
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
+        compose.waitForIdle()
+    }
 
     @Test fun directoryToRecurringPlanIsReachableThroughNormalUi() {
+        showApp()
         compose.onNodeWithText("Register").performClick()
         compose.onNodeWithTag("add-customer").performClick()
         compose.onNodeWithText("Customer name · Required").performTextInput("Stage Three Customer")
@@ -117,6 +126,7 @@ class Stage3DailyOperationsUiTest {
     }
 
     @Test fun appBarAndSystemBackProtectUnsavedCreateAndEditForms()=runBlocking {
+        showApp()
         compose.onNodeWithText("Register").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Unsaved")
         compose.onNodeWithText("Back").performClick(); compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed(); compose.onNodeWithText("Keep editing").performClick(); compose.onNodeWithText("Unsaved").assertIsDisplayed(); compose.onNodeWithText("Discard changes").assertDoesNotExist()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; compose.waitUntil(5_000){runCatching{compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()}.isSuccess}; compose.onNodeWithText("Discard changes").performClick()
@@ -131,6 +141,7 @@ class Stage3DailyOperationsUiTest {
     }
 
     @Test fun expandedLongTextUsesSameBufferUntilExplicitSave()=runBlocking {
+        showApp()
         compose.onNodeWithText("Register").performClick(); compose.onNodeWithTag("add-customer").performClick(); compose.onNodeWithText("Customer name · Required").performTextInput("Long text customer")
         compose.onNodeWithText("Site name · Required").performTextInput("Long text site")
         val longNote="Unsaved long private note that deliberately occupies enough compact-field space to exercise the reserved expand affordance region without creating a second editing buffer."
@@ -142,6 +153,7 @@ class Stage3DailyOperationsUiTest {
         val customer=repository.createCustomer(CustomerInput("Selector customer")); repository.createSite(customer,SiteInput("Selector site",""))
         val viewModel=ServiceLoopViewModel(repository){}
         compose.runOnUiThread { compose.activity.setContent { ServiceLoopTheme { ServiceLoopApp(viewModel) } } }
+        compose.waitForIdle()
         compose.onNodeWithText("Register").performClick(); compose.onNodeWithText("Equipment").performClick(); compose.onNodeWithTag("add-equipment-from-register").performClick()
         compose.onNodeWithText("Select the customer site where the equipment is installed.").assertIsDisplayed(); compose.waitUntil(5_000){compose.onAllNodesWithText("ST-001", substring=true).fetchSemanticsNodes().isNotEmpty()}; compose.onNodeWithText("ST-001", substring=true).performClick(); compose.onNodeWithText("Equipment name · Required").assertIsDisplayed(); Unit
     }

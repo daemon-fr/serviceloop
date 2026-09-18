@@ -47,16 +47,20 @@ class OwnerVisualRuntimeTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     private fun captureRenderedEvidence(name: String) {
-        composeRule.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.waitForIdleSync()
-        Thread.sleep(500)
-        val screenshot = instrumentation.uiAutomation.takeScreenshot()
-        val evidenceDirectory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
-        FileOutputStream(File(evidenceDirectory, "closure-$name.png")).use {
-            check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+        try {
+            composeRule.waitForIdle()
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync()
+            Thread.sleep(500)
+            val screenshot = instrumentation.uiAutomation.takeScreenshot()
+            val evidenceDirectory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
+            FileOutputStream(File(evidenceDirectory, "closure-$name.png")).use {
+                check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+            screenshot.recycle()
+        } catch (failure: Throwable) {
+            android.util.Log.w("ServiceLoopRenderEvidence", "Best-effort artifact capture failed for $name", failure)
         }
-        screenshot.recycle()
     }
 
     @Test
@@ -122,6 +126,8 @@ class OwnerVisualRuntimeTest {
                 if (instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString() != "com.v16studio.serviceloop") instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             }
         } finally {
+            composeRule.runOnUiThread { composeRule.activity.setContent {} }
+            composeRule.waitForIdle()
             database.close()
         }
     }
@@ -312,6 +318,8 @@ class OwnerVisualRuntimeTest {
         composeRule.onNodeWithTag("not-applicable-reason-check-note", useUnmergedTree = true).assertTextContains("Cabinet isolated")
         composeRule.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-photos"))
         composeRule.onNodeWithTag("service-photos").assertIsDisplayed()
+        composeRule.runOnUiThread { composeRule.activity.setContent {} }
+        composeRule.waitForIdle()
         database.close()
     }
 

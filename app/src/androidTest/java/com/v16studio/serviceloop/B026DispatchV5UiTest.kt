@@ -75,7 +75,11 @@ class B026DispatchV5UiTest {
         }
     }
 
-    @After fun close() { db.close() }
+    @After fun close() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        db.close()
+    }
 
     @Test fun sitePickerHidesOneTimeUntilMatchingSearch() {
         val sites = runBlocking { db.serviceLoopDao().allSites() }

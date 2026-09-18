@@ -2,21 +2,21 @@ package com.v16studio.serviceloop
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -26,7 +26,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.room.Room
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,7 +50,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CompletionUiSemanticTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private lateinit var database: ServiceLoopDatabase
 
     @Before fun setUp() {
@@ -71,7 +70,11 @@ class CompletionUiSemanticTest {
         }
     }
 
-    @After fun tearDown() = database.close()
+    @After fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
 
     @Test fun noChecklistBlockerLinksRevealCompletionControls() {
         assertCompletionBlockerNavigation("OUTCOME", false)
@@ -98,7 +101,7 @@ class CompletionUiSemanticTest {
     }
 
     @Test fun performedMissingNextDueWithoutChecklistCanBeRecoveredFromReview() {
-        assertMissingNextDueRecovery("PERFORMED", withChecklist = false, capture = true)
+        assertMissingNextDueRecovery("PERFORMED", withChecklist = false)
     }
 
     @Test fun performedMissingNextDueWithChecklistCanBeRecoveredFromReview() {
@@ -144,12 +147,6 @@ class CompletionUiSemanticTest {
         compose.onNodeWithTag(blockerTag).assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
         compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
-        if (dark || largeText || kind == "OUTCOME") {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            val image = compose.onRoot().captureToImage().asAndroidBitmap()
-            val name = "checkpoint0-${kind.lowercase()}-${if (withChecklist) "checklist" else "no-checklist"}-${if (dark) "dark" else "light"}${if (largeText) "-large-text" else ""}.png"
-            File(context.getExternalFilesDir(null), name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        }
         when (kind) {
             "NOT_PERFORMED_REASON" -> compose.onNodeWithTag("not-performed-reason").assertIsDisplayed()
             "NEXT_DUE" -> compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
@@ -162,7 +159,6 @@ class CompletionUiSemanticTest {
         withChecklist: Boolean,
         largeText: Boolean = false,
         dark: Boolean = false,
-        capture: Boolean = false,
     ) {
         val before = runBlocking {
             val dao = database.serviceLoopDao()
@@ -208,11 +204,6 @@ class CompletionUiSemanticTest {
             org.junit.Assert.assertEquals(before[1], dao.visit("v"))
             org.junit.Assert.assertEquals(before[2], dao.obligation("o"))
             org.junit.Assert.assertEquals(before[3], dao.plan("p"))
-        }
-        if (largeText || dark || capture) {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            File(context.getExternalFilesDir(null), "checkpoint0-missing-next-due-${outcome.lowercase()}-${if (dark) "dark" else "light"}${if (largeText) "-large-text" else ""}.png")
-                .outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithTag("use-calculated-next-due").performClick()
         compose.waitUntil(10_000) { runBlocking { database.serviceLoopDao().workItem("w")?.confirmedNextDueDate == "2026-12-05" } }
@@ -627,11 +618,6 @@ class CompletionUiSemanticTest {
         compose.onAllNodesWithTag("keep-due-oneoff").assertCountEquals(0)
         compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
         compose.onNodeWithText("No recurring due date for this Service.").assertExists()
-        InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)?.let { directory ->
-            File(directory, "service-flow-2b-oneoff.png").outputStream().use { output ->
-                compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output)
-            }
-        }
     }
 
     @Test fun incompleteChecklistBlocksPartlyAndNotPerformedServicesUntilCompleted() {

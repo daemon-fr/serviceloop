@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop
 
 import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -14,7 +16,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
@@ -48,7 +50,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ServiceQuestionUiCorrectionTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var database: ServiceLoopDatabase
 
@@ -61,7 +63,11 @@ class ServiceQuestionUiCorrectionTest {
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
 
     @Test
     fun resolvedCheckDoesNotMoveFollowingContentForStatusTextOrNumber() {
@@ -342,11 +348,15 @@ class ServiceQuestionUiCorrectionTest {
     )
 
     private fun captureCard(name: String) {
-        val bitmap = compose.onNodeWithTag("question-${if (name.contains("status")) "render-status" else if (name.contains("optional")) "render-optional-text" else "render-required-text"}").captureToImage().asAndroidBitmap()
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = context.externalCacheDir ?: context.cacheDir
-        FileOutputStream(File(directory, "service-question-$name.png")).use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
-        bitmap.recycle()
+        try {
+            val bitmap = compose.onNodeWithTag("question-${if (name.contains("status")) "render-status" else if (name.contains("optional")) "render-optional-text" else "render-required-text"}").captureToImage().asAndroidBitmap()
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val directory = context.externalCacheDir ?: context.cacheDir
+            FileOutputStream(File(directory, "service-question-$name.png")).use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
+            bitmap.recycle()
+        } catch (failure: Throwable) {
+            android.util.Log.w("ServiceLoopRenderEvidence", "Best-effort artifact capture failed for $name", failure)
+        }
     }
 
     private fun fixedTime() = object : BusinessTime {

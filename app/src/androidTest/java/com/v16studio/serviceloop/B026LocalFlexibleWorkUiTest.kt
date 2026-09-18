@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -76,6 +77,12 @@ class B026LocalFlexibleWorkUiTest {
         preferences.clearRecentQueries()
         listOf("CUSTOMER", "SITE", "EQUIPMENT", "TEMPLATE", "PLAN", "VISIT", "FOLLOW_UP", "FINAL_RECORD")
             .forEach { preferences.setCategoryExpanded(it, true) }
+    }
+
+    @After
+    fun disposeContentAfterTest() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
     }
 
     @Test fun registerHidesOneTimeRowsByDefaultAcrossAllPanes() {
@@ -886,15 +893,19 @@ class B026LocalFlexibleWorkUiTest {
     private fun assertAbsentTag(tag: String) = assertTrue(compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty())
 
     private fun captureRendered(name: String) {
-        compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.waitForIdleSync()
-        Thread.sleep(500)
-        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b030-rendered")
-        check(directory.exists() || directory.mkdirs())
-        val screenshot = instrumentation.uiAutomation.takeScreenshot()
-        FileOutputStream(File(directory, name)).use { check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        screenshot.recycle()
+        try {
+            compose.waitForIdle()
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync()
+            Thread.sleep(500)
+            val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "b030-rendered")
+            check(directory.exists() || directory.mkdirs())
+            val screenshot = instrumentation.uiAutomation.takeScreenshot()
+            FileOutputStream(File(directory, name)).use { check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            screenshot.recycle()
+        } catch (failure: Throwable) {
+            android.util.Log.w("ServiceLoopRenderEvidence", "Best-effort artifact capture failed for $name", failure)
+        }
     }
 
     private fun equipment(id: String, name: String) = EquipmentSummary(id, name, "EQ-$id", "ID-$id", "Site", "Customer", null, CustomerType.STANDARD)

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.setContent
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -12,7 +11,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -23,11 +21,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.ui.*
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
-import java.io.File
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -45,21 +41,13 @@ class DispatchCoordinatorUiTest {
     private var previousRole:String?=null
     @Before fun off(){previousRole=prefs.getString(TEAM_ROLE,null);prefs.edit().putString(TEAM_ROLE,TeamRole.SOLO.name).remove(COORDINATOR_ENABLED).commit()}
     @After fun restorePreference(){prefs.edit().apply{if(previousRole==null)remove(TEAM_ROLE) else putString(TEAM_ROLE,previousRole)}.commit()}
-    private fun capture(tag:String,name:String){
-        val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),name)
-        var lastFailure:Throwable?=null
-        repeat(3){
-            try{
-                compose.waitForIdle()
-                file.outputStream().use{assertTrue(compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it))}
-                return
-            }catch(failure:Throwable){
-                lastFailure=failure
-                compose.runOnUiThread{compose.activity.window.decorView.invalidate()}
-                Thread.sleep(250)
-            }
+    private fun disposeCompositionAndClose(database: ServiceLoopDatabase) {
+        try {
+            compose.runOnUiThread { compose.activity.setContent {} }
+            compose.waitForIdle()
+        } finally {
+            database.close()
         }
-        throw AssertionError("Unable to capture $tag after redraw retries",lastFailure)
     }
 
     @Test fun coordinatorWorkspaceMovesFromSettingsToReactiveHomeActions(){
@@ -67,7 +55,7 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithTag("root-nav-home").assertIsDisplayed();compose.onNodeWithTag("root-nav-work").assertIsDisplayed();compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
         compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-COORDINATOR").performClick()
         compose.onNode(hasText("Coordinator tools are available from Home.", substring = true)).assertIsDisplayed();compose.onNodeWithText("Technicians").assertDoesNotExist();compose.onNodeWithText("Teams and leaders").assertDoesNotExist();compose.onNodeWithText("Dispatch outbox").assertDoesNotExist()
-        compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed();capture("root-home","dispatch-home-coordinator.png")
+        compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed()
         compose.onNodeWithText("Technicians").performClick();compose.onNodeWithTag("dispatch-technicians").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Teams").performClick();compose.onNodeWithTag("dispatch-teams").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Outbox").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.onNodeWithTag("dispatch-new-visit").performClick();compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed()
@@ -197,16 +185,15 @@ class DispatchCoordinatorUiTest {
 
     @Test fun listFirstOutboxHandlesLargeDirectoryAndExplicitSelection(){
         val context=ApplicationProvider.getApplicationContext<Context>();val db=Room.inMemoryDatabaseBuilder(context,ServiceLoopDatabase::class.java).allowMainThreadQueries().build();val service=DispatchPackageService(db);val ids=runBlocking{val dao=db.serviceLoopDao();dao.insertCustomers(listOf(CustomerEntity("customer","CU-LARGE","Large Customer")));val sites=(1..120).map{SiteEntity("site-$it","customer","SITE-${it.toString().padStart(3,'0')}","Site $it","$it Test Road",null)};dao.insertSites(sites);dao.insertEquipment(sites.take(3).mapIndexed{index,site->EquipmentEntity("equipment-$index",site.id,"EQ-$index",null,"Pump $index",null,null,null,null)});val self=service.identity();service.importTechnician(self);val team=service.createTeam("North Team");service.setTeamMember(team,self.technicianId,true,true);sites.take(3).mapIndexed{index,site->service.saveOutboxVisit(DispatchOutboxEditorDraft(managerReference="JOB-$index",siteId=site.id,serviceDate="2026-09-${20+index}",appointmentLocalTime="${(8+index).toString().padStart(2,'0')}:00",appointmentZoneId="Europe/Bucharest",teamIds=listOf(team),items=listOf(DispatchOutboxItemDraft("item-$index","equipment-$index","Inspect pump $index"))))}}
-        try{compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();NavHost(nav,"outbox"){composable("outbox"){DispatchOutboxScreen(PaddingValues(),nav,LocalDate.of(2026,4,15),service,db)};composable("dispatch/visit/new"){Text("New editor",Modifier.testTag("fake-new-editor"))};composable("dispatch/visit/{id}"){Text("Editor opened",Modifier.testTag("fake-editor"))};composable("dispatch/export-review"){Text("Review",Modifier.testTag("fake-review"))}}}}};compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed();compose.onNodeWithTag("dispatch-search").assertIsDisplayed();compose.onNodeWithTag("dispatch-status-filter").assertIsDisplayed();compose.onNodeWithTag("dispatch-date-filter").assertIsDisplayed();compose.onNodeWithText("Sender label").assertDoesNotExist();compose.onNodeWithText("Create outbox Visit").assertDoesNotExist();compose.onNodeWithText("SITE-120",substring=true).assertDoesNotExist();compose.onNodeWithText("Export selected (0)").assertDoesNotExist();capture("dispatch-outbox","dispatch-outbox-list-first.png")
+        try{compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();NavHost(nav,"outbox"){composable("outbox"){DispatchOutboxScreen(PaddingValues(),nav,LocalDate.of(2026,4,15),service,db)};composable("dispatch/visit/new"){Text("New editor",Modifier.testTag("fake-new-editor"))};composable("dispatch/visit/{id}"){Text("Editor opened",Modifier.testTag("fake-editor"))};composable("dispatch/export-review"){Text("Review",Modifier.testTag("fake-review"))}}}}};compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed();compose.onNodeWithTag("dispatch-search").assertIsDisplayed();compose.onNodeWithTag("dispatch-status-filter").assertIsDisplayed();compose.onNodeWithTag("dispatch-date-filter").assertIsDisplayed();compose.onNodeWithText("Sender label").assertDoesNotExist();compose.onNodeWithText("Create outbox Visit").assertDoesNotExist();compose.onNodeWithText("SITE-120",substring=true).assertDoesNotExist();compose.onNodeWithText("Export selected (0)").assertDoesNotExist()
             compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[0]}"));compose.onNodeWithTag("dispatch-select-${ids[0]}").performClick();compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[1]}"));compose.onNodeWithTag("dispatch-select-${ids[1]}").performClick();compose.onNodeWithText("2 selected").assertIsDisplayed();compose.onNodeWithText("Export (2)").assertIsDisplayed();assertTrue(compose.onAllNodesWithText("Draft").fetchSemanticsNodes().size>=2);compose.onNodeWithTag("dispatch-select-${ids[0]}").assertExists();compose.onNodeWithTag("dispatch-open-${ids[0]}").assertExists()
-            capture("dispatch-outbox","dispatch-outbox-list-first-selection.png")
             compose.onNodeWithTag("dispatch-search").performTextInput("JOB-0");compose.waitUntil{compose.onAllNodesWithText("1 selected").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-open-${ids[0]}"));compose.onNodeWithTag("dispatch-open-${ids[0]}").performClick();compose.onNodeWithTag("fake-editor").assertIsDisplayed()
-        }finally{db.close()}
+        }finally{disposeCompositionAndClose(db)}
     }
 
     @Test fun sitePickerSearchFindsLateLargeDirectoryEntry(){
         val customers=listOf(CustomerEntity("customer","CU-SEARCH","Search Customer"));val sites=(1..150).map{SiteEntity("site-$it","customer","SITE-${it.toString().padStart(3,'0')}","Branch $it","$it Long Road",null)};var selected:String?=null
-        compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){DispatchSitePickerDialog(sites,customers,{}, {selected=it})}}};compose.onNodeWithTag("dispatch-site-picker").assertIsDisplayed();compose.onNodeWithTag("dispatch-site-search").performTextInput("SITE-150");compose.onNodeWithTag("dispatch-site-picker-list").performScrollToNode(hasTestTag("dispatch-site-site-150"));compose.onNodeWithTag("dispatch-site-site-150",useUnmergedTree=true).assertIsDisplayed();capture("dispatch-site-picker","dispatch-site-picker-search.png");compose.onNodeWithTag("dispatch-site-site-150",useUnmergedTree=true).performClick();assertEquals("site-150",selected)
+        compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){DispatchSitePickerDialog(sites,customers,{}, {selected=it})}}};compose.onNodeWithTag("dispatch-site-picker").assertIsDisplayed();compose.onNodeWithTag("dispatch-site-search").performTextInput("SITE-150");compose.onNodeWithTag("dispatch-site-picker-list").performScrollToNode(hasTestTag("dispatch-site-site-150"));compose.onNodeWithTag("dispatch-site-site-150",useUnmergedTree=true).assertIsDisplayed();compose.onNodeWithTag("dispatch-site-site-150",useUnmergedTree=true).performClick();assertEquals("site-150",selected)
     }
 
 
@@ -217,11 +204,11 @@ class DispatchCoordinatorUiTest {
             compose.onNodeWithTag("open-render-editor").performClick();compose.onNodeWithTag("dispatch-choose-site").performClick();compose.onNodeWithTag("dispatch-site-render-site").performClick()
             compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-choose-teams"));compose.onNodeWithTag("dispatch-choose-teams").performClick();compose.onNodeWithText("Rendered Team").performClick();compose.onNodeWithTag("dispatch-team-apply").performClick()
             compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-add-item"));compose.onNodeWithTag("dispatch-add-item").performClick();compose.onNodeWithTag("dispatch-equipment-render-equipment").performClick();compose.onNodeWithTag("dispatch-work-task").performTextInput("New rendered work");compose.onNodeWithTag("dispatch-work-item-save").performClick()
-            capture("dispatch-new-visit","dispatch-new-visit-editor-top.png");compose.onNodeWithTag("dispatch-save-visit").performClick();compose.onNodeWithTag("open-render-editor").assertIsDisplayed();assertEquals(3,runBlocking{service.outboxVisits().size})
-            compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();DispatchExportReviewScreen(PaddingValues(),nav,ids,service)}}};compose.onNodeWithTag("dispatch-export-sender").performTextInput("Prototype coordinator");compose.waitUntil(10_000){compose.onAllNodesWithText("First export · Version 1").fetchSemanticsNodes().size==2};compose.onAllNodesWithText("First export · Version 1").assertCountEquals(2);capture("dispatch-export-review","dispatch-export-review.png")
-        }finally{db.close()}
+            compose.onNodeWithTag("dispatch-save-visit").performClick();compose.onNodeWithTag("open-render-editor").assertIsDisplayed();assertEquals(3,runBlocking{service.outboxVisits().size})
+            compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();DispatchExportReviewScreen(PaddingValues(),nav,ids,service)}}};compose.onNodeWithTag("dispatch-export-sender").performTextInput("Prototype coordinator");compose.waitUntil(10_000){compose.onAllNodesWithText("First export · Version 1").fetchSemanticsNodes().size==2};compose.onAllNodesWithText("First export · Version 1").assertCountEquals(2)
+        }finally{disposeCompositionAndClose(db)}
     }    @Test fun packageCompositionDoesNotCreateLocalPlannerVisit(){
-        val db=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),ServiceLoopDatabase::class.java).build();try{val dao=db.serviceLoopDao();runBlocking{dao.insertCustomers(listOf(CustomerEntity("c","CU-I","Customer")));dao.insertSites(listOf(SiteEntity("s","c","ST-I","Site",null,null)));dao.insertEquipment(listOf(EquipmentEntity("e","s","EQ-I",null,"Pump",null,null,null,null)));val svc=DispatchPackageService(db);val identity=svc.identity();val alex=TechnicianIdentity("alex-instrumented-id","Alex");svc.importTechnician(identity);svc.importTechnician(alex);val first=svc.createTeam("Instrumentation north");val second=svc.createTeam("Instrumentation emergency");svc.setTeamMember(first,identity.technicianId,true,true);svc.setTeamMember(first,alex.technicianId,true,false);svc.setTeamMember(second,alex.technicianId,true,true);val outbox=svc.createOutboxVisit("JOB-UI","s","2026-09-20","09:00","Europe/Bucharest","Rear entrance",listOf(first,second));svc.addOutboxItem(outbox,"e","John only",null,null,listOf(identity.technicianId));svc.addOutboxItem(outbox,"e","John and Alex",null,null,listOf(identity.technicianId,alex.technicianId));svc.addOutboxItem(outbox,"e","Everyone",null,null,emptyList());val exported=svc.exportPackage(listOf(outbox),"Prototype coordinator");assertEquals(2,exported.visits.single().teams.size);assertEquals(listOf(1,2,0),exported.visits.single().work.map{it.assignedTechnicians.size});assertEquals(0,dao.visitCount())}}finally{db.close()}
+        val db=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),ServiceLoopDatabase::class.java).build();try{val dao=db.serviceLoopDao();runBlocking{dao.insertCustomers(listOf(CustomerEntity("c","CU-I","Customer")));dao.insertSites(listOf(SiteEntity("s","c","ST-I","Site",null,null)));dao.insertEquipment(listOf(EquipmentEntity("e","s","EQ-I",null,"Pump",null,null,null,null)));val svc=DispatchPackageService(db);val identity=svc.identity();val alex=TechnicianIdentity("alex-instrumented-id","Alex");svc.importTechnician(identity);svc.importTechnician(alex);val first=svc.createTeam("Instrumentation north");val second=svc.createTeam("Instrumentation emergency");svc.setTeamMember(first,identity.technicianId,true,true);svc.setTeamMember(first,alex.technicianId,true,false);svc.setTeamMember(second,alex.technicianId,true,true);val outbox=svc.createOutboxVisit("JOB-UI","s","2026-09-20","09:00","Europe/Bucharest","Rear entrance",listOf(first,second));svc.addOutboxItem(outbox,"e","John only",null,null,listOf(identity.technicianId));svc.addOutboxItem(outbox,"e","John and Alex",null,null,listOf(identity.technicianId,alex.technicianId));svc.addOutboxItem(outbox,"e","Everyone",null,null,emptyList());val exported=svc.exportPackage(listOf(outbox),"Prototype coordinator");assertEquals(2,exported.visits.single().teams.size);assertEquals(listOf(1,2,0),exported.visits.single().work.map{it.assignedTechnicians.size});assertEquals(0,dao.visitCount())}}finally{disposeCompositionAndClose(db)}
     }
 
     @Test fun batchCancelOpensOnlyCancellationDialogAndPersistsCanceledState(){
@@ -233,7 +220,7 @@ class DispatchCoordinatorUiTest {
             compose.onNodeWithTag("dispatch-select-$id").performClick();compose.onNodeWithTag("dispatch-more-selection").performClick();compose.onNodeWithTag("dispatch-cancel-selected").performClick()
             compose.onNodeWithText("Cancel selected Visits").assertIsDisplayed();compose.onNodeWithTag("dispatch-status-confirm").assertDoesNotExist();compose.onNodeWithTag("dispatch-cancel-reason").performTextInput("Coordinator cancellation");compose.onNodeWithText("Apply").performClick()
             compose.waitUntil(10_000){runBlocking{db.dispatchDao().outboxVisit(id)?.outboxStatus==DispatchOutboxStatus.CANCELED}};compose.waitUntil(10_000){compose.onAllNodesWithText("No visits match these filters").fetchSemanticsNodes().isNotEmpty()};compose.waitForIdle()
-        }finally{db.close()}
+        }finally{disposeCompositionAndClose(db)}
     }
 
     @Test fun individualDraftCancelActionUsesReasonAndReloadsReadOnlyCanceledEditor(){
@@ -243,7 +230,7 @@ class DispatchCoordinatorUiTest {
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();CompositionLocalProvider(LocalDetailBackInterceptor provides remember{mutableStateOf<(() -> Unit)?>(null)}){DispatchVisitEditorScreen(PaddingValues(),nav,id,LocalDate.of(2026,9,11),service,db)}}}}
             compose.waitUntil(10_000){compose.onAllNodesWithTag("dispatch-cancel-visit").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-cancel-visit").performClick();compose.onNodeWithTag("dispatch-cancel-dialog").assertIsDisplayed();compose.onNodeWithTag("dispatch-cancel-reason").performTextInput("No longer needed");compose.onNodeWithTag("dispatch-cancel-confirm").performClick()
             compose.waitUntil(10_000){runBlocking{db.dispatchDao().outboxVisit(id)?.outboxStatus==DispatchOutboxStatus.CANCELED}};compose.waitUntil(10_000){compose.onAllNodesWithText("Read-only").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-cancel-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-reopen-visit").assertDoesNotExist();compose.onNodeWithText("This Draft is stored in cancellation history and is not exported.").assertIsDisplayed()
-        }finally{db.close()}
+        }finally{disposeCompositionAndClose(db)}
     }
 
     @Test fun individualConcludedVisitReopensToDispatchedAndRemainsFunctional(){
@@ -253,6 +240,6 @@ class DispatchCoordinatorUiTest {
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();CompositionLocalProvider(LocalDetailBackInterceptor provides remember{mutableStateOf<(() -> Unit)?>(null)}){DispatchVisitEditorScreen(PaddingValues(),nav,id,LocalDate.of(2026,9,11),service,db)}}}}
             compose.waitUntil(10_000){compose.onAllNodesWithText("Read-only").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-cancel-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-reopen-visit").assertIsDisplayed();compose.onNodeWithTag("dispatch-reopen-visit").performClick()
             compose.waitUntil(10_000){runBlocking{db.dispatchDao().outboxVisit(id)?.outboxStatus==DispatchOutboxStatus.DISPATCHED}};compose.waitUntil(10_000){compose.onAllNodesWithTag("dispatch-save-visit").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-reopen-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-cancel-visit").assertIsDisplayed()
-        }finally{db.close()}
+        }finally{disposeCompositionAndClose(db)}
     }
 }

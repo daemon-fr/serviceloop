@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,6 +26,7 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -40,7 +42,18 @@ class DueServicesProjectionUiTest {
     }
     private lateinit var database: ServiceLoopDatabase
 
-    @After fun close() { if (::database.isInitialized) database.close() }
+    @Before fun resetUiFilterPreferences() {
+        context.getSharedPreferences("serviceloop_ui_filter_preferences", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
+
+    @After fun close() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        if (::database.isInitialized) database.close()
+    }
 
     @Test fun roomProjectionStaysAvailableAcrossNavigationAndUpdatesClaims() = runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
@@ -65,6 +78,7 @@ class DueServicesProjectionUiTest {
         compose.waitUntil(10_000) { viewModel.state.value.dueServices.singleOrNull()?.claimedVisitId == visit }
         assertEquals(plan, viewModel.state.value.dueServices.single().planId)
 
+        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Visit, All").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Visit, All").assertIsDisplayed().performClick()
         compose.onNodeWithTag("due-visit-selector-option-hasvisit").performClick()
         compose.onNodeWithContentDescription("Visit, Has visit").assertIsDisplayed()

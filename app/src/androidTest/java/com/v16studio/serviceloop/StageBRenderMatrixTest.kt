@@ -24,11 +24,15 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 class StageBRenderMatrixTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+
+    @Before
+    fun requireRenderEvidenceOptIn() = assumeRenderEvidenceSuite()
 
     private data class Shot(val group:String,val name:String,val route:String?)
 

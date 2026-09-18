@@ -151,11 +151,15 @@ class OwnerR1CorrectionEvidenceTest {
     }
 
     private fun capture(name: String) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val bitmap = instrumentation.uiAutomation.takeScreenshot()
-        val directory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
-        FileOutputStream(File(directory, name)).use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        bitmap.recycle()
+        try {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val bitmap = instrumentation.uiAutomation.takeScreenshot()
+            val directory = instrumentation.targetContext.externalCacheDir ?: instrumentation.targetContext.cacheDir
+            FileOutputStream(File(directory, name)).use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            bitmap.recycle()
+        } catch (failure: Throwable) {
+            android.util.Log.w("ServiceLoopRenderEvidence", "Best-effort artifact capture failed for $name", failure)
+        }
     }
 
     @Test fun lightOwnerR1CorrectionEvidence() = render(false)

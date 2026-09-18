@@ -1,9 +1,11 @@
 package com.v16studio.serviceloop
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
 import androidx.navigation.compose.rememberNavController
@@ -31,7 +33,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class B025RawDraftRestorationUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var database: ServiceLoopDatabase
 
@@ -45,6 +47,8 @@ class B025RawDraftRestorationUiTest {
 
     @After
     fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
         database.close()
     }
 

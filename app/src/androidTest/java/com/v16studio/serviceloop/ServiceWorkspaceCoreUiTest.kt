@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Box
@@ -13,7 +15,7 @@ import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -64,7 +66,7 @@ import org.junit.Assert.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class ServiceWorkspaceCoreUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var database: ServiceLoopDatabase
 
@@ -77,7 +79,11 @@ class ServiceWorkspaceCoreUiTest {
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
 
     @Test
     fun serviceWorkspaceShowsProgressWorkChecklistAndAutosaveLanguage() {

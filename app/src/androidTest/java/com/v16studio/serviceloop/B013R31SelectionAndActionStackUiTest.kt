@@ -32,6 +32,7 @@ import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -150,6 +151,9 @@ class B013R31SelectionAndActionStackUiTest {
 @RunWith(AndroidJUnit4::class)
 class B013R31OwnerSurfaceRenderTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Before
+    fun requireRenderEvidenceOptIn() = assumeRenderEvidenceSuite()
 
     @After
     fun restoreOwnerReviewPreferences() {

@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop.ui
 
 import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -8,7 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onRoot
@@ -43,7 +45,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ServiceAttentionOrderUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var database: ServiceLoopDatabase
 
@@ -56,7 +58,11 @@ class ServiceAttentionOrderUiTest {
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
 
     @Test
     fun workPerformedRawBufferWinsOverPrivateRawBuffer() {
@@ -171,13 +177,17 @@ class ServiceAttentionOrderUiTest {
     }
 
     private fun capture(name: String) {
-        compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.waitForIdleSync()
-        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "serviceloop-owner-correction")
-        check(directory.exists() || directory.mkdirs())
-        File(directory, name).outputStream().use { output ->
-            check(compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
+        try {
+            compose.waitForIdle()
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync()
+            val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "serviceloop-owner-correction")
+            check(directory.exists() || directory.mkdirs())
+            File(directory, name).outputStream().use { output ->
+                check(compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+        } catch (failure: Throwable) {
+            android.util.Log.w("ServiceLoopRenderEvidence", "Best-effort artifact capture failed for $name", failure)
         }
     }
 

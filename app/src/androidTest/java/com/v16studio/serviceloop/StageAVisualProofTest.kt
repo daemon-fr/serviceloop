@@ -95,6 +95,7 @@ class StageAVisualProofTest {
 
     @Before
     fun seedActualModels() {
+        assumeRenderEvidenceSuite()
         database = Room.inMemoryDatabaseBuilder(compose.activity, ServiceLoopDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -157,7 +158,7 @@ class StageAVisualProofTest {
         viewModel = ServiceLoopViewModel(repository) {}
     }
 
-    @After fun closeDatabase() = database.close()
+    @After fun closeDatabase() { if (::database.isInitialized) database.close() }
 
     private fun render(width: Int, dark: Boolean, content: @androidx.compose.runtime.Composable () -> Unit) {
         compose.runOnUiThread {

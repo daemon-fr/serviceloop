@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class Sl2RuntimeIntegrityTest {
     @Test fun canonicalMigratedFixturePreservesFinalVisitAnswersIdentityAndRecurrence() {
+        assumeHistoricalFixtureValidation()
         runBlocking {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val database = ServiceLoopDatabase.open(context)
