@@ -624,8 +624,12 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         val consequence = "Switching will clear ${discarded.joinToString(", ").ifBlank { "the current visit setup" }}."
         AlertDialog(onDismissRequest = { pendingMode = null }, title = { Text("Switch visit setup?") }, text = { Text(consequence) }, confirmButton = { TextButton({ applyMode(requested); pendingMode = null }) { Text("Switch") } }, dismissButton = { TextButton({ pendingMode = null }) { Text("Cancel") } })
     }
-    EditorColumn(padding, state, tag = "new-visit-form", topContentPadding = 0.dp) {
-        item {
+    EditorColumn(
+        padding,
+        state,
+        tag = "new-visit-form",
+        topContentPadding = 0.dp,
+        leadingContent = {
             Column(Modifier.fillMaxWidth().background(colors.surface)) {
                 VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
                 Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
@@ -633,7 +637,8 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
                     ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode")
                 }
             }
-        }
+        },
+    ) {
         if (mode == "NEW") {
             item { DailyHeading("New customer"); DailyField(customerName, { customerName = it }, "Customer name · Required"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email"); DailyField(locationLabel, { locationLabel = it }, "Location label"); DailyField(address, { address = it }, "Service address"); Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("new-visit-customer-type")) { Checkbox(oneTimeCustomer, { oneTimeCustomer = it }, modifier = Modifier.testTag("new-visit-one-time-customer")); Text("One-time customer (no contract)") } }
             item { VisitSetupSectionHeading("Set up visit", "visit-setup-heading") }

@@ -5,6 +5,8 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -46,17 +48,51 @@ internal fun EditorColumn(
     state: UiState,
     tag: String? = null,
     topContentPadding: Dp = 8.dp,
-    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+    leadingContent: (@Composable () -> Unit)? = null,
+    content: EditorColumnScope.() -> Unit,
 ) {
+    val horizontalPadding = if (leadingContent == null) 16.dp else 0.dp
     LazyColumn(
         Modifier.padding(padding).fillMaxWidth().widthIn(max = com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens.Size.formMaxWidth)
             .then(if (tag == null) Modifier else Modifier.testTag(tag)),
-        contentPadding = PaddingValues(16.dp, topContentPadding, 16.dp, 32.dp),
+        contentPadding = PaddingValues(horizontalPadding, topContentPadding, horizontalPadding, 32.dp),
         verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section),
     ) {
-        if (state.error != null) item { Text("Not saved — ${state.error}", color = MaterialTheme.colorScheme.error) }
-        if (state.operationMessage != null) item { Text(state.operationMessage, color = MaterialTheme.colorScheme.primary) }
-        content()
+        if (state.error != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = if (leadingContent == null) 0.dp else 16.dp)) { Text("Not saved — ${state.error}", color = MaterialTheme.colorScheme.error) } }
+        if (state.operationMessage != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = if (leadingContent == null) 0.dp else 16.dp)) { Text(state.operationMessage, color = MaterialTheme.colorScheme.primary) } }
+        leadingContent?.let { item { it() } }
+        EditorColumnScope(this, if (leadingContent == null) 0.dp else 16.dp).content()
+    }
+}
+
+internal class EditorColumnScope internal constructor(
+    private val listScope: LazyListScope,
+    private val horizontalPadding: Dp,
+) {
+    fun item(
+        key: Any? = null,
+        contentType: Any? = null,
+        content: @Composable LazyItemScope.() -> Unit,
+    ) {
+        listScope.item(key = key, contentType = contentType) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { content() }
+        }
+    }
+
+    fun <T> items(
+        items: List<T>,
+        key: ((item: T) -> Any)? = null,
+        contentType: ((item: T) -> Any?)? = null,
+        itemContent: @Composable LazyItemScope.(item: T) -> Unit,
+    ) {
+        listScope.items(
+            count = items.size,
+            key = if (key == null) null else { index: Int -> key(items[index]) },
+            contentType = if (contentType == null) ({ _: Int -> null }) else { index: Int -> contentType(items[index]) },
+        ) { index ->
+            val item = items[index]
+            Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { itemContent(item) }
+        }
     }
 }
 
