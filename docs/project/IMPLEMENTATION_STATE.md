@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-16
+**Updated:** 2026-09-21
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -12,7 +12,7 @@ Protected accepted baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at the historical SL-5C checkpoint: v11
 
-The explicitly authorized active implementation/review branch is `codex/b013-ui-overhaul`, currently declaring Room v15 with schema files 1–15 and migrations through 14→15. B-025 Service Flow and B-026 flexible work/Dispatch v5 are implemented there. This work remains subject to independent review and owner acceptance; it has not advanced `master`. See `REFACTORING_CHECKPOINT_0.md` for this branch's current correctness and verification checkpoint. Historical SL-5C results below remain evidence for their stated revision only.
+The B043 documentation/implementation line is `codex/b043-five-role-workspace`, based on `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`. The documentation commit is recorded at the B043 handoff after it exists. B043 is documented only at this stage; it does not advance `master` or claim production implementation. The preceding `codex/b013-ui-overhaul` line, Room v15, and its B-025/B-026 implementation evidence remain historical branch context. Historical SL-5C results below remain evidence for their stated revision only.
 
 ## Historical accepted state and active branch context
 
@@ -201,6 +201,17 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - New Visit back protection compares a meaningful draft snapshot to its initial route-aware baseline; search, mode, focus, picker dismissal, and restored values remain clean. The requested Follow-up explanatory sentence was removed without changing Contact/Corrective or private-content semantics.
 - B037 evidence is documented in `B037_V1_0_1_OWNER_REVIEW_UI_CORRECTIONS.md`. Final JVM unit tests: 431 PASS; required debug/release assembly, lint, and Android-test APK gates: PASS; focused canonical AVD checks: B036 field/action 3/3, interval layout 2/2, B037 render/back guard 2/2, and relevant B026 Create Visit 3/3. Fresh light/dark render screenshots were visually inspected.
 - This remains implemented owner-review work only. No release tag, protected-branch merge, backend, accounts, sync, invoicing, accounting, inventory, or customer portal scope was introduced.
+
+## B043 — FIVE-ROLE WORKSPACE / FIELD DELEGATION
+
+**Status:** DOCUMENTED / IMPLEMENTATION NOT STARTED
+
+- Branch: `codex/b043-five-role-workspace`
+- Base SHA: `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`
+- Documentation commit: recorded at the B043 handoff after the commit exists.
+- Room remains v15. No production source, manifest, Gradle file, Room schema, test, or resource changed in this documentation stage.
+- Adopted roles, in exact order, are Solo, Subcontractor, Employee, Team Leader, and Coordinator. Solo and Subcontractor manage their own Register/work; Employee receives and performs assigned work without the Register root; Team Leader combines Register, receiver, performer, coordinator, delegation, and conclusion capability; Coordinator has Register and coordination/conclusion capability but no technician field-work execution. Legacy `MEMBER` maps explicitly to Subcontractor, and conclusion remains distinct from technician completion.
+- Next action: production implementation from the B043 authority document.
 
 ## Toolchain / environment baseline
 

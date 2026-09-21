@@ -2,6 +2,8 @@
 
 **Status:** Implemented UI/file-entry decision and bounded package-design recommendation, 2026-09-12.
 
+> **B043 supersession note:** B043 supersedes this document's user-facing Solo / Member / Coordinator taxonomy. Existing stored `MEMBER` maps to `Subcontractor` for compatibility. B024's underlying adopted file-based Dispatch, package, assignment, and provenance semantics remain valid unless B043 explicitly changes them. The content below is historical evidence and is not retrospectively rewritten.
+
 ## Local role model
 
 ServiceLoop persists one device-local role: `SOLO`, `MEMBER`, or `COORDINATOR`. The former `coordinator_enabled` preference migrates once: enabled becomes `COORDINATOR`; disabled or absent becomes `SOLO`. No account, remote team, or synchronization meaning is introduced.

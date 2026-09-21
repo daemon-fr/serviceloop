@@ -2,6 +2,8 @@
 
 **OWNER APPROVED UNDER B-015 — BANKED ON THE AUTHORITATIVE TECHNICAL DEVELOPMENT LINE**
 
+> **Current authority:** Role taxonomy and workspace behavior are now governed by B043. Team Leader has both receiver and coordinator capability; Coordinator is coordination-only for technician field execution. The package, transport, assignment, generation, and provenance rules below remain unchanged unless explicitly amended by B043.
+
 This document remains the detailed implementation reference for the asynchronous coordinator-to-technician Dispatch design first developed on `prototype/dispatch-v2` and now deliberately integrated with verified SL-4 on `codex/integrate-sl4-dispatch`.
 
 Current integrated technical checkpoint:

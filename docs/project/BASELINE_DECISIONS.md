@@ -1,6 +1,6 @@
 # ServiceLoop — Adopted Baseline Decisions
 
-**Adopted:** 2026-09-06; amendments through 2026-09-09
+**Adopted:** 2026-09-06; amendments through 2026-09-21
 
 The owner approved the orchestrator's recommended working baseline.
 
@@ -162,3 +162,13 @@ Prefer substantial, coherent Codex assignments that deliver demonstrable workflo
 - Working/final work subjects are strict `SITE` or `EQUIPMENT`. Known Equipment freezes identity snapshots; unidentified Equipment may carry only a trimmed <=500-character description; SITE and unidentified work cannot carry recurring plan/obligation effects.
 - Recurring plans remain Equipment-backed and Standard-customer-only. Room schema v15, recovery compatibility 9–15, current CSV projections, history grouping, and public-report omission rules preserve this meaning. Current `.slwork` v4 remains field-stable and rejects future-shaped flexible dispatch rows on export.
 - B026A contains the persistence/domain/output foundation only. B026B customer/work-entry UI is not authorized by this amendment.
+
+## B043 — Five-role workspace, field delegation, and coordinator conclusion
+
+- The product roles, in exact visible order, are **Solo** — “I manage and perform my own service work.”; **Subcontractor** — “I manage my own work and also receive tasks from others.”; **Employee** — “I work on tasks assigned by a coordinator.”; **Team Leader** — “I perform assigned work and coordinate other technicians.”; and **Coordinator** — “I plan, assign, and oversee work for technicians.”
+- The capability matrix is authoritative: Solo `Register Yes / Receive No / Perform Yes / Delegate No / Coordinator tools No / Conclude others No`; Subcontractor `Yes / Yes / Yes / No / No / No`; Employee `No / Yes / Yes / No / No / No`; Team Leader `Yes / Yes / Yes / Yes / Yes / Yes`; Coordinator `Yes / No / No / Yes / Yes / Yes`.
+- There is no “Hide Register” preference. Employee has no Register root or ordinary master-data management workflows but may see operational Visit context. Team Leader has full hybrid Register, receiver, performer, coordinator, delegation, and conclusion capability. Coordinator has Register and coordinator/conclusion capability but no technician field-work execution.
+- Team Leader and Coordinator may conclude work delegated to others. Conclusion is administrative coordination-side closure and is not technician completion, evidence rewrite, final-history replacement, recurrence fulfillment, PDF generation, report delivery, or proof of central acceptance.
+- Existing stored `MEMBER` maps explicitly to **Subcontractor**, not Solo. This is preference compatibility; no Room migration is required merely for the role value.
+- Visit Maps uses the captured Visit site/address snapshot where available, with external Intent handoff only, no Maps SDK or location permission, no ServiceLoop state mutation, and no implication of contact, attendance, completion, or delivery.
+- B043 remains local-first and file-based with no accounts, backend, cloud/live sync, live reassignment, web coordinator, generic security/RBAC boundary, or second master-data database. It supersedes conflicting older role/workspace statements while preserving historical evidence and unchanged Dispatch transport semantics.

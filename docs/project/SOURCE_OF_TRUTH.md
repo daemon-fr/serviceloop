@@ -1,6 +1,6 @@
 # ServiceLoop — Source of Truth
 
-**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-15.
+**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-21.
 
 ## Authority order
 
@@ -25,7 +25,7 @@ Accepted/banked baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at that historical SL-5C checkpoint: v11
 
-`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The explicitly authorized active implementation/review line is `codex/b013-ui-overhaul`; it is not owner-accepted or merged. Its current Room declaration is v15, with retained schema files and migrations through 14→15. See `IMPLEMENTATION_STATE.md` and `REFACTORING_CHECKPOINT_0.md` for current verification evidence. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
+`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The B043 documentation/implementation line is `codex/b043-five-role-workspace`, created from `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`; this documentation stage is not implementation-complete and does not change Room or production source. The preceding `codex/b013-ui-overhaul` line and its v15 implementation evidence remain historical branch context. See `IMPLEMENTATION_STATE.md` for the current pointer. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
 
 B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013; UI corrections may continue during implementation and review. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 
@@ -101,3 +101,7 @@ This is a **functional freeze**, not a claim that the current interface/copy is 
 5. **Release preparation and submission.**
 
 Read `IMPLEMENTATION_STATE.md` for the concise current implementation summary and remaining validation boundaries. Read milestone coverage files, the Dispatch reference, and `B026_FLEXIBLE_AD_HOC_WORK_AND_ONE_TIME_CUSTOMERS.md` for the B026A persistence/output boundary and detailed semantics.
+
+## B043 — Later owner amendment: five-role workspace and field delegation
+
+B043 is the later owner amendment governing the `TeamRole` taxonomy, Register availability by role, technician receiver roles, the Team Leader hybrid role, Coordinator's restriction from technician field-work execution, and coordinator/Team Leader conclusion semantics. It supersedes conflicting role/workspace statements in older documents while preserving their historical evidence and unchanged Dispatch package, transport, assignment, generation, and provenance semantics. B043 does not claim that its production implementation is complete.

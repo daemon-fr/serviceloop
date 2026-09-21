@@ -10,11 +10,11 @@ Do not silently combine the adopted Conceptual App Map with conflicting policies
 
 ## Product boundary
 
-ServiceLoop is a local-first service book for an independent technician servicing customers' equipment. Preserve the loop:
+ServiceLoop is a local-first service book for solo technicians and small service companies. It includes the explicitly adopted local/file-based Dispatch and role workflows. Preserve the loop:
 
 Customer → site → equipment → service plan → due work/arrangements → working visit → service record/report → next obligation/follow-up.
 
-Do not turn it into a generic task manager or full field-service-management suite. No backend/accounts/team sync/dispatch/invoicing/accounting/inventory/customer portal unless explicitly authorized.
+Do not turn it into a generic task manager or full enterprise field-service-management suite. Still prohibited without explicit adoption: backend/accounts, live/cloud sync, team sync, billing/accounting, inventory, customer portal, or unrelated enterprise scope.
 
 ## Implementation discipline
 
