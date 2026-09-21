@@ -45,6 +45,7 @@ data class CustomerInput(
     val customerType: CustomerType = CustomerType.STANDARD,
 )
 data class SiteInput(val name: String, val address: String, val contactName: String = "", val phone: String = "", val email: String = "", val privateAccessNote: String = "", val isDefault: Boolean = false)
+data class CustomerWithFirstSiteInput(val customer: CustomerInput, val site: SiteInput)
 data class EquipmentInput(val name: String, val technicianIdentifier: String = "", val make: String = "", val model: String = "", val serialNumber: String = "", val privateNote: String = "")
 data class PlanInput(val name: String, val intervalCount: Int, val intervalUnit: String, val dueDate: String, val reusableTemplateId: String? = null, val dueDateChangeReason: String = "")
 data class PlanDetail(val id: String, val equipmentId: String, val equipmentName: String, val reference: String, val name: String, val intervalCount: Int, val intervalUnit: String, val dueDate: String, val state: String, val reusableTemplateId: String?)

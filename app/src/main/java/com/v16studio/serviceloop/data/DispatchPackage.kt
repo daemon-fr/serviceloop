@@ -2,8 +2,8 @@ package com.v16studio.serviceloop.data
 
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.CustomerType
+import com.v16studio.serviceloop.domain.CustomerWithFirstSiteInput
 import com.v16studio.serviceloop.domain.VisitCancellationOrigin
-import com.v16studio.serviceloop.domain.OneTimeVisitInput
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.io.File
 import java.security.MessageDigest
@@ -82,20 +82,9 @@ class DispatchPackageService(
             require(existing.outboxStatus!=DispatchOutboxStatus.CONCLUDED){"Reopen this concluded Visit before editing"}
             require(draft.expectedModifiedAtEpochMillis==existing.modifiedAtEpochMillis){"This Dispatch Visit changed after the editor was opened. Reopen it and review the latest version."}
         }
-        require(draft.oneTimeSite == null || draft.dispatchVisitId == null){"One-time customer details are only available for a new Visit"}
-        val oneTime=draft.oneTimeSite
-        val site=if(oneTime!=null){
-            validateOneTimeDispatchInput(oneTime)
-            val customerId=UUID.randomUUID().toString()
-            val siteId=UUID.randomUUID().toString()
-            val customerName=oneTime.customerName.trim()
-            val address=oneTime.address.trim().takeIf{it.isNotEmpty()}
-            val siteName=oneTime.locationLabel.trim().ifBlank{address?:customerName}
-            val customer=CustomerEntity(customerId,ordinaryReference("CU",dao.customerCount()+1),customerName,phone=oneTime.phone.trim().takeIf{it.isNotEmpty()},email=oneTime.email.trim().takeIf{it.isNotEmpty()},customerType=CustomerType.ONE_TIME.code)
-            dao.insertCustomers(listOf(customer))
-            val created=SiteEntity(siteId,customerId,ordinaryReference("ST",dao.siteCount()+1),siteName,address,null,isDefault=true)
-            dao.insertSites(listOf(created))
-            created
+        require(draft.newCustomerSite == null || draft.dispatchVisitId == null){"New customer details are only available for a new Visit"}
+        val site=if(draft.newCustomerSite!=null){
+            createCustomerWithFirstSiteInTransaction(dao, draft.newCustomerSite).site
         }else{
             require(draft.siteId.isNotBlank()){"Choose a valid Site"}
             dao.site(draft.siteId)?:error("Choose a valid Site")
@@ -110,7 +99,7 @@ class DispatchPackageService(
         draft.items.forEach{item->
             require(item.dispatchItemId.isNotBlank()){"Work item identity is missing"}
             require(item.taskName.trim().isNotEmpty()){"Every work item needs a task name"}
-            validateOutboxSubject(site,customer,item.subjectType,item.equipmentId,item.equipmentDescription,item.servicePlanReference,item.dueDateSnapshot)
+            validateOutboxSubject(site,customer,item.subjectType,item.equipmentId,item.equipmentDescription,item.servicePlanReference,item.dueDateSnapshot,item.reusableTemplateId)
             require(item.assignedTechnicianIds.distinct().all{it in participants}){"An item assignee is outside the selected Teams"}
         }
         val id=existing?.dispatchVisitId?:UUID.randomUUID().toString()
@@ -132,23 +121,14 @@ class DispatchPackageService(
         remaining.values.forEachIndexed{index,item->dispatch.updateOutboxItem(item.copy(position=-index-1))}
         draft.items.forEachIndexed{index,item->
             val normalizedDescription=item.equipmentDescription.trim().takeIf{it.isNotEmpty()}
-            val entity=DispatchOutboxItemEntity(item.dispatchItemId,id,index,item.equipmentId,item.taskName.trim(),item.servicePlanReference?.trim()?.takeIf{it.isNotEmpty()},item.dueDateSnapshot?.trim()?.takeIf{it.isNotEmpty()},item.subjectType.code,normalizedDescription)
+            val entity=DispatchOutboxItemEntity(item.dispatchItemId,id,index,item.equipmentId,item.taskName.trim(),item.servicePlanReference?.trim()?.takeIf{it.isNotEmpty()},item.dueDateSnapshot?.trim()?.takeIf{it.isNotEmpty()},item.subjectType.code,normalizedDescription,item.reusableTemplateId?.trim()?.takeIf{it.isNotEmpty()})
             if(item.dispatchItemId in remaining)dispatch.updateOutboxItem(entity) else dispatch.insertOutboxItem(entity)
             dispatch.clearOutboxItemAssignees(item.dispatchItemId)
             dispatch.insertOutboxItemAssignees(item.assignedTechnicianIds.distinct().map{DispatchOutboxItemAssigneeEntity(item.dispatchItemId,it)})
         }
         id
     }
-    private fun ordinaryReference(prefix:String,sequence:Int)="$prefix-${sequence.toString().padStart(3,'0')}"
-    private fun validateOneTimeDispatchInput(input:OneTimeVisitInput){
-        require(input.customerName.trim().isNotBlank()){"Customer name is required"}
-        require(input.customerName.trim().length<=200){"Customer name must be 200 characters or fewer"}
-        require(input.phone.trim().length<=100){"Phone must be 100 characters or fewer"}
-        require(input.email.trim().length<=320){"Email must be 320 characters or fewer"}
-        require(input.locationLabel.trim().length<=200){"Location label must be 200 characters or fewer"}
-        require(input.address.trim().length<=500){"Address must be 500 characters or fewer"}
-    }
-    private suspend fun validateOutboxSubject(site:SiteEntity,customer:CustomerEntity,subjectType:WorkSubjectType,equipmentId:String?,equipmentDescription:String,planReference:String?,dueDate:String?):EquipmentEntity?{
+    private suspend fun validateOutboxSubject(site:SiteEntity,customer:CustomerEntity,subjectType:WorkSubjectType,equipmentId:String?,equipmentDescription:String,planReference:String?,dueDate:String?,reusableTemplateId:String?=null):EquipmentEntity?{
         val normalizedPlan=planReference?.trim()?.takeIf{it.isNotEmpty()}
         val normalizedDue=dueDate?.trim()?.takeIf{it.isNotEmpty()}
         return when(subjectType){
@@ -156,6 +136,7 @@ class DispatchPackageService(
                 require(equipmentId==null){"SITE work cannot reference Equipment"}
                 require(equipmentDescription.trim().isEmpty()){"SITE work cannot have an Equipment description"}
                 require(normalizedPlan==null&&normalizedDue==null){"SITE work cannot carry recurring provenance"}
+                reusableTemplateId?.let { templateId -> require(dao.reusableTemplate(templateId)?.state == "ACTIVE") { "Inspection template is unavailable" } }
                 null
             }
             WorkSubjectType.EQUIPMENT->{
@@ -170,11 +151,17 @@ class DispatchPackageService(
                         require(plan.equipmentId==equipment.id){"Service Plan does not belong to the selected Equipment"}
                     }
                     normalizedDue?.let{date->require(normalizedPlan!=null){"Due date requires a service plan reference"};LocalDate.parse(date)}
+                    if (normalizedPlan != null) {
+                        require(reusableTemplateId == null) { "Recurring service work uses its Service Plan template" }
+                    } else {
+                        reusableTemplateId?.let { templateId -> require(dao.reusableTemplate(templateId)?.state == "ACTIVE") { "Inspection template is unavailable" } }
+                    }
                     equipment
                 }else{
                     require(equipmentId==null){"A selected Equipment item no longer exists"}
                     require(equipmentDescription.trim().isEmpty()||equipmentDescription.trim().length<=500){"Equipment description must be 500 characters or fewer"}
                     require(normalizedPlan==null&&normalizedDue==null){"Unidentified Equipment work cannot carry recurring provenance"}
+                    reusableTemplateId?.let { templateId -> require(dao.reusableTemplate(templateId)?.state == "ACTIVE") { "Inspection template is unavailable" } }
                     null
                 }
             }
@@ -206,7 +193,7 @@ class DispatchPackageService(
             val subject=WorkSubjectType.fromCode(i.subjectType)
             val equipment=validateOutboxSubject(site,customer,subject,i.equipmentId,i.equipmentDescription.orEmpty(),i.servicePlanReference,i.dueDateSnapshot)
             val assigned=dispatch.outboxItemAssignees(i.dispatchItemId).map{it.technicianId}.sorted().map{tech[it]?.let{x->DispatchTechnicianSnapshot(x.technicianId,x.displayName,x.designation)}?:error("Technician missing")}
-            val snapshot=snapshotForPlanReference(i.servicePlanReference)
+            val snapshot=snapshotForOutboxItem(i)
             DispatchWork(i.dispatchItemId,subject,equipment?.reference,i.equipmentDescription?.trim()?.takeIf{equipment==null&&!it.isNullOrBlank()},i.taskName,i.servicePlanReference,i.dueDateSnapshot,assigned,snapshot?.snapshotId)
         }
         require(items.isNotEmpty())
@@ -225,8 +212,25 @@ class DispatchPackageService(
         )
         return draft.copy(snapshotId = DispatchPackageCodec.contentAddressedSnapshotId(draft))
     }
+    private suspend fun snapshotForTemplateId(templateId:String?):DispatchInspectionSnapshot? {
+        val master = templateId?.let { dao.reusableTemplate(it) } ?: return null
+        val revision = dao.reusableTemplateRevision(master.currentRevisionId) ?: return null
+        val draft = DispatchInspectionSnapshot(
+            snapshotId = "",
+            templateName = revision.nameSnapshot,
+            sourceTemplateReference = master.reference,
+            sourceRevision = revision.revisionNumber,
+            items = dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) },
+        )
+        return draft.copy(snapshotId = DispatchPackageCodec.contentAddressedSnapshotId(draft))
+    }
+    private suspend fun snapshotForOutboxItem(item:DispatchOutboxItemEntity):DispatchInspectionSnapshot? =
+        item.reusableTemplateId?.let { templateId -> snapshotForTemplateId(templateId) } ?: snapshotForPlanReference(item.servicePlanReference)
     private suspend fun inspectionSnapshotsFor(visit:DispatchVisit):List<DispatchInspectionSnapshot> = visit.work.mapNotNull { work ->
-        work.inspectionSnapshotId?.let { expected -> snapshotForPlanReference(work.servicePlanReference)?.takeIf { it.snapshotId == expected } }
+        work.inspectionSnapshotId?.let { expected ->
+            dispatch.outboxItems().firstOrNull { it.dispatchItemId == work.dispatchItemId }?.let { snapshotForOutboxItem(it) }
+                ?.takeIf { it.snapshotId == expected }
+        }
     }.distinctBy { it.snapshotId }
     suspend fun prepareExport(ids:List<String>,sender:String):DispatchExportPreparation=database.withTransaction{
         require(sender.trim().isNotEmpty());val selected=ids.distinct();require(selected.isNotEmpty()){ "Select at least one Visit" };require(selected.size<=DispatchPackageCodec.MAX_VISITS){"A work package can contain at most ${DispatchPackageCodec.MAX_VISITS} Visits. Reduce the selection."};val now=System.currentTimeMillis();val expected=linkedMapOf<String,Pair<Long,String>>()

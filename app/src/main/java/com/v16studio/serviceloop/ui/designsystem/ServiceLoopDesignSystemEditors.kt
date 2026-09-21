@@ -118,6 +118,7 @@ fun <T> ServiceLoopChoicePair(
     modifier: Modifier = Modifier,
     testTagPrefix: String? = null,
     stackWhenLargeFont: Boolean = true,
+    enabled: Boolean = true,
 ) {
     require(options.size == 2) { "A paired choice requires exactly two options" }
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -129,6 +130,7 @@ fun <T> ServiceLoopChoicePair(
                 selected = first.first == selected,
                 onClick = { onSelected(first.first) },
                 label = first.second,
+                enabled = enabled,
                 modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-${first.first}"),
             )
         }
@@ -137,6 +139,7 @@ fun <T> ServiceLoopChoicePair(
                 selected = second.first == selected,
                 onClick = { onSelected(second.first) },
                 label = second.second,
+                enabled = enabled,
                 modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-${second.first}"),
             )
         }

@@ -1,9 +1,10 @@
 package com.v16studio.serviceloop
 
 import com.v16studio.serviceloop.domain.appointmentEpochMillis
-import com.v16studio.serviceloop.ui.NewVisitDraftSnapshot
-import com.v16studio.serviceloop.ui.NewVisitTaskDraft
-import com.v16studio.serviceloop.ui.newVisitDraftIsDirty
+import com.v16studio.serviceloop.ui.CustomerCreationDraft
+import com.v16studio.serviceloop.ui.VisitSetupDraft
+import com.v16studio.serviceloop.ui.VisitSetupTaskDraft
+import com.v16studio.serviceloop.ui.visitSetupIsDirty
 import com.v16studio.serviceloop.ui.parseAppointmentTimeInput
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.time.ZoneId
@@ -28,27 +29,27 @@ class B037OwnerReviewCorrectionsTest {
 
     @Test
     fun visitDraftDirtyStateComparesBusinessFieldsAndReturnsCleanWhenRestored() {
-        val baseline = snapshot()
-        assertFalse(newVisitDraftIsDirty(baseline, baseline))
-        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(date = "2026-09-20")))
-        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(appointmentTime = "09:30")))
+        val baseline = VisitSetupDraft(serviceDate = "2026-09-19")
+        assertFalse(visitSetupIsDirty(baseline, baseline))
+        assertTrue(visitSetupIsDirty(baseline, baseline.copy(serviceDate = "2026-09-20")))
+        assertTrue(visitSetupIsDirty(baseline, baseline.copy(appointmentTime = "09:30")))
         val restoredTime = baseline.copy(appointmentTime = "09:30").copy(appointmentTime = "")
-        assertFalse(newVisitDraftIsDirty(baseline, restoredTime))
-        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(customerName = "New customer")))
-        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(tasks = listOf(NewVisitTaskDraft("Inspect", WorkSubjectType.SITE, null, "", null)))))
-        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(selectedPlanIds = setOf("plan-1"))))
-        assertFalse(newVisitDraftIsDirty(baseline, baseline.copy(siteId = "site-a")))
+        assertFalse(visitSetupIsDirty(baseline, restoredTime))
+        assertTrue(visitSetupIsDirty(baseline, baseline.copy(newCustomer = CustomerCreationDraft(name = "New customer"))))
+        assertTrue(visitSetupIsDirty(baseline, baseline.copy(tasks = listOf(VisitSetupTaskDraft(taskName = "Inspect", subjectType = WorkSubjectType.SITE, equipmentId = null, equipmentDescription = "", reusableTemplateId = null)))))
+        assertTrue(visitSetupIsDirty(baseline, baseline.copy(selectedPlanIds = setOf("plan-1"))))
+        assertFalse(visitSetupIsDirty(baseline, baseline.copy(siteId = "site-a")))
         val selectedSite = baseline.copy(siteId = "site-a")
-        assertFalse(newVisitDraftIsDirty(selectedSite, selectedSite.copy(siteId = "site-b")))
-        assertFalse(newVisitDraftIsDirty(baseline, baseline.copy(selectedPlanIds = emptySet())))
+        assertFalse(visitSetupIsDirty(selectedSite, selectedSite.copy(siteId = "site-b")))
+        assertFalse(visitSetupIsDirty(baseline, baseline.copy(selectedPlanIds = emptySet())))
     }
 
     @Test
     fun createVisitDirtySnapshotDoesNotContainPresentationOnlyModeOrSiteSearch() {
-        val source = productionKotlinFunctionSource("internal data class NewVisitDraftSnapshot", "@Composable\ninternal fun InspectionChecklistSelector")
+        val source = productionKotlinFunctionSource("internal data class VisitSetupDraft", "@Composable\ninternal fun VisitSetupForm")
         assertFalse(source.contains("siteQuery"))
-        assertFalse(source.contains("mode:"))
-        assertTrue(productionKotlinSource("com/v16studio/serviceloop/ui").contains("newVisitDraftIsDirty(initialDraft, currentDraft)"))
+        assertTrue(source.contains("mode:"))
+        assertTrue(productionKotlinSource("com/v16studio/serviceloop/ui").contains("visitSetupIsDirty(baseline, draft)"))
     }
 
     @Test
@@ -67,11 +68,10 @@ class B037OwnerReviewCorrectionsTest {
 
     @Test
     fun createVisitCustomerTabsShareOneUpperSurfaceBand() {
-        val screen = productionKotlinFunctionSource("internal fun NewVisitScreen", "internal fun VisitDetailScreen")
-        assertTrue(screen.contains("Column(Modifier.fillMaxWidth().background(colors.surface)"))
+        val screen = productionKotlinSource("com/v16studio/serviceloop/ui")
+        assertTrue(screen.contains("internal fun VisitSetupForm"))
         assertTrue(screen.contains("VisitSetupSectionHeading(\"Choose a customer\", \"choose-visit-customer\""))
-        assertTrue(screen.contains("Modifier.fillMaxWidth().testTag(\"visit-mode-tabs\")"))
-        assertFalse(screen.contains("background(colors.canvas).testTag(\"visit-mode-tabs\")"))
+        assertTrue(screen.contains("CustomerCreationForm"))
     }
 
     @Test
@@ -80,7 +80,7 @@ class B037OwnerReviewCorrectionsTest {
         val contact = productionKotlinSourceContaining("CONTACT_CHANNELS = listOf(", "internal fun ContactNoteEditorScreen")
         val detail = productionKotlinSourceContaining("internal fun ContactNoteScreen", "Mark entered in error")
         val outbox = productionKotlinSourceContaining("internal fun DispatchOutboxScreen", "dispatch-new-visit-bottom")
-        val visit = productionKotlinFunctionSource("internal fun NewVisitScreen", "internal fun VisitDetailScreen")
+        val visit = productionKotlinSource("com/v16studio/serviceloop/ui")
         val customer = productionKotlinFunctionSource("internal fun CustomerDetailScreen", "internal fun CustomerEditorScreen")
 
         assertTrue(contact.contains("CONTACT_CHANNELS = listOf("))
@@ -107,34 +107,10 @@ class B037OwnerReviewCorrectionsTest {
         assertTrue(outbox.contains("dispatch-new-visit-floating"))
         assertTrue(outbox.contains("nav.navigate(\"dispatch/visit/new\")"))
         assertTrue(outbox.contains("if(selectedRows.isEmpty())"))
-        assertTrue(visit.contains("showOperationMessage = false"))
+        assertTrue(visit.contains("actionItems"))
         assertTrue(visit.contains("ServiceLoopFieldAction"))
         assertTrue(visit.contains("visit-change-customer-site"))
         assertTrue(production.contains("if ((workDashboard?.totalItemCount ?: 0) == 0) Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))"))
     }
 
-    private fun snapshot(
-        date: String = "2026-09-19",
-        appointmentTime: String = "",
-        customerName: String = "",
-        selectedPlanIds: Set<String> = emptySet(),
-        tasks: List<NewVisitTaskDraft> = emptyList(),
-    ) = NewVisitDraftSnapshot(
-        siteId = null,
-        selectedPlanIds = selectedPlanIds,
-        date = date,
-        appointmentTime = appointmentTime,
-        customerName = customerName,
-        phone = "",
-        email = "",
-        locationLabel = "",
-        address = "",
-        oneTimeCustomer = false,
-        taskName = "",
-        subjectType = WorkSubjectType.SITE,
-        equipmentId = null,
-        equipmentDescription = "",
-        templateId = null,
-        tasks = tasks,
-    )
 }

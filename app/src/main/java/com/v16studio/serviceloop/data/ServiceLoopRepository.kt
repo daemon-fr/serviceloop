@@ -143,7 +143,25 @@ interface ServiceLoopRepository {
     suspend fun cloneTemplate(id: String): String = error("Template clone unavailable")
     suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    @Suppress("DEPRECATION")
+    suspend fun createNewCustomerVisit(input: CustomerWithFirstSiteInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String =
+        createNewCustomerVisit(
+            NewCustomerVisitInput(
+                customerName = input.customer.name,
+                phone = input.customer.phone,
+                email = input.customer.email,
+                locationLabel = input.site.name,
+                address = input.site.address,
+                customerType = input.customer.customerType,
+            ),
+            adHocWork,
+            state,
+            serviceDate,
+            scheduledAtEpochMillis,
+        )
+    @Deprecated("Use createNewCustomerVisit(CustomerWithFirstSiteInput, ...)")
     suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    @Deprecated("Use createNewCustomerVisit(CustomerWithFirstSiteInput, ...)")
     suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun addAdHocWork(visitId: String, input: AdHocWorkInput): String = error("Ad-hoc work unavailable")
     @Deprecated("Use updateCustomer with CustomerInput.customerType")
@@ -454,26 +472,21 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun createCustomer(input: CustomerInput): String {
-        validateCustomer(input); writeGate.beforeWrite(); val id = UUID.randomUUID().toString()
-        dao.insertCustomers(listOf(CustomerEntity(id, reference("CU", dao.customerCount() + 1), input.name.trim(), clean(input.contactName), clean(input.phone), clean(input.email), clean(input.privateNote), customerType = input.customerType.code)))
+        validateCustomerInput(input); writeGate.beforeWrite(); val id = UUID.randomUUID().toString()
+        dao.insertCustomers(listOf(CustomerEntity(id, ordinaryReference("CU", dao.customerCount() + 1), input.name.trim(), normalizedOptional(input.contactName), normalizedOptional(input.phone), normalizedOptional(input.email), normalizedOptional(input.privateNote), customerType = input.customerType.code)))
         return id
     }
 
     override suspend fun createCustomerWithFirstSite(customer: CustomerInput, site: SiteInput): Pair<String, String> {
-        validateCustomer(customer); validateSite(site); writeGate.beforeWrite()
-        val customerId = UUID.randomUUID().toString()
-        val siteId = UUID.randomUUID().toString()
-        val customerValue = CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customer.name.trim(), clean(customer.contactName), clean(customer.phone), clean(customer.email), clean(customer.privateNote), customerType = customer.customerType.code)
-        val siteValue = SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), site.name.trim(), clean(site.address), clean(site.privateAccessNote), clean(site.contactName), clean(site.phone), clean(site.email), true)
-        database.withTransaction {
-            dao.insertCustomers(listOf(customerValue))
-            dao.insertSites(listOf(siteValue))
+        writeGate.beforeWrite()
+        val created = database.withTransaction {
+            createCustomerWithFirstSiteInTransaction(dao, CustomerWithFirstSiteInput(customer, site))
         }
-        return customerId to siteId
+        return created.customer.id to created.site.id
     }
 
     override suspend fun updateCustomer(id: String, input: CustomerInput): Long {
-        validateCustomer(input)
+        validateCustomerInput(input)
         writeGate.beforeWrite()
         val now = businessTime.instant().toEpochMilli()
         database.withTransaction {
@@ -489,16 +502,16 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun createSite(customerId: String, input: SiteInput): String {
-        validateSite(input); val customer = dao.customer(customerId) ?: error("Customer no longer exists"); require(customer.state == "ACTIVE")
+        validateSiteInput(input); val customer = dao.customer(customerId) ?: error("Customer no longer exists"); require(customer.state == "ACTIVE")
         writeGate.beforeWrite(); val id = UUID.randomUUID().toString(); val existing = dao.sitesForCustomer(customerId)
-        val value = SiteEntity(id, customerId, reference("ST", dao.siteCount() + 1), input.name.trim(), clean(input.address), clean(input.privateAccessNote), clean(input.contactName), clean(input.phone), clean(input.email), input.isDefault || existing.isEmpty())
+        val value = SiteEntity(id, customerId, ordinaryReference("ST", dao.siteCount() + 1), input.name.trim(), normalizedOptional(input.address), normalizedOptional(input.privateAccessNote), normalizedOptional(input.contactName), normalizedOptional(input.phone), normalizedOptional(input.email), input.isDefault || existing.isEmpty())
         database.withTransaction { if (value.isDefault) existing.filter { it.isDefault }.forEach { dao.updateSite(it.copy(isDefault = false)) }; dao.insertSites(listOf(value)) }
         return id
     }
 
     override suspend fun updateSite(id: String, input: SiteInput): Long {
-        validateSite(input); val old = dao.site(id) ?: error("Site no longer exists")
-        val value = old.copy(name = input.name.trim(), address = clean(input.address), contactName = clean(input.contactName), phone = clean(input.phone), email = clean(input.email), privateAccessNotes = clean(input.privateAccessNote), isDefault = input.isDefault)
+        validateSiteInput(input); val old = dao.site(id) ?: error("Site no longer exists")
+        val value = old.copy(name = input.name.trim(), address = normalizedOptional(input.address), contactName = normalizedOptional(input.contactName), phone = normalizedOptional(input.phone), email = normalizedOptional(input.email), privateAccessNotes = normalizedOptional(input.privateAccessNote), isDefault = input.isDefault)
         if (value == old) return businessTime.instant().toEpochMilli(); writeGate.beforeWrite()
         database.withTransaction { if (value.isDefault) dao.sitesForCustomer(old.customerId).filter { it.id != id && it.isDefault }.forEach { dao.updateSite(it.copy(isDefault = false)) }; dao.updateSite(value) }
         return businessTime.instant().toEpochMilli()
@@ -629,23 +642,25 @@ class RoomServiceLoopRepository(
         return database.withTransaction { createVisitForSiteInTransaction(siteId, planIds, adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = true) }
     }
 
-    override suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
-        validateNewCustomerVisitInput(input)
+    override suspend fun createNewCustomerVisit(input: CustomerWithFirstSiteInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
         require(adHocWork.isNotEmpty()) { "Add at least one task" }
         require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
         LocalDate.parse(serviceDate)
         writeGate.beforeWrite()
         return database.withTransaction {
-            val customerId = UUID.randomUUID().toString()
-            val siteId = UUID.randomUUID().toString()
-             val customerName = input.customerName.trim()
-             val address = clean(input.address)
-             val siteName = input.locationLabel.trim().ifBlank { address ?: customerName }
-             dao.insertCustomers(listOf(CustomerEntity(customerId, reference("CU", dao.customerCount() + 1), customerName, phone = clean(input.phone), email = clean(input.email), customerType = input.customerType.code)))
-             dao.insertSites(listOf(SiteEntity(siteId, customerId, reference("ST", dao.siteCount() + 1), siteName, address, null, isDefault = true)))
-             createVisitForSiteInTransaction(siteId, emptyList(), adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = false)
+            val created = createCustomerWithFirstSiteInTransaction(dao, input)
+            createVisitForSiteInTransaction(created.site.id, emptyList(), adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = false)
          }
     }
+
+    @Deprecated("Use createNewCustomerVisit(CustomerWithFirstSiteInput, ...)")
+    override suspend fun createNewCustomerVisit(input: NewCustomerVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String =
+        createNewCustomerVisit(
+            CustomerWithFirstSiteInput(
+                CustomerInput(input.customerName, phone = input.phone, email = input.email, customerType = input.customerType),
+                SiteInput(input.locationLabel.trim().ifBlank { input.address.trim().ifBlank { input.customerName } }, input.address, isDefault = true),
+            ), adHocWork, state, serviceDate, scheduledAtEpochMillis,
+        )
 
     override suspend fun createOneTimeVisit(oneTime: OneTimeVisitInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String =
         createNewCustomerVisit(NewCustomerVisitInput(oneTime.customerName, oneTime.phone, oneTime.email, oneTime.locationLabel, oneTime.address, CustomerType.ONE_TIME), adHocWork, state, serviceDate, scheduledAtEpochMillis)
@@ -890,17 +905,6 @@ class RoomServiceLoopRepository(
         }
         return input.copy(taskName = taskName, equipmentDescription = description)
     }
-
-    private fun validateNewCustomerVisitInput(input: NewCustomerVisitInput) {
-        require(input.customerName.trim().isNotBlank()) { "Customer name is required" }
-        require(input.customerName.trim().length <= 200) { "Customer name must be 200 characters or fewer" }
-        require(input.phone.trim().length <= 100) { "Phone must be 100 characters or fewer" }
-        require(input.email.trim().length <= 320) { "Email must be 320 characters or fewer" }
-        require(input.locationLabel.trim().length <= 200) { "Location label must be 200 characters or fewer" }
-        require(input.address.trim().length <= 500) { "Address must be 500 characters or fewer" }
-    }
-
-    private fun validateOneTimeVisitInput(input: OneTimeVisitInput) = validateNewCustomerVisitInput(NewCustomerVisitInput(input.customerName, input.phone, input.email, input.locationLabel, input.address, CustomerType.ONE_TIME))
 
     private suspend fun validateLinkableWorkItem(workItemId: String): WorkItemEntity {
         val item = dao.workItem(workItemId) ?: error("Work item no longer exists")
@@ -1956,11 +1960,9 @@ class RoomServiceLoopRepository(
         return item
     }
 
-    private fun clean(value: String?): String? = value?.trim()?.ifBlank { null }
+    private fun clean(value: String?): String? = normalizedOptional(value)
     private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
-    private fun reference(prefix: String, sequence: Int) = "$prefix-${sequence.toString().padStart(3, '0')}"
-    private fun validateCustomer(input: CustomerInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.contactName.length <= 200 && input.phone.length <= 100 && input.email.length <= 320 && input.privateNote.length <= 5000) }
-    private fun validateSite(input: SiteInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.address.length <= 500 && input.contactName.length <= 200 && input.phone.length <= 100 && input.email.length <= 320 && input.privateAccessNote.length <= 5000) }
+    private fun reference(prefix: String, sequence: Int) = ordinaryReference(prefix, sequence)
     private fun validateEquipment(input: EquipmentInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.technicianIdentifier.length <= 100 && input.make.length <= 100 && input.model.length <= 100 && input.serialNumber.length <= 150 && input.privateNote.length <= 5000) }
     private fun validatePlan(input: PlanInput) { require(input.name.trim().isNotEmpty() && input.name.length <= 200); require(input.intervalCount > 0); require(input.intervalUnit in setOf("DAYS", "WEEKS", "MONTHS", "YEARS")); LocalDate.parse(input.dueDate) }
     private fun validateTemplate(name: String, items: List<TemplateItemDraft>) { require(name.trim().isNotEmpty() && name.length <= 200); require(items.isNotEmpty()); items.forEach { require(it.label.trim().isNotEmpty() && it.label.length <= 300); require(it.responseType in setOf("STATUS", "TEXT", "NUMBER")); require(it.unit.length <= 30 && it.privateGuidance.length <= 2000) } }

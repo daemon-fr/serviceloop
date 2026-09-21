@@ -93,29 +93,42 @@ internal fun CustomerDetailScreen(
 
 @Composable
 internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    var creationDraft by rememberSaveable(existing?.id, stateSaver = CustomerCreationDraftSaver) { mutableStateOf(CustomerCreationDraft()) }
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
-    var firstSiteName by rememberSaveable(existing?.id) { mutableStateOf("") }; var firstSiteAddress by rememberSaveable(existing?.id) { mutableStateOf("") }
     var oneTimeCustomer by rememberSaveable(existing?.id) { mutableStateOf(existing?.customerType == CustomerType.ONE_TIME) }
     val oneTimeBlocked = existing != null && existing.customerType == CustomerType.STANDARD && !existing.canMarkOneTime
-    UnsavedChangesGuard(name!=existing?.name.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateNote.orEmpty()||firstSiteName.isNotBlank()||firstSiteAddress.isNotBlank()||oneTimeCustomer != (existing?.customerType == CustomerType.ONE_TIME),nav)
+    val changed = if (existing == null) creationDraft.hasMeaningfulInput() else name!=existing.name||contact!=existing.contactName||phone!=existing.phone||email!=existing.email||note!=existing.privateNote||oneTimeCustomer != (existing.customerType == CustomerType.ONE_TIME)
+    UnsavedChangesGuard(changed,nav)
     EditorColumn(padding, state, tag = "customer-editor") {
         item { DailyHeading(if (existing == null) "Add customer" else "Edit ${existing.reference}"); Text("A stable reference is assigned on Save.") }
-        item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
-        if (existing == null) item { DailyHeading("First site"); Text("Every new customer starts with a default site. Blank contact fields inherit the customer contact."); DailyField(firstSiteName, { firstSiteName = it }, "Site name · Required"); DailyField(firstSiteAddress, { firstSiteAddress = it }, "Site address") }
-        item { LongTextEditor(note, { note = it }, "Private customer note", true) }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control")) {
-                Checkbox(
-                    checked = oneTimeCustomer,
-                    onCheckedChange = { checked -> if (!oneTimeBlocked || !checked) oneTimeCustomer = checked },
-                    enabled = !oneTimeBlocked,
-                    modifier = Modifier.testTag("customer-one-time-checkbox"),
-                )
-                Text("One-time customer (no contract)")
+        if (existing == null) {
+            item { CustomerCreationForm(creationDraft, { creationDraft = it }) }
+        } else {
+            item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
+            item { LongTextEditor(note, { note = it }, "Private customer note", true) }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control")) {
+                    Checkbox(
+                        checked = oneTimeCustomer,
+                        onCheckedChange = { checked -> if (!oneTimeBlocked || !checked) oneTimeCustomer = checked },
+                        enabled = !oneTimeBlocked,
+                        modifier = Modifier.testTag("customer-one-time-checkbox"),
+                    )
+                    Text("One-time customer (no contract)")
+                }
+                if (oneTimeBlocked) Text(existing.oneTimeBlockReason ?: "This customer has recurring service plans and cannot be marked one-time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("customer-one-time-block-reason"))
             }
-            if (oneTimeBlocked) Text(existing?.oneTimeBlockReason ?: "This customer has recurring service plans and cannot be marked one-time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("customer-one-time-block-reason"))
         }
-        item { Button({ val input = CustomerInput(name, contact, phone, email, note, if (oneTimeCustomer) CustomerType.ONE_TIME else CustomerType.STANDARD); if (existing == null) viewModel.createCustomerWithFirstSite(input, SiteInput(firstSiteName, firstSiteAddress, isDefault = true)) { (customerId, _) -> nav.navigate("customer/$customerId") { popUpTo("customer/new") { inclusive = true } } } else viewModel.updateCustomer(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && (existing != null || firstSiteName.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-customer")) { Text("Save customer${if (existing == null) " and first site" else ""}") } }
+        item {
+            Button({
+                if (existing == null) {
+                    val input = creationDraft.toInput()
+                    viewModel.createCustomerWithFirstSite(input.customer, input.site) { (customerId, _) -> nav.navigate("customer/$customerId") { popUpTo("customer/new") { inclusive = true } } }
+                } else {
+                    viewModel.updateCustomer(existing.id, CustomerInput(name, contact, phone, email, note, if (oneTimeCustomer) CustomerType.ONE_TIME else CustomerType.STANDARD)) { nav.popBackStack() }
+                }
+            }, enabled = (existing == null && creationDraft.isValidForCreate() || existing != null && name.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-customer")) { Text("Save customer${if (existing == null) " and first site" else ""}") }
+        }
     }
 }
 

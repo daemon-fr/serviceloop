@@ -35,8 +35,9 @@ internal fun LongTextEditor(
     label: String,
     private: Boolean,
     compact: Boolean = false,
+    enabled: Boolean = true,
 ) {
-    ServiceLoopLongTextEditor(value, onValueChange, label, private, compact = compact)
+    ServiceLoopLongTextEditor(value, onValueChange, label, private, compact = compact, enabled = enabled)
 }
 
 @Composable
@@ -105,9 +106,9 @@ internal class EditorColumnScope internal constructor(
 }
 
 @Composable
-internal fun DailyField(value:String,onChange:(String)->Unit,label:String,bottomPadding:Dp=ServiceLoopUiTokens.Space.lg){
+internal fun DailyField(value:String,onChange:(String)->Unit,label:String,bottomPadding:Dp=ServiceLoopUiTokens.Space.lg,enabled:Boolean=true){
     val tag = "field-" + label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    ServiceLoopTextField(value,onChange,label,modifier=Modifier.testTag(tag).padding(bottom=bottomPadding))
+    ServiceLoopTextField(value,onChange,label,enabled=enabled,modifier=Modifier.testTag(tag).padding(bottom=bottomPadding))
 }
 
 @Composable

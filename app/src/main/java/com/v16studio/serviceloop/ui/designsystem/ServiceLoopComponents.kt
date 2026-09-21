@@ -468,6 +468,7 @@ fun <T> ServiceLoopFilterSelector(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     testTag: String? = null,
+    enabled: Boolean = true,
 ) {
     var expanded by rememberSaveable(label) { mutableStateOf(false) }
     val colors = LocalServiceLoopTokens.current
@@ -480,14 +481,14 @@ fun <T> ServiceLoopFilterSelector(
     val selectedLabel = options.firstOrNull { it.first == selected }?.second.orEmpty()
     Box(modifier) {
         Surface(
-            onClick = { expanded = true },
+            onClick = { if (enabled) expanded = true },
             shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
             color = selectorSurface,
             border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, selectorOutline),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = ServiceLoopUiTokens.Size.fieldMin)
                 .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
-                .semantics { contentDescription = "$label, $selectedLabel" },
+                .semantics { contentDescription = "$label, $selectedLabel"; if (!enabled) disabled() },
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(

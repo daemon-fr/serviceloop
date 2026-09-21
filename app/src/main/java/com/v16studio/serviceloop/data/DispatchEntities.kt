@@ -95,6 +95,7 @@ data class DispatchOutboxItemEntity(
     val dueDateSnapshot: String?,
     @androidx.room.ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
     val equipmentDescription: String? = null,
+    val reusableTemplateId: String? = null,
 )
 
 @Entity(

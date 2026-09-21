@@ -46,7 +46,7 @@ class B043WorkspaceEnforcementTest {
         val database = productionKotlinSource("com/v16studio/serviceloop/data")
         assertTrue(gradle.contains("versionCode = 2"))
         assertTrue(gradle.contains("versionName = \"1.0.1\""))
-        assertTrue(database.contains("version = 15"))
+        assertTrue(database.contains("version = 16"))
         assertFalse(ui().contains("TeamRole.MEMBER"))
     }
 

@@ -3,8 +3,8 @@ package com.v16studio.serviceloop.data
 import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.VisitCancellationOrigin
-import com.v16studio.serviceloop.domain.OneTimeVisitInput
 import com.v16studio.serviceloop.domain.WorkSubjectType
+import com.v16studio.serviceloop.domain.CustomerWithFirstSiteInput
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
@@ -281,6 +281,7 @@ data class DispatchOutboxItemDraft(
     val taskName:String,
     val servicePlanReference:String?=null,
     val dueDateSnapshot:String?=null,
+    val reusableTemplateId:String?=null,
     val assignedTechnicianIds:List<String> = emptyList(),
 ) {
     /** Source compatibility for existing known-equipment callers. */
@@ -291,7 +292,7 @@ data class DispatchOutboxItemDraft(
         servicePlanReference:String?=null,
         dueDateSnapshot:String?=null,
         assignedTechnicianIds:List<String> = emptyList(),
-    ) : this(dispatchItemId,WorkSubjectType.EQUIPMENT,equipmentId,"",taskName,servicePlanReference,dueDateSnapshot,assignedTechnicianIds)
+    ) : this(dispatchItemId,WorkSubjectType.EQUIPMENT,equipmentId,"",taskName,servicePlanReference,dueDateSnapshot,null,assignedTechnicianIds)
 }
 data class DispatchOutboxEditorDraft(
     val dispatchVisitId:String?=null,
@@ -304,5 +305,5 @@ data class DispatchOutboxEditorDraft(
     val instructions:String?=null,
     val teamIds:List<String>,
     val items:List<DispatchOutboxItemDraft>,
-    val oneTimeSite:OneTimeVisitInput?=null,
+    val newCustomerSite:CustomerWithFirstSiteInput?=null,
 )
