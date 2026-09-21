@@ -49,6 +49,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun EquipmentLinkScreen(workItemId: String, context: EquipmentLinkContext?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    val capabilities = LocalWorkspaceCapabilities.current
     var showAdd by rememberSaveable(workItemId) { mutableStateOf(false) }
     var name by rememberSaveable(workItemId) { mutableStateOf("") }
     var identifier by rememberSaveable(workItemId) { mutableStateOf("") }
@@ -67,8 +68,8 @@ internal fun EquipmentLinkScreen(workItemId: String, context: EquipmentLinkConte
                 }
             }
         } else item { Text("No registered equipment exists at this site yet.") }
-        item { OutlinedButton({ showAdd = !showAdd }, Modifier.fillMaxWidth().testTag("link-add-equipment")) { Text(if (showAdd) "Cancel new equipment" else "Add equipment") } }
-        if (showAdd) item {
+        if (capabilities.canManageRegister) item { OutlinedButton({ showAdd = !showAdd }, Modifier.fillMaxWidth().testTag("link-add-equipment")) { Text(if (showAdd) "Cancel new equipment" else "Add equipment") } }
+        if (capabilities.canManageRegister && showAdd) item {
             Card {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("New equipment", fontWeight = FontWeight.Bold)

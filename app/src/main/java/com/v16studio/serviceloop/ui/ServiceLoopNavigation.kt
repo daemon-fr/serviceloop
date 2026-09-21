@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,20 +59,24 @@ internal fun ServiceLoopNavGraph(
     incomingInspectionTemplatesEvent: Int,
 ) {
     val context = LocalContext.current
-    val incomingRole = remember(incomingWorkPackage, incomingWorkPackageEvent) { incomingWorkPackage?.let { context.teamRole() } }
-    val incomingTemplateRole = remember(incomingInspectionTemplates, incomingInspectionTemplatesEvent) { incomingInspectionTemplates?.let { context.teamRole() } }
+    val teamRole by rememberTeamRoleState(context)
+    val capabilities = teamRole.workspaceCapabilities
     var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent) {
-        mutableStateOf(
-            (incomingWorkPackage != null && incomingRole != TeamRole.SUBCONTRACTOR) ||
-                (incomingInspectionTemplates != null && incomingTemplateRole !in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)),
-        )
+        mutableStateOf(false)
     }
-    LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.SUBCONTRACTOR) nav.navigate("dispatch/import") { launchSingleTop = true }
+    LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState, capabilities.canReceiveAssignedWork) {
+        if (!state.restrictedRecoveryState && incomingWorkPackage != null) {
+            showExternalRoleDialog = !capabilities.canReceiveAssignedWork
+            if (capabilities.canReceiveAssignedWork) nav.navigate("dispatch/import") { launchSingleTop = true }
+        }
     }
-    LaunchedEffect(incomingInspectionTemplates, incomingInspectionTemplatesEvent, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null && incomingTemplateRole in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)) nav.navigate("template/list") { launchSingleTop = true }
+    LaunchedEffect(incomingInspectionTemplates, incomingInspectionTemplatesEvent, state.restrictedRecoveryState, capabilities.canExchangeTemplates) {
+        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null) {
+            showExternalRoleDialog = !capabilities.canExchangeTemplates
+            if (capabilities.canExchangeTemplates) nav.navigate("template/list") { launchSingleTop = true }
+        }
     }
+    CompositionLocalProvider(LocalTeamRole provides teamRole, LocalWorkspaceCapabilities provides capabilities) {
     NavHost(
         navController = nav,
         startDestination = if (state.restrictedRecoveryState) "data-recovery" else HOME,
@@ -115,10 +120,13 @@ internal fun ServiceLoopNavGraph(
             }
         }
         composable(CUSTOMERS) {
-            var equipmentMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-            LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
-            RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
-                ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav, state.templates, viewModel) }
+            if (!capabilities.showRegister) {
+                LaunchedEffect(Unit) { nav.navigateToRoot(RootDestination.HOME) }
+            } else {
+                LaunchedEffect(Unit) { viewModel.refreshRootDataNonBlocking() }
+                RootScaffold(nav, RootDestination.CUSTOMERS) { padding ->
+                    ScreenState(state.loading && !state.rootDataReady, state.error.takeUnless { state.rootDataReady }, padding, "root-customers", state.rootRefreshError, viewModel::refreshRootDataNonBlocking) { CustomersScreen(state.customerList, state.siteList, state.equipmentList, nav, state.templates, viewModel) }
+                }
             }
         }
         composable("equipment/{id}") { entry ->
@@ -128,7 +136,7 @@ internal fun ServiceLoopNavGraph(
                 ScreenState(state.loading, state.error, padding) { state.equipment?.let { EquipmentScreen(it, nav, state.businessDate, state.home?.dueSoonHorizonDays ?: 14, viewModel) } }
             }
         }
-        composable("customer/new") { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } }
+        composable("customer/new") { WorkspaceGate(capabilities.canManageRegister, "Customer management", nav) { DetailScaffold("Add customer", nav) { CustomerEditorScreen(null, it, state, viewModel, nav) } } }
         composable("customer/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id);viewModel.observeOperationalDashboard(WorkScope.Customer(id))}; DetailScaffold("Customer",nav){CustomerDetailScreen(state.customer,it,nav,viewModel,state.operationalDashboard?.takeIf { projection -> projection.scope == WorkScope.Customer(id) },state.businessDate,state.home?.dueSoonHorizonDays ?: 14)} }
         composable("work-dashboard/customer/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -149,7 +157,7 @@ internal fun ServiceLoopNavGraph(
                         item {
                             OperationalDashboard(
                                 projection = projection,
-                                onOpenItem = { openOperationalWork(nav, it) },
+                                onOpenItem = { openOperationalWork(nav, it, capabilities.canPerformFieldWork) },
                                 onViewAll = { openOperationalSection(nav, it, projection.scope) },
                                 modifier = Modifier.testTag("customer-work-dashboard"),
                             )
@@ -158,45 +166,45 @@ internal fun ServiceLoopNavGraph(
                 }
             }
         }
-        composable("customer/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Edit customer",nav){CustomerEditorScreen(state.customer,it,state,viewModel,nav)} }
-        composable("site/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId"); DetailScaffold("Add site",nav){SiteEditorScreen(id,null,it,state,viewModel,nav)} }
+        composable("customer/edit/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Customer management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadCustomer(id)}; DetailScaffold("Edit customer",nav){CustomerEditorScreen(state.customer,it,state,viewModel,nav)} } }
+        composable("site/new/{customerId}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Site management", nav) { val id=entry.arguments?.getString("customerId"); DetailScaffold("Add site",nav){SiteEditorScreen(id,null,it,state,viewModel,nav)} } }
         composable("site/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Site",nav){SiteDetailScreen(state.site,it,nav,viewModel)} }
-        composable("site/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Edit site",nav){SiteEditorScreen(null,state.site,it,state,viewModel,nav)} }
-        composable("equipment/new/{siteId}") { entry -> val id=entry.arguments?.getString("siteId"); DetailScaffold("Add equipment",nav){EquipmentEditorScreen(id,null,it,state,viewModel,nav)} }
-        composable("equipment/select-site") { LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Choose equipment site",nav){EquipmentSiteSelectorScreen(state.visitSites,it,nav)} }
-        composable("equipment/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadEquipment(id)}; DetailScaffold("Edit equipment",nav){EquipmentEditorScreen(null,state.equipment,it,state,viewModel,nav)} }
-        composable("plan/new/{equipmentId}") { entry -> val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} }
+        composable("site/edit/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Site management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadSite(id)}; DetailScaffold("Edit site",nav){SiteEditorScreen(null,state.site,it,state,viewModel,nav)} } }
+        composable("equipment/new/{siteId}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Equipment management", nav) { val id=entry.arguments?.getString("siteId"); DetailScaffold("Add equipment",nav){EquipmentEditorScreen(id,null,it,state,viewModel,nav)} } }
+        composable("equipment/select-site") { WorkspaceGate(capabilities.canManageRegister, "Equipment management", nav) { LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Choose equipment site",nav){EquipmentSiteSelectorScreen(state.visitSites,it,nav)} } }
+        composable("equipment/edit/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Equipment management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadEquipment(id)}; DetailScaffold("Edit equipment",nav){EquipmentEditorScreen(null,state.equipment,it,state,viewModel,nav)} } }
+        composable("plan/new/{equipmentId}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Service-plan management", nav) { val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} } }
         composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
-        composable("plan/edit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} }
-        composable("template/list") { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel,incomingInspectionTemplates)} }
+        composable("plan/edit/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Service-plan management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} } }
+        composable("template/list") { WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel,incomingInspectionTemplates)} } }
         composable(
             "template/new?cloneFrom={cloneFrom}&returnTo={returnTo}",
             arguments = listOf(
                 navArgument("cloneFrom") { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument("returnTo") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
-        ) { entry ->
+        ) { entry -> WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) {
             val cloneFrom = entry.arguments?.getString("cloneFrom")
             val returnTo = entry.arguments?.getString("returnTo")
             LaunchedEffect(cloneFrom) { cloneFrom?.takeIf(String::isNotBlank)?.let(viewModel::loadTemplate) }
             DetailScaffold("Create template",nav){TemplateEditorScreen(null,it,state,viewModel,nav,state.template?.takeIf { template -> template.id == cloneFrom },returnTo)}
-        }
-        composable("template/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id);viewModel.loadTemplateHistory(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav,viewModel,state.templatePlanReferenceCount ?: 0,state.templateVersions)} }
+        } }
+        composable("template/{id}") { entry -> WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplate(id);viewModel.loadTemplateHistory(id)}; DetailScaffold("Inspection template",nav){TemplateDetailScreen(state.template,it,nav,viewModel,state.templatePlanReferenceCount ?: 0,state.templateVersions)} } }
         composable(
             "template/edit/{id}?focusItem={focusItem}",
             arguments = listOf(navArgument("focusItem") { type = NavType.StringType; nullable = true; defaultValue = null }),
-        ) { entry ->
+        ) { entry -> WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) {
             val id=entry.arguments?.getString("id").orEmpty()
             val focusItem=entry.arguments?.getString("focusItem")?.toIntOrNull()
             LaunchedEffect(id){viewModel.loadTemplate(id)}
             DetailScaffold("Edit template",nav){TemplateEditorScreen(state.template,it,state,viewModel,nav,focusItem = focusItem)}
-        }
-        composable("template/history/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplateHistory(id)}; DetailScaffold("Version history",nav){TemplateHistoryScreen(state.templateVersions,it,id,nav)} }
-        composable("template/version/{templateId}/{revisionId}") { entry -> val templateId=entry.arguments?.getString("templateId").orEmpty(); val revisionId=entry.arguments?.getString("revisionId").orEmpty(); LaunchedEffect(templateId){viewModel.loadTemplateHistory(templateId)}; DetailScaffold("Template version",nav){TemplateVersionScreen(state.templateVersions.firstOrNull { it.id == revisionId },it)} }
+        } }
+        composable("template/history/{id}") { entry -> WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadTemplateHistory(id)}; DetailScaffold("Version history",nav){TemplateHistoryScreen(state.templateVersions,it,id,nav)} } }
+        composable("template/version/{templateId}/{revisionId}") { entry -> WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { val templateId=entry.arguments?.getString("templateId").orEmpty(); val revisionId=entry.arguments?.getString("revisionId").orEmpty(); LaunchedEffect(templateId){viewModel.loadTemplateHistory(templateId)}; DetailScaffold("Template version",nav){TemplateVersionScreen(state.templateVersions.firstOrNull { it.id == revisionId },it)} } }
         composable("visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadVisit(id);viewModel.loadReminderSettings()}; DetailScaffold("Visit",nav){VisitDetailScreen(state.visit,it,state,viewModel,nav)} }
-        composable("visit/new") { entry -> val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} }
-        composable("visit/new/{planId}") { entry -> val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} }
-        composable("field/{workItemId}") { entry -> val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} }
+        composable("visit/new") { entry -> WorkspaceGate(capabilities.canCreateLocalWork, "Local Visit creation", nav) { val ids=remember(entry){nav.previousBackStackEntry?.savedStateHandle?.remove<ArrayList<String>>("visit-setup-plan-ids")?.toList().orEmpty()}; LaunchedEffect(Unit){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,ids)} } }
+        composable("visit/new/{planId}") { entry -> WorkspaceGate(capabilities.canCreateLocalWork, "Local Visit creation", nav) { val id=entry.arguments?.getString("planId").orEmpty(); LaunchedEffect(id){viewModel.loadVisitSetup()}; DetailScaffold("Create visit",nav){NewVisitScreen(state.visitSites,state.dueServices,it,state,viewModel,nav,listOf(id))} } }
+        composable("field/{workItemId}") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) { val id=entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id){viewModel.loadFieldEvidence(id)}; DetailScaffold("Parts and photographs",nav){FieldEvidenceScreen(id,state,it,viewModel,nav)} } }
         composable("follow-up/list") { LaunchedEffect(Unit){viewModel.loadFollowUps()}; DetailScaffold("Follow-ups",nav){FollowUpListScreen(state.followUps,it,nav)} }
         composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
         composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
@@ -206,7 +214,7 @@ internal fun ServiceLoopNavGraph(
             LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
             DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav,state.operationalDashboard)}
         }
-        composable("inspection/{id}") { entry ->
+        composable("inspection/{id}") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) {
             val id = entry.arguments?.getString("id").orEmpty()
             LaunchedEffect(id) { viewModel.loadInspection(id) }
             DetailScaffold("Service", nav) { padding ->
@@ -214,24 +222,25 @@ internal fun ServiceLoopNavGraph(
                     ServiceScreen(draft, state.serviceProgress, state.saveStatus, state.inspectionFocus, viewModel, nav, PaddingValues(), LocalDetailBackInterceptor.current)
                 } }
             }
-        }
-        composable("review/{visitId}") { entry ->
+        } }
+        composable("review/{visitId}") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) {
             val visitId = entry.arguments?.getString("visitId").orEmpty()
             LaunchedEffect(visitId) { viewModel.loadCompletion(visitId) }
             val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
             androidx.compose.runtime.DisposableEffect(lifecycleOwner, visitId) { val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.loadCompletion(visitId) }; lifecycleOwner.lifecycle.addObserver(observer); onDispose { lifecycleOwner.lifecycle.removeObserver(observer); viewModel.clearCompletionContext(visitId) } }
             LaunchedEffect(state.finalizedRecordId) { state.finalizedRecordId?.let { recordId -> viewModel.consumeFinalizedNavigation(); nav.navigate("record/$recordId") { popUpTo("review/{visitId}") { inclusive = true } } } }
             DetailScaffold("Review visit", nav) { padding -> CompletionReviewScreen(visitId, state.completionLines, state.businessProfile, state, padding, viewModel, nav) }
-        }
+        } }
         composable("settings") { LaunchedEffect(Unit) { viewModel.loadReminderSettings() }; DetailScaffold("Settings", nav) { padding -> SettingsScreen(state, padding, nav, appearanceController) } }
-        composable("work/{workItemId}/link-equipment") { entry -> val id = entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id) { viewModel.loadEquipmentLinkContext(id) }; DetailScaffold("Link equipment", nav) { padding -> EquipmentLinkScreen(id, state.equipmentLinkContext, padding, state, viewModel, nav) } }
+        composable("work/{workItemId}/link-equipment") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) { val id = entry.arguments?.getString("workItemId").orEmpty(); LaunchedEffect(id) { viewModel.loadEquipmentLinkContext(id) }; DetailScaffold("Link equipment", nav) { padding -> EquipmentLinkScreen(id, state.equipmentLinkContext, padding, state, viewModel, nav) } } }
         composable("appearance") { DetailScaffold("Appearance", nav) { padding -> AppearanceSettingsScreen(padding, appearanceController) } }
         composable("reminders") { LaunchedEffect(Unit) { viewModel.loadReminderSettings() }; DetailScaffold("Reminders", nav) { padding -> ReminderSettingsScreen(state, padding, viewModel, nav) } }
         composable("calendar") { LaunchedEffect(Unit) { viewModel.loadCalendarSettings() }; DetailScaffold("Calendar integration", nav) { padding -> CalendarSettingsScreen(state, padding, viewModel) } }
         composable("dispatch/settings") { DetailScaffold("Team role settings",nav){DispatchSettings(it,nav)} }
-        composable("dispatch/technicians") { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} }
-        composable("dispatch/teams") { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} }
+        composable("dispatch/technicians") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { DetailScaffold("Technicians",nav){DispatchTechniciansScreen(it)} } }
+        composable("dispatch/teams") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} } }
         composable("dispatch/create") {
+            WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) {
             DetailScaffold(
                 "Outbox",
                 nav,
@@ -243,12 +252,13 @@ internal fun ServiceLoopNavGraph(
                         leadingIcon = { com.v16studio.serviceloop.ui.icons.ServiceLoopIcon(com.v16studio.serviceloop.ui.icons.ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
                     )
                 },
-            ) { DispatchOutboxScreen(it, nav, state.businessDate, showEmbeddedTopAction = false) }
+            ) { DispatchOutboxScreen(it, nav, state.businessDate, showEmbeddedTopAction = false, canConcludeDelegatedWork = capabilities.canConcludeDelegatedWork) }
+            }
         }
-        composable("dispatch/visit/new") { DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,state.businessDate)} }
-        composable("dispatch/visit/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch visit",nav){DispatchVisitEditorScreen(it,nav,id,state.businessDate)} }
-        composable("dispatch/export-review") { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Review export",nav){DispatchExportReviewScreen(it,nav,ids)} }
-        composable("dispatch/import") { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel,incomingWorkPackage)} }
+        composable("dispatch/visit/new") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,state.businessDate,canConcludeDelegatedWork=capabilities.canConcludeDelegatedWork)} } }
+        composable("dispatch/visit/{id}") { entry -> WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { val id=entry.arguments?.getString("id").orEmpty(); DetailScaffold("Dispatch visit",nav){DispatchVisitEditorScreen(it,nav,id,state.businessDate,canConcludeDelegatedWork=capabilities.canConcludeDelegatedWork)} } }
+        composable("dispatch/export-review") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Review export",nav){DispatchExportReviewScreen(it,nav,ids)} } }
+        composable("dispatch/import") { WorkspaceGate(capabilities.canReceiveAssignedWork, "Assigned-work receiving", nav) { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel,incomingWorkPackage)} } }
         composable("business-profile") { LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }; DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) } }
         composable("record/{id}") { entry -> val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id); viewModel.loadRecordVersions(id) }; DetailScaffold("Final service record", nav) { padding -> FinalRecordScreen(state.finalRecord, state.recordVersions, state.reportVersions, false, state.generatingReport, state.error, padding, viewModel, nav) } }
         composable("record-version/{id}/{revisionId}") { entry -> val recordId = entry.arguments?.getString("id").orEmpty(); val revisionId = entry.arguments?.getString("revisionId").orEmpty(); LaunchedEffect(recordId, revisionId) { viewModel.loadFinalRecordRevision(recordId, revisionId) }; DetailScaffold("Historical record revision", nav) { padding -> FinalRecordScreen(state.finalRecord, emptyList(), emptyList(), true, state.generatingReport, state.error, padding, viewModel, nav) } }
@@ -258,12 +268,12 @@ internal fun ServiceLoopNavGraph(
         composable("history/global") { DetailScaffold("History", nav) { padding -> HistoryScreen(com.v16studio.serviceloop.domain.HistoryScope(com.v16studio.serviceloop.domain.HistoryScopeType.GLOBAL), state, padding, viewModel, nav) } }
         composable("history/{scope}/{id}") { entry -> val scope = runCatching { com.v16studio.serviceloop.domain.HistoryScopeType.valueOf(entry.arguments?.getString("scope").orEmpty()) }.getOrDefault(com.v16studio.serviceloop.domain.HistoryScopeType.GLOBAL); val id = entry.arguments?.getString("id"); DetailScaffold("History", nav) { padding -> HistoryScreen(com.v16studio.serviceloop.domain.HistoryScope(scope, id, "${scope.name.lowercase()} history"), state, padding, viewModel, nav) } }
         composable("correction/{recordId}") { entry -> val id = entry.arguments?.getString("recordId").orEmpty(); DetailScaffold("Correct service record", nav) { padding -> CorrectionScreen(id, state, padding, viewModel, nav) } }
-        composable("lifecycle/{subject}/{id}/{action}") { entry -> val subject = entry.arguments?.getString("subject").orEmpty(); val id = entry.arguments?.getString("id").orEmpty(); val action = entry.arguments?.getString("action").orEmpty(); DetailScaffold("Lifecycle review", nav) { padding -> LifecycleScreen(subject, id, action, state, padding, viewModel, nav) } }
-        composable("equipment/move/{id}") { entry -> val id = entry.arguments?.getString("id").orEmpty(); DetailScaffold("Move equipment", nav) { padding -> MoveEquipmentScreen(id, state, padding, viewModel, nav) } }
+        composable("lifecycle/{subject}/{id}/{action}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Register management", nav) { val subject = entry.arguments?.getString("subject").orEmpty(); val id = entry.arguments?.getString("id").orEmpty(); val action = entry.arguments?.getString("action").orEmpty(); DetailScaffold("Lifecycle review", nav) { padding -> LifecycleScreen(subject, id, action, state, padding, viewModel, nav) } } }
+        composable("equipment/move/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Equipment management", nav) { val id = entry.arguments?.getString("id").orEmpty(); DetailScaffold("Move equipment", nav) { padding -> MoveEquipmentScreen(id, state, padding, viewModel, nav) } } }
         composable("data-recovery") { DetailScaffold("Data and recovery", nav) { padding -> DataRecoveryScreen(state, padding, viewModel, nav) } }
         composable("backup/{mode}") { entry -> val mode = entry.arguments?.getString("mode").orEmpty(); DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) } }
         composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
-        composable("csv/import") { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } }
+        composable("csv/import") { WorkspaceGate(capabilities.canManageRegister, "Directory CSV import", nav) { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } } }
         composable("data/erase") { DetailScaffold("Erase local data", nav) { padding -> EraseScreen(state, padding, viewModel, nav) } }
         composable("change/{id}") { entry -> val id = entry.arguments?.getString("id"); DetailScaffold("Recorded change", nav) { padding -> val row = state.history.firstOrNull { it.id == id }; androidx.compose.foundation.layout.Column(Modifier.padding(padding).padding(24.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { androidx.compose.material3.Text(row?.title.orEmpty(), style = androidx.compose.material3.MaterialTheme.typography.headlineSmall); androidx.compose.material3.Text(row?.subtitle.orEmpty()); androidx.compose.material3.Text("This is a read-only historical change. It cannot be replayed or undone here.") } } }
     }
@@ -271,9 +281,24 @@ internal fun ServiceLoopNavGraph(
         AlertDialog(
             onDismissRequest = { showExternalRoleDialog = false },
             title = { androidx.compose.material3.Text(if (incomingInspectionTemplates != null) "Inspection templates received" else "Work package received") },
-            text = { androidx.compose.material3.Text(if (incomingInspectionTemplates != null) "Inspection template files are imported in Member or Coordinator mode." else "Work packages are imported in Member mode.") },
+            text = { androidx.compose.material3.Text(if (incomingInspectionTemplates != null) "Inspection template files can be exchanged by Subcontractors, Team Leaders, and Coordinators." else "Work packages can be received by Subcontractors, Employees, and Team Leaders.") },
             confirmButton = { Button({ showExternalRoleDialog = false; nav.navigate("dispatch/settings") }, Modifier.testTag("external-package-open-role")) { androidx.compose.material3.Text("Open Team role settings") } },
             dismissButton = { TextButton({ showExternalRoleDialog = false }) { androidx.compose.material3.Text("Not now") } },
         )
+    }
+    }
+}
+
+@Composable
+private fun WorkspaceGate(allowed: Boolean, feature: String, nav: NavHostController, content: @Composable () -> Unit) {
+    if (allowed) content() else DetailScaffold("Unavailable", nav) { padding ->
+        androidx.compose.foundation.layout.Column(
+            Modifier.padding(padding).padding(24.dp).testTag("workspace-unavailable"),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        ) {
+            androidx.compose.material3.Text("$feature is unavailable for the current Team role.", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+            Button({ nav.popBackStack() }, Modifier.testTag("workspace-unavailable-back")) { androidx.compose.material3.Text("Back") }
+            TextButton({ nav.navigate("dispatch/settings") }, Modifier.testTag("workspace-unavailable-role-settings")) { androidx.compose.material3.Text("Team role settings") }
+        }
     }
 }

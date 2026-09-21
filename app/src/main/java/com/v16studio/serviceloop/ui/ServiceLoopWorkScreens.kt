@@ -189,6 +189,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: ServiceLoopViewModel) {
+    val capabilities = LocalWorkspaceCapabilities.current
     LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
     var tab by rememberSaveable { mutableStateOf("DASHBOARD") }
     Column(Modifier.fillMaxSize().background(LocalServiceLoopTokens.current.canvas)) {
@@ -202,12 +203,12 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
         }
         if (tab == "DASHBOARD") {
             LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                item { CoordinatorHomeActions(nav) }
+                item { WorkspaceHomeActions(nav) }
                 state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
                     item {
                         OperationalDashboard(
                             projection = projection,
-                            onOpenItem = { openOperationalWork(nav, it) },
+                            onOpenItem = { openOperationalWork(nav, it, capabilities.canPerformFieldWork) },
                             onViewAll = { openOperationalSection(nav, it, projection.scope) },
                             modifier = Modifier.testTag("home-operational-dashboard"),
                             showTitle = false,
@@ -216,7 +217,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 } ?: item {
                     Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
                 }
-                item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
+                if (capabilities.canCreateLocalWork) item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
             }
         } else {
             HomeAgendaScreen(state, nav, Modifier.weight(1f))
@@ -286,10 +287,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
     }
 }
 
-internal fun openOperationalWork(nav: NavHostController, item: OperationalWorkItem) {
+internal fun openOperationalWork(nav: NavHostController, item: OperationalWorkItem, canPerformFieldWork: Boolean = true) {
     when (item.kind) {
         OperationalWorkKind.VISIT -> {
-            if (item.state == OperationalWorkState.IN_PROGRESS && item.workItemId != null) nav.navigate("inspection/${item.workItemId}")
+            if (canPerformFieldWork && item.state == OperationalWorkState.IN_PROGRESS && item.workItemId != null) nav.navigate("inspection/${item.workItemId}")
             else nav.navigate("visit/${item.recordId}")
         }
         OperationalWorkKind.SERVICE -> nav.navigate("plan/${item.recordId}")
@@ -414,6 +415,7 @@ internal fun VisitsWorkScreen(
     operationalStateFor: (VisitSummary) -> OperationalWorkState? = { null },
     onNewVisit: () -> Unit = {},
 ) {
+    val capabilities = LocalWorkspaceCapabilities.current
     val context = LocalContext.current
     val filterPreferences = remember(context) { UiFilterPreferences(context) }
     val remembersFilters = contextualFilter == null && initialOperationalState == null
@@ -466,9 +468,9 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        WorkNewVisitFloatingAction(actionState, onNewVisit)
+        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }
 
@@ -490,6 +492,7 @@ internal fun FollowUpsWorkScreen(
     },
     onNewVisit: () -> Unit = {},
 ) {
+    val capabilities = LocalWorkspaceCapabilities.current
     val context = LocalContext.current
     val filterPreferences = remember(context) { UiFilterPreferences(context) }
     val remembersFilters = contextualFilter == null && initialOperationalState == null
@@ -545,8 +548,8 @@ internal fun FollowUpsWorkScreen(
                 operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
-            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        WorkNewVisitFloatingAction(actionState, onNewVisit)
+        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }

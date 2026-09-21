@@ -200,6 +200,7 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RootScaffold(nav: NavHostController, selected: RootDestination, content: @Composable (PaddingValues) -> Unit) {
+    val capabilities = LocalWorkspaceCapabilities.current
     val windowWidth = LocalConfiguration.current.screenWidthDp.dp
     val compactRootActions = windowWidth < ServiceLoopUiTokens.Size.narrowThreshold ||
         LocalDensity.current.fontScale >= ServiceLoopUiTokens.Layout.badgeFontScaleStackThreshold
@@ -252,7 +253,7 @@ internal fun RootScaffold(nav: NavHostController, selected: RootDestination, con
                 }
             }
         },
-        bottomBar = { RootNavigation(selected, nav::navigateToRoot) },
+        bottomBar = { RootNavigation(selected, capabilities, nav::navigateToRoot) },
         content = { padding -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ServiceLoopUiTokens.Size.contentMaxWidth).fillMaxSize()) { content(serviceLoopAdaptiveScaffoldPadding(padding, windowWidth, layoutDirection)) } } },
     )
 }
@@ -276,9 +277,9 @@ internal fun DetailScaffold(title: String, nav: NavHostController, topAction: (@
 internal val LocalDetailBackInterceptor = compositionLocalOf<MutableState<(() -> Unit)?>> { error("Detail back interceptor unavailable") }
 
 @Composable
-private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestination) -> Unit) {
+private fun RootNavigation(selected: RootDestination, capabilities: WorkspaceCapabilities, onNavigate: (RootDestination) -> Unit) {
     NavigationBar {
-        RootDestination.entries.forEach { destination ->
+        RootDestination.entries.filter { it != RootDestination.CUSTOMERS || capabilities.showRegister }.forEach { destination ->
             val icon = when (destination) {
                 RootDestination.HOME -> ServiceLoopIcons.Home
                 RootDestination.WORK -> ServiceLoopIcons.Work
@@ -289,7 +290,7 @@ private fun RootNavigation(selected: RootDestination, onNavigate: (RootDestinati
     }
 }
 
-private fun NavHostController.navigateToRoot(destination: RootDestination) {
+internal fun NavHostController.navigateToRoot(destination: RootDestination) {
     navigate(destination.route) {
         popUpTo(graph.findStartDestination().id) { saveState = false }
         launchSingleTop = true

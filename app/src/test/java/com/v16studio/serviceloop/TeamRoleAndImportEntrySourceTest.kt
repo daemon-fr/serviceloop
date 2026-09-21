@@ -22,11 +22,12 @@ class TeamRoleAndImportEntrySourceTest {
 
     @Test fun workOverflowIsRemovedAndRoleGatewaysLiveOnHome() {
         val app = productionKotlinSourceContaining("ServiceLoopDenseNavigableRow(\"History\"")
-        val coordinator = productionKotlinSourceContaining("role==TeamRole.COORDINATOR")
+        val workspace = productionKotlinSourceContaining("internal fun WorkspaceHomeActions")
         assertFalse(productionKotlinSource("com/v16studio/serviceloop/ui").contains("WorkMoreMenu"))
         assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"History\""))
-        assertTrue(coordinator.contains("role==TeamRole.SUBCONTRACTOR"))
-        assertTrue(coordinator.contains("member-import-work-package"))
+        assertTrue(workspace.contains("canReceiveAssignedWork"))
+        assertTrue(workspace.contains("canUseCoordinatorTools"))
+        assertTrue(workspace.contains("import-work-package"))
     }
 
     @Test fun externalPackageEntryReviewsInsteadOfAutoImporting() {
@@ -41,7 +42,7 @@ class TeamRoleAndImportEntrySourceTest {
         assertTrue(activity.contains("incomingWorkPackage"))
         assertTrue(activity.contains("incomingWorkPackageEvent++"))
         assertTrue(activity.contains("ACTION_SEND"))
-        assertTrue(appSource().contains("Work packages are imported in Member mode."))
+        assertTrue(appSource().contains("Work packages can be received by Subcontractors, Employees, and Team Leaders."))
         assertTrue(appSource().contains("external-package-open-role"))
     }
 

@@ -205,7 +205,7 @@ class B013R31OwnerSurfaceRenderTest {
         compose.onNodeWithText("Team role settings").performClick()
         compose.onNodeWithTag("team-role-SOLO").performClick()
         capture("team-role-solo.png")
-        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
         compose.onNodeWithTag("technician-identity").assertIsDisplayed()
         capture("team-role-member.png")
         compose.onNodeWithTag("team-role-COORDINATOR").performClick()

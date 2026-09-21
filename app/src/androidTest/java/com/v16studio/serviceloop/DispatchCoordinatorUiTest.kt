@@ -69,10 +69,10 @@ class DispatchCoordinatorUiTest {
         compose.onNodeWithText("History",useUnmergedTree=true).assertIsDisplayed()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithTag("member-import-work-package").assertIsDisplayed()
+        compose.onNodeWithTag("import-work-package").assertIsDisplayed()
         compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
@@ -81,7 +81,7 @@ class DispatchCoordinatorUiTest {
     @Test fun memberIdentityShowsPersistedIdBeforeDesignationWithoutReportNameSection(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("technician-id-value").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Technician identity").assertIsDisplayed()
         compose.onNodeWithText("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.").assertIsDisplayed()
@@ -111,10 +111,10 @@ class DispatchCoordinatorUiTest {
     @Test fun memberExternalPackageOpensImportReview(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Team role settings").performClick()
-        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Back").performClick()
-        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit() }
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SUBCONTRACTOR.name).commit() }
         compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Import work package").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
@@ -132,11 +132,11 @@ class DispatchCoordinatorUiTest {
         compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Work package received").assertIsDisplayed()
-        compose.onNodeWithText("Work packages are imported in Member mode.").assertIsDisplayed()
+        compose.onNodeWithText("Work packages can be received by Subcontractors, Employees, and Team Leaders.").assertIsDisplayed()
         compose.onNodeWithText("Import work package").assertDoesNotExist()
         compose.onNodeWithTag("external-package-open-role").performClick()
         compose.onNodeWithTag("team-role-settings").assertIsDisplayed()
-        compose.onNodeWithTag("team-role-MEMBER").assertIsDisplayed()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").assertIsDisplayed()
     }
 
     @Test fun soloExternalSendPackageShowsSameExplanation(){
@@ -148,7 +148,7 @@ class DispatchCoordinatorUiTest {
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
         compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_SEND).setType(WORK_PACKAGE_MIME).putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///sdcard/Download/sample.slwork"))) }
         compose.onNodeWithText("Work package received").assertIsDisplayed()
-        compose.onNodeWithText("Work packages are imported in Member mode.").assertIsDisplayed()
+        compose.onNodeWithText("Work packages can be received by Subcontractors, Employees, and Team Leaders.").assertIsDisplayed()
         compose.onNodeWithText("Import work package").assertDoesNotExist()
     }
 
@@ -162,9 +162,9 @@ class DispatchCoordinatorUiTest {
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit(); compose.activity.onNewIntent(packageIntent()) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("external-package-open-role").performClick()
-        compose.onNodeWithTag("team-role-MEMBER").performClick()
+        compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
         compose.onNodeWithText("Back").performClick()
-        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.MEMBER.name).commit(); compose.activity.onNewIntent(packageIntent()) }
+        compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SUBCONTRACTOR.name).commit(); compose.activity.onNewIntent(packageIntent()) }
         compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("dispatch-import").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
         compose.onNodeWithText("Work package received").assertDoesNotExist()

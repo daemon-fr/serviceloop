@@ -69,6 +69,7 @@ internal fun DueServicesScreen(
     },
     onNewVisit: () -> Unit = {},
 ) {
+    val capabilities = LocalWorkspaceCapabilities.current
     val context = LocalContext.current
     val filterPreferences = remember(context) { UiFilterPreferences(context) }
     val contextualEntry = contextualFilter != null || initialBucket != null || initialOperationalState != null
@@ -143,11 +144,11 @@ internal fun DueServicesScreen(
                     operationalState = operationalStateFor(due),
                 )
             }
-            item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
+        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
         }
-        DueServiceSelectionActions(selected, selectionEnabled, state, viewModel, nav)
+        if (capabilities.canCreateLocalWork) DueServiceSelectionActions(selected, selectionEnabled, state, viewModel, nav)
     }
 }
 
@@ -784,6 +785,7 @@ private fun reminderLeadMenuLabel(minutes: Int): String = when (minutes) {
 @Composable
 internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     if (detail == null) return DailyEmpty(padding, "Reading visit")
+    val capabilities = LocalWorkspaceCapabilities.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val detailZone = runCatching { java.time.ZoneId.of(detail.appointmentZoneId ?: state.businessZoneId) }.getOrDefault(java.time.ZoneId.systemDefault())
@@ -796,20 +798,20 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         item { DispatchVisitPanel(detail) }
          item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status", modifier = Modifier.testTag("visit-calendar-status"));if(calendar?.label=="Calendar integration is off") ServiceLoopNavigationButton("Calendar settings",{nav.navigate("calendar")},Modifier.fillMaxWidth().testTag("visit-calendar-settings"));when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
         val serviceProgress = state.serviceProgress
-        if (serviceProgress?.visitId == detail.id) item {
+        if (capabilities.canPerformFieldWork && serviceProgress?.visitId == detail.id) item {
             VisitServiceProgressOverview(serviceProgress, onSelect = { item ->
                 viewModel.focusService(item.workItemId)
                 nav.navigate("inspection/${item.workItemId}")
             })
         } else {
-            items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){nav.navigate("inspection/${line.workItemId}")} }
+            items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",capabilities.canPerformFieldWork && detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){if(capabilities.canPerformFieldWork) nav.navigate("inspection/${line.workItemId}")} }
         }
-        if(detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
+        if(capabilities.canPerformFieldWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
         if (detail.state == "BOOKED") item {
             var rescheduleSaved by rememberSaveable(detail.id) { mutableStateOf(false) }
             val rescheduleDateValid = runCatching { LocalDate.parse(newDate) }.isSuccess
             val rescheduleTimeValid = isValidAppointmentTimeInput(appointmentTime)
-            Button(
+            if(capabilities.canPerformFieldWork) Button(
                 { viewModel.startVisit(detail.id) { id ->
                     val target = viewModel.state.value.serviceProgress?.preferredResumeItem()?.workItemId
                     if (target != null) nav.navigate("inspection/$target") else nav.navigate("visit/$id")
@@ -817,7 +819,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
                 enabled = detail.lines.isNotEmpty() && !state.operationInProgress,
                 modifier = Modifier.fillMaxWidth().testTag("start-visit"),
             ) { Text("Start visit") }
-            if (detail.lines.isEmpty()) Text("Add at least one service line before starting.")
+            if (capabilities.canPerformFieldWork && detail.lines.isEmpty()) Text("Add at least one service line before starting.")
             AppointmentReminderSelector(
                 currentOverrideMinutes = detail.appointmentReminderLeadMinutes,
                 resolvedDefaultMinutes = state.reminderPreferences?.defaultAppointmentLeadMinutes ?: ReminderPreferences().defaultAppointmentLeadMinutes,
@@ -854,7 +856,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
             Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
             Button({ viewModel.restoreVisit(detail.id, restoreDate, appointmentEpochMillis(restoreDate, restoreTime, detailZone)) { viewModel.loadVisit(it) } }, enabled = !state.operationInProgress && restoreDateValid && restoreTimeValid, modifier = Modifier.fillMaxWidth().testTag("restore-booking")) { Text("Restore booking") }
         }
-        if (detail.state == "WORKING") item {
+        if (capabilities.canPerformFieldWork && detail.state == "WORKING") item {
             val session = state.activeServiceWorkItemId?.takeIf { state.activeServiceVisitId == detail.id && state.serviceProgress?.items?.any { item -> item.workItemId == it } == true }
             val target = session ?: state.serviceProgress?.preferredResumeItem()?.workItemId ?: detail.lines.firstOrNull()?.workItemId
             ServiceLoopActionStack {

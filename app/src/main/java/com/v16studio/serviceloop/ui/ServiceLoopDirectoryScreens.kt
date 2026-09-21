@@ -255,6 +255,7 @@ internal fun workRoute(tab: WorkTab, filter: String? = null, scope: WorkScope = 
 
 @Composable
 internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, businessDate: LocalDate, dueSoonHorizonDays: Int, viewModel: ServiceLoopViewModel) {
+    val capabilities = LocalWorkspaceCapabilities.current
     LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text(detail.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -274,19 +275,21 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
                 Text(detail.privateNote,style=ServiceLoopUiTokens.Type.body)
             }
         }
-        item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).testTag("equipment-actions"), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
+        if(capabilities.canManageRegister) item { Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).testTag("equipment-actions"), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ServiceLoopSecondaryButton("Edit",{nav.navigate("equipment/edit/${detail.id}")},Modifier.weight(1f).fillMaxHeight()); if(capabilities.canPerformFieldWork) ServiceLoopSecondaryButton("Start / resume",{detail.workingItemId?.let{nav.navigate("inspection/$it")}},Modifier.weight(1f).fillMaxHeight(),enabled=detail.workingItemId!=null) } }
         item { SectionTitle("Service plans") }
         items(detail.plans) { plan ->
             val dueLabel = servicePlanDueLabel(plan.dueDate, businessDate, dueSoonHorizonDays)
             ServiceLoopEntityRecord("${plan.reference} · ${plan.name}",plan.interval,"Due ${plan.dueDate} · $dueLabel",plan.state){nav.navigate("plan/${plan.id}")}
         }
         item {
-            if (detail.customerType == CustomerType.ONE_TIME) {
+            if (!capabilities.canManageRegister) {
+                Unit
+            } else if (detail.customerType == CustomerType.ONE_TIME) {
                 Text("Recurring service requires a Standard customer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Button(onClick = { nav.navigate("plan/new/${detail.id}") }, modifier = Modifier.fillMaxWidth().testTag("add-service-plan")) { Text("Add service plan") }
             }
-            ServiceLoopSectionDivider(); SectionTitle("History and management"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopNavigationButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) }
+            ServiceLoopSectionDivider(); SectionTitle(if(capabilities.canManageRegister) "History and management" else "History"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopActionStack { ServiceLoopNavigationButton("Equipment history",{nav.navigate("history/EQUIPMENT/${detail.id}")},Modifier.fillMaxWidth()); if(capabilities.canManageRegister) { ServiceLoopSecondaryButton("Move equipment",{nav.navigate("equipment/move/${detail.id}")},Modifier.fillMaxWidth()); ServiceLoopSecondaryButton(if(detail.state=="ACTIVE") "Retire equipment" else "Return equipment to service",{nav.navigate("lifecycle/EQUIPMENT/${detail.id}/${if(detail.state=="ACTIVE")"RETIRE" else "RETURN"}")},Modifier.fillMaxWidth()) } }
         }
     }
 }

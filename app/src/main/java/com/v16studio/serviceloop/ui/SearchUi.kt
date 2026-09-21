@@ -71,6 +71,7 @@ internal fun SearchScreen(
     nav: NavHostController,
     operationalDashboard: OperationalDashboardProjection? = null,
 ) {
+    val capabilities = LocalWorkspaceCapabilities.current
     var query by rememberSaveable { mutableStateOf("") }
     var fieldFocused by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -86,7 +87,8 @@ internal fun SearchScreen(
     }
 
     val recentPanelVisible = fieldFocused && query.isBlank() && recentQueries.isNotEmpty()
-    val grouped = SearchCategory.entries.mapNotNull { category ->
+    val visibleCategories = if (capabilities.canManageRegister) SearchCategory.entries else listOf(SearchCategory.VISIT, SearchCategory.FOLLOW_UP, SearchCategory.FINAL_RECORD)
+    val grouped = visibleCategories.mapNotNull { category ->
         results.filter { it.type == category.type }.takeIf(List<SearchTarget>::isNotEmpty)?.let { category to it }
     }
     val globalOperationalDashboard = operationalDashboard?.takeIf { it.scope == WorkScope.Global }
@@ -120,7 +122,7 @@ internal fun SearchScreen(
                     },
                 )
             } else if (query.isBlank()) {
-                Text("Search customers, sites, equipment, templates, service plans, visits, final records, and follow-ups.")
+                Text(if (capabilities.canManageRegister) "Search customers, sites, equipment, templates, service plans, visits, final records, and follow-ups." else "Search visits, follow-ups, and final records.")
             }
         }
         if (query.isNotBlank() && results.isEmpty()) item { Text("No matching saved records.") }
