@@ -12,7 +12,7 @@ Protected accepted baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at the historical SL-5C checkpoint: v11
 
-The B043 documentation/implementation line is `codex/b043-five-role-workspace`, based on `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`. The documentation commit is recorded at the B043 handoff after it exists. B043 is documented only at this stage; it does not advance `master` or claim production implementation. The preceding `codex/b013-ui-overhaul` line, Room v15, and its B-025/B-026 implementation evidence remain historical branch context. Historical SL-5C results below remain evidence for their stated revision only.
+The B043 documentation/implementation line is `codex/b043-five-role-workspace`, based on `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`. The primary B043 documentation commit is `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`. B043 is documented only at this stage; it does not advance `master` or claim production implementation. The preceding `codex/b013-ui-overhaul` line, Room v15, and its B-025/B-026 implementation evidence remain historical branch context. Historical SL-5C results below remain evidence for their stated revision only.
 
 ## Historical accepted state and active branch context
 
@@ -208,7 +208,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 
 - Branch: `codex/b043-five-role-workspace`
 - Base SHA: `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`
-- Documentation commit: recorded at the B043 handoff after the commit exists.
+- Documentation commit: `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`.
 - Room remains v15. No production source, manifest, Gradle file, Room schema, test, or resource changed in this documentation stage.
 - Adopted roles, in exact order, are Solo, Subcontractor, Employee, Team Leader, and Coordinator. Solo and Subcontractor manage their own Register/work; Employee receives and performs assigned work without the Register root; Team Leader combines Register, receiver, performer, coordinator, delegation, and conclusion capability; Coordinator has Register and coordination/conclusion capability but no technician field-work execution. Legacy `MEMBER` maps explicitly to Subcontractor, and conclusion remains distinct from technician completion.
 - Next action: production implementation from the B043 authority document.
