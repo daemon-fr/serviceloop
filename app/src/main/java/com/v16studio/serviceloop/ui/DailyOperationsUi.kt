@@ -29,8 +29,14 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
 @Composable
-internal fun LongTextEditor(value: String, onValueChange: (String) -> Unit, label: String, private: Boolean) {
-    ServiceLoopLongTextEditor(value, onValueChange, label, private)
+internal fun LongTextEditor(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    private: Boolean,
+    compact: Boolean = false,
+) {
+    ServiceLoopLongTextEditor(value, onValueChange, label, private, compact = compact)
 }
 
 @Composable
@@ -49,6 +55,7 @@ internal fun EditorColumn(
     state: UiState,
     tag: String? = null,
     topContentPadding: Dp = 8.dp,
+    showOperationMessage: Boolean = true,
     leadingContent: (@Composable () -> Unit)? = null,
     content: EditorColumnScope.() -> Unit,
 ) {
@@ -60,7 +67,7 @@ internal fun EditorColumn(
         verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section),
     ) {
         if (state.error != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = if (leadingContent == null) 0.dp else 16.dp)) { Text("Not saved — ${state.error}", color = MaterialTheme.colorScheme.error) } }
-        if (state.operationMessage != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = if (leadingContent == null) 0.dp else 16.dp)) { Text(state.operationMessage, color = MaterialTheme.colorScheme.primary) } }
+        if (showOperationMessage && state.operationMessage != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = if (leadingContent == null) 0.dp else 16.dp)) { Text(state.operationMessage, color = MaterialTheme.colorScheme.primary) } }
         leadingContent?.let { item { it() } }
         EditorColumnScope(this, if (leadingContent == null) 0.dp else 16.dp).content()
     }

@@ -218,7 +218,8 @@ internal data class NewVisitDraftSnapshot(
     val tasks: List<NewVisitTaskDraft>,
 )
 
-internal fun newVisitDraftIsDirty(initial: NewVisitDraftSnapshot, current: NewVisitDraftSnapshot): Boolean = initial != current
+internal fun newVisitDraftIsDirty(initial: NewVisitDraftSnapshot, current: NewVisitDraftSnapshot): Boolean =
+    initial.copy(siteId = null) != current.copy(siteId = null)
 
 @Composable
 internal fun InspectionChecklistSelector(
@@ -358,12 +359,12 @@ internal fun parseAppointmentTimeInput(value: String): LocalTime? = value.trim()
 private fun isValidAppointmentTimeInput(value: String): Boolean = value.isBlank() || parseAppointmentTimeInput(value) != null
 
 @Composable
-internal fun VisitSetupSectionHeading(title: String, testTag: String) {
+internal fun VisitSetupSectionHeading(title: String, testTag: String, modifier: Modifier = Modifier) {
     Text(
         title,
         style = MaterialTheme.typography.titleLarge,
         color = LocalServiceLoopTokens.current.textPrimary,
-        modifier = Modifier.fillMaxWidth().testTag(testTag),
+        modifier = modifier.fillMaxWidth().testTag(testTag),
     )
 }
 
@@ -631,9 +632,10 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
         state,
         tag = "new-visit-form",
         topContentPadding = 0.dp,
+        showOperationMessage = false,
         leadingContent = {
             Column(Modifier.fillMaxWidth().background(colors.surface)) {
-                VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
+                VisitSetupSectionHeading("Choose a customer", "choose-visit-customer", Modifier.padding(horizontal = 16.dp))
                 Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
                 Box(Modifier.fillMaxWidth().testTag("visit-mode-tabs")) {
                     ServiceLoopContentTabs(listOf("EXISTING" to "Existing", "NEW" to "New"), mode, ::requestModeChange, testTagPrefix = "visit-mode")
@@ -646,7 +648,24 @@ internal fun NewVisitScreen(sites: List<VisitSiteOption>, dueServices: List<DueS
             item { VisitSetupSectionHeading("Set up visit", "visit-setup-heading") }
         }
         else {
-            item { Text("Customer / site", fontWeight = FontWeight.Bold); if (site != null) Row(verticalAlignment = Alignment.CenterVertically) { Text("${site.customerName} · ${site.name}", Modifier.weight(1f)); if (initialPlanIds.isEmpty()) TextButton(::requestSiteChange) { Text("Change") } } else DailyField(siteQuery, { siteQuery = it }, "Find customer or site") }
+            item {
+                Text("Customer / site", fontWeight = FontWeight.Bold)
+                if (site != null) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.fieldActionGap),
+                    ) {
+                        Text("${site.customerName} · ${site.name}", Modifier.weight(1f))
+                        ServiceLoopFieldAction(
+                            accessibleName = "Change customer or site",
+                            onClick = ::requestSiteChange,
+                            modifier = Modifier.testTag("visit-change-customer-site"),
+                            content = { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
+                        )
+                    }
+                } else DailyField(siteQuery, { siteQuery = it }, "Find customer or site")
+            }
             if (site == null) items(matchingSites, key = { "visit-site-${it.id}" }) { option -> ServiceLoopEntityRecord("${option.reference} · ${option.name}", option.customerName, if (option.customerType == CustomerType.ONE_TIME) "One-time" else null, modifier = Modifier.testTag("visit-site-${option.id}"), onClick = { changeSite(option.id) }) }
             if (site == null && matchingSites.isEmpty()) item { Text(if (sites.isEmpty()) "Add a customer site before creating a visit." else "No matching customer sites.") }
             if (site != null && site.customerType == CustomerType.ONE_TIME) item { Text("One-time customers use ad-hoc work.") }
@@ -818,7 +837,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         } else {
             items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",capabilities.canPerformFieldWork && detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){if(capabilities.canPerformFieldWork) nav.navigate("inspection/${line.workItemId}")} }
         }
-        if(capabilities.canPerformFieldWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
+        if(capabilities.canPerformFieldWork && capabilities.canCreateLocalWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
         if (detail.state == "BOOKED") item {
             var rescheduleSaved by rememberSaveable(detail.id) { mutableStateOf(false) }
             val rescheduleDateValid = runCatching { LocalDate.parse(newDate) }.isSuccess

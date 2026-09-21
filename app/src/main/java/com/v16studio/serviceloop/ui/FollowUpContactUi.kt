@@ -1,13 +1,20 @@
 package com.v16studio.serviceloop.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
@@ -17,7 +24,53 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoicePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
+import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import java.time.LocalDate
+
+internal val CONTACT_CHANNELS = listOf(
+    "CALL" to "Call",
+    "SMS" to "SMS",
+    "EMAIL" to "Email",
+    "IN_PERSON" to "In person",
+    "OTHER" to "Other",
+)
+
+internal fun contactChannelLabel(channel: String): String = CONTACT_CHANNELS.firstOrNull { it.first == channel }?.second ?: channel
+
+internal fun contactChannelIcon(channel: String): Int = when (channel) {
+    "CALL" -> ServiceLoopIcons.Call
+    "SMS" -> ServiceLoopIcons.Sms
+    "EMAIL" -> ServiceLoopIcons.Mail
+    "IN_PERSON" -> ServiceLoopIcons.Person
+    else -> ServiceLoopIcons.More
+}
+
+@Composable
+internal fun ContactChannelChoices(selected: String, onSelected: (String) -> Unit) {
+    val colors = LocalServiceLoopTokens.current
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        CONTACT_CHANNELS.forEach { (value, label) ->
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                    .selectable(selected = value == selected, enabled = true, role = Role.RadioButton) { onSelected(value) }
+                    .semantics { contentDescription = label }
+                    .testTag("contact-channel-$value"),
+                shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+                color = if (value == selected) colors.selection else colors.surface,
+                border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (value == selected) colors.selectionOutline else colors.outlineControl),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    ServiceLoopIcon(contactChannelIcon(value), null, Modifier.size(ServiceLoopUiTokens.Size.icon), if (value == selected) colors.selectionInk else colors.icon)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun FollowUpListScreen(values: List<FollowUpDetail>, padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { if (values.isEmpty()) item { Text("No follow-ups") }; items(values) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",listOfNotNull(follow.customerName,follow.siteName,follow.equipmentName).filter{it.isNotBlank()}.joinToString(" · "),"${follow.type.lowercase()} · Due ${follow.dueDate}",follow.state){nav.navigate("follow-up/${follow.id}")} } } }
@@ -40,5 +93,22 @@ internal fun FollowUpEditorScreen(customerId: String, padding: PaddingValues, st
 internal fun ContactNoteEditorScreen(customerId: String, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var channel by rememberSaveable { mutableStateOf("CALL") }; var outcome by rememberSaveable { mutableStateOf("") }; var note by rememberSaveable { mutableStateOf("") }
     UnsavedChangesGuard(channel!="CALL"||outcome.isNotBlank()||note.isNotBlank(),nav)
-    EditorColumn(padding,state) { item { DailyHeading("Record actual contact outcome"); Text("Opening an external app does not create this note."); ServiceLoopChoiceGroup(listOf("CALL","SMS","EMAIL","IN_PERSON","OTHER").map{it to it.lowercase().replace('_',' ')},channel,{channel=it}); LongTextEditor(outcome,{outcome=it},"Actual context / outcome · Required",false); LongTextEditor(note,{note=it},"PRIVATE note",true); Button({ viewModel.createContactNote(ContactNoteInput(customerId,channel=channel,outcome=outcome,privateNote=note)) { nav.popBackStack() } },enabled=outcome.isNotBlank()&&!state.operationInProgress,modifier=Modifier.fillMaxWidth()){Text("Save contact note")} } }
+    EditorColumn(padding,state) {
+        item {
+            Text("Channel", style = ServiceLoopUiTokens.Type.label)
+            ContactChannelChoices(channel) { channel = it }
+            Text(
+                "Calls, messages and email are recorded here only when you save an outcome.",
+                style = ServiceLoopUiTokens.Type.supporting,
+                color = LocalServiceLoopTokens.current.textSecondary,
+            )
+            LongTextEditor(outcome, { outcome = it }, "Outcome · Required", false, compact = true)
+            LongTextEditor(note, { note = it }, "Private note · Optional", true, compact = true)
+            Button(
+                { viewModel.createContactNote(ContactNoteInput(customerId, channel = channel, outcome = outcome, privateNote = note)) { nav.popBackStack() } },
+                enabled = outcome.isNotBlank() && !state.operationInProgress,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save contact note") }
+        }
+    }
 }

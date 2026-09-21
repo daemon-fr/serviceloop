@@ -13,14 +13,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
@@ -28,6 +33,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextFieldAdapter as OutlinedTextField
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
@@ -42,8 +48,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -117,12 +125,15 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.bodyGap)) {
                 Text("What is your role?", style = MaterialTheme.typography.titleLarge)
-                ServiceLoopChoiceGroup(
-                    options = choices.map { option -> option.role to "${option.title} (${option.description})" },
-                    selected = role,
-                    onSelected = { role = it; context.setTeamRole(it) },
-                    testTagPrefix = "team-role",
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                    choices.forEach { option ->
+                        TeamRoleChoice(
+                            option = option,
+                            selected = role == option.role,
+                            onSelected = { role = option.role; context.setTeamRole(option.role) },
+                        )
+                    }
+                }
                 Text(roleExplanation, style = ServiceLoopUiTokens.Type.supporting, modifier = Modifier.testTag("team-role-helper"))
             }
         }
@@ -136,6 +147,44 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
         }
         if (role.workspaceCapabilities.canReceiveAssignedWork) item {
             TechnicianIdentityContent()
+        }
+    }
+}
+
+@Composable
+private fun TeamRoleChoice(
+    option: TeamRoleOption,
+    selected: Boolean,
+    onSelected: () -> Unit,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .selectable(selected = selected, enabled = true, role = Role.RadioButton, onClick = onSelected)
+            .testTag("team-role-${option.role.name}"),
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+        color = if (selected) colors.selection else colors.surface,
+        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) colors.selectionOutline else colors.outlineControl),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
+            verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+        ) {
+            Text(
+                option.title,
+                style = ServiceLoopUiTokens.Type.itemTitle,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary,
+                modifier = Modifier.testTag("team-role-${option.role.name}-title"),
+            )
+            Text(
+                option.description,
+                style = ServiceLoopUiTokens.Type.supporting,
+                color = colors.textSecondary,
+                modifier = Modifier.testTag("team-role-${option.role.name}-description"),
+            )
         }
     }
 }

@@ -88,8 +88,9 @@ internal fun SearchScreen(
 
     val recentPanelVisible = fieldFocused && query.isBlank() && recentQueries.isNotEmpty()
     val visibleCategories = if (capabilities.canManageRegister) SearchCategory.entries else listOf(SearchCategory.VISIT, SearchCategory.FOLLOW_UP, SearchCategory.FINAL_RECORD)
+    val visibleResults = results.filter { result -> visibleCategories.any { it.type == result.type } }
     val grouped = visibleCategories.mapNotNull { category ->
-        results.filter { it.type == category.type }.takeIf(List<SearchTarget>::isNotEmpty)?.let { category to it }
+        visibleResults.filter { it.type == category.type }.takeIf(List<SearchTarget>::isNotEmpty)?.let { category to it }
     }
     val globalOperationalDashboard = operationalDashboard?.takeIf { it.scope == WorkScope.Global }
 
@@ -125,7 +126,9 @@ internal fun SearchScreen(
                 Text(if (capabilities.canManageRegister) "Search customers, sites, equipment, templates, service plans, visits, final records, and follow-ups." else "Search visits, follow-ups, and final records.")
             }
         }
-        if (query.isNotBlank() && results.isEmpty()) item { Text("No matching saved records.") }
+        if (query.isNotBlank() && visibleResults.isEmpty()) item {
+            Text(if (capabilities.canManageRegister) "No matching saved records." else "No matching work records.")
+        }
         grouped.forEach { (category, categoryResults) ->
             item(key = "search-category-${category.key}") {
                 var expanded by remember(category.key) { mutableStateOf(preferences.isCategoryExpanded(category.key)) }

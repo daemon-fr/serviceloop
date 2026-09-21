@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.EquipmentLinkContext
 import com.v16studio.serviceloop.domain.EquipmentSummary
+import com.v16studio.serviceloop.domain.SearchTarget
 import com.v16studio.serviceloop.ui.COORDINATOR_ENABLED
 import com.v16studio.serviceloop.ui.DISPATCH_PREFS
 import com.v16studio.serviceloop.ui.EquipmentLinkScreen
@@ -53,7 +54,9 @@ class B043RoleWorkspaceUiTest {
         TEAM_ROLE_OPTIONS.forEach { option ->
             compose.onNodeWithTag("team-role-settings").performScrollToNode(hasTestTag("team-role-${option.role.name}"))
             compose.onNodeWithTag("team-role-${option.role.name}").assertIsDisplayed()
-            compose.onNode(hasText("${option.title} (${option.description})", substring = true)).assertIsDisplayed()
+            compose.onNodeWithTag("team-role-${option.role.name}-title", useUnmergedTree = true).assertTextEquals(option.title)
+            compose.onNodeWithTag("team-role-${option.role.name}-description", useUnmergedTree = true).assertTextEquals(option.description)
+            compose.onNodeWithText("${option.title} (${option.description})", substring = true).assertDoesNotExist()
         }
     }
 
@@ -103,13 +106,20 @@ class B043RoleWorkspaceUiTest {
             compose.activity.setContent {
                 ServiceLoopTheme(false) {
                     CompositionLocalProvider(LocalTeamRole provides role, LocalWorkspaceCapabilities provides role.workspaceCapabilities) {
-                        SearchScreen(emptyList(), PaddingValues(), viewModel, rememberNavController())
+                        SearchScreen(
+                            listOf(SearchTarget("CUSTOMER", "customer-only", "CU-1", "Matching customer", "Matching site")),
+                            PaddingValues(),
+                            viewModel,
+                            rememberNavController(),
+                        )
                     }
                 }
             }
         }
         compose.onNodeWithText("Search visits, follow-ups, and final records.").assertIsDisplayed()
         compose.onNodeWithText("Search customers, sites, equipment, templates, service plans, visits, final records, and follow-ups.").assertDoesNotExist()
+        compose.onNodeWithTag("field-search-names-and-references").performTextInput("customer")
+        compose.onNodeWithText("No matching work records.").assertIsDisplayed()
     }
 
     @Test fun employeeCanLinkExistingEquipmentWithoutCreatingMasterEquipment() {

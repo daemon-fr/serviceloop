@@ -36,6 +36,10 @@ class B037OwnerReviewCorrectionsTest {
         assertFalse(newVisitDraftIsDirty(baseline, restoredTime))
         assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(customerName = "New customer")))
         assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(tasks = listOf(NewVisitTaskDraft("Inspect", WorkSubjectType.SITE, null, "", null)))))
+        assertTrue(newVisitDraftIsDirty(baseline, baseline.copy(selectedPlanIds = setOf("plan-1"))))
+        assertFalse(newVisitDraftIsDirty(baseline, baseline.copy(siteId = "site-a")))
+        val selectedSite = baseline.copy(siteId = "site-a")
+        assertFalse(newVisitDraftIsDirty(selectedSite, selectedSite.copy(siteId = "site-b")))
         assertFalse(newVisitDraftIsDirty(baseline, baseline.copy(selectedPlanIds = emptySet())))
     }
 
@@ -65,9 +69,48 @@ class B037OwnerReviewCorrectionsTest {
     fun createVisitCustomerTabsShareOneUpperSurfaceBand() {
         val screen = productionKotlinFunctionSource("internal fun NewVisitScreen", "internal fun VisitDetailScreen")
         assertTrue(screen.contains("Column(Modifier.fillMaxWidth().background(colors.surface)"))
-        assertTrue(screen.contains("VisitSetupSectionHeading(\"Choose a customer\", \"choose-visit-customer\")"))
+        assertTrue(screen.contains("VisitSetupSectionHeading(\"Choose a customer\", \"choose-visit-customer\""))
         assertTrue(screen.contains("Modifier.fillMaxWidth().testTag(\"visit-mode-tabs\")"))
         assertFalse(screen.contains("background(colors.canvas).testTag(\"visit-mode-tabs\")"))
+    }
+
+    @Test
+    fun b043CorrectionSurfacesKeepFocusedInteractionContracts() {
+        val production = productionKotlinSource("com/v16studio/serviceloop/ui")
+        val contact = productionKotlinSourceContaining("CONTACT_CHANNELS = listOf(", "internal fun ContactNoteEditorScreen")
+        val detail = productionKotlinSourceContaining("internal fun ContactNoteScreen", "Mark entered in error")
+        val outbox = productionKotlinSourceContaining("internal fun DispatchOutboxScreen", "dispatch-new-visit-bottom")
+        val visit = productionKotlinFunctionSource("internal fun NewVisitScreen", "internal fun VisitDetailScreen")
+        val customer = productionKotlinFunctionSource("internal fun CustomerDetailScreen", "internal fun CustomerEditorScreen")
+
+        assertTrue(contact.contains("CONTACT_CHANNELS = listOf("))
+        assertTrue(contact.contains("testTag(\"contact-channel-"))
+        assertTrue(contact.contains("contentDescription = label"))
+        assertTrue(contact.contains("compact = true"))
+        assertTrue(contact.contains("Outcome · Required"))
+        assertTrue(contact.contains("Private note · Optional"))
+        assertTrue(contact.contains("Calls, messages and email are recorded here only when you save an outcome."))
+        assertFalse(contact.contains("Record actual contact outcome"))
+        assertFalse(contact.contains("Opening an external app does not create this note."))
+
+        assertTrue(customer.contains("ServiceLoopDenseNavigableRow"))
+        assertTrue(customer.contains("nav.navigate(\"contact/${'$'}{note.id}\")"))
+        assertFalse(customer.contains("Entered-in-error reason"))
+        assertFalse(customer.contains("Mark entered in error"))
+        assertFalse(customer.contains("note.privateNote"))
+
+        assertTrue(detail.contains("Mark entered in error"))
+        assertTrue(detail.contains("Reason · Required"))
+        assertTrue(detail.contains("Confirm entered in error"))
+        assertTrue(detail.contains("reason.isNotBlank() && !state.operationInProgress"))
+        assertTrue(outbox.contains("dispatch-new-visit-bottom"))
+        assertTrue(outbox.contains("dispatch-new-visit-floating"))
+        assertTrue(outbox.contains("nav.navigate(\"dispatch/visit/new\")"))
+        assertTrue(outbox.contains("if(selectedRows.isEmpty())"))
+        assertTrue(visit.contains("showOperationMessage = false"))
+        assertTrue(visit.contains("ServiceLoopFieldAction"))
+        assertTrue(visit.contains("visit-change-customer-site"))
+        assertTrue(production.contains("if ((workDashboard?.totalItemCount ?: 0) == 0) Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))"))
     }
 
     private fun snapshot(

@@ -36,6 +36,7 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 internal const val WORK_NEW_VISIT_SLOT_KEY = "work-new-visit-slot"
+internal const val DISPATCH_NEW_VISIT_SLOT_KEY = "dispatch-new-visit-slot"
 private val WorkNewVisitFloatingClearance = ServiceLoopUiTokens.Size.touchMin + ServiceLoopUiTokens.Space.lg
 
 internal enum class WorkNewVisitActionState { UNRESOLVED, FLOATING, DOCKED }
@@ -61,12 +62,15 @@ internal fun resolveWorkNewVisitActionState(
 
 /** Resolves once from the first meaningful list layout, then only moves from FLOATING to DOCKED. */
 @Composable
-internal fun rememberWorkNewVisitActionState(listState: LazyListState): WorkNewVisitActionState {
-    var actionState by rememberSaveable { mutableStateOf(WorkNewVisitActionState.UNRESOLVED) }
-    LaunchedEffect(listState) {
+internal fun rememberWorkNewVisitActionState(
+    listState: LazyListState,
+    slotKey: Any = WORK_NEW_VISIT_SLOT_KEY,
+): WorkNewVisitActionState {
+    var actionState by rememberSaveable(slotKey) { mutableStateOf(WorkNewVisitActionState.UNRESOLVED) }
+    LaunchedEffect(listState, slotKey) {
         snapshotFlow {
             val layout = listState.layoutInfo
-            val slot = layout.visibleItemsInfo.firstOrNull { it.key == WORK_NEW_VISIT_SLOT_KEY }
+            val slot = layout.visibleItemsInfo.firstOrNull { it.key == slotKey }
             WorkNewVisitLayout(
                 totalItemsCount = layout.totalItemsCount,
                 visibleItemsCount = layout.visibleItemsInfo.size,
@@ -85,14 +89,16 @@ internal fun rememberWorkNewVisitActionState(listState: LazyListState): WorkNewV
 @Composable
 internal fun WorkNewVisitReservedSlot(
     onClick: () -> Unit,
+    slotTestTag: String = "new-visit-slot",
+    actionTestTag: String = "new-visit-work-bottom",
 ) {
-    Box(Modifier.fillMaxWidth().testTag("new-visit-slot")) {
+    Box(Modifier.fillMaxWidth().testTag(slotTestTag)) {
         // The natural action is real list content at all times. The action state controls only
         // the supplemental floater, so short pages never move or blink this row into place.
         ServiceLoopPrimaryButton(
             "New visit",
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().testTag("new-visit-work-bottom"),
+            modifier = Modifier.fillMaxWidth().testTag(actionTestTag),
             leadingIcon = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
         )
     }
@@ -104,6 +110,7 @@ internal fun WorkNewVisitFloatingAction(
     onClick: () -> Unit,
     bottomInset: Dp = 0.dp,
     respectNavigationBars: Boolean = true,
+    actionTestTag: String = "new-visit-work-floating",
 ) {
     AnimatedVisibility(
         visible = actionState == WorkNewVisitActionState.FLOATING,
@@ -129,7 +136,7 @@ internal fun WorkNewVisitFloatingAction(
                 ServiceLoopPrimaryButton(
                     "New visit",
                     onClick,
-                    Modifier.widthIn(min = 144.dp).testTag("new-visit-work-floating"),
+                    Modifier.widthIn(min = 144.dp).testTag(actionTestTag),
                     leadingIcon = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
                 )
             }

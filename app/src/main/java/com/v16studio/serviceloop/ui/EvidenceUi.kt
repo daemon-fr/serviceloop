@@ -59,7 +59,16 @@ internal fun EquipmentLinkScreen(workItemId: String, context: EquipmentLinkConte
     var note by rememberSaveable(workItemId) { mutableStateOf("") }
     if (context == null || context.workItemId != workItemId) return DailyEmpty(padding, "Loading equipment")
     EditorColumn(padding, state) {
-        item { DailyHeading("Identify equipment"); Text("${context.siteName} · Link this task to registered equipment or create a new item.") }
+        item {
+            DailyHeading("Identify equipment")
+            Text(
+                if (capabilities.canManageRegister) {
+                    "${context.siteName} · Link this task to registered equipment or create a new item."
+                } else {
+                    "${context.siteName} · Link this task to registered equipment."
+                },
+            )
+        }
         if (context.equipment.isNotEmpty()) {
             item { Text("Registered equipment", fontWeight = FontWeight.Bold) }
             items(context.equipment, key = { "link-equipment-${it.id}" }) { equipment ->

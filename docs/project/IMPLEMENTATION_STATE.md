@@ -216,6 +216,12 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Final verification: 439 JVM tests PASS; debug/release builds, lint, Android-test APK, and `git diff --check` PASS; seven focused tests PASS on canonical `Pixel 10a ServiceLoop`; actual Google Maps system handoff PASS; eight light/dark/role-specific renders inspected.
 - Next action: independent owner review and, if accepted, separately authorized protected-baseline integration.
 
+### B043 owner-review correction pass
+
+- The correction pass preserves the five-role capability matrix and clarifies Employee as execution-only: no local Visits, ad-hoc tasks, reusable templates, or Register/master records; assigned-work documentation and history remain available.
+- Owner-review UI corrections cover role-option hierarchy, Employee equipment/search/work surfaces, Work-style Dispatch Outbox New Visit actions, Contact Note entry/detail/customer summary flows, Customer gateway spacing, and Create Visit alignment, stale-message suppression, dirty-state semantics, and customer/site reselection action.
+- Focused verification: B037/B043 JVM/source contracts PASS; `:app:assembleDebug` PASS; `:app:assembleDebugAndroidTest` PASS; focused UI-INSTRUMENTED coverage PASS (7/7: five B043 role/search/equipment tests, the Outbox natural/floating/batch action test, and the Create Visit back-guard test) on canonical `Pixel_10a_ServiceLoop`, resolved serial `emulator-5554`. HUMAN/RENDERED inspection was not run in this correction pass. Room v15, version `1.0.1` / code 2, file formats/provenance, recurrence, immutable history, and B040/B042 editor composition remain unchanged.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

@@ -209,7 +209,7 @@ internal fun ServiceLoopNavGraph(
         composable("follow-up/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadFollowUp(id)}; DetailScaffold("Follow-up",nav){FollowUpDetailScreen(state.followUp,it,state,viewModel,nav)} }
         composable("follow-up/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Add follow-up",nav){FollowUpEditorScreen(id,it,state,viewModel,nav)} }
         composable("contact/new/{customerId}") { entry -> val id=entry.arguments?.getString("customerId").orEmpty(); DetailScaffold("Record contact",nav){ContactNoteEditorScreen(id,it,state,viewModel,nav)} }
-        composable("contact/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadContactNote(id)}; DetailScaffold("Contact note",nav){padding -> ContactNoteScreen(state.contactNote,padding)} }
+        composable("contact/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadContactNote(id)}; DetailScaffold("Contact note",nav){padding -> ContactNoteScreen(state.contactNote,padding,state,viewModel)} }
         composable("search") {
             LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
             DetailScaffold("Search",nav){SearchScreen(state.searchResults,it,viewModel,nav,state.operationalDashboard)}
@@ -241,18 +241,7 @@ internal fun ServiceLoopNavGraph(
         composable("dispatch/teams") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { DetailScaffold("Teams",nav){DispatchTeamsScreen(it)} } }
         composable("dispatch/create") {
             WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) {
-            DetailScaffold(
-                "Outbox",
-                nav,
-                topAction = {
-                    ServiceLoopPrimaryButton(
-                        "New visit",
-                        { nav.navigate("dispatch/visit/new") },
-                        Modifier.testTag("dispatch-new-visit"),
-                        leadingIcon = { com.v16studio.serviceloop.ui.icons.ServiceLoopIcon(com.v16studio.serviceloop.ui.icons.ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon)) },
-                    )
-                },
-            ) { DispatchOutboxScreen(it, nav, state.businessDate, showEmbeddedTopAction = false, canConcludeDelegatedWork = capabilities.canConcludeDelegatedWork) }
+            DetailScaffold("Outbox", nav) { DispatchOutboxScreen(it, nav, state.businessDate, canConcludeDelegatedWork = capabilities.canConcludeDelegatedWork) }
             }
         }
         composable("dispatch/visit/new") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,state.businessDate,canConcludeDelegatedWork=capabilities.canConcludeDelegatedWork)} } }

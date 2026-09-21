@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -90,15 +91,50 @@ internal fun HistoryScreen(scope: HistoryScope, state: UiState, padding: Padding
 }
 
 @Composable
-internal fun ContactNoteScreen(note: ContactNoteDetail?, padding: PaddingValues) {
+internal fun ContactNoteScreen(note: ContactNoteDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel) {
     if (note == null) return Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    var correctionExpanded by rememberSaveable(note.id) { mutableStateOf(false) }
+    var reason by rememberSaveable(note.id) { mutableStateOf("") }
     Column(Modifier.padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(note.reference, style = MaterialTheme.typography.headlineSmall)
-        Text("${note.channel.replace('_', ' ')} · ${Instant.ofEpochMilli(note.occurredAtEpochMillis)}")
-        Text(note.outcome)
-        if (note.privateNote.isNotBlank()) { HorizontalDivider(); ServiceLoopPrivateLabel("Internal / Not in customer report", style = MaterialTheme.typography.titleMedium); Text(note.privateNote) }
-        if (note.enteredInError) Text("Entered in error${note.errorReason?.let { ": $it" }.orEmpty()}", color = MaterialTheme.colorScheme.error)
-        Text("Read-only history entry", style = MaterialTheme.typography.bodySmall)
+        Text("${note.reference} · ${contactChannelLabel(note.channel)}", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("contact-note-title"))
+        Text("Outcome", style = ServiceLoopUiTokens.Type.label)
+        Text(note.outcome, modifier = Modifier.testTag("contact-note-outcome"))
+        if (note.privateNote.isNotBlank()) {
+            HorizontalDivider()
+            Text("Private note", style = ServiceLoopUiTokens.Type.label)
+            Text(note.privateNote, modifier = Modifier.testTag("contact-note-private-note"))
+            ServiceLoopPrivateLabel("PRIVATE · Not included in the customer report")
+        }
+        if (note.enteredInError) {
+            Text("Entered in error", color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("contact-note-entered-in-error"))
+            note.errorReason?.takeIf(String::isNotBlank)?.let {
+                Text("Reason", style = ServiceLoopUiTokens.Type.label)
+                Text(it, modifier = Modifier.testTag("contact-note-error-reason"))
+            }
+        } else if (!correctionExpanded) {
+            TextButton(
+                { correctionExpanded = true },
+                Modifier.testTag("contact-note-mark-entered-in-error"),
+            ) { Text("Mark entered in error") }
+        } else {
+            LongTextEditor(reason, { reason = it }, "Reason · Required", false, compact = true)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.buttonGap)) {
+                TextButton({ correctionExpanded = false; reason = "" }, Modifier.weight(1f).testTag("contact-note-correction-cancel")) { Text("Cancel") }
+                ServiceLoopPrimaryButton(
+                    "Confirm entered in error",
+                    {
+                        viewModel.markContactNoteEnteredInError(note.id, reason) {
+                            correctionExpanded = false
+                            reason = ""
+                            viewModel.loadContactNote(note.id)
+                        }
+                    },
+                    Modifier.weight(1f).testTag("contact-note-correction-confirm"),
+                    enabled = reason.isNotBlank() && !state.operationInProgress,
+                )
+            }
+        }
+        state.error?.let { Text("Not saved — $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("contact-note-error")) }
     }
 }
 

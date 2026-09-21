@@ -48,6 +48,8 @@ Employee is execution-focused. Employee does not receive the Register root or or
 
 Employee must still see the Customer/Site/Equipment/service/checklist context required by an assigned Visit. “No Register” does not mean “no operational directory information.” This is a local workspace model, not a security permission system.
 
+Employee creates no local work definitions: no local Visits, ad-hoc tasks, reusable templates, or Register/master records. Employee may create documentation and history resulting from assigned work, including checklist answers, evidence, Contact Notes, Follow-ups, and valid completion/finalization records. Assigned checklist identity and content remain the captured dispatch snapshot.
+
 ### Team Leader
 
 Team Leader is intentionally a hybrid role, not Employee plus a leader badge. It combines full Register/master-data and local-work capability with technician-side Dispatch receiving and field execution, plus coordinator-side planning, delegation, and conclusion.

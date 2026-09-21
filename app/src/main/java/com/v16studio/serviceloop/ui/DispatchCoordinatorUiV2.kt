@@ -16,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,7 +77,7 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
     )
 }
 
-@Composable internal fun DispatchOutboxScreen(padding:PaddingValues,nav:NavHostController,businessDate:LocalDate,serviceOverride:DispatchPackageService?=null,databaseOverride:ServiceLoopDatabase?=null,showEmbeddedTopAction:Boolean=true,canConcludeDelegatedWork:Boolean=true){
+@Composable internal fun DispatchOutboxScreen(padding:PaddingValues,nav:NavHostController,businessDate:LocalDate,serviceOverride:DispatchPackageService?=null,databaseOverride:ServiceLoopDatabase?=null,canConcludeDelegatedWork:Boolean=true){
     val context=LocalContext.current;val svc=remember(serviceOverride){serviceOverride?:dispatchService(context)};val db=databaseOverride?:(context.applicationContext as ServiceLoopApplication).container.database;val scope=rememberCoroutineScope();val lifecycleOwner=LocalLifecycleOwner.current
     var outbox by remember{mutableStateOf(emptyList<DispatchOutboxVisitEntity>())};var sites by remember{mutableStateOf(emptyList<SiteEntity>())};var customers by remember{mutableStateOf(emptyList<CustomerEntity>())};var itemCounts by remember{mutableStateOf(emptyMap<String,Int>())}
     var search by rememberSaveable{mutableStateOf("")};var statusFilter by rememberSaveable{mutableStateOf("Active")};var dateFilter by rememberSaveable{mutableStateOf("All dates")};var customStart by rememberSaveable{mutableStateOf(businessDate.toString())};var customEnd by rememberSaveable{mutableStateOf(businessDate.plusDays(7).toString())};var checked by remember{mutableStateOf(setOf<String>())};var pendingStatusAction by remember{mutableStateOf<String?>(null)};var cancelReason by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)}
@@ -84,7 +85,7 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
     LaunchedEffect(Unit){reload()};DisposableEffect(lifecycleOwner){val observer=LifecycleEventObserver{_,event->if(event==Lifecycle.Event.ON_RESUME)reload()};lifecycleOwner.lifecycle.addObserver(observer);onDispose{lifecycleOwner.lifecycle.removeObserver(observer)}}
     val today=businessDate;val monday=today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));val customRange=runCatching{LocalDate.parse(customStart)..LocalDate.parse(customEnd)}.getOrNull();val siteMap=sites.associateBy{it.id};val customerMap=customers.associateBy{it.id};val needle=search.trim().lowercase()
     val visible=outbox.filter{visit->val statusMatch=when(statusFilter){"Active"->visit.outboxStatus in setOf(DispatchOutboxStatus.DRAFT,DispatchOutboxStatus.DISPATCHED);"Draft"->visit.outboxStatus==DispatchOutboxStatus.DRAFT;"Dispatched"->visit.outboxStatus==DispatchOutboxStatus.DISPATCHED;"Canceled"->visit.outboxStatus==DispatchOutboxStatus.CANCELED;"Concluded"->visit.outboxStatus==DispatchOutboxStatus.CONCLUDED;else->true};val date=LocalDate.parse(visit.serviceDate);val dateMatch=when(dateFilter){"Today"->date==today;"Tomorrow"->date==today.plusDays(1);"This week"->date in monday..monday.plusDays(6);"Next 7 days"->date in today..today.plusDays(6);"Custom range"->customRange?.let{date in it}==true;else->true};val site=siteMap[visit.siteId];val customer=site?.let{customerMap[it.customerId]};val searchMatch=needle.isEmpty()||listOf(visit.managerReference,site?.reference,site?.name,customer?.reference,customer?.name).any{it?.lowercase()?.contains(needle)==true};statusMatch&&dateMatch&&searchMatch}.sortedWith(compareBy({it.serviceDate},{it.appointmentLocalTime.orEmpty()},{it.createdAtEpochMillis},{it.dispatchVisitId}))
-    LaunchedEffect(visible.map{it.dispatchVisitId}){checked=checked.intersect(visible.map{it.dispatchVisitId}.toSet())};val selectedRows=visible.filter{it.dispatchVisitId in checked}
+    LaunchedEffect(visible.map{it.dispatchVisitId}){checked=checked.intersect(visible.map{it.dispatchVisitId}.toSet())};val selectedRows=visible.filter{it.dispatchVisitId in checked};val listState=rememberLazyListState();val actionState=rememberWorkNewVisitActionState(listState,DISPATCH_NEW_VISIT_SLOT_KEY);val listBottomPadding=if(selectedRows.isEmpty())workNewVisitListBottomPadding(actionState)else ServiceLoopUiTokens.Space.sm
     when(pendingStatusAction){
         "cancel" -> DispatchCancellationReasonDialog("Cancel selected Visits",cancelReason,selectedRows.any{it.outboxStatus==DispatchOutboxStatus.DISPATCHED},"Apply",onDismiss={pendingStatusAction=null;cancelReason=""}){reason->
             val ids=selectedRows.map{it.dispatchVisitId}
@@ -97,7 +98,6 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
     var moreOpen by remember { mutableStateOf(false) }
     Column(Modifier.padding(padding).fillMaxSize().testTag("dispatch-outbox")) {
         Column(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Layout.pageInsetCompact),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-            if(showEmbeddedTopAction) ServiceLoopPrimaryButton("New visit",{nav.navigate("dispatch/visit/new")},Modifier.fillMaxWidth().testTag("dispatch-new-visit"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Add,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})
             ServiceLoopTextField(search,{search=it},"Search visits",singleLine=true,modifier=Modifier.testTag("dispatch-search"))
             ServiceLoopFilterSelectorRow(
                 first={ServiceLoopFilterSelector("Status",statusFilter,listOf("Active","Draft","Dispatched","Canceled","Concluded","All").map{it to it},{statusFilter=it},testTag="dispatch-status-filter")},
@@ -117,7 +117,8 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
                 }
             }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("dispatch-outbox-list"),contentPadding=PaddingValues(ServiceLoopUiTokens.Layout.pageInsetCompact,0.dp,ServiceLoopUiTokens.Layout.pageInsetCompact,ServiceLoopUiTokens.Space.section),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)){
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxSize().testTag("dispatch-outbox-list"),state=listState,contentPadding=PaddingValues(ServiceLoopUiTokens.Layout.pageInsetCompact,0.dp,ServiceLoopUiTokens.Layout.pageInsetCompact,listBottomPadding),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)){
             if(outbox.isEmpty())item{ServiceLoopNotice("No dispatch visits yet","Create a visit when work is ready to prepare for technicians.",ServiceLoopNoticeKind.Info)}
             else if(visible.isEmpty())item{ServiceLoopNotice(if(search.isNotBlank())"No matching dispatch visits" else "No visits match these filters","Clear search or change the active filters.",ServiceLoopNoticeKind.Info)}
             visible.groupBy{it.serviceDate}.forEach { (date, visits) ->
@@ -144,6 +145,9 @@ private fun dispatchService(context:Context)=DispatchPackageService((context.app
                     }
                 }
             }
+            item(key=DISPATCH_NEW_VISIT_SLOT_KEY){WorkNewVisitReservedSlot({nav.navigate("dispatch/visit/new")},slotTestTag="dispatch-new-visit-slot",actionTestTag="dispatch-new-visit-bottom")}
+        }
+        if(selectedRows.isEmpty()) WorkNewVisitFloatingAction(actionState,{nav.navigate("dispatch/visit/new")},respectNavigationBars=false,actionTestTag="dispatch-new-visit-floating")
         }
         if(selectedRows.isNotEmpty())ServiceLoopPinnedBar(Modifier.testTag("dispatch-batch-actions")){
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${selectedRows.size} selected",Modifier.weight(1f).testTag("dispatch-selected-count"),style=MaterialTheme.typography.titleMedium);ServiceLoopTextAction("Clear",{checked=emptySet()},Modifier.testTag("dispatch-clear-selection"))}
