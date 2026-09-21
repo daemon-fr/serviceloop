@@ -1,6 +1,6 @@
 # ServiceLoop — Source of Truth
 
-**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-21.
+**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-22.
 
 ## Authority order
 
@@ -25,7 +25,7 @@ Accepted/banked baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at that historical SL-5C checkpoint: v11
 
-`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The B043 documentation/implementation line is `codex/b043-five-role-workspace`, created from `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`; this documentation stage is not implementation-complete and does not change Room or production source. The preceding `codex/b013-ui-overhaul` line and its v15 implementation evidence remain historical branch context. See `IMPLEMENTATION_STATE.md` for the current pointer. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
+`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The B044 implementation line is `codex/b044-visit-setup-harmonization`, created from `acc193bb53befe2803b9a050c35cf2eb4df0536a`; its implementation commit is `7dd23d0`, with Room v16 and no `.slwork`, `.slinsp`, or backup-format change. The preceding `codex/b043-five-role-workspace` line remains historical branch context for the preserved five-role behavior. See `IMPLEMENTATION_STATE.md` for the current pointer. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
 
 B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013; UI corrections may continue during implementation and review. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 

@@ -1445,3 +1445,21 @@ This refactor is complete when:
 - Team/technician assignments remain Dispatch-only;
 - no Room/package-format change occurs unless explicitly approved for the identified new-Standard-customer constraint;
 - five-role B043 behavior remains unchanged.
+
+---
+
+## 35. B044 execution result — 2026-09-22
+
+**Status: IMPLEMENTED AND VERIFIED / READY FOR OWNER REVIEW**
+
+- Branch: `codex/b044-visit-setup-harmonization`
+- Production start SHA: `acc193bb53befe2803b9a050c35cf2eb4df0536a`
+- Documentation checkpoint: `3b1d346` (`Document B044 visit setup harmonization`)
+- Implementation commit: `7dd23d0` (`B044 implement shared visit setup harmonization`)
+- Add Customer, ordinary New Visit, and Dispatch New Visit now share the same customer-creation draft, validation, canonical Customer/Site inputs, and transactional creation primitive.
+- Ordinary New Visit and Dispatch New/Edit now render through the shared `VisitSetupForm`; Dispatch retains only assignment, coordination, Outbox persistence, and lifecycle extensions.
+- Dispatch plan/task reconstruction preserves unmatched planned items instead of silently converting them; reusable-template selection is stored locally for stable inspection snapshots.
+- Room v16 adds only nullable `dispatch_outbox_items.reusableTemplateId`; `.slwork`, `.slinsp`, and backup formats are unchanged.
+- Final gates: `:app:testDebugUnitTest` PASS (441 tests), `:app:assembleDebug` PASS, `:app:lintDebug` PASS, `:app:assembleDebugAndroidTest` PASS, and `git diff --check` PASS.
+- Domain-instrumented migration verification: `Migration1To2Test` PASS, 11/11, on the dynamically resolved `Pixel 10a ServiceLoop` emulator (`emulator-5554` for this run). The APK was built first and installed explicitly with `adb -s <resolved-serial> install -r`.
+- Full legacy UI suite and HUMAN/RENDERED owner review were not run in this pass; those remain separate acceptance evidence.

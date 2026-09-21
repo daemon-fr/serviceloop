@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-21
+**Updated:** 2026-09-22
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -222,6 +222,17 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Owner-review UI corrections cover role-option hierarchy, Employee equipment/search/work surfaces, Work-style Dispatch Outbox New Visit actions, Contact Note entry/detail/customer summary flows, Customer gateway spacing, and Create Visit alignment, stale-message suppression, dirty-state semantics, and customer/site reselection action.
 - Focused verification: B037/B043 JVM/source contracts PASS; `:app:assembleDebug` PASS; `:app:assembleDebugAndroidTest` PASS; focused UI-INSTRUMENTED coverage PASS (7/7: five B043 role/search/equipment tests, the Outbox natural/floating/batch action test, and the Create Visit back-guard test) on canonical `Pixel_10a_ServiceLoop`, resolved serial `emulator-5554`. HUMAN/RENDERED inspection was not run in this correction pass. Room v15, version `1.0.1` / code 2, file formats/provenance, recurrence, immutable history, and B040/B042 editor composition remain unchanged.
 
+## B044 — VISIT SETUP HARMONIZATION AND DISPATCH EXTENSION
+
+**Status: IMPLEMENTED AND VERIFIED / READY FOR OWNER REVIEW**
+
+- Branch: `codex/b044-visit-setup-harmonization`; production start SHA: `acc193bb53befe2803b9a050c35cf2eb4df0536a`.
+- Documentation checkpoint: `3b1d346`; implementation commit: `7dd23d0`.
+- Add Customer, ordinary New Visit, and Dispatch New Visit share the same customer-creation draft, validation, canonical inputs, and transactional Customer + default Site primitive. Shared `VisitSetupForm` now owns common local and Dispatch setup; Dispatch keeps assignment, coordination, Outbox persistence, and lifecycle extensions.
+- Dispatch preserves unmatched planned items, stable task identity, reusable inspection-template selection, and existing Outbox lifecycle semantics. Employee remains excluded from Visit creation through the existing role capability boundary.
+- Room is v16 with only nullable `dispatch_outbox_items.reusableTemplateId`; `.slwork`, `.slinsp`, and backup formats remain unchanged. Android metadata remains version `1.0.1` / code 2.
+- Verification: 441 JVM unit tests PASS; `:app:assembleDebug`, `:app:lintDebug`, `:app:assembleDebugAndroidTest`, and `git diff --check` PASS. Domain-instrumented `Migration1To2Test` PASS (11/11) on the dynamically resolved canonical `Pixel 10a ServiceLoop` emulator. Full legacy UI suite and HUMAN/RENDERED owner review were not run for B044.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`
@@ -234,7 +245,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Kotlin 2.2.10
 - Compose BOM 2026.02.01
 - Room 2.8.4
-- Room schema v15 on the active B-013 branch (v11 at SL-5C)
+- Room schema v16 on the active B044 branch (v15 on the preceding B-013/B043 line; v11 at SL-5C)
 - canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
 
 ## Verification / acceptance boundaries
