@@ -75,7 +75,7 @@ internal class EditorColumnScope internal constructor(
         content: @Composable LazyItemScope.() -> Unit,
     ) {
         listScope.item(key = key, contentType = contentType) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { content() }
+            Column(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { content() }
         }
     }
 
@@ -91,7 +91,7 @@ internal class EditorColumnScope internal constructor(
             contentType = if (contentType == null) ({ _: Int -> null }) else { index: Int -> contentType(items[index]) },
         ) { index ->
             val item = items[index]
-            Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { itemContent(item) }
+            Column(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding)) { itemContent(item) }
         }
     }
 }
