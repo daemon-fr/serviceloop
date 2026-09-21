@@ -284,6 +284,10 @@ private fun dispatchPackageSubjectLabel(item:DispatchWork,equipment:DispatchEqui
     val capabilities=LocalWorkspaceCapabilities.current
     Column(Modifier.fillMaxWidth().testTag("workspace-home-actions"),verticalArrangement=Arrangement.spacedBy(8.dp)){
         if(capabilities.canReceiveAssignedWork){ServiceLoopSecondaryButton("Import work package",{nav.navigate("dispatch/import")},Modifier.fillMaxWidth().testTag("import-work-package"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.Backup,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})}
-        if(capabilities.canUseCoordinatorTools){Row(Modifier.fillMaxWidth().testTag("coordinator-home-actions"),horizontalArrangement=Arrangement.spacedBy(6.dp)){ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.weight(1f));ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.weight(1f));ServiceLoopSecondaryButton("Outbox",{nav.navigate("dispatch/create")},Modifier.weight(1f))}}
+        if(capabilities.canUseCoordinatorTools){ServiceLoopAdaptiveActionRow(listOf(
+            { ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.fillMaxWidth()) },
+            { ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.fillMaxWidth()) },
+            { ServiceLoopSecondaryButton("Outbox",{nav.navigate("dispatch/create")},Modifier.fillMaxWidth()) },
+        ),Modifier.testTag("coordinator-home-actions"))}
     }
 }

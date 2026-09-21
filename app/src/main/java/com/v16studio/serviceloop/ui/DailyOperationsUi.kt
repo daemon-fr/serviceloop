@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.ui
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -111,7 +112,16 @@ internal fun DailyEmpty(padding:PaddingValues,value:String,onRetry:(() -> Unit)?
 @Composable
 internal fun PrivateBlock(label:String,value:String){Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(12.dp)){ServiceLoopPrivateLabel(label, style = MaterialTheme.typography.labelLarge);Text(value)}}}
 
-internal fun handoff(context:Context,intent:Intent,label:String)=if(runCatching{context.startActivity(intent);true}.getOrDefault(false)) "Opened $label · no contact outcome was recorded" else "No compatible $label app is available · copy the saved details manually"
+internal fun handoff(
+    context: Context,
+    intent: Intent,
+    label: String,
+    successMessage: String = "Opened $label · no contact outcome was recorded",
+    failureMessage: String = "No compatible $label app is available · copy the saved details manually",
+) = if (runCatching { context.startActivity(intent); true }.getOrDefault(false)) successMessage else failureMessage
+
+internal fun visitMapsIntent(capturedAddress: String): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(capturedAddress)}"))
 
 internal fun InputStream.readDailyBounded(limit:Int):ByteArray? { val output=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0; while(true){val count=read(buffer);if(count<0)break;total+=count;if(total>limit)return null;output.write(buffer,0,count)};return output.toByteArray() }
 

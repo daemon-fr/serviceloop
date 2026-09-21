@@ -24,6 +24,7 @@ import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAdaptiveActionRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
@@ -791,9 +792,20 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
     val detailZone = runCatching { java.time.ZoneId.of(detail.appointmentZoneId ?: state.businessZoneId) }.getOrDefault(java.time.ZoneId.systemDefault())
     var newDate by rememberSaveable(detail.id) { mutableStateOf(detail.serviceDate) }; var appointmentTime by rememberSaveable(detail.id, detail.scheduledAtEpochMillis) { mutableStateOf(parseAppointmentTime(detail.scheduledAtEpochMillis, detailZone)) }; var reason by rememberSaveable(detail.id) { mutableStateOf("") }; var cancelReason by rememberSaveable(detail.id) { mutableStateOf("") }; var oneOffName by rememberSaveable(detail.id){mutableStateOf("")}; var oneOffEquipment by rememberSaveable(detail.id){mutableStateOf<String?>(null)}
     var reviewError by rememberSaveable(detail.id) { mutableStateOf<String?>(null) }
+    var handoffStatus by rememberSaveable(detail.id) { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.padding(padding).testTag("visit-detail-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
          item { Column(Modifier.testTag("visit-identity")) { Text("${detail.reference} · ${detail.state.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}", style = MaterialTheme.typography.headlineSmall); Text(detail.customerName); Text(detail.siteName); Text(detail.siteAddress); if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label")) } }
-         item { ServiceLoopResponsivePair(first = { ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.fillMaxWidth().testTag("visit-customer-link")) }, second = { ServiceLoopNavigationButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.fillMaxWidth().testTag("visit-site-link")) }, modifier = Modifier.testTag("visit-relationship-actions")) }
+         item {
+             ServiceLoopAdaptiveActionRow(
+                 actions = listOf(
+                     { ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.testTag("visit-customer-link")) },
+                     { ServiceLoopNavigationButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.testTag("visit-site-link")) },
+                     { ServiceLoopSecondaryButton("Maps", { handoffStatus = handoff(context, visitMapsIntent(detail.siteAddress), "maps", "Opened maps.", "No compatible maps app is available.") }, Modifier.testTag("visit-maps-link"), enabled = detail.siteAddress.isNotBlank()) },
+                 ),
+                 modifier = Modifier.testTag("visit-relationship-actions"),
+             )
+             handoffStatus?.let { Text(it, modifier = Modifier.testTag("visit-maps-status")) }
+         }
          item { VisitDateLandmark(detail.state, detail.serviceDate, detail.scheduledAtEpochMillis, detail.appointmentZoneId, state.businessZoneId) }
         item { DispatchVisitPanel(detail) }
          item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status", modifier = Modifier.testTag("visit-calendar-status"));if(calendar?.label=="Calendar integration is off") ServiceLoopNavigationButton("Calendar settings",{nav.navigate("calendar")},Modifier.fillMaxWidth().testTag("visit-calendar-settings"));when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }

@@ -40,4 +40,14 @@ class B043WorkspaceEnforcementTest {
         assertTrue(database.contains("version = 15"))
         assertFalse(ui().contains("TeamRole.MEMBER"))
     }
+
+    @Test fun `visit maps uses captured address and neutral handoff copy`() {
+        val visit = productionKotlinSourceContaining("internal fun VisitDetailScreen")
+        val handoff = productionKotlinSourceContaining("internal fun visitMapsIntent")
+        assertTrue(visit.contains("visitMapsIntent(detail.siteAddress)"))
+        assertTrue(visit.contains("enabled = detail.siteAddress.isNotBlank()"))
+        assertTrue(visit.contains("\"Opened maps.\""))
+        assertTrue(visit.contains("\"No compatible maps app is available.\""))
+        assertTrue(handoff.contains("geo:0,0?q=${'$'}{Uri.encode(capturedAddress)}"))
+    }
 }
