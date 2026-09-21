@@ -84,21 +84,6 @@ internal const val COORDINATOR_ENABLED = "coordinator_enabled"
 internal const val TEAM_ROLE = "team_role"
 internal const val OFFICE_EMAIL = "office_email"
 
-internal enum class TeamRole { SOLO, MEMBER, COORDINATOR }
-
-internal fun Context.teamRole(): TeamRole {
-    val prefs = getSharedPreferences(DISPATCH_PREFS, 0)
-    prefs.getString(TEAM_ROLE, null)?.let { stored ->
-        return runCatching { TeamRole.valueOf(stored) }.getOrDefault(TeamRole.SOLO)
-    }
-    val migrated = if (prefs.getBoolean(COORDINATOR_ENABLED, false)) TeamRole.COORDINATOR else TeamRole.SOLO
-    prefs.edit().putString(TEAM_ROLE, migrated.name).remove(COORDINATOR_ENABLED).apply()
-    return migrated
-}
-
-internal fun Context.setTeamRole(role: TeamRole) =
-    getSharedPreferences(DISPATCH_PREFS, 0).edit().putString(TEAM_ROLE, role.name).remove(COORDINATOR_ENABLED).apply()
-
 internal fun reportShareEligible(filePresent:Boolean,voided:Boolean,renditionKind:String,historical:Boolean,acknowledged:Boolean)=filePresent&&(!voided||renditionKind=="VOID_NOTICE")&&(!historical||voided||acknowledged)
 internal fun reportShareIntent(uri:Uri,officeEmail:String?=null,subject:String?=null,body:String?=null)=Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply{officeEmail?.takeIf{it.isNotBlank()}?.let{putExtra(Intent.EXTRA_EMAIL,arrayOf(it))};subject?.let{putExtra(Intent.EXTRA_SUBJECT,it)};body?.let{putExtra(Intent.EXTRA_TEXT,it)}}
 internal fun canceledDispatchVisitMessage(origin:String?):String=when(VisitCancellationOrigin.fromCode(origin)){
@@ -119,11 +104,7 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
     val prefs = remember { context.getSharedPreferences(DISPATCH_PREFS, 0) }
     var role by rememberSaveable { mutableStateOf(context.teamRole()) }
     var email by rememberSaveable { mutableStateOf(prefs.getString(OFFICE_EMAIL, "").orEmpty()) }
-    val choices = listOf(
-        TeamRole.SOLO to ("Solo" to "I work alone"),
-        TeamRole.MEMBER to ("Member" to "I work in a team"),
-        TeamRole.COORDINATOR to ("Coordinator" to "I oversee teams"),
-    )
+    val choices = TEAM_ROLE_OPTIONS
     LazyColumn(
         Modifier.padding(padding).testTag("team-role-settings"),
         contentPadding = PaddingValues(16.dp),
@@ -132,12 +113,12 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
         item {
             val roleExplanation = buildString {
                 append("Roles only control local file-based workflows. No account, synchronization, or shared database is created.")
-                if (role == TeamRole.COORDINATOR) append(" Coordinator tools are available from Home.")
+                if (role.workspaceCapabilities.canUseCoordinatorTools) append(" Coordinator tools are available from Home.")
             }
             Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.bodyGap)) {
                 Text("What is your role?", style = MaterialTheme.typography.titleLarge)
                 ServiceLoopChoiceGroup(
-                    options = choices.map { (value, copy) -> value to "${copy.first} (${copy.second})" },
+                    options = choices.map { option -> option.role to "${option.title} (${option.description})" },
                     selected = role,
                     onSelected = { role = it; context.setTeamRole(it) },
                     testTagPrefix = "team-role",
@@ -153,7 +134,7 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
                 modifier = Modifier.fillMaxWidth().testTag("team-role-office-email"),
             )
         }
-        if (role == TeamRole.MEMBER) item {
+        if (role.workspaceCapabilities.canReceiveAssignedWork) item {
             TechnicianIdentityContent()
         }
     }

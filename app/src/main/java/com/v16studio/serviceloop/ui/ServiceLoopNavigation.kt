@@ -62,15 +62,15 @@ internal fun ServiceLoopNavGraph(
     val incomingTemplateRole = remember(incomingInspectionTemplates, incomingInspectionTemplatesEvent) { incomingInspectionTemplates?.let { context.teamRole() } }
     var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent) {
         mutableStateOf(
-            (incomingWorkPackage != null && incomingRole != TeamRole.MEMBER) ||
-                (incomingInspectionTemplates != null && incomingTemplateRole !in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)),
+            (incomingWorkPackage != null && incomingRole != TeamRole.SUBCONTRACTOR) ||
+                (incomingInspectionTemplates != null && incomingTemplateRole !in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)),
         )
     }
     LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.MEMBER) nav.navigate("dispatch/import") { launchSingleTop = true }
+        if (!state.restrictedRecoveryState && incomingWorkPackage != null && incomingRole == TeamRole.SUBCONTRACTOR) nav.navigate("dispatch/import") { launchSingleTop = true }
     }
     LaunchedEffect(incomingInspectionTemplates, incomingInspectionTemplatesEvent, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null && incomingTemplateRole in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) nav.navigate("template/list") { launchSingleTop = true }
+        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null && incomingTemplateRole in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)) nav.navigate("template/list") { launchSingleTop = true }
     }
     NavHost(
         navController = nav,

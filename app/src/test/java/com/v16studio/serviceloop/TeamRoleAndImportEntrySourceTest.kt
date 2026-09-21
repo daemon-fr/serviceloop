@@ -13,10 +13,11 @@ class TeamRoleAndImportEntrySourceTest {
     private fun source(path: String) = File("src/main/$path").readText()
 
     @Test fun legacyCoordinatorPreferenceMigratesToPersistedRole() {
-        val dispatch = productionKotlinSourceContaining("enum class TeamRole")
-        assertTrue(dispatch.contains("enum class TeamRole { SOLO, MEMBER, COORDINATOR }"))
-        assertTrue(dispatch.contains("if (prefs.getBoolean(COORDINATOR_ENABLED, false)) TeamRole.COORDINATOR else TeamRole.SOLO"))
-        assertTrue(dispatch.contains("putString(TEAM_ROLE, migrated.name).remove(COORDINATOR_ENABLED)"))
+        val policy = productionKotlinSourceContaining("internal enum class TeamRole")
+        assertTrue(policy.contains("SUBCONTRACTOR"))
+        assertTrue(policy.contains("\"MEMBER\", TeamRole.SUBCONTRACTOR.name -> TeamRole.SUBCONTRACTOR"))
+        assertTrue(policy.contains("if (legacyCoordinatorEnabled) TeamRole.COORDINATOR else TeamRole.SOLO"))
+        assertTrue(policy.contains("putString(TEAM_ROLE, role.name).remove(COORDINATOR_ENABLED)"))
     }
 
     @Test fun workOverflowIsRemovedAndRoleGatewaysLiveOnHome() {
@@ -24,7 +25,7 @@ class TeamRoleAndImportEntrySourceTest {
         val coordinator = productionKotlinSourceContaining("role==TeamRole.COORDINATOR")
         assertFalse(productionKotlinSource("com/v16studio/serviceloop/ui").contains("WorkMoreMenu"))
         assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"History\""))
-        assertTrue(coordinator.contains("role==TeamRole.MEMBER"))
+        assertTrue(coordinator.contains("role==TeamRole.SUBCONTRACTOR"))
         assertTrue(coordinator.contains("member-import-work-package"))
     }
 
@@ -60,11 +61,13 @@ class TeamRoleAndImportEntrySourceTest {
         assertFalse(app.contains("FilterChip"))
     }
 
-    @Test fun teamRoleSettingsUseCombinedLabelsAndEmbedMemberIdentity() {
-        val dispatch = productionKotlinSourceContaining("TeamRole.SOLO to (\"Solo\" to \"I work alone\")")
-        assertTrue(dispatch.contains("TeamRole.SOLO to (\"Solo\" to \"I work alone\")"))
+    @Test fun teamRoleSettingsUseAdoptedLabelsAndEmbedReceiverIdentity() {
+        val dispatch = productionKotlinSourceContaining("internal fun DispatchSettings")
+        val policy = productionKotlinSourceContaining("internal val TEAM_ROLE_OPTIONS")
+        assertTrue(policy.contains("I manage and perform my own service work."))
+        assertTrue(policy.contains("I perform assigned work and coordinate other technicians."))
         assertTrue(dispatch.contains("Send report copies to (optional)"))
-        assertTrue(dispatch.contains("if (role == TeamRole.MEMBER)"))
+        assertTrue(dispatch.contains("canReceiveAssignedWork"))
         assertTrue(dispatch.contains("TechnicianIdentityContent"))
         assertFalse(dispatch.contains("Open Technician identity"))
     }

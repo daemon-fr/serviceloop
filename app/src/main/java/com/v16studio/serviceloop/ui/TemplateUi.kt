@@ -138,7 +138,7 @@ internal fun InspectionTemplateLibraryContent(
     Column(Modifier.padding(padding).testTag("inspection-templates"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (showHeading) Text("Inspection templates", style = MaterialTheme.typography.titleLarge)
         Button({ nav.navigate(if (createReturnTo == null) "template/new" else "template/new?returnTo=$createReturnTo") }, Modifier.fillMaxWidth().testTag("create-inspection-template")) { Text("Create inspection template") }
-        if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) {
+        if (role in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)) {
             Text("Share inspection templates only. Visits already created with a template keep their checklist.", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
@@ -152,7 +152,7 @@ internal fun InspectionTemplateLibraryContent(
             .sortedWith(compareBy<TemplateSummary> { it.state != "ACTIVE" }.thenBy { it.name.lowercase() }.thenBy { it.reference })
             .forEach { template ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    if (role in setOf(TeamRole.MEMBER, TeamRole.COORDINATOR)) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
+                    if (role in setOf(TeamRole.SUBCONTRACTOR, TeamRole.COORDINATOR)) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
                     ServiceLoopEntityRecord("${template.reference} · ${template.name} (v${template.revisionNumber})", metadata = "${template.itemCount} items", status = template.state, modifier = Modifier.weight(1f)) { nav.navigate("template/${template.id}") }
                 }
             }
