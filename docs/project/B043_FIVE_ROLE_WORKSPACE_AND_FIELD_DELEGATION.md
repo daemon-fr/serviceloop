@@ -1,8 +1,8 @@
 # B043 — Five-role workspace, field delegation, and coordinator conclusion
 
-**Status:** OWNER-ADOPTED DOCUMENTATION AUTHORITY, 2026-09-21.
+**Status:** OWNER-ADOPTED AUTHORITY; PRODUCTION IMPLEMENTED AND VERIFIED ON `codex/b043-five-role-workspace`, 2026-09-21.
 
-This document records the B043 owner amendment for the next implementation task. It supersedes conflicting older user-facing role/workspace assumptions while preserving their historical evidence and the adopted asynchronous, local/file-based Dispatch transport semantics. This documentation commit does not implement the model.
+This document records the B043 owner amendment and the resulting production implementation. It supersedes conflicting older user-facing role/workspace assumptions while preserving their historical evidence and the adopted asynchronous, local/file-based Dispatch transport semantics. Owner acceptance and merge to the protected baseline remain separate gates.
 
 ## Owner decision summary
 
@@ -97,16 +97,15 @@ All operational field roles—Solo, Subcontractor, Employee, and Team Leader—m
 
 The implementation must use the Visit's captured site/address snapshot where available. It must not silently substitute a later-edited current Site address for a historical or booked Visit. A missing/blank address disables or omits the action. Maps is an external Intent handoff only: no Maps SDK, no location permission, and no ServiceLoop state mutation. Launching Maps does not imply contact, attendance, completion, or service delivery.
 
-## Current implementation seams
+## Implemented seams
 
-These are the important seams for the later production implementation; none is changed by B043 documentation work.
-
-- `app/src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt`: current `TeamRole` enum (`SOLO`, `MEMBER`, `COORDINATOR`); `Context.teamRole()` and `Context.setTeamRole()`; `DispatchSettings()` choices and technician identity; legacy `COORDINATOR_ENABLED` migration; current Member-specific receiving logic.
-- `app/src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt`: `CoordinatorHomeActions`; Technician, Team, and Outbox actions; Dispatch Visit editing/export; Outbox `concludeOutboxVisits` behavior.
-- `app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopNavigation.kt`: static `Register` root; incoming `.slwork` and `.slinsp` handling; role-specific import/dialog routes; directory/editor routes; coordinator routes.
+- `app/src/main/java/com/v16studio/serviceloop/ui/WorkspacePolicy.kt`: exact five-role taxonomy, centralized capability rows, explicit legacy parsing/canonicalization, reactive preference observation, and composition-local projection.
+- `app/src/main/java/com/v16studio/serviceloop/ui/DispatchUi.kt`: exact role choices and descriptions plus technician identity where assigned-work receiving is available.
+- `app/src/main/java/com/v16studio/serviceloop/ui/DispatchCoordinatorUiV2.kt`: capability-aware Home import/coordinator actions; Dispatch Visit editing/export; Outbox `concludeOutboxVisits` behavior.
+- `app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopNavigation.kt`: capability-projected roots and route gates; reactive incoming `.slwork` and `.slinsp` handling; directory/editor, field-work, local-work, and coordinator routes.
 - `app/src/main/java/com/v16studio/serviceloop/ui/ServiceLoopApp.kt`: root navigation composition and `RootScaffold`/`RootNavigation`.
 - Customer, Site, Equipment, and Plan screens: separate management actions from operational/read-only detail context.
-- `app/src/main/java/com/v16studio/serviceloop/ui/DueVisitUi.kt`: Visit detail, Customer/Site contextual entry, technician start/resume/review flows, and the future Visit Maps insertion point. The existing Visit detail and captured site-address data are the basis for preserving booked/historical address meaning.
+- `app/src/main/java/com/v16studio/serviceloop/ui/DueVisitUi.kt`: Visit detail, Customer/Site contextual entry, technician start/resume/review flows, and Visit Maps using the captured Visit address.
 - `app/src/main/java/com/v16studio/serviceloop/ui/TemplateUi.kt`: reusable-template management and `.slinsp` exchange/import paths.
 - `app/src/main/java/com/v16studio/serviceloop/ui/SearchUi.kt`: Register-style grouped discovery and operational search projections.
 - Stage 4/Data Recovery: CSV master-data import remains a bookkeeping path and must not become an Employee workspace substitute.
@@ -117,9 +116,9 @@ These are the important seams for the later production implementation; none is c
 
 B043 does not authorize user accounts, authentication, backend or cloud authorization, central policy enforcement, live synchronization, live task reassignment, a web coordinator, a generic RBAC engine, billing, inventory, chat, AI, or a second master-data database. ServiceLoop remains local-first; adopted Dispatch remains file-based. Role behavior is a local product/workspace model, not a security boundary. Existing `.slwork` and `.slinsp` formats, Room version, and transport/provenance rules remain unchanged unless separately adopted.
 
-## Implementation outline
+## Implemented scope
 
-The next production task should:
+The production implementation:
 
 1. replace the user-facing role taxonomy with the five-role order and exact descriptions, while adding explicit stored `MEMBER` → `SUBCONTRACTOR` compatibility;
 2. introduce one capability-aware workspace projection so root navigation, Register management actions, operational details, template exchange, Search, CSV, and equipment actions follow the role model without duplicating directory data;
@@ -128,14 +127,21 @@ The next production task should:
 5. add Visit Maps from captured Visit address meaning through a platform Intent with no state mutation; and
 6. add semantic tests for each capability row, legacy preference parsing, Team Leader dual paths, Coordinator field-work exclusion, completion/conclusion separation, address-snapshot selection, and unchanged file transport.
 
-## Verification expectations
+## Production commits and verification
 
-The implementation task must report evidence separately for unit/domain tests, UI instrumentation, system handoff, and human/rendered inspection. At minimum, verify all five role rows, root/Register visibility, assigned operational context for Employee, Team Leader receiver plus coordinator paths, Coordinator absence of technician execution, explicit legacy parsing, conclusion idempotence/no duplicate business effects, Maps Intent behavior and blank-address handling, and unchanged `.slwork`/`.slinsp` semantics. A passing test must not be treated as proof of a security boundary or live delivery.
+Production implementation commits are `967e889` (five-role workspace policy), `e6cd912` (role-aware workspace enforcement), and `1cd2103` (Visit Maps and verification). The implementation started from `7d4382683253c7c9e680b3cd0add5b34bfe16377`; protected `master` remained at `1fd51131b040ab62af3874c1106615b75f3008fe`.
 
-This B043 documentation stage performs no Gradle, Android, emulator, device, or lint verification. Its validation is documentation review, targeted contradiction/search review, and `git diff --check` only.
+- UNIT/DOMAIN: 439 tests passed with no failures, errors, or skips, including capability rows, explicit legacy parsing, Dispatch conclusion and unchanged transport regression coverage.
+- BUILD/STATIC: `:app:assembleDebug`, `:app:assembleRelease`, `:app:lintDebug`, `:app:assembleDebugAndroidTest`, and `git diff --check` passed after the final production/test edit.
+- UI-INSTRUMENTED: seven focused B043 tests passed on the canonical `Pixel 10a ServiceLoop` AVD. Coverage includes exact role copy/order, reactive roots and Home actions for every role, Employee operational-only Search and existing-equipment linking, Team Leader dual workspace, Coordinator/local-field route exclusion, captured-address Maps behavior, blank-address disablement, and rendered smoke capture.
+- SYSTEM-HANDOFF: the captured-address `geo:` Intent resolved to and opened Google Maps on the canonical AVD; no permission or ServiceLoop state mutation was added.
+- HUMAN/RENDERED: eight bounded screenshots were inspected across light/dark role settings, Employee/Team Leader/Coordinator Home, and Visit Maps. Status-bar insets, dark canvas, role-specific navigation/actions, narrow-width coordinator action labels, and Visit relationship actions were visually checked.
+- COMPATIBILITY: Room remains v15; version remains `1.0.1` / code 2; `.slwork`, `.slinsp`, backup, assignment, generation, snapshot, provenance, recurrence, report, and history formats/semantics are unchanged.
+
+This evidence verifies the local workspace model and file handoffs. It does not claim a security boundary, live delivery, backend synchronization, or external pilot acceptance.
 
 ## Superseded assumptions and implementation status
 
 B043 supersedes conflicting older user-facing Solo/Member/Coordinator and four-role-plus-visibility assumptions. Older documents remain historical evidence; they are not retrospectively rewritten. In particular, there is no new “Hide Register” preference, Employee is not a Register role, Team Leader is not coordinator-only or receiver-only, and Coordinator is not a technician performer.
 
-Production implementation has **NOT** begun in this documentation commit. No Kotlin, Java, manifest, Gradle, Room schema, test, or resource file is changed by B043 documentation work.
+Production implementation is complete on the designated review branch. It has not been owner-accepted or merged to protected `master`.

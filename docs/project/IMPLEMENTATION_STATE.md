@@ -12,7 +12,7 @@ Protected accepted baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at the historical SL-5C checkpoint: v11
 
-The B043 documentation/implementation line is `codex/b043-five-role-workspace`, based on `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`. The primary B043 documentation commit is `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`. B043 is documented only at this stage; it does not advance `master` or claim production implementation. The preceding `codex/b013-ui-overhaul` line, Room v15, and its B-025/B-026 implementation evidence remain historical branch context. Historical SL-5C results below remain evidence for their stated revision only.
+The B043 implementation line is `codex/b043-five-role-workspace`. This production task started from `7d4382683253c7c9e680b3cd0add5b34bfe16377`; its implementation commits are `967e889`, `e6cd912`, and `1cd2103`. The earlier B043 authority commit is `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`. B043 is implemented and verified for owner review but does not advance protected `master`. The preceding `codex/b013-ui-overhaul` line, Room v15, and its B-025/B-026 implementation evidence remain historical branch context. Historical SL-5C results below remain evidence for their stated revision only.
 
 ## Historical accepted state and active branch context
 
@@ -204,14 +204,17 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 
 ## B043 — FIVE-ROLE WORKSPACE / FIELD DELEGATION
 
-**Status:** DOCUMENTED / IMPLEMENTATION NOT STARTED
+**Status:** IMPLEMENTED AND VERIFIED / READY FOR OWNER REVIEW
 
 - Branch: `codex/b043-five-role-workspace`
-- Base SHA: `1479d38e0ca30fd461cc377df2357e0ce47cc3d9`
-- Documentation commit: `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`.
-- Room remains v15. No production source, manifest, Gradle file, Room schema, test, or resource changed in this documentation stage.
+- Production start SHA: `7d4382683253c7c9e680b3cd0add5b34bfe16377`
+- Implementation commits: `967e889`, `e6cd912`, and `1cd2103`; authority commit: `309d9f9b5c0454c3fc6b8dc210ecbaf3a43203a4`.
+- Room remains v15 and Android metadata remains version code 2 / version name 1.0.1. No Room, manifest, Gradle, resource, `.slwork`, `.slinsp`, or backup-format change was required.
 - Adopted roles, in exact order, are Solo, Subcontractor, Employee, Team Leader, and Coordinator. Solo and Subcontractor manage their own Register/work; Employee receives and performs assigned work without the Register root; Team Leader combines Register, receiver, performer, coordinator, delegation, and conclusion capability; Coordinator has Register and coordination/conclusion capability but no technician field-work execution. Legacy `MEMBER` maps explicitly to Subcontractor, and conclusion remains distinct from technician completion.
-- Next action: production implementation from the B043 authority document.
+- Centralized capabilities drive reactive root navigation, Home actions, master-data mutations, Search, templates, CSV import, equipment linking/creation, local Visit creation, field execution, incoming file handling, and coordinator conclusion. Employee keeps assigned operational context without ordinary Register bookkeeping; Team Leader retains both receiver/performer and coordinator paths; Coordinator is excluded from technician execution.
+- Visit detail adds a Maps handoff from the captured Visit address. Blank addresses disable the action; no location permission, SDK, or state mutation was added.
+- Final verification: 439 JVM tests PASS; debug/release builds, lint, Android-test APK, and `git diff --check` PASS; seven focused tests PASS on canonical `Pixel 10a ServiceLoop`; actual Google Maps system handoff PASS; eight light/dark/role-specific renders inspected.
+- Next action: independent owner review and, if accepted, separately authorized protected-baseline integration.
 
 ## Toolchain / environment baseline
 
