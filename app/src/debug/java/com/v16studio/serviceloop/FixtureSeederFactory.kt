@@ -35,7 +35,11 @@ object FixtureIds {
 }
 
 object FixtureSeederFactory {
-    fun create(database: ServiceLoopDatabase): StartupSeeder = DebugFixtureSeeder(database)
+    /** Normal debug app startup is intentionally empty, matching release behavior. */
+    fun create(@Suppress("UNUSED_PARAMETER") database: ServiceLoopDatabase): StartupSeeder = NoOpStartupSeeder()
+
+    /** Explicit opt-in fixture path for instrumentation/render evidence tests. */
+    fun createFixtureSeeder(database: ServiceLoopDatabase): StartupSeeder = DebugFixtureSeeder(database)
 }
 
 private class DebugFixtureSeeder(private val database: ServiceLoopDatabase) : StartupSeeder {

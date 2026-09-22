@@ -247,7 +247,7 @@ internal fun ServiceLoopNavGraph(
         composable("backup/{mode}") { entry -> val mode = entry.arguments?.getString("mode").orEmpty(); DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) } }
         composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
         composable("csv/import") { WorkspaceGate(capabilities.canManageRegister, "Directory CSV import", nav) { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } } }
-        composable("import") { DetailScaffold("Import", nav) { padding -> ServiceLoopSyncScreen(state, padding, viewModel, nav, incomingServiceLoopSync) } }
+        composable("import") { DetailScaffold("Import shared data", nav) { padding -> ServiceLoopSyncScreen(state, padding, viewModel, nav, incomingServiceLoopSync) } }
         composable("data-transfer") { DetailScaffold("Import / export data", nav) { padding -> DataTransferScreen(padding, nav) } }
         composable("data-transfer/export") { DetailScaffold("Export data", nav) { padding -> DataExportScreen(state, padding, nav) } }
         composable("data-transfer/templates") { DetailScaffold("Export inspection templates", nav) { padding -> TemplateExportScreen(state.templates, padding, nav) } }

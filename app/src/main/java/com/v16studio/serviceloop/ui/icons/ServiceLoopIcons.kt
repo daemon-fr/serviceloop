@@ -20,6 +20,7 @@ object ServiceLoopIcons {
     @DrawableRes val ArrowFatLineDown = R.drawable.ic_sl_arrow_fat_line_down
     @DrawableRes val ArrowFatLineUp = R.drawable.ic_sl_arrow_fat_line_up
     @DrawableRes val ArrowUp = R.drawable.ic_sl_arrow_up
+    @DrawableRes val ArrowsDownUp = R.drawable.ic_sl_arrows_down_up
     @DrawableRes val Back = R.drawable.ic_sl_back
     @DrawableRes val Backup = R.drawable.ic_sl_backup
     @DrawableRes val Calendar = R.drawable.ic_sl_calendar

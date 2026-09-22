@@ -187,7 +187,7 @@ private fun dispatchPackageSubjectLabel(item:DispatchWork,equipment:DispatchEqui
 @Composable internal fun WorkspaceHomeActions(nav:NavHostController){
     val capabilities=LocalWorkspaceCapabilities.current
     Column(Modifier.fillMaxWidth().testTag("workspace-home-actions"),verticalArrangement=Arrangement.spacedBy(8.dp)){
-        ServiceLoopSecondaryButton("Import",{nav.navigate("import")},Modifier.fillMaxWidth().testTag("home-import"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})
+        ServiceLoopSecondaryButton("Import shared data",{nav.navigate("import")},Modifier.fillMaxWidth().testTag("home-import"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})
         if(capabilities.canUseCoordinatorTools){ServiceLoopAdaptiveActionRow(listOf(
             { ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.fillMaxWidth()) },
             { ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.fillMaxWidth()) },

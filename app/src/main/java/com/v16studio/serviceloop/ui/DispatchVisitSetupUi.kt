@@ -341,23 +341,22 @@ internal fun DispatchVisitEditorScreen(
         },
         extensionItems = {
             item {
-                ServiceLoopSectionHeading("Assignment")
-                Text("Teams", style = MaterialTheme.typography.titleMedium)
-                Text(if (selectedTeams.isEmpty()) "Choose Teams" else teams.filter { it.team.id in selectedTeams }.joinToString { it.team.name })
-                ServiceLoopSecondaryButton("Choose Teams", { showTeams = true }, Modifier.fillMaxWidth().testTag("dispatch-choose-teams"), enabled = !readOnly && !busy)
-                Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
-                val planEntries = dueServices.filter { it.planId in draft.selectedPlanIds }.map { "PLAN:${it.planId}" to it.planName }
-                val taskEntries = draft.tasks.map { "TASK:${it.stableUiId}" to it.taskName }
-                (planEntries + taskEntries).forEach { (key, label) ->
-                    val names = assignments[key].orEmpty().mapNotNull { id -> participants.firstOrNull { it.technicianId == id }?.displayName }
-                    Row(Modifier.fillMaxWidth().clickable(enabled = !readOnly && !busy) { assigneeKey = key }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text(label); Text(if (names.isEmpty()) "Everyone on selected Teams" else names.joinToString(" · "), style = MaterialTheme.typography.bodySmall) }
-                        Text("Assign", color = MaterialTheme.colorScheme.primary)
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                    ServiceLoopSectionHeading("Assignment")
+                    val teamLabel = teams.filter { it.team.id in selectedTeams }.joinToString(" · ") { it.team.name }.ifBlank { "Choose teams" }
+                    ServiceLoopSecondaryButton(teamLabel, { showTeams = true }, Modifier.fillMaxWidth().testTag("dispatch-choose-teams"), enabled = !readOnly && !busy)
+                    val planEntries = dueServices.filter { it.planId in draft.selectedPlanIds }.map { "PLAN:${it.planId}" to it.planName }
+                    val taskEntries = draft.tasks.map { "TASK:${it.stableUiId}" to it.taskName }
+                    (planEntries + taskEntries).forEach { (key, label) ->
+                        val names = assignments[key].orEmpty().mapNotNull { id -> participants.firstOrNull { it.technicianId == id }?.displayName }
+                        Row(Modifier.fillMaxWidth().clickable(enabled = !readOnly && !busy) { assigneeKey = key }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) { Text(label); Text(if (names.isEmpty()) "Everyone on selected teams" else names.joinToString(" · "), style = MaterialTheme.typography.bodySmall) }
+                            Text("Assign", color = MaterialTheme.colorScheme.primary)
+                        }
                     }
-                }
-                if (unmatchedItems.isNotEmpty()) {
-                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
-                    ServiceLoopNotice("Planned work preserved", "Some saved plan items are not in the current due-work projection. They remain unchanged and will not be silently converted.", ServiceLoopNoticeKind.Warning)
+                    if (unmatchedItems.isNotEmpty()) {
+                        ServiceLoopNotice("Planned work preserved", "Some saved plan items are not in the current due-work projection. They remain unchanged and will not be silently converted.", ServiceLoopNoticeKind.Warning)
+                    }
                 }
             }
             item {
@@ -390,10 +389,10 @@ internal fun DispatchVisitEditorScreen(
 private fun DispatchTeamSelectionDialog(teams: List<DispatchTeamDetail>, selected: Set<String>, onDismiss: () -> Unit, onApply: (Set<String>) -> Unit) {
     var staged by remember(selected) { mutableStateOf(selected) }
     AlertDialog(
-        modifier = Modifier.testTag("dispatch-team-picker"), onDismissRequest = onDismiss, title = { Text("Choose Teams") },
-        text = { Column { teams.forEach { team -> Row(Modifier.fillMaxWidth().clickable { staged = if (team.team.id in staged) staged - team.team.id else staged + team.team.id }.testTag("dispatch-team-${team.team.id}"), verticalAlignment = Alignment.CenterVertically) { Checkbox(team.team.id in staged, null); Text(team.team.name) } }; if (teams.isEmpty()) Text("Create a Team in Coordinator tools first.") } },
-        dismissButton = { ServiceLoopTextAction("Cancel", onDismiss) },
-        confirmButton = { ServiceLoopPrimaryButton("Apply", { onApply(staged) }, Modifier.testTag("dispatch-team-apply")) },
+        modifier = Modifier.testTag("dispatch-team-picker"), onDismissRequest = onDismiss, title = { Text("Choose teams") },
+        text = { Column { teams.forEach { team -> Row(Modifier.fillMaxWidth().clickable { staged = if (team.team.id in staged) staged - team.team.id else staged + team.team.id }.testTag("dispatch-team-${team.team.id}"), verticalAlignment = Alignment.CenterVertically) { Checkbox(team.team.id in staged, null); Text(team.team.name) } }; if (teams.isEmpty()) Text("Create a team in Coordinator tools first.") } },
+        dismissButton = if (teams.isEmpty()) null else ({ ServiceLoopTextAction("Cancel", onDismiss) }),
+        confirmButton = if (teams.isEmpty()) ({ ServiceLoopTextAction("Close", onDismiss) }) else ({ ServiceLoopPrimaryButton("Apply", { onApply(staged) }, Modifier.testTag("dispatch-team-apply")) }),
     )
 }
 

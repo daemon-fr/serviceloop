@@ -447,9 +447,12 @@ class StateSemanticsTest {
 
     @Test fun releaseFactoryIsNoOpAndProductionSourceContainsNoFixtureCustomer() {
         val releaseFactory = File("src/release/java/com/v16studio/serviceloop/FixtureSeederFactory.kt").readText()
+        val debugFactory = File("src/debug/java/com/v16studio/serviceloop/FixtureSeederFactory.kt").readText()
         val productionSources = productionKotlinSource()
         assertTrue(releaseFactory.contains("NoOpStartupSeeder"))
         assertFalse(releaseFactory.contains("DebugFixtureSeeder"))
+        assertTrue(debugFactory.contains("fun create(@Suppress(\"UNUSED_PARAMETER\") database: ServiceLoopDatabase): StartupSeeder = NoOpStartupSeeder()"))
+        assertTrue(debugFactory.contains("fun createFixtureSeeder(database: ServiceLoopDatabase): StartupSeeder = DebugFixtureSeeder(database)"))
         assertFalse(productionSources.contains("Harbor Fitness and Rehabilitation Cooperative"))
     }
 

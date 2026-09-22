@@ -25,8 +25,8 @@ class OwnerReviewFixtureTest {
             .allowMainThreadQueries()
             .build()
         try {
-            FixtureSeederFactory.create(database).seedIfNeeded()
-            FixtureSeederFactory.create(database).seedIfNeeded()
+            FixtureSeederFactory.createFixtureSeeder(database).seedIfNeeded()
+            FixtureSeederFactory.createFixtureSeeder(database).seedIfNeeded()
 
             val dao = database.serviceLoopDao()
             val visit = dao.visit(FixtureIds.OWNER_REVIEW_VISIT)

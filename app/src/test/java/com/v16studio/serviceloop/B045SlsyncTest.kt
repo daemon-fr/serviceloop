@@ -127,6 +127,16 @@ class B045SlsyncTest {
         assertThrows(IllegalArgumentException::class.java) { ServiceLoopSyncEnvelopeCodec.encode(invalidManifest, mapOf("x" to byteArrayOf(1))) }
     }
 
+    @Test fun removingParentFamilyClosesSelectedDependents() {
+        val value = packageValue()
+        val selected = SyncContentFamily.entries.toSet()
+        val withoutCustomers = removeSyncContentFamily(value, selected, SyncContentFamily.CUSTOMERS)
+        assertEquals(setOf(SyncContentFamily.BUSINESS_PROFILE, SyncContentFamily.INSPECTION_TEMPLATES, SyncContentFamily.TECHNICIANS, SyncContentFamily.TEAMS), withoutCustomers)
+        val withoutTechnicians = removeSyncContentFamily(value, selected, SyncContentFamily.TECHNICIANS)
+        assertFalse(SyncContentFamily.TEAMS in withoutTechnicians)
+        assertFalse(SyncContentFamily.DISPATCH_DRAFTS in withoutTechnicians)
+    }
+
     private fun dispatchPackage() = DispatchPackage(
         packageId = "package-1",
         createdAt = "2026-09-22T10:00:00Z",

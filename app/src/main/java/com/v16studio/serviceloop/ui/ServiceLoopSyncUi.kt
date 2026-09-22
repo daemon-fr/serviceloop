@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.ServiceLoopApplication
 import com.v16studio.serviceloop.data.DispatchPackageService
+import com.v16studio.serviceloop.data.DispatchVisitClassification
 import com.v16studio.serviceloop.data.DispatchPreview
 import com.v16studio.serviceloop.data.InspectionTemplateExchangeService
 import com.v16studio.serviceloop.data.InspectionTemplateImportClassification
@@ -44,6 +45,7 @@ import com.v16studio.serviceloop.data.SyncContentFamily
 import com.v16studio.serviceloop.data.count
 import com.v16studio.serviceloop.data.filterFullWorkspacePackage
 import com.v16studio.serviceloop.data.normalizeSyncContentSelection
+import com.v16studio.serviceloop.data.removeSyncContentFamily
 import com.v16studio.serviceloop.domain.TemplateSummary
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
@@ -108,8 +110,8 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
     LazyColumn(Modifier.padding(padding).testTag("service-loop-import"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Import", style = MaterialTheme.typography.headlineSmall)
-                Text("Choose ordinary incoming ServiceLoop data or assigned work. The file purpose determines the safe import experience.")
+                Text("Import shared data", style = MaterialTheme.typography.headlineSmall)
+                Text("Import ServiceLoop data shared from another workspace.")
                 if (state.restrictedRecoveryState) ServiceLoopNotice("Recovery is restricted", "Resolve recovery before importing ordinary data.", ServiceLoopNoticeKind.Error)
                 error?.let { ServiceLoopNotice("Could not read this ServiceLoop file", it.take(240), ServiceLoopNoticeKind.Error) }
                 message?.let { ServiceLoopNotice("Import complete", it, ServiceLoopNoticeKind.Success) }
@@ -117,6 +119,9 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
         }
         item {
             ServiceLoopActionStack { OutlinedButton({ open.launch(arrayOf(SERVICE_LOOP_SYNC_MIME, "application/zip", "application/octet-stream", "*/*")) }, Modifier.fillMaxWidth().testTag("choose-serviceloop-file"), enabled = !busy && !state.restrictedRecoveryState) { ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown, null, Modifier.padding(end = 8.dp)); Text("Choose ServiceLoop file") } }
+        }
+        if (capabilities.canManageRegister) item {
+            ServiceLoopDenseNavigableRow("Import customers/sites/equipment from CSV", context = "For directory data from spreadsheets or external systems.", leadingIcon = ServiceLoopIcons.ArrowCircleDown, modifier = Modifier.testTag("import-directory-csv"), onClick = { nav.navigate("csv/import") })
         }
         decoded?.let { current ->
             item { Text(current.envelope.manifest.title, style = MaterialTheme.typography.titleLarge); Text("${current.envelope.manifest.purpose.replace('_', ' ')} · generated ${current.envelope.manifest.generatedAt}") }
@@ -126,7 +131,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     Text("Choose which contents from this file should be included in the new replacement workspace. Unchecked content from this file will not be imported; it does not preserve the current local family.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SyncContentFamily.entries.filter { it.count(value) > 0 }.forEach { family ->
                         val checked = family in selectedFamilies
-                        Row(Modifier.fillMaxWidth().testTag("sync-content-family-${family.name.lowercase()}"), verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, { next -> selectedFamilies = if (next) normalizeSyncContentSelection(value, selectedFamilies + family) else selectedFamilies - family }, enabled = family != SyncContentFamily.BUSINESS_PROFILE); Text(family.label, Modifier.weight(1f)); Text(family.count(value).toString()) }
+                        Row(Modifier.fillMaxWidth().testTag("sync-content-family-${family.name.lowercase()}"), verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, { next -> selectedFamilies = if (next) normalizeSyncContentSelection(value, selectedFamilies + family) else removeSyncContentFamily(value, selectedFamilies, family) }, enabled = family != SyncContentFamily.BUSINESS_PROFILE); Text(family.label, Modifier.weight(1f)); Text(family.count(value).toString()) }
                     }
                     if (!capabilities.canManageRegister) ServiceLoopNotice("Unavailable for this Team role", "This full workspace file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                     Spacer(Modifier.height(8.dp)); ServiceLoopNotice("Full workspace", "This full workspace import replaces current ServiceLoop business data. Unchecked content from this file will not be imported.", ServiceLoopNoticeKind.Warning)
@@ -143,8 +148,9 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     SyncWorkFamilyRow("Visits", preview.value.visits.size, workSelected, true) { workSelected = it }
                     Text("The mature Dispatch preview remains authoritative for new, unchanged, update, conflict, and assignment classifications.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!capabilities.canReceiveAssignedWork) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
+                    if (!preview.canImport) ServiceLoopNotice("Import needs review", if (preview.visits.isNotEmpty() && preview.visits.all { it.classification == DispatchVisitClassification.ALREADY_CURRENT }) "This work assignment is already current." else "This work assignment needs review before it can be imported.", ServiceLoopNoticeKind.Warning)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = workSelected && capabilities.canReceiveAssignedWork && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = workSelected && capabilities.canReceiveAssignedWork && preview.canImport && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
             current.templatePreview?.let { preview ->
                 item {
@@ -163,10 +169,10 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
 private fun SyncWorkFamilyRow(label: String, count: Int, checked: Boolean, enabled: Boolean, onChecked: (Boolean) -> Unit) = Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, onChecked, enabled = enabled); Text(label, Modifier.weight(1f)); Text(count.toString()) }
 
 @Composable
-internal fun DataTransferScreen(padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding).testTag("settings-data-transfer"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Import / export data", style = MaterialTheme.typography.headlineSmall); Text("Move ordinary ServiceLoop data. Backups and recovery are managed separately.") }; item { ServiceLoopDenseNavigableRow("Import data", context = "Choose a ServiceLoop file or external CSV", modifier = Modifier.testTag("data-transfer-import"), leadingIcon = ServiceLoopIcons.ArrowCircleDown, onClick = { nav.navigate("import") }) }; item { ServiceLoopDenseNavigableRow("Export data", context = "Inspection templates or readable CSV", modifier = Modifier.testTag("data-transfer-export"), leadingIcon = ServiceLoopIcons.ArrowCircleUp, onClick = { nav.navigate("data-transfer/export") }) }; item { ServiceLoopDenseNavigableRow("Verify ServiceLoop file", context = "Read without changing business data", modifier = Modifier.testTag("data-transfer-verify"), leadingIcon = ServiceLoopIcons.CheckCircle, onClick = { nav.navigate("data-transfer/verify") }) } } }
+internal fun DataTransferScreen(padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding).testTag("settings-data-transfer"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Import / export data", style = MaterialTheme.typography.headlineSmall); Text("Move ordinary ServiceLoop data. Backups and recovery are managed separately.") }; item { ServiceLoopDenseNavigableRow("Import shared data", context = "Import a ServiceLoop file shared from another workspace.", modifier = Modifier.testTag("data-transfer-import"), leadingIcon = ServiceLoopIcons.ArrowCircleDown, onClick = { nav.navigate("import") }) }; item { ServiceLoopDenseNavigableRow("Export / share data", context = "Share inspection templates or export readable CSV.", modifier = Modifier.testTag("data-transfer-export"), leadingIcon = ServiceLoopIcons.ArrowCircleUp, onClick = { nav.navigate("data-transfer/export") }) }; item { ServiceLoopDenseNavigableRow("Verify ServiceLoop file", context = "Check a ServiceLoop file without changing local data.", modifier = Modifier.testTag("data-transfer-verify"), leadingIcon = ServiceLoopIcons.CheckCircle, onClick = { nav.navigate("data-transfer/verify") }) } } }
 
 @Composable
-internal fun DataExportScreen(state: UiState, padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Export data", style = MaterialTheme.typography.headlineSmall) }; item { ServiceLoopDenseNavigableRow("Inspection templates", context = "Share reusable inspection templates", leadingIcon = ServiceLoopIcons.CheckCircle, onClick = { nav.navigate("data-transfer/templates") }) }; item { ServiceLoopDenseNavigableRow("Readable CSV", context = "Export directory data for external systems", leadingIcon = ServiceLoopIcons.ArrowCircleUp, onClick = { nav.navigate("csv/export") }) }; item { Text("Assigned work is exported from Dispatch Outbox. Full recovery copies are created in Backup and recovery.", color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+internal fun DataExportScreen(state: UiState, padding: PaddingValues, nav: NavHostController) { LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Export / share data", style = MaterialTheme.typography.headlineSmall) }; item { ServiceLoopDenseNavigableRow("Share inspection templates", context = "Create a ServiceLoop file with reusable inspection templates.", leadingIcon = ServiceLoopIcons.CheckCircle, onClick = { nav.navigate("data-transfer/templates") }) }; item { ServiceLoopDenseNavigableRow("Export readable CSV", context = "For spreadsheets and external systems.", leadingIcon = ServiceLoopIcons.ArrowCircleUp, onClick = { nav.navigate("csv/export") }) }; item { Text("Work assignments are shared from Dispatch Outbox. Full backups are created in Backup and recovery.", color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
 
 @Composable
 internal fun TemplateExportScreen(values: List<TemplateSummary>, padding: PaddingValues, nav: NavHostController) {

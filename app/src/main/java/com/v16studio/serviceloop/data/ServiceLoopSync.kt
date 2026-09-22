@@ -316,6 +316,28 @@ fun normalizeSyncContentSelection(value: ServiceLoopSyncPackage, requested: Set<
     return selected.filterTo(linkedSetOf()) { it.count(value) > 0 || it == SyncContentFamily.BUSINESS_PROFILE }
 }
 
+/** Removes a family and any selected family whose package content requires it. */
+fun removeSyncContentFamily(value: ServiceLoopSyncPackage, selected: Set<SyncContentFamily>, removed: SyncContentFamily): Set<SyncContentFamily> {
+    val result = (selected - removed).toMutableSet()
+    fun dependencies(family: SyncContentFamily): Set<SyncContentFamily> = buildSet {
+        when (family) {
+            SyncContentFamily.SITES -> add(SyncContentFamily.CUSTOMERS)
+            SyncContentFamily.EQUIPMENT -> add(SyncContentFamily.SITES)
+            SyncContentFamily.SERVICE_PLANS -> { add(SyncContentFamily.EQUIPMENT); add(SyncContentFamily.INSPECTION_TEMPLATES) }
+            SyncContentFamily.TEAMS -> add(SyncContentFamily.TECHNICIANS)
+            SyncContentFamily.VISITS -> { add(SyncContentFamily.SITES); if (value.visits.bookedVisits.any { visit -> visit.work.any { it.equipmentId != null } }) add(SyncContentFamily.EQUIPMENT); if (value.visits.bookedVisits.any { visit -> visit.work.any { it.planId != null } }) add(SyncContentFamily.SERVICE_PLANS); if (value.visits.bookedVisits.any { visit -> visit.work.any { it.templateId != null } }) add(SyncContentFamily.INSPECTION_TEMPLATES) }
+            SyncContentFamily.FOLLOW_UPS -> { add(SyncContentFamily.CUSTOMERS); if (value.followups.followUps.any { it.siteId != null }) add(SyncContentFamily.SITES); if (value.followups.followUps.any { it.equipmentId != null }) add(SyncContentFamily.EQUIPMENT) }
+            SyncContentFamily.CONTACT_NOTES -> { add(SyncContentFamily.CUSTOMERS); if (value.followups.contactNotes.any { it.siteId != null }) add(SyncContentFamily.SITES); if (value.followups.contactNotes.any { it.equipmentId != null }) add(SyncContentFamily.EQUIPMENT) }
+            SyncContentFamily.DISPATCH_DRAFTS -> { add(SyncContentFamily.CUSTOMERS); add(SyncContentFamily.SITES); add(SyncContentFamily.TECHNICIANS); add(SyncContentFamily.TEAMS); if (value.visits.dispatchDrafts.any { it.items.any { item -> item.equipmentId != null } }) add(SyncContentFamily.EQUIPMENT); if (value.visits.dispatchDrafts.any { it.items.any { item -> item.planId != null } }) add(SyncContentFamily.SERVICE_PLANS); if (value.visits.dispatchDrafts.any { it.items.any { item -> item.templateId != null } }) add(SyncContentFamily.INSPECTION_TEMPLATES) }
+            else -> Unit
+        }
+    }
+    var changed: Boolean
+    do { changed = false; result.toList().forEach { family -> if (family != SyncContentFamily.BUSINESS_PROFILE && dependencies(family).any { it !in result } && result.remove(family)) changed = true } } while (changed)
+    result += SyncContentFamily.BUSINESS_PROFILE
+    return result
+}
+
 fun filterFullWorkspacePackage(value: ServiceLoopSyncPackage, requested: Set<SyncContentFamily>): ServiceLoopSyncPackage {
     val selected = normalizeSyncContentSelection(value, requested)
     return value.copy(
