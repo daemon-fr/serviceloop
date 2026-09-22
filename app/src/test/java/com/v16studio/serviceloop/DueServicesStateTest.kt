@@ -248,6 +248,52 @@ class DueServicesStateTest {
         assertNull(viewModel.state.value.error)
     }
 
+    @Test fun photoInclusionSaveBlocksFinalizationUntilRefreshAndFreezesSavedTruth() = runTest {
+        val repository = PhotoMetadataRepository()
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadCompletion("visit-photo")
+        assertFalse(viewModel.state.value.completionLines.single().photos.single().includedInReport)
+
+        viewModel.setPhotoReportInclusion("work-photo", "photo-1", true, "visit-photo")
+        repository.photoWriteEntered.await()
+        assertEquals(setOf("photo-1"), viewModel.state.value.photoMetadataPendingIds)
+        viewModel.finalizeVisit("visit-photo")
+        assertEquals("a pending photo write blocks finalization", 0, repository.finalizationCount)
+        assertFalse(viewModel.state.value.finalizing)
+
+        repository.photoWriteRelease.complete(Unit)
+        assertTrue(viewModel.state.value.photoMetadataPendingIds.isEmpty())
+        assertEquals("completion is refreshed from persisted photo metadata", 2, repository.completionReads)
+        assertTrue(viewModel.state.value.completionLines.single().photos.single().includedInReport)
+
+        viewModel.finalizeVisit("visit-photo")
+        assertEquals(1, repository.finalizationCount)
+        assertTrue(repository.frozenPhotoInclusion == true)
+        assertEquals("record-visit-photo", viewModel.state.value.finalizedRecordId)
+    }
+
+    @Test fun failedPhotoInclusionSaveStaysVisibleBlocksFinalizeAndCanBeRetried() = runTest {
+        val repository = PhotoMetadataRepository(failPhotoWrite = true)
+        val viewModel = ServiceLoopViewModel(repository) {}
+        viewModel.loadCompletion("visit-photo")
+        viewModel.setPhotoReportInclusion("work-photo", "photo-1", true, "visit-photo")
+        repository.photoWriteEntered.await()
+        repository.photoWriteRelease.complete(Unit)
+
+        assertTrue(viewModel.state.value.photoMetadataPendingIds.isEmpty())
+        assertEquals("Photo selection was not saved. Change the choice to retry.", viewModel.state.value.photoMetadataErrorMessages["photo-1"])
+        viewModel.finalizeVisit("visit-photo")
+        assertEquals(0, repository.finalizationCount)
+
+        repository.failPhotoWrite = false
+        viewModel.setPhotoReportInclusion("work-photo", "photo-1", true, "visit-photo")
+        assertTrue(viewModel.state.value.photoMetadataErrorMessages.isEmpty())
+        assertTrue(viewModel.state.value.completionLines.single().photos.single().includedInReport)
+        viewModel.finalizeVisit("visit-photo")
+        assertEquals(1, repository.finalizationCount)
+        assertTrue(repository.frozenPhotoInclusion == true)
+    }
+
     private fun due(reference: String, claimedVisitId: String? = null) = DueService(
         planId = reference, planReference = reference, planName = "Maintenance", dueDate = "2026-09-01",
         obligationId = "obligation-$reference", equipmentId = "equipment-$reference", equipmentReference = "EQ-$reference",
@@ -263,6 +309,48 @@ class DueServicesStateTest {
         override suspend fun inspection(workItemId: String): InspectionDraft? = null
         override suspend fun completionLines(visitId: String): List<CompletionLine> = emptyList()
         override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?): Long = 0L
+    }
+
+    private class PhotoMetadataRepository(var failPhotoWrite: Boolean = false) : BaseRepository() {
+        val photoWriteEntered = CompletableDeferred<Unit>()
+        val photoWriteRelease = CompletableDeferred<Unit>()
+        var savedPhotoIncluded = false
+        var completionReads = 0
+        var finalizationCount = 0
+        var frozenPhotoInclusion: Boolean? = null
+
+        override suspend fun completionLines(visitId: String): List<CompletionLine> {
+            completionReads++
+            return listOf(
+                CompletionLine(
+                    workItemId = "work-photo",
+                    equipmentName = null,
+                    equipmentReference = null,
+                    serviceName = "Service with photo",
+                    outcome = "PERFORMED",
+                    fulfillmentEligibility = FulfillmentEligibility.HISTORY_ONLY,
+                    fulfillsCurrentObligation = false,
+                    dueDate = null,
+                    proposedNextDueDate = null,
+                    workPerformed = "Completed",
+                    photos = listOf(PhotoEntry("photo-1", "photo.jpg", "image/jpeg", 123L, savedPhotoIncluded, "Evidence")),
+                ),
+            )
+        }
+
+        override suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long {
+            photoWriteEntered.complete(Unit)
+            photoWriteRelease.await()
+            if (failPhotoWrite) error("simulated photo metadata write failure")
+            savedPhotoIncluded = includeInReport
+            return 1L
+        }
+
+        override suspend fun finalizeVisit(visitId: String): FinalizeResult {
+            finalizationCount++
+            frozenPhotoInclusion = savedPhotoIncluded
+            return FinalizeResult.Success("record-$visitId")
+        }
     }
 
     private class ObservableDueRepository : BaseRepository() {

@@ -204,8 +204,8 @@ private fun ServicePhotoCard(workItemId: String, photo: PhotoEntry, context: Con
     var confirmRemoval by rememberSaveable(photo.id) { mutableStateOf(false) }
     var fullView by rememberSaveable(photo.id) { mutableStateOf(false) }
     PhotoEvidenceCard(photo, context, onOpen = { fullView = true })
-    if (state.photoMetadataPendingId == photo.id) Text("Saving photo details…", modifier = Modifier.testTag("photo-saving-${photo.id}"))
-    if (state.photoMetadataErrorId == photo.id) Text("Photo details not saved — retry by editing the caption or report choice.", color = MaterialTheme.colorScheme.error)
+    if (state.photoMetadataPendingId == photo.id || photo.id in state.photoMetadataPendingIds) Text("Saving photo details…", modifier = Modifier.testTag("photo-saving-${photo.id}"))
+    (state.photoMetadataErrorMessages[photo.id] ?: if (state.photoMetadataErrorId == photo.id) "Photo details not saved — change the report choice to retry." else null)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (editingEnabled) {
         OutlinedTextField(caption, { caption = it; viewModel.schedulePhotoCaption(workItemId, photo.id, it) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth().testTag("photo-caption-${photo.id}"))
         Row(verticalAlignment = Alignment.CenterVertically) {

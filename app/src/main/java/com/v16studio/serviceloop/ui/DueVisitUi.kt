@@ -18,11 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
@@ -97,7 +99,6 @@ internal fun DueServicesScreen(
                     state.dueServicesError?.let { ServiceLoopPrimaryButton("Retry", { viewModel.retryDueServices() }, Modifier.testTag("retry-due-services")) }
                 }
             }
-            DueServiceSelectionActions(emptyList(), false, state, viewModel, nav)
         }
         return
     }
@@ -111,9 +112,13 @@ internal fun DueServicesScreen(
             } &&
             (query.isBlank() || listOf(due.planReference, due.planName, due.equipmentName, due.equipmentReference, due.customerName, due.siteName).any { it.contains(query, true) })
     } else filterDueServices(scopedValues, dateFilter, visitFilter, query)
-    val selectedRows = scopedValues.filter { it.planId in selected }
+    val selectedRows = scopedValues.filter { it.planId in selected && it.claimedVisitId == null }
     val selectionSite = selectedRows.firstOrNull()?.siteId
-    val selectionEnabled = selectedRows.isNotEmpty() && selectedRows.all { it.claimedVisitId == null && it.siteId == selectionSite } && !state.operationInProgress
+    val selectedIds = selectedRows.filter { it.siteId == selectionSite }.map { it.planId }
+    LaunchedEffect(scopedValues, selected) {
+        if (selected != selectedIds) selected = selectedIds
+    }
+    val selectionEnabled = selectedIds.isNotEmpty() && !state.operationInProgress
     val listState = rememberLazyListState()
     val actionState = rememberWorkNewVisitActionState(listState)
     Column(modifier.fillMaxSize().padding(padding)) {
@@ -142,11 +147,11 @@ internal fun DueServicesScreen(
                     title = "${due.planReference} · ${due.planName}",
                     context = "${due.equipmentReference} · ${due.equipmentName}\n${due.customerName} · ${due.siteName}",
                     metadata = listOf("Due ${due.dueDate}", due.bucket.name.lowercase().replace('_', ' '), due.claimedVisitId?.let { "Has visit" }).filterNotNull().joinToString(" · "),
-                    selected = due.planId in selected,
+                    selected = due.planId in selectedIds,
                     onClick = { nav.navigate(due.claimedVisitId?.let { "visit/$it" } ?: "plan/${due.planId}") },
                     actionDescription = if (due.claimedVisitId == null) "Open service plan ${due.planReference} ${due.planName}" else "Open existing visit ${due.planReference} ${due.planName}",
-                    selectionChecked = if (selectable) due.planId in selected else null,
-                    onSelectionChange = if (selectable) { checked -> selected = if (checked) selected + due.planId else selected - due.planId } else null,
+                    selectionChecked = if (selectable) due.planId in selectedIds else null,
+                    onSelectionChange = if (selectable) { checked -> selected = if (checked) selectedIds + due.planId else selectedIds - due.planId } else null,
                     operationalState = operationalStateFor(due),
                 )
             }
@@ -154,15 +159,28 @@ internal fun DueServicesScreen(
         }
         if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
         }
-        if (capabilities.canCreateLocalWork) DueServiceSelectionActions(selected, selectionEnabled, state, viewModel, nav)
+        if (capabilities.canCreateLocalWork && selectedIds.isNotEmpty()) {
+            DueServiceSelectionActions(selectedIds, selectionEnabled, state, viewModel, nav) { selected = emptyList() }
+        }
     }
 }
 
 @Composable
-private fun DueServiceSelectionActions(selected: List<String>, enabled: Boolean, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ServiceLoopSecondaryButton("Book selected", { nav.currentBackStackEntry?.savedStateHandle?.set("visit-setup-plan-ids", ArrayList(selected)); nav.navigate("visit/new") }, enabled = enabled, modifier = Modifier.weight(1f).fillMaxHeight().testTag("book-selected-services"))
-        ServiceLoopPrimaryButton("Start selected", { viewModel.createVisit(selected, "WORKING", state.businessDate.toString(), null) { nav.navigate("visit/$it") } }, enabled = enabled, modifier = Modifier.weight(1f).fillMaxHeight().testTag("start-selected-services"))
+private fun DueServiceSelectionActions(selected: List<String>, enabled: Boolean, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, onClear: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("due-service-selection-bar"),
+        verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+    ) {
+        Text("${selected.size} selected", style = MaterialTheme.typography.titleSmall, modifier = Modifier.testTag("due-service-selected-count"))
+        ServiceLoopAdaptiveActionRow(
+            actions = listOf(
+                { ServiceLoopSecondaryButton("Book selected", { nav.currentBackStackEntry?.savedStateHandle?.set("visit-setup-plan-ids", ArrayList(selected)); nav.navigate("visit/new") }, enabled = enabled, modifier = Modifier.testTag("book-selected-services")) },
+                { ServiceLoopPrimaryButton("Start selected", { viewModel.createVisit(selected, "WORKING", state.businessDate.toString(), null) { nav.navigate("visit/$it") } }, enabled = enabled, modifier = Modifier.testTag("start-selected-services")) },
+                { ServiceLoopSecondaryButton("Clear", onClear, modifier = Modifier.testTag("clear-selected-services")) },
+            ),
+            modifier = Modifier.testTag("due-service-selection-actions"),
+        )
     }
 }
 @Composable
@@ -197,9 +215,16 @@ private fun AdHocWorkEditor(
     }
     Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .semantics { contentDescription = if (expanded) "Collapse Add task" else "Expand Add task" }
+                    .testTag("add-visit-task-toggle"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column { Text("Add task", fontWeight = FontWeight.Bold); if (!expanded) Text("Add extra work to this visit", style = MaterialTheme.typography.bodySmall) }
-                Text(if (expanded) "⌃" else "⌄", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = if (expanded) "Collapse Add task" else "Expand Add task" })
+                ServiceLoopIcon(ServiceLoopIcons.CaretDown, null, Modifier.size(ServiceLoopUiTokens.Size.icon).graphicsLayer { rotationZ = if (expanded) 180f else 0f })
             }
             if (expanded) {
             DailyField(taskName, { taskName = it }, "Task name · Required")

@@ -204,32 +204,49 @@ fun ServiceLoopAdaptiveActionRow(
         ) { measurables, constraints ->
             if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
             val gapPx = gap.roundToPx()
-            val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(ServiceLoopUiTokens.Size.touchMin.roundToPx()) }
+            val touchMinPx = ServiceLoopUiTokens.Size.touchMin.roundToPx()
+            val intrinsicWidths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(touchMinPx) }
+            val preferredRowWidth = intrinsicWidths.fold(0L) { total, width -> total + width.toLong() } + gapPx.toLong() * (measurables.size - 1)
+            val rowWidthLimit = if (constraints.hasBoundedWidth) constraints.maxWidth else
+                maxOf(constraints.minWidth, preferredRowWidth.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            val minimumWidth = minOf(touchMinPx, rowWidthLimit)
+            val natural = intrinsicWidths.map { it.coerceIn(minimumWidth, rowWidthLimit) }
             val rows = mutableListOf<MutableList<Int>>()
             var current = mutableListOf<Int>()
-            var currentWidth = 0
+            var currentWidth = 0L
+            val rowWidthLimitLong = rowWidthLimit.toLong()
             natural.forEachIndexed { index, width ->
-                val nextWidth = if (current.isEmpty()) width else currentWidth + gapPx + width
-                if (current.isNotEmpty() && nextWidth > constraints.maxWidth) {
+                val nextWidth = if (current.isEmpty()) width.toLong() else currentWidth + gapPx + width
+                if (current.isNotEmpty() && nextWidth > rowWidthLimitLong) {
                     rows += current
                     current = mutableListOf()
-                    currentWidth = 0
+                    currentWidth = 0L
                 }
                 current += index
-                currentWidth = if (current.size == 1) width else currentWidth + gapPx + width
+                currentWidth = if (current.size == 1) width.toLong() else currentWidth + gapPx + width
             }
             if (current.isNotEmpty()) rows += current
 
             val placeables = measurables.mapIndexed { index, measurable ->
                 val row = rows.first { index in it }
-                val rowNatural = row.sumOf { natural[it] } + gapPx * (row.size - 1)
-                val width = if (row.size == 1) constraints.maxWidth else natural[index] +
-                    ((constraints.maxWidth - rowNatural).coerceAtLeast(0) / row.size)
-                measurable.measure(Constraints.fixed(width.coerceAtLeast(ServiceLoopUiTokens.Size.touchMin.roundToPx()), constraints.maxHeight))
+                val rowNatural = row.sumOf { natural[it].toLong() } + gapPx.toLong() * (row.size - 1)
+                val remaining = (rowWidthLimitLong - rowNatural).coerceAtLeast(0L)
+                val width = if (row.size == 1) rowWidthLimitLong else natural[index].toLong() + remaining / row.size
+                val targetWidth = width.coerceIn(minimumWidth.toLong(), rowWidthLimitLong).toInt()
+                measurable.measure(
+                    Constraints(
+                        minWidth = targetWidth,
+                        maxWidth = targetWidth,
+                        minHeight = 0,
+                        maxHeight = constraints.maxHeight,
+                    ),
+                )
             }
             val rowHeights = rows.map { row -> row.maxOf { placeables[it].height } }
-            val height = (rowHeights.sum() + gapPx * (rows.size - 1)).coerceIn(constraints.minHeight, constraints.maxHeight)
-            layout(constraints.maxWidth, height) {
+            val desiredHeight = (rowHeights.sumOf { it.toLong() } + gapPx.toLong() * (rows.size - 1))
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val height = desiredHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
+            layout(rowWidthLimit, height) {
                 var y = 0
                 rows.forEachIndexed { rowIndex, row ->
                     var x = 0

@@ -14,11 +14,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -59,7 +62,7 @@ class ServiceLoopAdaptiveTabsTest {
 
         cases.forEach { (width, fontScale) ->
             compose.runOnUiThread {
-                compose.activity.setContent {
+        compose.setContent {
                     val deviceDensity = LocalDensity.current.density
                     val fittedDensity = deviceDensity * minOf(1f, 400f / width)
                     CompositionLocalProvider(LocalDensity provides Density(fittedDensity, fontScale)) {
@@ -206,6 +209,49 @@ class ServiceLoopAdaptiveTabsTest {
             assertTrue(compose.onAllNodesWithText("Booking").fetchSemanticsNodes().isEmpty())
             assertTrue(compose.onAllNodesWithText("Booked only").fetchSemanticsNodes().isEmpty())
         }
+    }
+
+    @Test fun dueServiceSelectionBarAppearsCountsClearsAndKeepsSameSiteEligibility() {
+        val rows = listOf(
+            DueService("plan-a", "P-A", "Maintenance", "2026-09-01", "ob-a", "eq-a", "EQ-A", "Pump", "site-a", "Main site", "customer", "Customer", null, DueBucket.OVERDUE),
+            DueService("plan-b", "P-B", "Maintenance", "2026-09-02", "ob-b", "eq-b", "EQ-B", "Boiler", "site-a", "Main site", "customer", "Customer", null, DueBucket.OVERDUE),
+            DueService("plan-c", "P-C", "Maintenance", "2026-09-03", "ob-c", "eq-c", "EQ-C", "Fan", "site-b", "Other site", "customer", "Customer", null, DueBucket.OVERDUE),
+            DueService("plan-d", "P-D", "Maintenance", "2026-09-04", "ob-d", "eq-d", "EQ-D", "Motor", "site-a", "Main site", "customer", "Customer", "visit-d", DueBucket.OVERDUE),
+        )
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(rows),
+            businessDate = java.time.LocalDate.of(2026, 9, 5),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(RetryRepository()) {}
+        compose.setContent {
+            ServiceLoopTheme {
+                Box(Modifier.width(360.dp).fillMaxHeight().testTag("due-screen-with-navigation-inset")) {
+                    DueServicesScreen(rows, PaddingValues(bottom = 80.dp), state, viewModel, rememberNavController())
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithTag("book-selected-services").fetchSemanticsNodes().isEmpty())
+        compose.onAllNodesWithTag("entity-record-selection").assertCountEquals(3)
+        compose.onAllNodesWithTag("entity-record-selection")[0].performClick()
+        compose.onNodeWithTag("due-service-selected-count").assertIsDisplayed()
+        compose.onNodeWithText("1 selected").assertIsDisplayed()
+        compose.onAllNodesWithTag("entity-record-selection").assertCountEquals(2)
+        assertTrue(compose.onAllNodesWithContentDescription("Select P-C · Maintenance").fetchSemanticsNodes().isEmpty())
+        compose.onAllNodesWithTag("entity-record-selection")[1].performClick()
+        compose.onNodeWithText("2 selected").assertIsDisplayed()
+        compose.onNodeWithTag("book-selected-services").assertIsDisplayed()
+        compose.onNodeWithTag("start-selected-services").assertIsDisplayed()
+        val container = compose.onNodeWithTag("due-screen-with-navigation-inset").fetchSemanticsNode().boundsInRoot
+        val selectionBar = compose.onNodeWithTag("due-service-selection-bar").fetchSemanticsNode().boundsInRoot
+        assertTrue("selection area stays above the simulated bottom navigation", selectionBar.bottom <= container.bottom - 79f)
+        compose.onNodeWithTag("clear-selected-services").performClick()
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
     }
 
     private class RetryRepository : ServiceLoopRepository {

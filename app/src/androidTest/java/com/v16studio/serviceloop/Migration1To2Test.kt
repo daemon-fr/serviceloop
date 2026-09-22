@@ -18,6 +18,64 @@ import org.junit.runner.RunWith
 class Migration1To2Test {
     private val dbName = "sl3-migration-test.db"
 
+    @Test fun migrationSixteenToSeventeenPreservesB047RowsAndValidatesRoomSchema() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val isolatedDbName = "sl3-migration-16-17-${System.nanoTime()}.db"
+        val schema = JSONObject(instrumentation.context.assets.open("com.v16studio.serviceloop.data.ServiceLoopDatabase/16.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(isolatedDbName), null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                val table = entity.getString("tableName")
+                old.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                entity.optJSONArray("indices")?.let { indices ->
+                    for (j in 0 until indices.length()) old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${'$'}{TABLE_NAME}", table))
+                }
+            }
+            old.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            old.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getString("identityHash")}')")
+            old.execSQL("INSERT INTO customers(id,reference,name) VALUES('customer-16','CU-16','Preserved customer')")
+            old.execSQL("INSERT INTO sites(id,customerId,reference,name) VALUES('site-16','customer-16','ST-16','Preserved site')")
+            old.execSQL("INSERT INTO working_visits(id,reference,customerId,siteId,actualServiceDate,customerNameSnapshot,siteNameSnapshot,state,modifiedAtEpochMillis) VALUES('visit-16','V-16','customer-16','site-16','2026-09-20','Captured customer','Captured site','FINALIZED',16)")
+            old.execSQL("INSERT INTO final_records(id,visitId,currentRevisionId,createdAtEpochMillis) VALUES('record-16','visit-16','revision-16',16)")
+            old.execSQL("INSERT INTO final_record_revisions(id,recordId,revisionNumber,visitReference,actualServiceDate,recordedAtEpochMillis,customerName,siteName,businessName,technicianName,businessZoneId) VALUES('revision-16','record-16',1,'V-16','2026-09-20',16,'Captured customer','Captured site','Service Co','Alex Dobre','Europe/Bucharest')")
+            old.execSQL("INSERT INTO dispatch_technicians(technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis,designation) VALUES('technician-16','Alex Dobre',1,16,'Technician')")
+            old.version = 16
+        }
+
+        val migrated = Room.databaseBuilder(context, ServiceLoopDatabase::class.java, isolatedDbName)
+            .addMigrations(ServiceLoopDatabase.MIGRATION_16_17)
+            .build()
+        try {
+            val dao = migrated.serviceLoopDao()
+            kotlinx.coroutines.runBlocking {
+                assertEquals("Preserved customer", dao.customer("customer-16")?.name)
+                assertEquals("visit-16", dao.finalRecord("record-16")?.visitId)
+                assertEquals("Captured customer", dao.finalRevision("revision-16")?.customerName)
+                assertNull(dao.finalRevision("revision-16")?.technicianDesignation)
+                assertEquals("Alex Dobre", migrated.dispatchDao().technician("technician-16")?.displayName)
+                assertNull(migrated.dispatchDao().technician("technician-16")?.notes)
+            }
+            val database = migrated.openHelper.writableDatabase
+            assertEquals(17, database.version)
+            database.query("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='customer_contacts'").use { cursor -> cursor.moveToFirst(); assertEquals(1, cursor.getInt(0)) }
+            fun assertNullableColumn(table: String, column: String) {
+                var notNull = -1
+                database.query("PRAGMA table_info(`$table`)").use { cursor ->
+                    while (cursor.moveToNext()) if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == column) notNull = cursor.getInt(cursor.getColumnIndexOrThrow("notnull"))
+                }
+                assertEquals("$table.$column must be nullable", 0, notNull)
+            }
+            assertNullableColumn("dispatch_technicians", "notes")
+            assertNullableColumn("final_record_revisions", "technicianDesignation")
+            database.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        } finally {
+            migrated.close()
+            context.deleteDatabase(isolatedDbName)
+        }
+    }
+
     @Test fun migrationOneToTenPreservesRowsThroughTheRegisteredChain() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -193,7 +193,7 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
             Column(Modifier.testTag("settings-about"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                 SectionTitle("About ServiceLoop")
                 ServiceLoopDenseNavigableRow("Version ${BuildConfig.VERSION_NAME}", context = "Build ${BuildConfig.VERSION_CODE}", leadingIcon = ServiceLoopIcons.Info, modifier = Modifier.testTag("settings-about-version")) {}
-                ServiceLoopDenseNavigableRow("Report a bug", leadingIcon = ServiceLoopIcons.Report, modifier = Modifier.testTag("settings-report-bug")) {
+                ServiceLoopDenseNavigableRow("Report a bug", leadingIcon = ServiceLoopIcons.Bug, modifier = Modifier.testTag("settings-report-bug")) {
                     val body = "ServiceLoop version: ${BuildConfig.VERSION_NAME}\nVersion code: ${BuildConfig.VERSION_CODE}\nAndroid: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
                     runCatching {
                         context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:placeholder@mail.com")).apply {

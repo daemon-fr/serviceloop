@@ -80,7 +80,9 @@ data class UiState(
     val serviceFollowUps: List<FollowUpDetail> = emptyList(),
     val fieldEvidenceWorkItemId: String? = null,
     val photoMetadataPendingId: String? = null,
+    val photoMetadataPendingIds: Set<String> = emptySet(),
     val photoMetadataErrorId: String? = null,
+    val photoMetadataErrorMessages: Map<String, String> = emptyMap(),
     val visits: List<VisitSummary> = emptyList(),
     val businessProfile: BusinessProfile? = null,
     val visitReportIdentity: BusinessProfile? = null,
@@ -710,23 +712,64 @@ class ServiceLoopViewModel(
     fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, include: Boolean, caption: String?) = runOperation({ withContext(Dispatchers.IO) { repository.savePhoto(workItemId, bytes, displayName, mimeType, include, caption) } }) { refreshEvidence(workItemId) }
     private val photoMetadataMutex = Mutex()
     private val photoMetadataVersions = mutableMapOf<String, Long>()
-    fun setPhotoReportInclusion(workItemId: String, photoId: String, include: Boolean) {
+    fun setPhotoReportInclusion(workItemId: String, photoId: String, include: Boolean, visitId: String? = null) {
         val version = (photoMetadataVersions[photoId] ?: 0L) + 1L
         photoMetadataVersions[photoId] = version
-        _state.update { it.copy(photoMetadataPendingId = photoId, photoMetadataErrorId = null, error = null) }
+        _state.update { current ->
+            val remainingErrors = current.photoMetadataErrorMessages - photoId
+            current.copy(
+                photoMetadataPendingId = photoId,
+                photoMetadataPendingIds = current.photoMetadataPendingIds + photoId,
+                photoMetadataErrorId = remainingErrors.keys.lastOrNull(),
+                photoMetadataErrorMessages = remainingErrors,
+            )
+        }
         viewModelScope.launch {
+            var persisted = false
             try {
                 photoMetadataMutex.withLock {
                     if (photoMetadataVersions[photoId] != version) return@withLock
                     repository.setPhotoReportInclusion(workItemId, photoId, include)
+                    persisted = true
                     if (photoMetadataVersions[photoId] == version) {
-                        loadFieldEvidence(workItemId)
-                        _state.update { it.copy(photoMetadataPendingId = null, photoMetadataErrorId = null) }
+                        if (visitId != null) {
+                            val lines = repository.completionLines(visitId)
+                            _state.update { current ->
+                                if (current.completionVisitId == visitId) current.copy(completionContext = CompletionContext(visitId, lines)) else current
+                            }
+                        } else {
+                            loadFieldEvidence(workItemId)
+                        }
+                        _state.update { current ->
+                            if (photoMetadataVersions[photoId] != version) current
+                            else {
+                                val pending = current.photoMetadataPendingIds - photoId
+                                val errors = current.photoMetadataErrorMessages - photoId
+                                current.copy(
+                                    photoMetadataPendingId = pending.lastOrNull(),
+                                    photoMetadataPendingIds = pending,
+                                    photoMetadataErrorId = errors.keys.lastOrNull(),
+                                    photoMetadataErrorMessages = errors,
+                                )
+                            }
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                if (photoMetadataVersions[photoId] == version) _state.update { it.copy(photoMetadataPendingId = null, photoMetadataErrorId = photoId, error = failure.message ?: "Photo details not saved") }
+                if (photoMetadataVersions[photoId] == version) {
+                    val message = if (persisted) "Photo selection saved, but the review could not refresh. Change the choice to retry." else "Photo selection was not saved. Change the choice to retry."
+                    _state.update { current ->
+                        val pending = current.photoMetadataPendingIds - photoId
+                        val errors = current.photoMetadataErrorMessages + (photoId to message)
+                        current.copy(
+                            photoMetadataPendingId = pending.lastOrNull(),
+                            photoMetadataPendingIds = pending,
+                            photoMetadataErrorId = photoId,
+                            photoMetadataErrorMessages = errors,
+                        )
+                    }
+                }
             }
         }
     }
@@ -1116,6 +1159,10 @@ class ServiceLoopViewModel(
     fun finalizeVisit(visitId: String) {
         if (_state.value.finalizing) return
         if (_state.value.completionVisitId != visitId) return
+        if (photoMetadataUnresolved(_state.value)) {
+            _state.update { current -> if (current.completionVisitId == visitId) current.copy(finalizing = false, error = "Save the photo selection before finalizing.") else current }
+            return
+        }
         val request = issueRequest("completion")
         val saveContext = issueRequest("draftSaveContext")
         _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = true, error = null) else current }
@@ -1131,6 +1178,10 @@ class ServiceLoopViewModel(
                     if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.completionVisitId == visitId) current.copy(finalizing = false, error = "Save inspection fields before finalizing${details.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()}") else current }
                     return@launch
                 }
+                if (photoMetadataUnresolved(_state.value)) {
+                    if (isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if (current.completionVisitId == visitId) current.copy(finalizing = false, error = "Save the photo selection before finalizing.") else current }
+                    return@launch
+                }
                 when (val result = repository.finalizeVisit(visitId)) {
                     is FinalizeResult.Success -> {
                         if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, finalizedRecordId = result.recordId) else current }
@@ -1142,6 +1193,10 @@ class ServiceLoopViewModel(
             catch (failure: Exception) { if(isCurrent(request) && isCurrent(saveContext)) _state.update { current -> if(current.completionVisitId == visitId) current.copy(finalizing = false, error = failure.message ?: "Finalization failed") else current } }
         }
     }
+
+    private fun photoMetadataUnresolved(state: UiState): Boolean =
+        state.photoMetadataPendingId != null || state.photoMetadataPendingIds.isNotEmpty() ||
+            state.photoMetadataErrorId != null || state.photoMetadataErrorMessages.isNotEmpty()
 
     fun generateReport(recordId: String, revisionId: String? = null) {
         val service = reportService ?: return

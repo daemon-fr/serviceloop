@@ -19,11 +19,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.FinalRecordDetail
@@ -42,6 +45,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import com.v16studio.serviceloop.ui.theme.LocalServiceLoopColors
+import com.v16studio.serviceloop.report.technicianReportName
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
@@ -76,27 +80,110 @@ internal fun FinalRecordScreen(detail: FinalRecordDetail?, recordVersions: List<
 internal fun ReportPreviewScreen(detail: FinalRecordDetail?, padding: PaddingValues, initialTextView: Boolean, historical: Boolean = false, viewModel: ServiceLoopViewModel? = null) {
     val rendition = detail?.report
     if (detail == null || rendition == null || rendition.status !in setOf("READY", "MISSING")) return HonestPlaceholder(padding, "Report file is not ready")
-    val context = LocalContext.current; val file = remember(rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
-     val colors = LocalServiceLoopTokens.current
-     var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }; var pageIndex by rememberSaveable { mutableStateOf(0) }; var bitmap by remember { mutableStateOf<Bitmap?>(null) }; var pageCount by remember { mutableStateOf(rendition.pageCount ?: 1) }; var missing by remember { mutableStateOf(!file.isFile) }; var supersededShareAcknowledged by rememberSaveable(rendition.id) { mutableStateOf(false) }
-     var pageScale by remember(pageIndex) { mutableStateOf(1f) }
-     var pageOffsetX by remember(pageIndex) { mutableStateOf(0f) }
-     var pageOffsetY by remember(pageIndex) { mutableStateOf(0f) }
-     val transformState = rememberTransformableState { scaleChange, panChange, _ ->
-         pageScale = (pageScale * scaleChange).coerceIn(1f, 4f)
-         pageOffsetX = (pageOffsetX + panChange.x).coerceIn(-900f, 900f)
-         pageOffsetY = (pageOffsetY + panChange.y).coerceIn(-1400f, 1400f)
-     }
-    LaunchedEffect(file, pageIndex, textView) {
-        if (!textView && file.isFile) withContext(Dispatchers.IO) { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { renderer -> pageCount = renderer.pageCount; val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)); bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }; page.close() } } } else missing = !file.isFile
+    val context = LocalContext.current
+    val file = remember(rendition.id, rendition.relativePath) { File(context.filesDir, rendition.relativePath) }
+    val colors = LocalServiceLoopTokens.current
+    var textView by rememberSaveable(rendition.id) { mutableStateOf(initialTextView || !file.isFile) }
+    var pageIndex by rememberSaveable(rendition.id) { mutableStateOf(0) }
+    val bitmapState = remember(rendition.id) { mutableStateOf<Bitmap?>(null) }
+    val bitmap by bitmapState
+    var pageCount by remember(rendition.id) { mutableStateOf(rendition.pageCount ?: 1) }
+    var missing by remember(rendition.id) { mutableStateOf(!file.isFile) }
+    var supersededShareAcknowledged by rememberSaveable(rendition.id) { mutableStateOf(false) }
+    var transform by remember(rendition.id) { mutableStateOf(PdfPageZoomMath.reset()) }
+    var viewportSize by remember(rendition.id) { mutableStateOf(IntSize.Zero) }
+    var displayedPageSize by remember(rendition.id, pageIndex) { mutableStateOf(IntSize.Zero) }
+
+    DisposableEffect(bitmapState) {
+        onDispose { bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle() }
+    }
+
+    val transformState = rememberTransformableState { scaleChange, panChange, _ ->
+        val nextScale = PdfPageZoomMath.clampScale(transform.scale * scaleChange)
+        val bounds = PdfPageZoomMath.translationBounds(
+            displayedPageWidth = displayedPageSize.width.toFloat(),
+            displayedPageHeight = displayedPageSize.height.toFloat(),
+            viewportWidth = viewportSize.width.toFloat(),
+            viewportHeight = viewportSize.height.toFloat(),
+            scale = nextScale,
+        )
+        transform = PdfPageZoomMath.clampTranslation(
+            offsetX = transform.offsetX + panChange.x,
+            offsetY = transform.offsetY + panChange.y,
+            bounds = bounds,
+            scale = nextScale,
+        )
+    }
+
+    LaunchedEffect(rendition.id, pageIndex, textView) {
+        transform = PdfPageZoomMath.reset()
+    }
+
+    LaunchedEffect(displayedPageSize, viewportSize, transform.scale) {
+        val bounds = PdfPageZoomMath.translationBounds(
+            displayedPageSize.width.toFloat(), displayedPageSize.height.toFloat(),
+            viewportSize.width.toFloat(), viewportSize.height.toFloat(), transform.scale,
+        )
+        transform = PdfPageZoomMath.clampTranslation(transform.offsetX, transform.offsetY, bounds, transform.scale)
+    }
+
+    LaunchedEffect(file, pageIndex) {
+        missing = !file.isFile
+        if (!file.isFile) {
+            bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
+            bitmapState.value = null
+            return@LaunchedEffect
+        }
+        val rendered = withContext(Dispatchers.IO) {
+            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                PdfRenderer(fd).use { renderer ->
+                    val count = renderer.pageCount
+                    val pageNumber = pageIndex.coerceIn(0, count - 1)
+                    val pageBitmap = renderer.openPage(pageNumber).use { page ->
+                        Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).also {
+                            page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        }
+                    }
+                    count to pageBitmap
+                }
+            }
+        }
+        pageCount = rendered.first
+        val previous = bitmapState.value
+        bitmapState.value = rendered.second
+        if (previous !== rendered.second) previous?.takeUnless(Bitmap::isRecycled)?.recycle()
     }
     Column(Modifier.padding(padding).fillMaxSize()) {
     Text(if (missing) "File missing · Structured report remains available" else "PDF file ready", modifier = Modifier.fillMaxWidth().background(if(missing) LocalServiceLoopColors.current.errorTint else LocalServiceLoopColors.current.confirmedTint).padding(10.dp))
-    LazyColumn(Modifier.weight(1f).testTag("report-preview-list"), contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Column(Modifier.padding(horizontal = 12.dp)) { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }; ServiceLoopContentTabs(listOf(false to "PDF view",true to "Text view"),textView,{textView=it},Modifier.testTag("report-view-tabs")) } }
+    LazyColumn(Modifier.weight(1f).clipToBounds().onSizeChanged { viewportSize = it }.testTag("report-preview-list"), contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Column(Modifier.padding(horizontal = 12.dp)) { Text("${detail.public.visitReference} · Revision ${detail.public.revisionNumber} · PDF v${rendition.versionNumber} · ${rendition.id.take(8)}"); Text("Service ${detail.public.actualServiceDate} · ${if (missing) "Structured text only" else "Ready"}"); rendition.generatedAtEpochMillis?.let { Text("Generated ${Instant.ofEpochMilli(it)}") } }; ServiceLoopContentTabs(listOf(false to "PDF view",true to "Text view"),textView,{ textView = it; transform = PdfPageZoomMath.reset() },Modifier.testTag("report-view-tabs")) } }
         if (textView) item { Box(Modifier.padding(horizontal = 12.dp)) { StructuredReportText(detail) } }
         else if (missing) item { Text("File missing", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
-         else { item { Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { bitmap?.let { Image(it.asImageBitmap(), "Rendered customer report page ${pageIndex + 1}", Modifier.fillMaxWidth().graphicsLayer(scaleX = pageScale, scaleY = pageScale, translationX = pageOffsetX, translationY = pageOffsetY).transformable(transformState)) } } }; item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { pageIndex-- }, enabled = pageIndex > 0) { Text("Previous page") }; Text("Page ${pageIndex + 1} of $pageCount"); OutlinedButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount) { Text("Next page") } } } }
+         else {
+             item {
+                 Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                     bitmap?.let { pageBitmap ->
+                         Image(
+                             pageBitmap.asImageBitmap(),
+                             "Rendered customer report page ${pageIndex + 1}",
+                             Modifier.fillMaxWidth()
+                                 .onSizeChanged { displayedPageSize = it }
+                                 .graphicsLayer(scaleX = transform.scale, scaleY = transform.scale, translationX = transform.offsetX, translationY = transform.offsetY)
+                                 .transformable(transformState, canPan = { transform.scale > PdfPageTransform.MIN_PDF_PAGE_SCALE })
+                                 .testTag("pdf-page-image"),
+                             contentScale = ContentScale.Fit,
+                         )
+                     }
+                 }
+             }
+             item {
+                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                     OutlinedButton(onClick = { bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle(); bitmapState.value = null; transform = PdfPageZoomMath.reset(); pageIndex-- }, enabled = pageIndex > 0, modifier = Modifier.testTag("pdf-page-previous")) { Text("Previous page") }
+                     Text("Page ${pageIndex + 1} of $pageCount")
+                     OutlinedButton(onClick = { bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle(); bitmapState.value = null; transform = PdfPageZoomMath.reset(); pageIndex++ }, enabled = pageIndex + 1 < pageCount, modifier = Modifier.testTag("pdf-page-next")) { Text("Next page") }
+                 }
+             }
+         }
         if (historical && !detail.voided) item { Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) { com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(supersededShareAcknowledged, { supersededShareAcknowledged = it }, contentDescription = "Acknowledge superseded historical report"); Text("I understand this is a superseded historical report") } }
         if (missing && historical && viewModel != null) item { Button(onClick = { viewModel.generateReport(detail.public.recordId, detail.public.revisionId) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { Text("Recreate from this fixed revision") } }
      item { Column(Modifier.padding(horizontal = 12.dp)) { val eligible=reportShareEligible(file.isFile,detail.voided,rendition.kind,historical,supersededShareAcknowledged); fun share(email:String?){val uri=FileProvider.getUriForFile(context,"${context.packageName}.reports",file);val subject="Service report ${detail.public.visitReference} · ${detail.public.businessName}";val body="Attached is the service report for ${detail.public.customerName} · ${detail.public.siteName} dated ${detail.public.actualServiceDate}.\n\nGenerated with ServiceLoop";context.startActivity(Intent.createChooser(reportShareIntent(uri,email,subject,body),if(email==null)"Share customer service record" else "Send service report to office"))}; ServiceLoopActionStack { Button(onClick={share(null)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("share-pdf").semantics{contentDescription="Share PDF"}){ServiceLoopIcon(ServiceLoopIcons.Share,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text(if(detail.voided&&rendition.kind!="VOID_NOTICE")"Share disabled for voided original" else "Share PDF")}; val office=context.getSharedPreferences(DISPATCH_PREFS,0).getString(OFFICE_EMAIL,"").orEmpty().trim(); if(office.isNotBlank()) OutlinedButton(onClick={share(office)},enabled=eligible,modifier=Modifier.fillMaxWidth().testTag("send-to-office")){ServiceLoopIcon(ServiceLoopIcons.Mail,null,Modifier.size(ServiceLoopUiTokens.Size.icon));Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm));Text("Send to office")} }; if(detail.voided&&rendition.kind!="VOID_NOTICE") Text("Generate and share the current void notice. Previously shared files cannot be revoked.",style=MaterialTheme.typography.bodySmall) else if(historical) Text("Superseded report: confirm before customer handoff. Sharing does not prove delivery.",style=MaterialTheme.typography.bodySmall) } }
@@ -111,7 +198,7 @@ private fun StructuredReportText(detail: FinalRecordDetail) {
         Text(r.businessName, style = MaterialTheme.typography.titleLarge)
         Text("Service record ${r.visitReference} · Revision ${r.revisionNumber}")
         Text("Service date ${r.actualServiceDate}")
-        Text("Technician ${r.technicianName}\n${r.businessContact}")
+        Text("Technician ${technicianReportName(r.technicianName, r.technicianDesignation)}\n${r.businessContact}")
         Text("${r.customerReference.orEmpty()} · ${r.customerName}\n${r.siteReference.orEmpty()} · ${r.siteName}\n${r.siteAddress.orEmpty()}")
         r.publicNote?.let { Text("Record note: $it") }
         r.dispatch?.let {

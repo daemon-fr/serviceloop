@@ -1103,16 +1103,19 @@ class RoomServiceLoopRepository(
         now
     }
 
-    override suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long = BusinessFileCoordinator.mutex.withLock {
-        writeGate.beforeWrite()
-        val now = businessTime.instant().toEpochMilli()
-        database.withTransaction {
-            val item = workingItem(workItemId)
-            check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" }
-            dao.touchVisit(item.visitId, now)
+    override suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long =
+        BusinessFileCoordinator.photoReportMetadataMutex.withLock {
+            BusinessFileCoordinator.mutex.withLock {
+                writeGate.beforeWrite()
+                val now = businessTime.instant().toEpochMilli()
+                database.withTransaction {
+                    val item = workingItem(workItemId)
+                    check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" }
+                    dao.touchVisit(item.visitId, now)
+                }
+                now
+            }
         }
-        now
-    }
 
     override suspend fun removePhoto(workItemId: String, photoId: String): Long = BusinessFileCoordinator.mutex.withLock {
         val root = attachmentRoot ?: error("Attachment storage unavailable")
@@ -1918,7 +1921,8 @@ class RoomServiceLoopRepository(
         ServiceDraftFieldKeys.questionNotApplicable(questionId),
     )
 
-    override suspend fun finalizeVisit(visitId: String): FinalizeResult = database.withTransaction {
+    override suspend fun finalizeVisit(visitId: String): FinalizeResult = BusinessFileCoordinator.photoReportMetadataMutex.withLock {
+        database.withTransaction {
         dao.finalRecordForVisit(visitId)?.let { return@withTransaction FinalizeResult.Success(it.id) }
         val visit = dao.visit(visitId) ?: return@withTransaction FinalizeResult.Blocked("Working visit no longer exists"); if (visit.state != "WORKING") return@withTransaction FinalizeResult.Blocked("Visit is not working")
         val profile = visitReportIdentity(visitId)
@@ -1996,6 +2000,7 @@ class RoomServiceLoopRepository(
             if (fulfills) { val plan = p.plan!!; val old = p.oldObligation!!; val nextId = stableId("obligation", revisionId, plan.id); check(dao.consumeObligation(old.id, plan.id, now, revisionId) == 1) { "Current service obligation changed — review this line before finalizing" }; dao.insertObligations(listOf(ServiceObligationEntity(nextId, plan.id, old.sequence + 1, p.nextDue!!, now))); check(dao.advancePlan(plan.id, old.id, p.nextDue, nextId, visit.actualServiceDate, revisionId) == 1) { "Current service obligation changed — review this line before finalizing" } }
         }
         check(dao.finalizeVisit(visitId, now) == 1); dao.releaseVisitClaims(visitId); FinalizeResult.Success(recordId)
+        }
     }
 
     override suspend fun finalRecord(recordId: String): FinalRecordDetail? {

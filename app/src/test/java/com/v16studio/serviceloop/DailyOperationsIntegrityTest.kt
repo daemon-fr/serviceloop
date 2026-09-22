@@ -260,9 +260,36 @@ class DailyOperationsIntegrityTest {
 
     @Test fun partsAndSelectedPhotosAreFrozenIntoFinalPublicSnapshot() = runTest {
         val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex", zoneId = "Europe/Bucharest")); val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val work = db.serviceLoopDao().firstWorkItemId(visit)!!
-        repo.savePublicWork(work, "Completed one-off checks"); repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null); repo.addPart(work, "Filter", "2.50", "pcs"); repo.savePhoto(work, testImageBytes(Color.RED), "shown.png", "image/png", true, "Filter housing"); repo.savePhoto(work, testImageBytes(Color.BLUE), "private.png", "image/png", false, "PRIVATE_PHOTO")
+        repo.savePublicWork(work, "Completed one-off checks"); repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null); repo.addPart(work, "Filter", "2.50", "pcs")
+        val shownPhotoId = repo.savePhoto(work, testImageBytes(Color.RED), "shown.png", "image/png", false, "Filter housing")
+        repo.savePhoto(work, testImageBytes(Color.BLUE), "private.png", "image/png", false, "PRIVATE_PHOTO")
+        assertFalse(db.serviceLoopDao().attachment(shownPhotoId)!!.includedInCustomerReport)
+        repo.setPhotoReportInclusion(work, shownPhotoId, true)
         val record = repo.finalRecord((repo.finalizeVisit(visit) as FinalizeResult.Success).recordId)!!; val line = record.public.lines.single()
         assertEquals("2.5", line.parts.single().quantity); assertEquals(1, line.photos.size); assertEquals("Filter housing", line.photos.single().caption); assertFalse(record.public.toString().contains("PRIVATE_PHOTO")); assertTrue(File(root, line.photos.single().relativePath).isFile)
+        val finalWork = db.serviceLoopDao().finalWorkItems(record.public.revisionId).single()
+        assertEquals(listOf(shownPhotoId), db.serviceLoopDao().finalPhotos(finalWork.id).map { it.sourceAttachmentId })
+    }
+
+    @Test fun finalizationWaitsForPhotoInclusionCheckpointAndFreezesItsSavedTruth() = runTest {
+        val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex", zoneId = "Europe/Bucharest"))
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.savePublicWork(work, "Completed checks"); repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        val photoId = repo.savePhoto(work, testImageBytes(Color.YELLOW), "evidence.png", "image/png", false, "Evidence")
+        val writeEntered = CompletableDeferred<Unit>(); val releaseWrite = CompletableDeferred<Unit>()
+        val delayed = RoomServiceLoopRepository(db, time, DraftWriteGate { writeEntered.complete(Unit); releaseWrite.await() }, attachmentRoot = root)
+        val inclusionWrite = launch { delayed.setPhotoReportInclusion(work, photoId, true) }
+        writeEntered.await()
+        val finalization = async { repo.finalizeVisit(visit) }
+        kotlinx.coroutines.yield()
+        assertFalse("finalization waits behind the unresolved photo metadata write", finalization.isCompleted)
+        releaseWrite.complete(Unit)
+        inclusionWrite.join()
+        val result = finalization.await() as FinalizeResult.Success
+        val revisionId = repo.finalRecord(result.recordId)!!.public.revisionId
+        val finalWork = db.serviceLoopDao().finalWorkItems(revisionId).single()
+        assertEquals(listOf(photoId), db.serviceLoopDao().finalPhotos(finalWork.id).map { it.sourceAttachmentId })
+        assertTrue(db.serviceLoopDao().attachment(photoId)!!.includedInCustomerReport)
     }
 
     @Test fun untouchedRecurringAndAdHocServicesStayNotStartedAndNewRowsAreUnresolved() = runTest {
@@ -590,6 +617,33 @@ class DailyOperationsIntegrityTest {
         assertEquals(original.public.revisionId, db.serviceLoopDao().finalRevision(correctedRevision)!!.supersedesRevisionId)
         assertEquals(beforePlan.currentDueDate, db.serviceLoopDao().plan(ids.plan)!!.currentDueDate)
         assertTrue(repo.history(HistoryQuery(search = "spelling")).any { it.eventKind == "CORRECTION" })
+    }
+
+    @Test fun finalizedTechnicianDesignationStaysFrozenThroughDirectoryEditsAndCorrection() = runTest {
+        val ids = foundation()
+        repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex Dobre", zoneId = "Europe/Bucharest"))
+        val dispatch = DispatchPackageService(db, root)
+        val identity = dispatch.identity()
+        dispatch.updateIdentityDesignation("Team Leader")
+        dispatch.importTechnician(identity.copy(designation = "Team Leader"))
+
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        repo.savePublicWork(work, "Annual service completed")
+        repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null)
+        val recordId = (repo.finalizeVisit(visit) as FinalizeResult.Success).recordId
+        assertEquals("Team Leader", repo.finalRecord(recordId)!!.public.technicianDesignation)
+
+        dispatch.updateTechnicianMetadata(identity.technicianId, "Alex in directory", "Field Technician", null)
+        dispatch.updateIdentityDesignation("Service Lead")
+        assertEquals("Service Lead", dispatch.identity().designation)
+        assertEquals("Team Leader", repo.finalRecord(recordId)!!.public.technicianDesignation)
+
+        val correction = repo.openCorrection(recordId)
+        repo.saveCorrection(correction.copy(reason = "Correct the customer spelling", customerName = "Acme Service Customer SRL"))
+        repo.commitCorrection(recordId)
+        assertEquals("Team Leader", repo.finalRecord(recordId)!!.public.technicianDesignation)
+        assertTrue(repo.recordVersions(recordId).first.size == 2)
     }
 
     @Test fun correctionDraftIsDurableAndVoidingPreservesIssuedVersions() = runTest {

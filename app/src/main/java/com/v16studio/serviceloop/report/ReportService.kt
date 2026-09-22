@@ -26,6 +26,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+internal fun technicianReportName(name: String, designation: String?): String =
+    name + designation?.trim()?.takeIf(String::isNotEmpty)?.let { " · $it" }.orEmpty()
+
 fun interface PdfWriteGate { suspend fun beforeRender() }
 fun interface ReportMetadataGate { suspend fun beforeReadyCommit() }
 fun interface ReportWriter { fun render(model: PublicReportModel, renditionId: String, versionNumber: Int, generatedAtEpochMillis: Long, file: File): Int }
@@ -227,7 +230,7 @@ object FixedServiceRecordPdf {
             RawLine(model.businessName, LineStyle.TITLE),
             RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.META),
             RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY),
-            RawLine("Technician: ${model.technicianName}${model.technicianDesignation?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", LineStyle.BODY),
+            RawLine("Technician: ${technicianReportName(model.technicianName, model.technicianDesignation)}", LineStyle.BODY),
             RawLine(model.businessContact, LineStyle.BODY),
             RawLine("Customer & site", LineStyle.SECTION),
             RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY),

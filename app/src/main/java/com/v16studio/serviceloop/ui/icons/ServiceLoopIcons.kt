@@ -23,6 +23,7 @@ object ServiceLoopIcons {
     @DrawableRes val ArrowsDownUp = R.drawable.ic_sl_arrows_down_up
     @DrawableRes val Back = R.drawable.ic_sl_back
     @DrawableRes val Backup = R.drawable.ic_sl_backup
+    @DrawableRes val Bug = R.drawable.ic_sl_bug
     @DrawableRes val Calendar = R.drawable.ic_sl_calendar
     @DrawableRes val Call = R.drawable.ic_sl_call
     @DrawableRes val Camera = R.drawable.ic_sl_camera

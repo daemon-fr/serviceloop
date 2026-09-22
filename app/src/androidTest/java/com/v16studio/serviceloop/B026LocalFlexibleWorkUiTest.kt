@@ -24,6 +24,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -452,7 +453,7 @@ class B026LocalFlexibleWorkUiTest {
         assertTrue(compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun dueServicesFloatingActionSitsAbovePersistentSelectionActions() {
+    @Test fun dueServicesFloatingActionSitsAboveVisibleSelectionActions() {
         val site = site("due-site", "Due site", CustomerType.STANDARD, equipment = listOf(equipment("due-equipment", "Due equipment")))
         val dueRows = (1..24).map { index -> due(site, "due-plan-$index") }
         val state = UiState(
@@ -470,6 +471,8 @@ class B026LocalFlexibleWorkUiTest {
             }
         }
 
+        compose.onAllNodesWithTag("entity-record-selection")[0].performClick()
+        compose.onNodeWithText("1 selected").assertIsDisplayed()
         compose.onNodeWithTag("new-visit-work-floating").assertIsDisplayed()
         val density = compose.activity.resources.displayMetrics.density
         val floating = compose.onNodeWithTag("new-visit-work-floating").fetchSemanticsNode().boundsInRoot
@@ -797,14 +800,26 @@ class B026LocalFlexibleWorkUiTest {
                 }
             }
         }
+        val toggle = compose.onNodeWithTag("add-visit-task-toggle").performScrollTo()
+        val toggleBounds = toggle.fetchSemanticsNode().boundsInRoot
+        assertTrue("Add task disclosure remains at least 48dp", toggleBounds.height >= 48f * compose.activity.resources.displayMetrics.density - 1f)
+        toggle.assertContentDescriptionEquals("Expand Add task").performClick()
+        compose.onNodeWithTag("add-visit-task-toggle").assertContentDescriptionEquals("Collapse Add task")
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Inspect registered unit")
+        compose.onNodeWithTag("add-visit-task-toggle").performScrollTo().performClick()
+        compose.onNodeWithTag("field-task-name-required").assertDoesNotExist()
+        compose.onNodeWithTag("add-visit-task-toggle").performScrollTo().performClick()
+        compose.onNodeWithTag("field-task-name-required").assertTextContains("Inspect registered unit")
         compose.onNodeWithTag("visit-task-subject-EQUIPMENT").performClick()
         compose.onNodeWithTag("visit-task-equipment-null").assertIsDisplayed()
         compose.onNodeWithTag("visit-task-equipment-one-time-equipment").assertIsDisplayed()
         compose.onNodeWithText("Registered one-time equipment", substring = true).assertIsDisplayed()
-        compose.onNodeWithTag("field-task-name-required").performTextInput("Inspect registered unit")
         compose.onNodeWithTag("visit-task-equipment-one-time-equipment").performClick()
-        compose.onNodeWithTag("add-visit-task").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-line-known-equipment").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("add-visit-task").performScrollTo().assertIsEnabled().performClick()
+        compose.waitUntil(5_000) { repository.lastAddedWorkItemId == "known-equipment" }
+        compose.waitUntil(5_000) { viewModel.state.value.visit?.lines?.any { it.workItemId == "known-equipment" } == true }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("visit-line-known-equipment"))
+        compose.onNodeWithTag("visit-line-known-equipment").assertIsDisplayed()
         compose.onNodeWithText("Registered one-time equipment", substring = true).assertIsDisplayed()
         assertEquals("known-equipment", repository.lastAddedWorkItemId)
     }
