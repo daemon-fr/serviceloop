@@ -4,7 +4,7 @@ import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import com.v16studio.serviceloop.data.WORK_PACKAGE_MIME
+import com.v16studio.serviceloop.data.SERVICE_LOOP_SYNC_MIME
 import androidx.compose.ui.unit.dp
 import com.v16studio.serviceloop.ui.summaryDaysUseSingleRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
@@ -25,9 +25,9 @@ class TeamRoleAndImportEntrySourceTest {
         val workspace = productionKotlinSourceContaining("internal fun WorkspaceHomeActions")
         assertFalse(productionKotlinSource("com/v16studio/serviceloop/ui").contains("WorkMoreMenu"))
         assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"History\""))
-        assertTrue(workspace.contains("canReceiveAssignedWork"))
+        assertFalse(workspace.contains("canReceiveAssignedWork"))
         assertTrue(workspace.contains("canUseCoordinatorTools"))
-        assertTrue(workspace.contains("import-work-package"))
+        assertTrue(workspace.contains("home-import"))
     }
 
     @Test fun externalPackageEntryReviewsInsteadOfAutoImporting() {
@@ -35,15 +35,14 @@ class TeamRoleAndImportEntrySourceTest {
         val activity = source("java/com/v16studio/serviceloop/MainActivity.kt")
         assertTrue(manifest.contains("android.intent.action.VIEW"))
         assertTrue(manifest.contains("android.intent.action.SEND"))
-        assertTrue(WORK_PACKAGE_MIME == "application/vnd.serviceloop.work-package+json")
-        assertTrue(manifest.contains(WORK_PACKAGE_MIME))
-        assertFalse(manifest.contains("application/vnd.serviceloop.work+json"))
-        assertTrue(manifest.contains(".*\\.slwork"))
-        assertTrue(activity.contains("incomingWorkPackage"))
-        assertTrue(activity.contains("incomingWorkPackageEvent++"))
+        assertTrue(SERVICE_LOOP_SYNC_MIME == "application/vnd.serviceloop.sync+zip")
+        assertTrue(manifest.contains(SERVICE_LOOP_SYNC_MIME))
+        assertFalse(manifest.contains("application/vnd.serviceloop.work-package+json"))
+        assertTrue(manifest.contains(".*\\.slsync"))
+        assertTrue(activity.contains("incomingServiceLoopSync"))
+        assertTrue(activity.contains("incomingServiceLoopSyncEvent++"))
         assertTrue(activity.contains("ACTION_SEND"))
-        assertTrue(appSource().contains("Work packages can be received by Subcontractors, Employees, and Team Leaders."))
-        assertTrue(appSource().contains("external-package-open-role"))
+        assertFalse(appSource().contains("Work packages can be received by Subcontractors, Employees, and Team Leaders."))
     }
 
     private fun appSource() = productionKotlinSource("com/v16studio/serviceloop/ui")

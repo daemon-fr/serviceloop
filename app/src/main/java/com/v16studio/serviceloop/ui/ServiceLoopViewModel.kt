@@ -811,12 +811,15 @@ class ServiceLoopViewModel(
     }
     fun clearServiceLoopSync() { _state.update { it.copy(syncPreview = null, error = null, operationMessage = null) } }
     fun importServiceLoopSync(onSuccess: () -> Unit = {}) {
-        val preview = _state.value.syncPreview ?: return
+        val packageValue = _state.value.syncPreview?.packageValue ?: return
+        importServiceLoopSync(packageValue, onSuccess)
+    }
+    fun importServiceLoopSync(packageValue: ServiceLoopSyncPackage, onSuccess: () -> Unit = {}) {
         if (_state.value.operationInProgress || _state.value.restrictedRecoveryState) return
         _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
         viewModelScope.launch {
             try {
-                repository.importServiceLoopSync(preview.packageValue)
+                repository.importServiceLoopSync(packageValue)
                 reminderCoordinator?.resetForDatasetReplacement()
                 calendarCoordinator?.resetForDatasetReplacement()
                 advanceDatasetGeneration()

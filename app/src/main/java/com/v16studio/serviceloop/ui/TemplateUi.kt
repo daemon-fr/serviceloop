@@ -21,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.ServiceLoopApplication
-import com.v16studio.serviceloop.data.INSPECTION_TEMPLATES_MIME
 import com.v16studio.serviceloop.data.InspectionTemplateCodec
 import com.v16studio.serviceloop.data.InspectionTemplateExchangeService
 import com.v16studio.serviceloop.data.InspectionTemplateImportClassification
@@ -68,93 +67,16 @@ internal fun InspectionTemplateLibraryContent(
     showHeading: Boolean = true,
     createReturnTo: String? = null,
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val exchange = remember { InspectionTemplateExchangeService((context.applicationContext as ServiceLoopApplication).container.database) }
     val capabilities = LocalWorkspaceCapabilities.current
-    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var preview by remember { mutableStateOf<InspectionTemplateImportPreview?>(null) }
-    var createSeparate by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var message by remember { mutableStateOf<String?>(null) }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val result = runCatching {
-                    withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { input -> exchange.preview(input.readDailyBounded(InspectionTemplateCodec.MAX_BYTES) ?: error("Selected file is too large")) }
-                            ?: error("Selected file is not readable")
-                    }
-                }
-                result.onSuccess { preview = it; createSeparate = emptySet() }.onFailure { message = it.message }
-            }
-        }
-    }
-    LaunchedEffect(incomingTemplates) {
-        if (incomingTemplates != null && capabilities.canExchangeTemplates) {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(Uri.parse(incomingTemplates))?.use { input -> exchange.preview(input.readDailyBounded(InspectionTemplateCodec.MAX_BYTES) ?: error("Received inspection template file is too large")) }
-                        ?: error("Received inspection template file is not readable")
-                }
-            }
-            result.onSuccess { preview = it; createSeparate = emptySet() }.onFailure { message = it.message }
-        }
-    }
-    preview?.let { incoming ->
-        AlertDialog(
-            modifier = Modifier.testTag("inspection-template-import-preview"),
-            onDismissRequest = { preview = null },
-            title = { Text("Import inspection templates") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Review the current-only .slinsp package before saving it locally.")
-                    incoming.entries.forEach { entry ->
-                        Text("${entry.transfer.reference} · ${entry.transfer.name}")
-                        Text("Revision ${entry.transfer.revision} · ${entry.transfer.items.size} items · ${entry.classification.name.replace('_', ' ')}")
-                        if (entry.classification == InspectionTemplateImportClassification.CONFLICT) {
-                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                Checkbox(entry.transfer.reference in createSeparate, { checked -> createSeparate = if (checked) createSeparate + entry.transfer.reference else createSeparate - entry.transfer.reference }, Modifier.testTag("create-separate-${entry.transfer.reference}"))
-                                Text("Create separate")
-                            }
-                        }
-                    }
-                }
-            },
-            dismissButton = { TextButton({ preview = null }) { Text("Cancel") } },
-            confirmButton = {
-                Button({
-                    scope.launch {
-                        val result = runCatching { withContext(Dispatchers.IO) { exchange.import(incoming, createSeparate) } }
-                        result.onSuccess { imported ->
-                            message = "Imported ${imported.importedReferences.size} inspection template${if (imported.importedReferences.size == 1) "" else "s"}. Exact matches were left unchanged."
-                            preview = null
-                            viewModel?.loadTemplates()
-                        }.onFailure { message = it.message }
-                    }
-                }, enabled = incoming.canImport(createSeparate), modifier = Modifier.testTag("import-inspection-templates")) { Text("Import selected") }
-            },
-        )
-    }
     Column(Modifier.padding(padding).testTag("inspection-templates"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (showHeading) Text("Inspection templates", style = MaterialTheme.typography.titleLarge)
         Button({ nav.navigate(if (createReturnTo == null) "template/new" else "template/new?returnTo=$createReturnTo") }, Modifier.fillMaxWidth().testTag("create-inspection-template")) { Text("Create inspection template") }
-        if (capabilities.canExchangeTemplates) {
-            Text("Share inspection templates only. Visits already created with a template keep their checklist.", style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton({ open.launch(arrayOf(INSPECTION_TEMPLATES_MIME, "application/json")) }, Modifier.weight(1f).testTag("import-inspection-templates-button")) { Text("Import templates") }
-                OutlinedButton({ scope.launch { runCatching { val export = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { InspectionTemplateCodec.encode(export) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slinsp", INSPECTION_TEMPLATES_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onFailure { message = it.message } } }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("export-inspection-templates")) { Text("Export selected") }
-            }
-        }
-        message?.let { Text(it, color = if (it.startsWith("Imported")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, modifier = Modifier.testTag("inspection-template-message")) }
         if (values.none { it.state != "DELETED" }) Text("No inspection templates yet")
         values.asSequence()
             .filter { it.state != "DELETED" }
             .sortedWith(compareBy<TemplateSummary> { it.state != "ACTIVE" }.thenBy { it.name.lowercase() }.thenBy { it.reference })
             .forEach { template ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    if (capabilities.canExchangeTemplates) Checkbox(template.id in selected, { checked -> selected = if (checked) selected + template.id else selected - template.id }, Modifier.testTag("template-select-${template.id}"))
-                    ServiceLoopEntityRecord("${template.reference} · ${template.name} (v${template.revisionNumber})", metadata = "${template.itemCount} items", status = template.state, modifier = Modifier.weight(1f)) { nav.navigate("template/${template.id}") }
-                }
+                ServiceLoopEntityRecord("${template.reference} · ${template.name} (v${template.revisionNumber})", metadata = "${template.itemCount} items", status = template.state, modifier = Modifier.fillMaxWidth()) { nav.navigate("template/${template.id}") }
             }
     }
 }

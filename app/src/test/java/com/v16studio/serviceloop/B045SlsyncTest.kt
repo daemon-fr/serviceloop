@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -103,6 +104,46 @@ class B045SlsyncTest {
         assertNull(dao.customer("customer-1"))
         assertEquals("old-dataset", dao.recoveryMetadata()?.datasetId)
     }
+
+    @Test fun universalEnvelopeWrapsWorkAndTemplatePayloadsWithoutChangingThem() {
+        val work = dispatchPackage()
+        val decodedWork = ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(work))
+        assertEquals(work, decodedWork)
+        val transfer = InspectionTemplateTransfer("2026-09-22T10:00:00Z", listOf(InspectionTemplateTransferEntry("IT-1", "Safety", 1, listOf(DispatchInspectionItem(1, "Guard", "STATUS", null, true, null)))) )
+        val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer))
+        assertEquals(transfer.generatedAt, decodedTemplates.generatedAt)
+        assertEquals(transfer.templates.single().copy(fingerprint = InspectionTemplateCodec.fingerprint(transfer.templates.single())), decodedTemplates.templates.single())
+    }
+
+    @Test fun purposeRoutingRejectsUnknownAndFamilyFilteringKeepsReferencesValid() {
+        val value = packageValue()
+        val filtered = filterFullWorkspacePackage(value, setOf(SyncContentFamily.VISITS))
+        assertTrue(filtered.register.customers.isNotEmpty())
+        assertTrue(filtered.register.sites.isNotEmpty())
+        assertTrue(filtered.plans.plans.isNotEmpty())
+        assertTrue(filtered.followups.followUps.isEmpty())
+        ServiceLoopSyncCodec.decode(ServiceLoopSyncCodec.encode(filtered))
+        val invalidManifest = ServiceLoopSyncManifest("x", "Unknown", "NOT_A_PURPOSE", "2026-09-22T10:00:00Z", sections = listOf(ServiceLoopSyncSectionDeclaration("x", 1, "x.json")))
+        assertThrows(IllegalArgumentException::class.java) { ServiceLoopSyncEnvelopeCodec.encode(invalidManifest, mapOf("x" to byteArrayOf(1))) }
+    }
+
+    private fun dispatchPackage() = DispatchPackage(
+        packageId = "package-1",
+        createdAt = "2026-09-22T10:00:00Z",
+        senderLabel = "Coordinator",
+        customers = listOf(DispatchCustomer("CU-1", "Customer")),
+        sites = listOf(DispatchSite("ST-1", "CU-1", "Site", "Address")),
+        equipment = emptyList(),
+        visits = listOf(
+            DispatchVisit(
+                dispatchVisitId = "DV-1", generation = 1, managerReference = "JOB-1", serviceDate = "2026-09-23",
+                appointmentLocalTime = null, appointmentZoneId = "Europe/Bucharest", siteReference = "ST-1", instructions = null,
+                teams = listOf(DispatchTeamSnapshot("TEAM-1", "Team", listOf("tech-1"), listOf("tech-1"))),
+                participants = listOf(DispatchTechnicianSnapshot("tech-1", "Technician")), leaderTechnicianIds = listOf("tech-1"),
+                work = listOf(DispatchWork("ITEM-1", WorkSubjectType.SITE, taskName = "Inspect site", assignedTechnicians = listOf(DispatchTechnicianSnapshot("tech-1", "Technician")))),
+            ),
+        ),
+    )
 
     private fun packageValue() = ServiceLoopSyncPackage(
         manifest = ServiceLoopSyncManifest("sync-1", "B045 test workspace", "FULL_WORKSPACE", "2026-09-22T10:00:00Z"),

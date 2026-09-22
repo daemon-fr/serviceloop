@@ -5,7 +5,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -53,33 +52,14 @@ internal fun ServiceLoopNavGraph(
     state: UiState,
     viewModel: ServiceLoopViewModel,
     appearanceController: AppearancePreferences,
-    incomingWorkPackage: String?,
-    incomingWorkPackageEvent: Int,
-    incomingInspectionTemplates: String?,
-    incomingInspectionTemplatesEvent: Int,
     incomingServiceLoopSync: String?,
     incomingServiceLoopSyncEvent: Int,
 ) {
     val context = LocalContext.current
     val teamRole by rememberTeamRoleState(context)
     val capabilities = teamRole.workspaceCapabilities
-    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent, incomingServiceLoopSync, incomingServiceLoopSyncEvent) {
-        mutableStateOf(false)
-    }
-    LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState, capabilities.canReceiveAssignedWork) {
-        if (!state.restrictedRecoveryState && incomingWorkPackage != null) {
-            showExternalRoleDialog = !capabilities.canReceiveAssignedWork
-            if (capabilities.canReceiveAssignedWork) nav.navigate("dispatch/import") { launchSingleTop = true }
-        }
-    }
-    LaunchedEffect(incomingInspectionTemplates, incomingInspectionTemplatesEvent, state.restrictedRecoveryState, capabilities.canExchangeTemplates) {
-        if (!state.restrictedRecoveryState && incomingInspectionTemplates != null) {
-            showExternalRoleDialog = !capabilities.canExchangeTemplates
-            if (capabilities.canExchangeTemplates) nav.navigate("template/list") { launchSingleTop = true }
-        }
-    }
     LaunchedEffect(incomingServiceLoopSync, incomingServiceLoopSyncEvent, state.restrictedRecoveryState) {
-        if (!state.restrictedRecoveryState && incomingServiceLoopSync != null) nav.navigate("slsync/import") { launchSingleTop = true }
+        if (!state.restrictedRecoveryState && incomingServiceLoopSync != null) nav.navigate("import") { launchSingleTop = true }
     }
     CompositionLocalProvider(LocalTeamRole provides teamRole, LocalWorkspaceCapabilities provides capabilities) {
     NavHost(
@@ -181,7 +161,7 @@ internal fun ServiceLoopNavGraph(
         composable("plan/new/{equipmentId}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Service-plan management", nav) { val id=entry.arguments?.getString("equipmentId"); LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Add service plan",nav){PlanEditorScreen(id,null,state.templates,it,state,viewModel,nav)} } }
         composable("plan/{id}") { entry -> val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Service plan",nav){PlanDetailScreen(state.plan,it,nav)} }
         composable("plan/edit/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Service-plan management", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id){viewModel.loadPlan(id)}; DetailScaffold("Edit service plan",nav){PlanEditorScreen(null,state.plan,state.templates,it,state,viewModel,nav)} } }
-        composable("template/list") { WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel,incomingInspectionTemplates)} } }
+        composable("template/list") { WorkspaceGate(capabilities.canManageTemplates, "Template management", nav) { LaunchedEffect(Unit){viewModel.loadTemplates()}; DetailScaffold("Inspection templates",nav){TemplateListScreen(state.templates,it,nav,viewModel) } } }
         composable(
             "template/new?cloneFrom={cloneFrom}&returnTo={returnTo}",
             arguments = listOf(
@@ -252,7 +232,6 @@ internal fun ServiceLoopNavGraph(
         composable("dispatch/visit/new") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { LaunchedEffect(Unit) { viewModel.loadVisitSetup() }; DetailScaffold("New dispatch visit",nav){DispatchVisitEditorScreen(it,nav,null,state.businessDate,canConcludeDelegatedWork=capabilities.canConcludeDelegatedWork,sitesOverride=state.visitSites,dueServicesOverride=state.dueServices,templatesOverride=state.templates,businessZoneId=state.businessZoneId,plannedWorkState=state.dueServicesProjection,onRetryDueServices=viewModel::retryDueServices,onRefreshTemplates=viewModel::loadTemplates)} } }
         composable("dispatch/visit/{id}") { entry -> WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { val id=entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadVisitSetup() }; DetailScaffold("Dispatch visit",nav){DispatchVisitEditorScreen(it,nav,id,state.businessDate,canConcludeDelegatedWork=capabilities.canConcludeDelegatedWork,sitesOverride=state.visitSites,dueServicesOverride=state.dueServices,templatesOverride=state.templates,businessZoneId=state.businessZoneId,plannedWorkState=state.dueServicesProjection,onRetryDueServices=viewModel::retryDueServices,onRefreshTemplates=viewModel::loadTemplates)} } }
         composable("dispatch/export-review") { WorkspaceGate(capabilities.canUseCoordinatorTools, "Coordinator tools", nav) { val ids=nav.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("dispatch-export-ids").orEmpty(); DetailScaffold("Review export",nav){DispatchExportReviewScreen(it,nav,ids)} } }
-        composable("dispatch/import") { WorkspaceGate(capabilities.canReceiveAssignedWork, "Assigned-work receiving", nav) { DetailScaffold("Import work package",nav){ImportDispatchPackageScreen(it,nav,viewModel,incomingWorkPackage)} } }
         composable("business-profile") { LaunchedEffect(Unit) { viewModel.loadBusinessProfile() }; DetailScaffold("Business and report identity", nav) { padding -> BusinessProfileScreen(state.businessProfile, state.businessProfileSaveStatus, padding, viewModel) } }
         composable("record/{id}") { entry -> val id = entry.arguments?.getString("id").orEmpty(); LaunchedEffect(id) { viewModel.loadFinalRecord(id); viewModel.loadRecordVersions(id) }; DetailScaffold("Final service record", nav) { padding -> FinalRecordScreen(state.finalRecord, state.recordVersions, state.reportVersions, false, state.generatingReport, state.error, padding, viewModel, nav) } }
         composable("record-version/{id}/{revisionId}") { entry -> val recordId = entry.arguments?.getString("id").orEmpty(); val revisionId = entry.arguments?.getString("revisionId").orEmpty(); LaunchedEffect(recordId, revisionId) { viewModel.loadFinalRecordRevision(recordId, revisionId) }; DetailScaffold("Historical record revision", nav) { padding -> FinalRecordScreen(state.finalRecord, emptyList(), emptyList(), true, state.generatingReport, state.error, padding, viewModel, nav) } }
@@ -264,22 +243,17 @@ internal fun ServiceLoopNavGraph(
         composable("correction/{recordId}") { entry -> val id = entry.arguments?.getString("recordId").orEmpty(); DetailScaffold("Correct service record", nav) { padding -> CorrectionScreen(id, state, padding, viewModel, nav) } }
         composable("lifecycle/{subject}/{id}/{action}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Register management", nav) { val subject = entry.arguments?.getString("subject").orEmpty(); val id = entry.arguments?.getString("id").orEmpty(); val action = entry.arguments?.getString("action").orEmpty(); DetailScaffold("Lifecycle review", nav) { padding -> LifecycleScreen(subject, id, action, state, padding, viewModel, nav) } } }
         composable("equipment/move/{id}") { entry -> WorkspaceGate(capabilities.canManageRegister, "Equipment management", nav) { val id = entry.arguments?.getString("id").orEmpty(); DetailScaffold("Move equipment", nav) { padding -> MoveEquipmentScreen(id, state, padding, viewModel, nav) } } }
-        composable("data-recovery") { DetailScaffold("Data and recovery", nav) { padding -> DataRecoveryScreen(state, padding, viewModel, nav) } }
+        composable("data-recovery") { DetailScaffold("Backup and recovery", nav) { padding -> DataRecoveryScreen(state, padding, viewModel, nav) } }
         composable("backup/{mode}") { entry -> val mode = entry.arguments?.getString("mode").orEmpty(); DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) } }
         composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
         composable("csv/import") { WorkspaceGate(capabilities.canManageRegister, "Directory CSV import", nav) { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } } }
-        composable("slsync/import") { DetailScaffold("Import ServiceLoop sync", nav) { padding -> ServiceLoopSyncScreen(state, padding, viewModel, nav, incomingServiceLoopSync) } }
+        composable("import") { DetailScaffold("Import", nav) { padding -> ServiceLoopSyncScreen(state, padding, viewModel, nav, incomingServiceLoopSync) } }
+        composable("data-transfer") { DetailScaffold("Import / export data", nav) { padding -> DataTransferScreen(padding, nav) } }
+        composable("data-transfer/export") { DetailScaffold("Export data", nav) { padding -> DataExportScreen(state, padding, nav) } }
+        composable("data-transfer/templates") { DetailScaffold("Export inspection templates", nav) { padding -> TemplateExportScreen(state.templates, padding, nav) } }
+        composable("data-transfer/verify") { DetailScaffold("Verify ServiceLoop file", nav) { padding -> ServiceLoopFileVerifyScreen(padding) } }
         composable("data/erase") { DetailScaffold("Erase local data", nav) { padding -> EraseScreen(state, padding, viewModel, nav) } }
         composable("change/{id}") { entry -> val id = entry.arguments?.getString("id"); DetailScaffold("Recorded change", nav) { padding -> val row = state.history.firstOrNull { it.id == id }; androidx.compose.foundation.layout.Column(Modifier.padding(padding).padding(24.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { androidx.compose.material3.Text(row?.title.orEmpty(), style = androidx.compose.material3.MaterialTheme.typography.headlineSmall); androidx.compose.material3.Text(row?.subtitle.orEmpty()); androidx.compose.material3.Text("This is a read-only historical change. It cannot be replayed or undone here.") } } }
-    }
-    if (!state.restrictedRecoveryState && showExternalRoleDialog) {
-        AlertDialog(
-            onDismissRequest = { showExternalRoleDialog = false },
-            title = { androidx.compose.material3.Text(if (incomingInspectionTemplates != null) "Inspection templates received" else "Work package received") },
-            text = { androidx.compose.material3.Text(if (incomingInspectionTemplates != null) "Inspection template files can be exchanged by Subcontractors, Team Leaders, and Coordinators." else "Work packages can be received by Subcontractors, Employees, and Team Leaders.") },
-            confirmButton = { Button({ showExternalRoleDialog = false; nav.navigate("dispatch/settings") }, Modifier.testTag("external-package-open-role")) { androidx.compose.material3.Text("Open Team role settings") } },
-            dismissButton = { TextButton({ showExternalRoleDialog = false }) { androidx.compose.material3.Text("Not now") } },
-        )
     }
     }
 }

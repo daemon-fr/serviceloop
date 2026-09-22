@@ -267,6 +267,15 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Focused verification: `B045SlsyncTest` 3/3 PASS; `:app:compileDebugKotlin` PASS. Final assembleDebug and `git diff --check` are the B045 handoff gates. Broad regression/device/rendered suites are intentionally not run under the time-boxed policy.
 - Room remains v16 and Android metadata remains `1.0.1` / code `2`. No demo dataset, merge, tag, protected-master movement, or future selective export architecture was added.
 
+## B046 — `.slsync` transport consolidation and import UX — 2026-09-22
+
+- Implemented on `codex/b046-slsync-transport-consolidation` from `9e189905d0fedb795639938af4e521ae2be8ea63`.
+- `.slsync` is now the sole ordinary exchange container with `FULL_WORKSPACE`, `WORK_ASSIGNMENT`, and `TEMPLATE_SHARE` purposes. B045 FULL_WORKSPACE v1 entries and semantics remain wire-compatible.
+- A shared envelope codec owns ZIP/manifest safety. Existing v5 Dispatch and template codecs remain internal payload codecs; Dispatch incremental generation/import and template exact/conflict behavior are preserved.
+- Home and Settings use one unified purpose-aware Import flow. Settings Data is `Import / export data`, `History`, `Backup and recovery`; template management no longer exposes exchange controls. Backup/recovery no longer contains ordinary import/export actions.
+- Old `.slwork`/`.slinsp` production filters and external generation/import entry points were removed. Dispatch export finalizes a verified WORK_ASSIGNMENT `.slsync` before committing Dispatched state.
+- Focused B046 tests passed; Kotlin compile passed. Full regression, connected-device, AVD smoke, rendered owner review, and owner acceptance remain separate gates.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

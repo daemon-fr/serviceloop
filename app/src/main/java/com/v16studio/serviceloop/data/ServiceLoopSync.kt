@@ -11,6 +11,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.LinkedHashMap
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -23,7 +24,21 @@ data class ServiceLoopSyncManifest(
     val purpose: String,
     val generatedAt: String,
     val generatedWith: String = "ServiceLoop",
+    val sections: List<ServiceLoopSyncSectionDeclaration> = emptyList(),
 )
+
+data class ServiceLoopSyncSectionDeclaration(
+    val name: String,
+    val version: Int,
+    val path: String,
+)
+
+data class ServiceLoopSyncEnvelope(
+    val manifest: ServiceLoopSyncManifest,
+    val sections: Map<String, ByteArray>,
+) {
+    fun section(name: String): ByteArray = sections[name] ?: error("Missing ServiceLoop sync section: $name")
+}
 
 data class SyncBusinessProfile(
     val businessName: String,
@@ -232,7 +247,194 @@ data class SyncImportCounts(
 
 data class SyncImportPreview(val packageValue: ServiceLoopSyncPackage, val counts: SyncImportCounts)
 
+enum class SyncContentFamily(val label: String) {
+    BUSINESS_PROFILE("Business profile"),
+    CUSTOMERS("Customers"),
+    SITES("Sites"),
+    EQUIPMENT("Equipment"),
+    INSPECTION_TEMPLATES("Inspection templates"),
+    SERVICE_PLANS("Service plans"),
+    TECHNICIANS("Technicians"),
+    TEAMS("Teams"),
+    VISITS("Visits"),
+    FOLLOW_UPS("Follow-ups"),
+    CONTACT_NOTES("Contact notes"),
+    DISPATCH_DRAFTS("Dispatch drafts"),
+}
+
+fun SyncContentFamily.count(value: ServiceLoopSyncPackage): Int = when (this) {
+    SyncContentFamily.BUSINESS_PROFILE -> 1
+    SyncContentFamily.CUSTOMERS -> value.register.customers.size
+    SyncContentFamily.SITES -> value.register.sites.size
+    SyncContentFamily.EQUIPMENT -> value.register.equipment.size
+    SyncContentFamily.INSPECTION_TEMPLATES -> value.inspections.templates.size
+    SyncContentFamily.SERVICE_PLANS -> value.plans.plans.size
+    SyncContentFamily.TECHNICIANS -> value.team.technicians.size
+    SyncContentFamily.TEAMS -> value.team.teams.size
+    SyncContentFamily.VISITS -> value.visits.bookedVisits.size
+    SyncContentFamily.FOLLOW_UPS -> value.followups.followUps.size
+    SyncContentFamily.CONTACT_NOTES -> value.followups.contactNotes.size
+    SyncContentFamily.DISPATCH_DRAFTS -> value.visits.dispatchDrafts.size
+}
+
+/** Returns the smallest safe FULL_WORKSPACE selection for the requested families. */
+fun normalizeSyncContentSelection(value: ServiceLoopSyncPackage, requested: Set<SyncContentFamily>): Set<SyncContentFamily> {
+    val selected = requested.toMutableSet().apply { add(SyncContentFamily.BUSINESS_PROFILE) }
+    fun add(vararg families: SyncContentFamily) { families.forEach { selected += it } }
+    if (SyncContentFamily.SITES in selected) add(SyncContentFamily.CUSTOMERS)
+    if (SyncContentFamily.EQUIPMENT in selected) add(SyncContentFamily.CUSTOMERS, SyncContentFamily.SITES)
+    if (SyncContentFamily.SERVICE_PLANS in selected) add(SyncContentFamily.CUSTOMERS, SyncContentFamily.SITES, SyncContentFamily.EQUIPMENT)
+    if (SyncContentFamily.TEAMS in selected) add(SyncContentFamily.TECHNICIANS)
+    if (SyncContentFamily.VISITS in selected) add(SyncContentFamily.CUSTOMERS, SyncContentFamily.SITES)
+    if (SyncContentFamily.FOLLOW_UPS in selected || SyncContentFamily.CONTACT_NOTES in selected) add(SyncContentFamily.CUSTOMERS)
+    if (SyncContentFamily.DISPATCH_DRAFTS in selected) add(SyncContentFamily.CUSTOMERS, SyncContentFamily.SITES, SyncContentFamily.TECHNICIANS, SyncContentFamily.TEAMS)
+    if (SyncContentFamily.SERVICE_PLANS in selected && value.plans.plans.any { it.templateId != null }) add(SyncContentFamily.INSPECTION_TEMPLATES)
+    if (SyncContentFamily.VISITS in selected) {
+        val visits = value.visits.bookedVisits
+        if (visits.any { visit -> visit.work.any { it.equipmentId != null } }) add(SyncContentFamily.EQUIPMENT)
+        if (visits.any { visit -> visit.work.any { it.planId != null } }) add(SyncContentFamily.SERVICE_PLANS)
+        if (visits.any { visit -> visit.work.any { it.templateId != null } }) add(SyncContentFamily.INSPECTION_TEMPLATES)
+    }
+    if (SyncContentFamily.DISPATCH_DRAFTS in selected) {
+        if (value.visits.dispatchDrafts.any { it.items.any { item -> item.equipmentId != null } }) add(SyncContentFamily.EQUIPMENT)
+        if (value.visits.dispatchDrafts.any { it.items.any { item -> item.planId != null } }) add(SyncContentFamily.SERVICE_PLANS)
+        if (value.visits.dispatchDrafts.any { it.items.any { item -> item.templateId != null } }) add(SyncContentFamily.INSPECTION_TEMPLATES)
+    }
+    if (SyncContentFamily.FOLLOW_UPS in selected) {
+        if (value.followups.followUps.any { it.siteId != null }) add(SyncContentFamily.SITES)
+        if (value.followups.followUps.any { it.equipmentId != null }) add(SyncContentFamily.EQUIPMENT)
+    }
+    if (SyncContentFamily.CONTACT_NOTES in selected) {
+        if (value.followups.contactNotes.any { it.siteId != null }) add(SyncContentFamily.SITES)
+        if (value.followups.contactNotes.any { it.equipmentId != null }) add(SyncContentFamily.EQUIPMENT)
+    }
+    // Visit/draft references can add a parent family after the first dependency pass.
+    if (SyncContentFamily.SERVICE_PLANS in selected) add(SyncContentFamily.EQUIPMENT, SyncContentFamily.SITES, SyncContentFamily.CUSTOMERS)
+    if (SyncContentFamily.EQUIPMENT in selected) add(SyncContentFamily.SITES, SyncContentFamily.CUSTOMERS)
+    if (SyncContentFamily.SITES in selected) add(SyncContentFamily.CUSTOMERS)
+    if (SyncContentFamily.SERVICE_PLANS in selected && value.plans.plans.any { it.templateId != null }) add(SyncContentFamily.INSPECTION_TEMPLATES)
+    return selected.filterTo(linkedSetOf()) { it.count(value) > 0 || it == SyncContentFamily.BUSINESS_PROFILE }
+}
+
+fun filterFullWorkspacePackage(value: ServiceLoopSyncPackage, requested: Set<SyncContentFamily>): ServiceLoopSyncPackage {
+    val selected = normalizeSyncContentSelection(value, requested)
+    return value.copy(
+        register = value.register.copy(
+            customers = value.register.customers.filter { SyncContentFamily.CUSTOMERS in selected },
+            sites = value.register.sites.filter { SyncContentFamily.SITES in selected },
+            equipment = value.register.equipment.filter { SyncContentFamily.EQUIPMENT in selected },
+        ),
+        inspections = value.inspections.copy(templates = value.inspections.templates.filter { SyncContentFamily.INSPECTION_TEMPLATES in selected }),
+        plans = value.plans.copy(plans = value.plans.plans.filter { SyncContentFamily.SERVICE_PLANS in selected }),
+        team = value.team.copy(
+            technicians = value.team.technicians.filter { SyncContentFamily.TECHNICIANS in selected },
+            teams = value.team.teams.filter { SyncContentFamily.TEAMS in selected },
+        ),
+        visits = value.visits.copy(
+            bookedVisits = value.visits.bookedVisits.filter { SyncContentFamily.VISITS in selected },
+            dispatchDrafts = value.visits.dispatchDrafts.filter { SyncContentFamily.DISPATCH_DRAFTS in selected },
+        ),
+        followups = value.followups.copy(
+            followUps = value.followups.followUps.filter { SyncContentFamily.FOLLOW_UPS in selected },
+            contactNotes = value.followups.contactNotes.filter { SyncContentFamily.CONTACT_NOTES in selected },
+        ),
+    )
+}
+
 data class SyncImportResult(val counts: SyncImportCounts, val importedAtEpochMillis: Long, val zoneId: String)
+
+object ServiceLoopSyncEnvelopeCodec {
+    const val FORMAT = "ServiceLoopSync"
+    const val FORMAT_VERSION = 1
+    const val MAX_PACKAGE_BYTES = 16 * 1024 * 1024
+    const val MAX_EXPANDED_BYTES = 32L * 1024 * 1024
+    const val MAX_ENTRIES = 16
+
+    fun encode(manifest: ServiceLoopSyncManifest, sections: Map<String, ByteArray>): ByteArray {
+        require(manifest.syncId.isNotBlank() && manifest.title.isNotBlank())
+        require(manifest.purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE"))
+        Instant.parse(manifest.generatedAt)
+        require(manifest.generatedWith == "ServiceLoop")
+        require(manifest.sections.size == sections.size && manifest.sections.map { it.name }.toSet().size == sections.size)
+        val entries = linkedMapOf("manifest.json" to manifestJson(manifest).toByteArray(Charsets.UTF_8))
+        manifest.sections.forEach { declaration ->
+            require(declaration.version > 0 && declaration.path == declaration.path.trim() && isSafeEntryName(declaration.path))
+            entries[declaration.path] = sections[declaration.name] ?: error("Missing section ${declaration.name}")
+        }
+        require(entries.size <= MAX_ENTRIES)
+        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } } }.toByteArray()
+    }
+
+    fun decode(bytes: ByteArray): ServiceLoopSyncEnvelope {
+        require(bytes.size <= MAX_PACKAGE_BYTES) { "Selected sync is too large" }
+        val entries = LinkedHashMap<String, ByteArray>()
+        var expanded = 0L
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                require(entries.size < MAX_ENTRIES) { "Sync contains too many entries" }
+                require(!entry.isDirectory && isSafeEntryName(entry.name)) { "Unsafe sync entry" }
+                require(entries.put(entry.name, zip.readBounded(MAX_EXPANDED_BYTES - expanded)) == null) { "Duplicate sync entry" }
+                expanded += entries.getValue(entry.name).size
+                require(expanded <= MAX_EXPANDED_BYTES) { "Expanded sync is too large" }
+            }
+        }
+        val manifestObject = JSONObject(entries["manifest.json"]?.toString(Charsets.UTF_8) ?: error("Sync manifest is missing"))
+        val manifest = parseManifest(manifestObject)
+        require(entries.keys == (setOf("manifest.json") + manifest.sections.map { it.path })) { "Sync entries do not match the manifest" }
+        return ServiceLoopSyncEnvelope(manifest, manifest.sections.associate { it.name to entries.getValue(it.path) })
+    }
+
+    fun wrapWorkAssignment(value: DispatchPackage): ByteArray = encode(
+        ServiceLoopSyncManifest(value.packageId, "ServiceLoop work assignment", "WORK_ASSIGNMENT", value.createdAt, sections = listOf(ServiceLoopSyncSectionDeclaration("working", DispatchPackageCodec.CURRENT_VERSION, "working.json"))),
+        mapOf("working" to DispatchPackageCodec.encode(value)),
+    )
+
+    fun unwrapWorkAssignment(bytes: ByteArray): DispatchPackage {
+        val envelope = decode(bytes)
+        require(envelope.manifest.purpose == "WORK_ASSIGNMENT") { "This ServiceLoop file is not a work assignment" }
+        require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("working", DispatchPackageCodec.CURRENT_VERSION, "working.json"))) { "Invalid work-assignment sections" }
+        return DispatchPackageCodec.decode(envelope.section("working"))
+    }
+
+    fun wrapTemplateShare(value: InspectionTemplateTransfer): ByteArray = encode(
+        ServiceLoopSyncManifest(UUID.randomUUID().toString(), "ServiceLoop inspection templates", "TEMPLATE_SHARE", value.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json"))),
+        mapOf("inspections" to InspectionTemplateCodec.encode(value)),
+    )
+
+    fun unwrapTemplateShare(bytes: ByteArray): InspectionTemplateTransfer {
+        val envelope = decode(bytes)
+        require(envelope.manifest.purpose == "TEMPLATE_SHARE") { "This ServiceLoop file is not a template share" }
+        require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json"))) { "Invalid template-share sections" }
+        return InspectionTemplateCodec.decode(envelope.section("inspections"))
+    }
+
+    private fun manifestJson(manifest: ServiceLoopSyncManifest) = JSONObject()
+        .put("format", FORMAT).put("formatVersion", FORMAT_VERSION).put("syncId", manifest.syncId)
+        .put("title", manifest.title).put("purpose", manifest.purpose).put("generatedAt", manifest.generatedAt)
+        .put("generatedWith", manifest.generatedWith)
+        .put("sections", JSONArray().also { array -> manifest.sections.forEach { array.put(JSONObject().put("name", it.name).put("version", it.version).put("path", it.path)) } }).toString()
+
+    private fun parseManifest(o: JSONObject): ServiceLoopSyncManifest {
+        require(o.requiredText("format") == FORMAT && o.getInt("formatVersion") == FORMAT_VERSION)
+        val purpose = o.requiredText("purpose")
+        require(purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE"))
+        val generatedAt = o.requiredText("generatedAt"); Instant.parse(generatedAt)
+        require(o.requiredText("generatedWith") == "ServiceLoop")
+        val sectionsObject = o.getJSONArray("sections")
+        val sections = (0 until sectionsObject.length()).map { index ->
+            val section = sectionsObject.getJSONObject(index)
+            ServiceLoopSyncSectionDeclaration(section.requiredText("name"), section.getInt("version"), section.requiredText("path"))
+        }
+        require(sections.isNotEmpty() && sections.map { it.name }.distinct().size == sections.size && sections.map { it.path }.distinct().size == sections.size)
+        require(sections.all { isSafeEntryName(it.path) })
+        return ServiceLoopSyncManifest(o.requiredText("syncId"), o.requiredText("title"), purpose, generatedAt, "ServiceLoop", sections)
+    }
+
+    private fun isSafeEntryName(name: String) = name.isNotBlank() && !name.contains('/') && !name.contains('\\') && !name.contains(':') && name != "." && name != ".."
+    private fun InputStream.readBounded(remaining: Long): ByteArray { require(remaining >= 0); val out = ByteArrayOutputStream(); val buffer = ByteArray(8192); while (true) { val count = read(buffer); if (count < 0) break; require(out.size() + count <= remaining) { "Expanded sync is too large" }; out.write(buffer, 0, count) }; return out.toByteArray() }
+    private fun JSONObject.requiredText(name: String, max: Int = 4_000): String = getString(name).trim().also { require(it.isNotEmpty() && it.length <= max) { "Invalid $name" } }
+}
 
 object ServiceLoopSyncCodec {
     const val FORMAT = "ServiceLoopSync"
@@ -261,56 +463,36 @@ object ServiceLoopSyncCodec {
 
     fun encode(value: ServiceLoopSyncPackage): ByteArray {
         validatePackage(value)
-        val entries = linkedMapOf(
-            "manifest.json" to manifestJson(value).toByteArray(Charsets.UTF_8),
-            "business.json" to businessJson(value.business).toByteArray(Charsets.UTF_8),
-            "register.json" to registerJson(value.register).toByteArray(Charsets.UTF_8),
-            "inspections.json" to inspectionsJson(value.inspections).toByteArray(Charsets.UTF_8),
-            "plans.json" to plansJson(value.plans).toByteArray(Charsets.UTF_8),
-            "team.json" to teamJson(value.team).toByteArray(Charsets.UTF_8),
-            "visits.json" to visitsJson(value.visits).toByteArray(Charsets.UTF_8),
-            "followups.json" to followupsJson(value.followups).toByteArray(Charsets.UTF_8),
+        val sectionDeclarations = sectionNames.map { ServiceLoopSyncSectionDeclaration(it, 1, "$it.json") }
+        return ServiceLoopSyncEnvelopeCodec.encode(
+            value.manifest.copy(purpose = PURPOSE_FULL_WORKSPACE, sections = sectionDeclarations),
+            mapOf(
+                "business" to businessJson(value.business).toByteArray(Charsets.UTF_8),
+                "register" to registerJson(value.register).toByteArray(Charsets.UTF_8),
+                "inspections" to inspectionsJson(value.inspections).toByteArray(Charsets.UTF_8),
+                "plans" to plansJson(value.plans).toByteArray(Charsets.UTF_8),
+                "team" to teamJson(value.team).toByteArray(Charsets.UTF_8),
+                "visits" to visitsJson(value.visits).toByteArray(Charsets.UTF_8),
+                "followups" to followupsJson(value.followups).toByteArray(Charsets.UTF_8),
+            ),
         )
-        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } } }.toByteArray()
     }
 
     fun decode(bytes: ByteArray): ServiceLoopSyncPackage {
-        require(bytes.size <= MAX_PACKAGE_BYTES) { "Selected sync is too large" }
-        val entries = LinkedHashMap<String, ByteArray>()
-        var expanded = 0L
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                require(entries.size < MAX_ENTRIES) { "Sync contains too many entries" }
-                val name = entry.name
-                require(!entry.isDirectory && isSafeEntryName(name)) { "Unsafe sync entry" }
-                require(entries.put(name, zip.readBounded(MAX_EXPANDED_BYTES - expanded)) == null) { "Duplicate sync entry" }
-                expanded += entries[name]!!.size
-                require(expanded <= MAX_EXPANDED_BYTES) { "Expanded sync is too large" }
-            }
-        }
-        require(entries.keys == expectedEntries) { "Sync entries do not match the v1 contract" }
-        val manifestObject = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
-        val manifest = parseManifest(manifestObject)
-        val sections = manifestObject.getJSONArray("sections")
-        require(sections.length() == sectionNames.size) { "Sync must contain exactly seven sections" }
-        val declared = mutableSetOf<String>()
-        for (index in 0 until sections.length()) {
-            val section = sections.getJSONObject(index)
-            val name = section.requiredText("name")
-            val path = section.requiredText("path")
-            require(section.getInt("version") == 1 && name in sectionNames && path == "$name.json" && declared.add(name)) { "Invalid sync section declaration" }
-        }
-        require(declared == sectionNames.toSet()) { "Sync sections are incomplete" }
+        val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes)
+        require(envelope.manifest.purpose == PURPOSE_FULL_WORKSPACE) { "Unsupported ServiceLoop sync purpose" }
+        require(envelope.manifest.sections == sectionNames.map { ServiceLoopSyncSectionDeclaration(it, 1, "$it.json") }) { "Sync entries do not match the v1 contract" }
+        val sections = envelope.sections
         return ServiceLoopSyncPackage(
-            manifest = manifest,
-            business = parseBusiness(JSONObject(entries.getValue("business.json").toString(Charsets.UTF_8))),
-            register = parseRegister(JSONObject(entries.getValue("register.json").toString(Charsets.UTF_8))),
-            inspections = parseInspections(JSONObject(entries.getValue("inspections.json").toString(Charsets.UTF_8))),
-            plans = parsePlans(JSONObject(entries.getValue("plans.json").toString(Charsets.UTF_8))),
-            team = parseTeam(JSONObject(entries.getValue("team.json").toString(Charsets.UTF_8))),
-            visits = parseVisits(JSONObject(entries.getValue("visits.json").toString(Charsets.UTF_8))),
-            followups = parseFollowups(JSONObject(entries.getValue("followups.json").toString(Charsets.UTF_8))),
+            // Keep the B045 package model value-compatible; section declarations belong to the generic envelope.
+            manifest = envelope.manifest.copy(sections = emptyList()),
+            business = parseBusiness(JSONObject(sections.getValue("business").toString(Charsets.UTF_8))),
+            register = parseRegister(JSONObject(sections.getValue("register").toString(Charsets.UTF_8))),
+            inspections = parseInspections(JSONObject(sections.getValue("inspections").toString(Charsets.UTF_8))),
+            plans = parsePlans(JSONObject(sections.getValue("plans").toString(Charsets.UTF_8))),
+            team = parseTeam(JSONObject(sections.getValue("team").toString(Charsets.UTF_8))),
+            visits = parseVisits(JSONObject(sections.getValue("visits").toString(Charsets.UTF_8))),
+            followups = parseFollowups(JSONObject(sections.getValue("followups").toString(Charsets.UTF_8))),
         ).also(::validatePackage)
     }
 
