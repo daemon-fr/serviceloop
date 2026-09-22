@@ -254,6 +254,19 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Active Service Plan projections provide contextual reusable-checklist suggestions by equipment/site, while explicit checklist choices, explicit None, and the Create Template return remain authoritative. No schema, version, or file-format change was made.
 - Focused evidence: `B044VisitSetupTest` 12/12 PASS; debug and Android-test APK assembly PASS; lint PASS; one canonical `Pixel 10a ServiceLoop` UI smoke 1/1 PASS with chooser/configured screenshots inspected. Broad regression suites and the full Create Template round-trip were intentionally not run under the time-boxed verification policy.
 
+## B045 — `.slsync` UNIVERSAL CONTAINER AND INITIAL WORKSPACE IMPORT
+
+**Status: IMPLEMENTED / READY FOR OWNER REVIEW**
+
+- Branch: `codex/b045-slsync-initial-import`; start SHA: `5a947da7ea6e61e32040f1afddaeba865473b2d5`.
+- B045 is a new explicit owner-adopted decision. The authoritative milestone document is `B045_SLSYNC_UNIVERSAL_CONTAINER_AND_INITIAL_WORKSPACE_IMPORT.md`; absence of a pre-existing B045 document was expected and did not limit implementation.
+- `.slsync` is a semantic ZIP container with MIME `application/vnd.serviceloop.sync+zip`, manifest v1, exactly seven semantic JSON sections, FULL_WORKSPACE purpose, bounded decode, exact-entry validation, and no binary payload, hashes, signatures, conflict engine, or selective-sync scope.
+- The trusted initial importer decodes fully before mutation, serializes through `BusinessFileCoordinator`, and performs a one-transaction Room replacement. Register, current templates, active plans/open obligations, booked local visits/claims, dispatch directory/drafts, follow-ups, and contact notes are mapped to the existing v16 entities. Technician identity, reminder preferences, role/appearance/device settings, Android permissions, and Calendar preference remain device-local.
+- Recovery metadata is renewed with a new dataset UUID and import timestamps; backup verification/attempt fields are reset, the reminder interval is preserved, and incomplete/restricted/adoption state is cleared on success. Old attachment/report files are not cleaned up yet and may remain orphaned; cleanup is deferred.
+- Settings import, Android document picker, ACTION_VIEW/ACTION_SEND `.slsync` routing, preview/replacement warning, success navigation, and safe failure state are implemented. Existing S37 CSV import, `.slwork`, `.slinsp`, and Recovery Backup behavior remain separate and unchanged.
+- Focused verification: `B045SlsyncTest` 3/3 PASS; `:app:compileDebugKotlin` PASS. Final assembleDebug and `git diff --check` are the B045 handoff gates. Broad regression/device/rendered suites are intentionally not run under the time-boxed policy.
+- Room remains v16 and Android metadata remains `1.0.1` / code `2`. No demo dataset, merge, tag, protected-master movement, or future selective export architecture was added.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

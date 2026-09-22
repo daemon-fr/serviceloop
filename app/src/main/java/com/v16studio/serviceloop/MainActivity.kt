@@ -15,6 +15,7 @@ import com.v16studio.serviceloop.ui.ServiceLoopApp
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import com.v16studio.serviceloop.data.INSPECTION_TEMPLATES_MIME
+import com.v16studio.serviceloop.data.SERVICE_LOOP_SYNC_MIME
 
 class MainActivity : ComponentActivity() {
     private var notificationRoute by mutableStateOf<String?>(null)
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
     private var incomingWorkPackageEvent by mutableStateOf(0)
     private var incomingInspectionTemplates by mutableStateOf<String?>(null)
     private var incomingInspectionTemplatesEvent by mutableStateOf(0)
+    private var incomingServiceLoopSync by mutableStateOf<String?>(null)
+    private var incomingServiceLoopSyncEvent by mutableStateOf(0)
     private val viewModel: ServiceLoopViewModel by viewModels {
         ServiceLoopViewModel.Factory((application as ServiceLoopApplication).container)
     }
@@ -33,7 +36,7 @@ class MainActivity : ComponentActivity() {
         acceptWorkPackageIntent(intent)
         setContent {
             ServiceLoopTheme(appearancePreferences = (application as ServiceLoopApplication).container.appearancePreferences, window = window) {
-                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent, (application as ServiceLoopApplication).container.appearancePreferences)
+                ServiceLoopApp(viewModel, notificationRoute, incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent, incomingServiceLoopSync, incomingServiceLoopSyncEvent, (application as ServiceLoopApplication).container.appearancePreferences)
             }
         }
     }
@@ -60,8 +63,10 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         uri?.let {
+            val isSync = intent?.type == SERVICE_LOOP_SYNC_MIME || it.path?.lowercase()?.endsWith(".slsync") == true
             val isTemplates = intent?.type == INSPECTION_TEMPLATES_MIME || it.path?.lowercase()?.endsWith(".slinsp") == true
-            if (isTemplates) { incomingInspectionTemplates = it.toString(); incomingInspectionTemplatesEvent++ }
+            if (isSync) { incomingServiceLoopSync = it.toString(); incomingServiceLoopSyncEvent++ }
+            else if (isTemplates) { incomingInspectionTemplates = it.toString(); incomingInspectionTemplatesEvent++ }
             else { incomingWorkPackage = it.toString(); incomingWorkPackageEvent++ }
         }
     }

@@ -57,11 +57,13 @@ internal fun ServiceLoopNavGraph(
     incomingWorkPackageEvent: Int,
     incomingInspectionTemplates: String?,
     incomingInspectionTemplatesEvent: Int,
+    incomingServiceLoopSync: String?,
+    incomingServiceLoopSyncEvent: Int,
 ) {
     val context = LocalContext.current
     val teamRole by rememberTeamRoleState(context)
     val capabilities = teamRole.workspaceCapabilities
-    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent) {
+    var showExternalRoleDialog by remember(incomingWorkPackage, incomingWorkPackageEvent, incomingInspectionTemplates, incomingInspectionTemplatesEvent, incomingServiceLoopSync, incomingServiceLoopSyncEvent) {
         mutableStateOf(false)
     }
     LaunchedEffect(incomingWorkPackage, incomingWorkPackageEvent, state.restrictedRecoveryState, capabilities.canReceiveAssignedWork) {
@@ -75,6 +77,9 @@ internal fun ServiceLoopNavGraph(
             showExternalRoleDialog = !capabilities.canExchangeTemplates
             if (capabilities.canExchangeTemplates) nav.navigate("template/list") { launchSingleTop = true }
         }
+    }
+    LaunchedEffect(incomingServiceLoopSync, incomingServiceLoopSyncEvent, state.restrictedRecoveryState) {
+        if (!state.restrictedRecoveryState && incomingServiceLoopSync != null) nav.navigate("slsync/import") { launchSingleTop = true }
     }
     CompositionLocalProvider(LocalTeamRole provides teamRole, LocalWorkspaceCapabilities provides capabilities) {
     NavHost(
@@ -263,6 +268,7 @@ internal fun ServiceLoopNavGraph(
         composable("backup/{mode}") { entry -> val mode = entry.arguments?.getString("mode").orEmpty(); DetailScaffold(if (mode == "create") "Create backup" else if (mode == "restore") "Restore backup" else "Inspect backup", nav) { padding -> BackupScreen(mode, state, padding, viewModel, nav) } }
         composable("csv/export") { DetailScaffold("Export readable CSV", nav) { padding -> CsvExportScreen(state, padding, viewModel) } }
         composable("csv/import") { WorkspaceGate(capabilities.canManageRegister, "Directory CSV import", nav) { DetailScaffold("Import directory CSV", nav) { padding -> CsvImportScreen(state, padding, viewModel, nav) } } }
+        composable("slsync/import") { DetailScaffold("Import ServiceLoop sync", nav) { padding -> ServiceLoopSyncScreen(state, padding, viewModel, nav, incomingServiceLoopSync) } }
         composable("data/erase") { DetailScaffold("Erase local data", nav) { padding -> EraseScreen(state, padding, viewModel, nav) } }
         composable("change/{id}") { entry -> val id = entry.arguments?.getString("id"); DetailScaffold("Recorded change", nav) { padding -> val row = state.history.firstOrNull { it.id == id }; androidx.compose.foundation.layout.Column(Modifier.padding(padding).padding(24.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { androidx.compose.material3.Text(row?.title.orEmpty(), style = androidx.compose.material3.MaterialTheme.typography.headlineSmall); androidx.compose.material3.Text(row?.subtitle.orEmpty()); androidx.compose.material3.Text("This is a read-only historical change. It cannot be replayed or undone here.") } } }
     }

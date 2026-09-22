@@ -219,6 +219,7 @@ interface ServiceLoopRepository {
     suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean, customerId: String? = null): ByteArray = error("Export unavailable")
     suspend fun validateDirectoryCsv(bytes: ByteArray): CsvImportPreview = error("Import unavailable")
     suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String> = emptySet(), skippedBranches: Set<String> = emptySet()): ImportResult = error("Import unavailable")
+    suspend fun importServiceLoopSync(value: ServiceLoopSyncPackage): SyncImportResult = error("ServiceLoop sync import unavailable")
     suspend fun erase(acknowledged: Boolean, confirmation: String): Unit = error("Erase unavailable")
     suspend fun reminderPreferences(): ReminderPreferences = ReminderPreferences()
     suspend fun saveReminderPreferences(value: ReminderPreferences): Long = error("Reminder settings unavailable")
@@ -299,6 +300,12 @@ class RoomServiceLoopRepository(
     override suspend fun recordsCsvPackage(includeInactive: Boolean, includePrivate: Boolean, includePreviousRevisions: Boolean, customerId: String?) = stage4.recordsCsvPackage(includeInactive, includePrivate, includePreviousRevisions, customerId)
     override suspend fun validateDirectoryCsv(bytes: ByteArray) = stage4.validateDirectoryCsv(bytes)
     override suspend fun importDirectory(preview: CsvImportPreview, createSeparate: Set<String>, skippedBranches: Set<String>) = stage4.importDirectory(preview, createSeparate, skippedBranches)
+    override suspend fun importServiceLoopSync(value: ServiceLoopSyncPackage): SyncImportResult {
+        val result = ServiceLoopSyncImporter(database, businessTime, writeGate).apply(value)
+        (businessTime as? MutableBusinessTime)?.updateZone(ZoneId.of(result.zoneId))
+        businessDateSignal?.invalidate()
+        return result
+    }
     override suspend fun erase(acknowledged: Boolean, confirmation: String) {
         stage4.erase(acknowledged, confirmation)
         (businessTime as? MutableBusinessTime)?.updateZone(ZoneId.systemDefault())

@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.v16studio.serviceloop.AppContainer
 import com.v16studio.serviceloop.data.ServiceLoopRepository
+import com.v16studio.serviceloop.data.ServiceLoopSyncCodec
+import com.v16studio.serviceloop.data.ServiceLoopSyncPackage
+import com.v16studio.serviceloop.data.SyncImportPreview
 import com.v16studio.serviceloop.data.NextDueRecoveryRequest
 import com.v16studio.serviceloop.data.NextDueRecoveryResult
 import com.v16studio.serviceloop.domain.CompletionLine
@@ -122,6 +125,7 @@ data class UiState(
     val backupResult: BackupResult? = null,
     val backupInspection: BackupInspection? = null,
     val csvPreview: CsvImportPreview? = null,
+    val syncPreview: SyncImportPreview? = null,
     val importResult: ImportResult? = null,
     val exportBytes: ByteArray? = null,
     val reminderPreferences: ReminderPreferences? = null,
@@ -794,6 +798,36 @@ class ServiceLoopViewModel(
     fun prepareRecordsCsv(includeInactive: Boolean, includePrivate: Boolean, previous: Boolean, customerId: String? = null) = runOperation({ repository.recordsCsvPackage(includeInactive, includePrivate, previous, customerId) }) { bytes -> _state.update { it.copy(exportBytes = bytes) } }
     fun validateCsv(bytes: ByteArray) = runOperation({ repository.validateDirectoryCsv(bytes) }) { value -> _state.update { it.copy(csvPreview = value, importResult = null) } }
     fun importCsv(createSeparate: Set<String> = emptySet(), skipped: Set<String> = emptySet()) { val preview = _state.value.csvPreview ?: return; runOperation({ repository.importDirectory(preview, createSeparate, skipped) }) { value -> _state.update { it.copy(importResult = value) }; refreshRootDataNonBlocking() } }
+    fun validateServiceLoopSync(bytes: ByteArray) {
+        if (_state.value.operationInProgress) return
+        _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null, syncPreview = null) }
+        viewModelScope.launch {
+            try {
+                val preview = withContext(Dispatchers.IO) { ServiceLoopSyncCodec.preview(ServiceLoopSyncCodec.decode(bytes)) }
+                _state.update { it.copy(operationInProgress = false, syncPreview = preview) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Could not read this ServiceLoop sync") } }
+        }
+    }
+    fun clearServiceLoopSync() { _state.update { it.copy(syncPreview = null, error = null, operationMessage = null) } }
+    fun importServiceLoopSync(onSuccess: () -> Unit = {}) {
+        val preview = _state.value.syncPreview ?: return
+        if (_state.value.operationInProgress || _state.value.restrictedRecoveryState) return
+        _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
+        viewModelScope.launch {
+            try {
+                repository.importServiceLoopSync(preview.packageValue)
+                reminderCoordinator?.resetForDatasetReplacement()
+                calendarCoordinator?.resetForDatasetReplacement()
+                advanceDatasetGeneration()
+                _state.update { it.copy(operationInProgress = false, operationMessage = "Imported ServiceLoop workspace.") }
+                refreshRootDataNonBlocking()
+                loadDatasetSummary()
+                onSuccess()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Could not import this ServiceLoop sync") } }
+        }
+    }
     fun erase(acknowledged: Boolean, confirmation: String, onSuccess: () -> Unit) { advanceDatasetGeneration(); runOperation({ reminderCoordinator?.resetForDatasetReplacement(); calendarCoordinator?.resetForDatasetReplacement(); repository.erase(acknowledged, confirmation); true }) { onSuccess() } }
     fun consumeFinalizedNavigation() { _state.update { it.copy(finalizedRecordId = null) } }
 

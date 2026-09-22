@@ -176,7 +176,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0, incomingInspectionTemplates: String? = null, incomingInspectionTemplatesEvent: Int = 0, appearancePreferences: AppearancePreferences? = null) {
+fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? = null, incomingWorkPackage: String? = null, incomingWorkPackageEvent: Int = 0, incomingInspectionTemplates: String? = null, incomingInspectionTemplatesEvent: Int = 0, incomingServiceLoopSync: String? = null, incomingServiceLoopSyncEvent: Int = 0, appearancePreferences: AppearancePreferences? = null) {
     val state by viewModel.state.collectAsState()
     if (!state.recoveryCheckComplete) return HonestPlaceholder(PaddingValues(), "Checking local recovery state")
     val nav = rememberNavController()
@@ -194,6 +194,8 @@ fun ServiceLoopApp(viewModel: ServiceLoopViewModel, notificationRoute: String? =
         incomingWorkPackageEvent = incomingWorkPackageEvent,
         incomingInspectionTemplates = incomingInspectionTemplates,
         incomingInspectionTemplatesEvent = incomingInspectionTemplatesEvent,
+        incomingServiceLoopSync = incomingServiceLoopSync,
+        incomingServiceLoopSyncEvent = incomingServiceLoopSyncEvent,
     )
 }
 
