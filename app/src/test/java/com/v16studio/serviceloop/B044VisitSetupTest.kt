@@ -8,9 +8,14 @@ import com.v16studio.serviceloop.ui.VisitSetupDraft
 import com.v16studio.serviceloop.ui.VisitSetupMode
 import com.v16studio.serviceloop.ui.VisitSetupTaskEditorState
 import com.v16studio.serviceloop.ui.VisitSetupTaskDraft
+import com.v16studio.serviceloop.ui.VisitSetupTemplateSuggestion
+import com.v16studio.serviceloop.ui.applyVisitSetupTemplateSuggestion
 import com.v16studio.serviceloop.ui.dispatchItemIdForWorkKey
 import com.v16studio.serviceloop.ui.restoreVisitSetupTaskEditorState
 import com.v16studio.serviceloop.ui.saveVisitSetupTaskEditorState
+import com.v16studio.serviceloop.ui.selectVisitSetupTemplateExplicitly
+import com.v16studio.serviceloop.ui.suggestVisitSetupTemplate
+import com.v16studio.serviceloop.ui.VisitSetupTemplateSuggestionSource
 import com.v16studio.serviceloop.ui.visitSetupIsDirty
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -30,6 +35,7 @@ class B044VisitSetupTest {
             equipmentDescription = "Roof unit",
             reusableTemplateId = "template-1",
             editingTaskId = "task-1",
+            templateSelectionExplicit = true,
         )
         val saved = saveVisitSetupTaskEditorState(original)
 
@@ -90,4 +96,86 @@ class B044VisitSetupTest {
         validateNewBookedVisitDate("BOOKED", "2026-09-23", today)
         validateNewBookedVisitDate("HISTORICAL", "2026-09-21", today)
     }
+
+    @Test
+    fun contextualSuggestionUsesOneActiveGlobalTemplate() {
+        val suggestion = suggestVisitSetupTemplate(WorkSubjectType.SITE, null, emptyMap(), listOf(activeTemplate("one")))
+
+        assertEquals("one", suggestion.autoSelectedTemplateId)
+        assertEquals(VisitSetupTemplateSuggestionSource.ONLY_ACTIVE_TEMPLATE, suggestion.source)
+    }
+
+    @Test
+    fun contextualSuggestionDoesNotGuessBetweenMultipleGlobalTemplates() {
+        val suggestion = suggestVisitSetupTemplate(WorkSubjectType.SITE, null, emptyMap(), listOf(activeTemplate("one"), activeTemplate("two")))
+
+        assertEquals(null, suggestion.autoSelectedTemplateId)
+        assertTrue(suggestion.preferredTemplateIds.isEmpty())
+    }
+
+    @Test
+    fun equipmentContextWinsAndFiltersInactiveAndDuplicateBindings() {
+        val suggestion = suggestVisitSetupTemplate(
+            WorkSubjectType.EQUIPMENT,
+            "equipment-1",
+            mapOf("equipment-1" to setOf("one", "one", "disabled"), "equipment-2" to setOf("other")),
+            listOf(activeTemplate("one"), activeTemplate("other"), activeTemplate("disabled", "DISABLED")),
+        )
+
+        assertEquals("one", suggestion.autoSelectedTemplateId)
+        assertEquals(VisitSetupTemplateSuggestionSource.EQUIPMENT_PLAN, suggestion.source)
+        assertEquals(listOf("one"), suggestion.preferredTemplateIds)
+    }
+
+    @Test
+    fun ambiguousEquipmentContextIsPreferredButNotAutoSelected() {
+        val suggestion = suggestVisitSetupTemplate(
+            WorkSubjectType.EQUIPMENT,
+            "equipment-1",
+            mapOf("equipment-1" to setOf("one", "two")),
+            listOf(activeTemplate("one"), activeTemplate("two")),
+        )
+
+        assertEquals(null, suggestion.autoSelectedTemplateId)
+        assertEquals(listOf("one", "two"), suggestion.preferredTemplateIds)
+    }
+
+    @Test
+    fun siteContextSuggestsOneTemplateAndUnspecifiedEquipmentUsesSiteContext() {
+        val suggestion = suggestVisitSetupTemplate(
+            WorkSubjectType.EQUIPMENT,
+            null,
+            mapOf("equipment-1" to setOf("one"), "equipment-2" to setOf("one")),
+            listOf(activeTemplate("one"), activeTemplate("other")),
+        )
+
+        assertEquals("one", suggestion.autoSelectedTemplateId)
+        assertEquals(VisitSetupTemplateSuggestionSource.SITE_PLANS, suggestion.source)
+    }
+
+    @Test
+    fun explicitTemplateChoiceAndExplicitNoneAreNeverOverwrittenByContext() {
+        val suggestion = VisitSetupTemplateSuggestion(
+            autoSelectedTemplateId = "suggested",
+            source = VisitSetupTemplateSuggestionSource.EQUIPMENT_PLAN,
+        )
+        val explicit = VisitSetupTaskEditorState(reusableTemplateId = "chosen", templateSelectionExplicit = true)
+        val explicitNone = VisitSetupTaskEditorState(templateSelectionExplicit = true)
+
+        assertEquals(explicit, applyVisitSetupTemplateSuggestion(explicit, suggestion))
+        assertEquals(explicitNone, applyVisitSetupTemplateSuggestion(explicitNone, suggestion))
+    }
+
+    @Test
+    fun returnedTemplateWinsAutoSuggestionAndBecomesExplicit() {
+        val auto = VisitSetupTaskEditorState(reusableTemplateId = "auto")
+        val returned = selectVisitSetupTemplateExplicitly(auto, "created")
+
+        assertEquals("created", returned.reusableTemplateId)
+        assertTrue(returned.templateSelectionExplicit)
+        assertEquals(returned, applyVisitSetupTemplateSuggestion(returned, VisitSetupTemplateSuggestion("other")))
+    }
+
+    private fun activeTemplate(id: String, state: String = "ACTIVE") =
+        com.v16studio.serviceloop.domain.TemplateSummary(id, "T-$id", id, 1, 1, state)
 }

@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui
 
+import android.content.Context
+import android.view.inputmethod.InputMethodManager
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -696,28 +698,88 @@ class B026LocalFlexibleWorkUiTest {
         compose.onNodeWithTag("field-find-customer-or-site").performTextInput("Unique one-time")
         compose.onNodeWithTag("visit-site-one-time-site").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("One-time", substring = true).fetchSemanticsNodes().isNotEmpty())
-        compose.onNodeWithTag("visit-site-one-time-site").performClick()
+        compose.onNodeWithTag("visit-site-one-time-site-select").performClick()
+        compose.onNodeWithTag("visit-site-continue").performClick()
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required")).assertIsDisplayed()
+    }
+
+    @Test fun siteSelectionIsStagedUntilContinueAndUsesSeparateCheckAction() {
+        val first = site("first-site", "First site", CustomerType.STANDARD)
+        val second = site("second-site", "Second site", CustomerType.STANDARD)
+        val checklist = TemplateSummary("smoke-template", "IT-SMOKE", "Smoke checklist", 1, 1, "ACTIVE")
+        showNewVisit(
+            listOf(first, second),
+            emptyList(),
+            state = UiState(
+                loading = false,
+                dueServicesProjection = DueServicesProjection.Available(emptyList()),
+                businessDate = LocalDate.of(2026, 9, 5),
+                businessZoneId = "Europe/Bucharest",
+                templates = listOf(checklist),
+            ),
+        )
+        captureRendered("b044-site-chooser.png")
+
+        compose.onNodeWithTag("visit-site-continue").assertIsNotEnabled()
+        compose.onAllNodesWithTag("field-appointment-service-date-yyyy-mm-dd").assertCountEquals(0)
+        compose.onAllNodesWithTag("field-task-name-required").assertCountEquals(0)
+        compose.onNodeWithTag("visit-site-first-site").assertHasNoClickAction()
+        compose.onNodeWithTag("visit-site-first-site-select").assertIsNotSelected().performClick()
+        compose.onNodeWithTag("visit-site-first-site-select").assertIsSelected()
+        compose.onNodeWithTag("visit-site-second-site-select").assertIsNotSelected()
+        compose.onNodeWithTag("visit-site-continue").assertIsEnabled()
+        compose.onAllNodesWithTag("field-appointment-service-date-yyyy-mm-dd").assertCountEquals(0)
+
+        compose.onNodeWithTag("visit-site-second-site-select").performClick()
+        compose.onNodeWithTag("visit-site-first-site-select").assertIsNotSelected()
+        compose.onNodeWithTag("visit-site-second-site-select").assertIsSelected()
+        compose.onNodeWithTag("visit-site-continue").performClick()
+        compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").assertIsDisplayed()
+        compose.onNodeWithText("Customer second-site · Second site").assertIsDisplayed()
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Inspect site")
+        compose.onNodeWithTag("task-template-selector").assertIsDisplayed()
+        compose.onNodeWithTag("task-template-suggestion").assertTextContains("Only active inspection checklist", substring = true)
+        compose.runOnUiThread {
+            val manager = compose.activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            manager.hideSoftInputFromWindow(compose.activity.currentFocus?.windowToken, 0)
+        }
+        compose.waitForIdle()
+        captureRendered("b044-site-configured.png")
     }
 
     @Test fun changingSiteProtectsTaskDraftsAndUsesTheSameOneTimeDiscoveryRule() {
         val standard = site("standard-site", "Standard site", CustomerType.STANDARD)
         val oneTime = site("one-time-site", "Unrelated one-time site", CustomerType.ONE_TIME)
         showNewVisit(listOf(standard, oneTime), emptyList())
-        compose.onNodeWithTag("visit-site-standard-site").performClick()
+        compose.onNodeWithTag("visit-site-standard-site-select").performClick()
+        compose.onNodeWithTag("visit-site-continue").performClick()
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-task-name-required"))
         compose.onNodeWithTag("field-task-name-required").performTextInput("Draft task")
         compose.onNodeWithTag("add-task").performClick()
-        compose.onNodeWithText("Change").performScrollTo().performClick()
-        compose.onNodeWithText("Change site?").assertIsDisplayed()
-        compose.onNodeWithText("Tasks added for this site will be cleared.").assertIsDisplayed()
-        compose.onNodeWithText("Keep current site").performClick()
+        compose.onNodeWithTag("visit-change-customer-site").performClick()
+        compose.onNodeWithTag("visit-site-standard-site-select").assertIsSelected()
+        compose.onNodeWithText("Unrelated one-time site").assertDoesNotExist()
+        compose.onNodeWithText("Keep current").assertDoesNotExist()
+        compose.onNodeWithTag("visit-site-continue").assertIsEnabled()
+        compose.onNodeWithText("Change customer or site?").assertDoesNotExist()
+        compose.onNodeWithTag("visit-site-continue").performClick()
         compose.onNodeWithTag("visit-task-0").assertIsDisplayed()
-        compose.onNodeWithText("Change").performScrollTo().performClick()
-        compose.onNodeWithText("Change site").performClick()
+        compose.onNodeWithTag("visit-change-customer-site").performClick()
         assertAbsentText("Unrelated one-time site")
         compose.onNodeWithTag("field-find-customer-or-site").performTextInput("Unrelated one-time")
         compose.onNodeWithTag("visit-site-one-time-site").assertIsDisplayed()
+        compose.onNodeWithTag("visit-site-one-time-site-select").performClick()
+        compose.onNodeWithTag("visit-site-continue").performClick()
+        compose.onNodeWithText("Change customer or site?").assertIsDisplayed()
+        compose.onNodeWithText("Planned and ad-hoc work added for this site will be cleared.").assertIsDisplayed()
+        compose.onNodeWithText("Keep current").performClick()
+        compose.onNodeWithTag("visit-task-0").assertIsDisplayed()
+        compose.onNodeWithTag("visit-change-customer-site").performClick()
+        compose.onNodeWithTag("field-find-customer-or-site").performTextInput("Unrelated one-time")
+        compose.onNodeWithTag("visit-site-one-time-site-select").performClick()
+        compose.onNodeWithTag("visit-site-continue").performClick()
+        compose.onNodeWithText("Change").performClick()
+        compose.onNodeWithTag("visit-task-0").assertDoesNotExist()
     }
 
     @Test fun existingOneTimeVisitCanAddKnownRegisteredEquipment() {

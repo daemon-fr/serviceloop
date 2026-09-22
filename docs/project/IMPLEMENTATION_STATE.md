@@ -248,6 +248,12 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Final JVM gate: 447 tests PASS with 0 failures/errors/skips. Canonical UI-INSTRUMENTED evidence: coordinator 16/16, B026 Dispatch 3/3, and B037 owner-review render/back-guard 2/2. The debug APK was built before `adb -s emulator-5554 install -r`; the pre-existing active `IT-001 · test (v1)` reusable template remained visible after replacement installation without data clearing.
 - No Room/schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup-format, release tag, protected-branch, merge, or owner-acceptance change was made. Final commit SHA is recorded at the Git handoff gate.
 
+### B044 owner-review selection and checklist-preset pass — 2026-09-22
+
+- Staged site selection is now explicit in the shared Visit setup: a non-clickable dashed site card, separate CheckFat RadioButton control, pinned Continue commit, and destructive confirmation only when changing a site that already has work. Existing Dispatch edits open directly in configuration.
+- Active Service Plan projections provide contextual reusable-checklist suggestions by equipment/site, while explicit checklist choices, explicit None, and the Create Template return remain authoritative. No schema, version, or file-format change was made.
+- Focused evidence: `B044VisitSetupTest` 12/12 PASS; debug and Android-test APK assembly PASS; lint PASS; one canonical `Pixel 10a ServiceLoop` UI smoke 1/1 PASS with chooser/configured screenshots inspected. Broad regression suites and the full Create Template round-trip were intentionally not run under the time-boxed verification policy.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

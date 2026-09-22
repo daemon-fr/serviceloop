@@ -20,6 +20,7 @@ data class VisitSiteOption(
     val customerName: String,
     val equipment: List<EquipmentSummary>,
     val customerType: CustomerType = CustomerType.STANDARD,
+    val templateIdsByEquipment: Map<String, Set<String>> = emptyMap(),
 )
 
 data class SiteDetail(

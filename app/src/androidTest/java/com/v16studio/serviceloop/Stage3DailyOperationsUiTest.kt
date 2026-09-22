@@ -104,7 +104,8 @@ class Stage3DailyOperationsUiTest {
         compose.onNodeWithText("Create visit").performClick()
         if (compose.onAllNodesWithText("Find customer or site").fetchSemanticsNodes().isNotEmpty()) {
             compose.onNodeWithText("Find customer or site").performTextInput("Workshop")
-            compose.onNodeWithTag("visit-site-${pair.first.siteId}").performClick()
+            compose.onNodeWithTag("visit-site-${pair.first.siteId}-select").performClick()
+            compose.onNodeWithTag("visit-site-continue").performClick()
         }
         compose.onNodeWithTag("new-visit-form").performScrollToNode(hasText("Record past visit"))
         compose.onNodeWithText("Record past visit").assertIsDisplayed()

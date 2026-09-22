@@ -3,7 +3,6 @@ package com.v16studio.serviceloop.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -28,7 +28,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,6 +41,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,6 +74,7 @@ import com.v16studio.serviceloop.ui.designsystem.serviceLoopFocusRing
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPinnedBar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
@@ -109,6 +114,7 @@ internal data class VisitSetupTaskEditorState(
     val equipmentDescription: String = "",
     val reusableTemplateId: String? = null,
     val editingTaskId: String? = null,
+    val templateSelectionExplicit: Boolean = false,
 )
 
 internal fun saveVisitSetupTaskEditorState(state: VisitSetupTaskEditorState): List<String> = listOf(
@@ -118,10 +124,11 @@ internal fun saveVisitSetupTaskEditorState(state: VisitSetupTaskEditorState): Li
     state.equipmentDescription,
     state.reusableTemplateId.orEmpty(),
     state.editingTaskId.orEmpty(),
+    state.templateSelectionExplicit.toString(),
 )
 
 internal fun restoreVisitSetupTaskEditorState(values: List<String>): VisitSetupTaskEditorState? {
-    if (values.size != 6) return null
+    if (values.size !in 6..7) return null
     return runCatching {
         VisitSetupTaskEditorState(
             taskName = values[0],
@@ -130,6 +137,7 @@ internal fun restoreVisitSetupTaskEditorState(values: List<String>): VisitSetupT
             equipmentDescription = values[3],
             reusableTemplateId = values[4].takeIf(String::isNotBlank),
             editingTaskId = values[5].takeIf(String::isNotBlank),
+            templateSelectionExplicit = values.getOrNull(6)?.toBooleanStrictOrNull() ?: false,
         )
     }.getOrNull()
 }
@@ -138,6 +146,88 @@ internal val VisitSetupTaskEditorStateSaver = listSaver<VisitSetupTaskEditorStat
     save = { state -> saveVisitSetupTaskEditorState(state) },
     restore = ::restoreVisitSetupTaskEditorState,
 )
+
+internal enum class VisitSetupTemplateSuggestionSource {
+    EQUIPMENT_PLAN,
+    SITE_PLANS,
+    ONLY_ACTIVE_TEMPLATE,
+    NONE,
+}
+
+internal data class VisitSetupTemplateSuggestion(
+    val autoSelectedTemplateId: String? = null,
+    val source: VisitSetupTemplateSuggestionSource = VisitSetupTemplateSuggestionSource.NONE,
+    val preferredTemplateIds: List<String> = emptyList(),
+)
+
+/**
+ * Resolves the contextual checklist convenience for a new ad-hoc task. The
+ * relationship hints are a Visit-setup projection; only currently active
+ * reusable templates are eligible for selection or ordering.
+ */
+internal fun suggestVisitSetupTemplate(
+    subjectType: WorkSubjectType,
+    selectedEquipmentId: String?,
+    templateIdsByEquipment: Map<String, Set<String>>,
+    activeTemplates: List<TemplateSummary>,
+): VisitSetupTemplateSuggestion {
+    val activeIds = activeTemplates.asSequence()
+        .filter { it.state == "ACTIVE" }
+        .map { it.id }
+        .toSet()
+    fun ordered(ids: Set<String>): List<String> = activeTemplates
+        .asSequence()
+        .filter { it.id in ids && it.id in activeIds }
+        .map { it.id }
+        .distinct()
+        .toList()
+
+    val contextualIds = when {
+        subjectType == WorkSubjectType.EQUIPMENT && selectedEquipmentId != null ->
+            templateIdsByEquipment[selectedEquipmentId].orEmpty()
+        else -> templateIdsByEquipment.values.asSequence().flatten().toSet()
+    }
+    val preferred = ordered(contextualIds)
+    if (preferred.size == 1) {
+        return VisitSetupTemplateSuggestion(
+            autoSelectedTemplateId = preferred.single(),
+            source = if (subjectType == WorkSubjectType.EQUIPMENT && selectedEquipmentId != null) {
+                VisitSetupTemplateSuggestionSource.EQUIPMENT_PLAN
+            } else {
+                VisitSetupTemplateSuggestionSource.SITE_PLANS
+            },
+            preferredTemplateIds = preferred,
+        )
+    }
+    if (preferred.size > 1) {
+        return VisitSetupTemplateSuggestion(preferredTemplateIds = preferred)
+    }
+
+    val globalActive = activeTemplates.filter { it.id in activeIds }.map { it.id }.distinct()
+    return if (globalActive.size == 1) {
+        VisitSetupTemplateSuggestion(
+            autoSelectedTemplateId = globalActive.single(),
+            source = VisitSetupTemplateSuggestionSource.ONLY_ACTIVE_TEMPLATE,
+            preferredTemplateIds = globalActive,
+        )
+    } else {
+        VisitSetupTemplateSuggestion()
+    }
+}
+
+internal fun applyVisitSetupTemplateSuggestion(
+    state: VisitSetupTaskEditorState,
+    suggestion: VisitSetupTemplateSuggestion,
+): VisitSetupTaskEditorState = if (state.editingTaskId == null && !state.templateSelectionExplicit) {
+    state.copy(reusableTemplateId = suggestion.autoSelectedTemplateId)
+} else {
+    state
+}
+
+internal fun selectVisitSetupTemplateExplicitly(
+    state: VisitSetupTaskEditorState,
+    templateId: String?,
+): VisitSetupTaskEditorState = state.copy(reusableTemplateId = templateId, templateSelectionExplicit = true)
 
 internal data class VisitSetupDraft(
     val mode: VisitSetupMode = VisitSetupMode.EXISTING,
@@ -269,6 +359,7 @@ internal fun VisitSetupForm(
     onCreateTemplate: () -> Unit = {},
     onRefreshTemplates: () -> Unit = {},
     templateReturnNav: NavHostController? = null,
+    startInConfiguration: Boolean = false,
     dateErrorMessage: String? = null,
     preludeItems: (LazyListScope.() -> Unit)? = null,
     extensionItems: (LazyListScope.() -> Unit)? = null,
@@ -276,6 +367,8 @@ internal fun VisitSetupForm(
 ) {
     var siteQuery by remember { mutableStateOf("") }
     var taskEditor by rememberSaveable(stateSaver = VisitSetupTaskEditorStateSaver) { mutableStateOf(VisitSetupTaskEditorState()) }
+    var siteSelectionVisible by rememberSaveable { mutableStateOf(!startInConfiguration) }
+    var stagedSiteId by rememberSaveable { mutableStateOf(draft.siteId) }
     var pendingSiteId by remember { mutableStateOf<String?>(null) }
     var pendingSiteChange by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf<VisitSetupMode?>(null) }
@@ -289,6 +382,12 @@ internal fun VisitSetupForm(
     val plannedWorkLoading = plannedWorkState is DueServicesProjection.Unresolved
 
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
+    val templateSuggestion = suggestVisitSetupTemplate(
+        subjectType = taskEditor.subjectType,
+        selectedEquipmentId = taskEditor.equipmentId,
+        templateIdsByEquipment = selectedSite?.templateIdsByEquipment.orEmpty(),
+        activeTemplates = templates,
+    )
     val matchingSites = sites.filter { option ->
         siteQuery.isNotBlank() || option.customerType == com.v16studio.serviceloop.domain.CustomerType.STANDARD
     }.filter { option ->
@@ -303,8 +402,39 @@ internal fun VisitSetupForm(
         else -> taskEditor.equipmentDescription.isBlank() && (taskEditor.equipmentId == null || equipment.any { it.id == taskEditor.equipmentId })
     } && (taskEditor.reusableTemplateId != null || draft.tasks.firstOrNull { it.stableUiId == taskEditor.editingTaskId }?.reusableTemplateId == null && taskEditor.editingTaskId != null)
 
+    LaunchedEffect(startInConfiguration) {
+        if (startInConfiguration) {
+            stagedSiteId = draft.siteId
+            siteSelectionVisible = false
+        }
+    }
+    LaunchedEffect(draft.mode) {
+        if (draft.mode == VisitSetupMode.NEW) {
+            siteSelectionVisible = false
+        } else if (!startInConfiguration && draft.siteId == null) {
+            stagedSiteId = null
+            siteSelectionVisible = true
+        }
+    }
+    LaunchedEffect(
+        selectedSite?.id,
+        selectedSite?.templateIdsByEquipment,
+        taskEditor.subjectType,
+        taskEditor.equipmentId,
+        templates,
+        taskEditor.editingTaskId,
+        taskEditor.templateSelectionExplicit,
+    ) {
+        val suggestedState = applyVisitSetupTemplateSuggestion(taskEditor, templateSuggestion)
+        if (suggestedState != taskEditor) {
+            taskEditor = suggestedState
+        }
+    }
+
     templateReturnNav?.let { nav ->
-        VisitSetupTemplateReturnBridge(nav, templates, onRefreshTemplates) { id -> taskEditor = taskEditor.copy(reusableTemplateId = id) }
+        VisitSetupTemplateReturnBridge(nav, templates, onRefreshTemplates) { id ->
+            taskEditor = selectVisitSetupTemplateExplicitly(taskEditor, id)
+        }
     }
 
     fun update(next: VisitSetupDraft) { if (editable) onDraftChange(next) }
@@ -328,15 +458,35 @@ internal fun VisitSetupForm(
     }
     fun clearSite() {
         update(draft.copy(siteId = null, selectedPlanIds = emptySet(), tasks = emptyList()))
+        stagedSiteId = null
         siteQuery = ""; resetTask()
     }
     fun selectSite(next: String) {
-        if (draft.tasks.isEmpty() && draft.selectedPlanIds.isEmpty()) update(draft.copy(siteId = next))
-        else { pendingSiteId = next; pendingSiteChange = true }
+        if (editable) stagedSiteId = next
     }
     fun requestSiteChange() {
-        if (draft.tasks.isEmpty() && draft.selectedPlanIds.isEmpty()) clearSite()
-        else { pendingSiteId = null; pendingSiteChange = true }
+        if (!editable) return
+        stagedSiteId = draft.siteId
+        siteQuery = ""
+        siteSelectionVisible = true
+    }
+    fun continueSiteSelection() {
+        val next = stagedSiteId ?: return
+        when {
+            draft.siteId == next -> {
+                siteSelectionVisible = false
+                siteQuery = ""
+            }
+            draft.tasks.isEmpty() && draft.selectedPlanIds.isEmpty() -> {
+                update(draft.copy(siteId = next))
+                siteSelectionVisible = false
+                siteQuery = ""
+            }
+            else -> {
+                pendingSiteId = next
+                pendingSiteChange = true
+            }
+        }
     }
     fun saveTask() {
         val task = VisitSetupTaskDraft(
@@ -350,11 +500,36 @@ internal fun VisitSetupForm(
 
     pendingSiteChange.takeIf { it }?.let {
         AlertDialog(
-            onDismissRequest = { pendingSiteChange = false; pendingSiteId = null },
+            onDismissRequest = {
+                pendingSiteChange = false
+                pendingSiteId = null
+                stagedSiteId = draft.siteId
+                siteSelectionVisible = false
+            },
             title = { Text("Change customer or site?") },
             text = { Text("Planned and ad-hoc work added for this site will be cleared.") },
-            confirmButton = { TextButton({ pendingSiteId?.let { update(draft.copy(siteId = it, selectedPlanIds = emptySet(), tasks = emptyList())) } ?: clearSite(); pendingSiteChange = false; pendingSiteId = null; resetTask() }) { Text("Change") } },
-            dismissButton = { TextButton({ pendingSiteChange = false; pendingSiteId = null }) { Text("Keep current") } },
+            confirmButton = {
+                TextButton({
+                    pendingSiteId?.let { next ->
+                        update(draft.copy(siteId = next, selectedPlanIds = emptySet(), tasks = emptyList()))
+                        stagedSiteId = next
+                    }
+                    pendingSiteChange = false
+                    pendingSiteId = null
+                    siteSelectionVisible = false
+                    siteQuery = ""
+                    resetTask()
+                }) { Text("Change") }
+            },
+            dismissButton = {
+                TextButton({
+                    pendingSiteChange = false
+                    pendingSiteId = null
+                    stagedSiteId = draft.siteId
+                    siteSelectionVisible = false
+                    siteQuery = ""
+                }) { Text("Keep current") }
+            },
         )
     }
     pendingMode?.let { requested ->
@@ -368,11 +543,12 @@ internal fun VisitSetupForm(
     }
 
     val targetReady = when (draft.mode) {
-        VisitSetupMode.EXISTING -> selectedSite != null
+        VisitSetupMode.EXISTING -> selectedSite != null && !siteSelectionVisible
         VisitSetupMode.NEW -> draft.newCustomer.isValidForCreate()
     }
 
-    LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+    Box(modifier.fillMaxWidth().fillMaxHeight()) {
+        LazyColumn(Modifier.fillMaxWidth().fillMaxHeight(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
         preludeItems?.invoke(this)
         item {
             val colors = LocalServiceLoopTokens.current
@@ -406,7 +582,7 @@ internal fun VisitSetupForm(
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
                     Text("Customer / site", fontWeight = FontWeight.Bold)
-                    if (selectedSite != null) {
+                    if (selectedSite != null && !siteSelectionVisible) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.fieldActionGap)) {
                             Text("${selectedSite.customerName} · ${selectedSite.name}", Modifier.weight(1f))
                             ServiceLoopFieldAction("Change customer or site", ::requestSiteChange, Modifier.testTag("visit-change-customer-site"), enabled = editable, content = { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) })
@@ -416,9 +592,9 @@ internal fun VisitSetupForm(
                     }
                 }
             }
-            if (selectedSite == null) {
+            if (siteSelectionVisible || selectedSite == null) {
                 items(matchingSites, key = { "visit-site-${it.id}" }) { option ->
-                    VisitSiteSelectionRow(option, editable, ::selectSite)
+                    VisitSiteSelectionRow(option, stagedSiteId == option.id, editable, ::selectSite)
                 }
                 if (matchingSites.isEmpty()) item { Text(if (sites.isEmpty()) "Add a customer site before creating a visit." else "No matching customer sites.", modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) }
             } else {
@@ -463,7 +639,13 @@ internal fun VisitSetupForm(
                     VisitSetupTaskEditor(
                         taskEditor.taskName, { taskEditor = taskEditor.copy(taskName = it) }, taskEditor.subjectType, { value -> taskEditor = taskEditor.copy(subjectType = value, equipmentId = if (value == WorkSubjectType.SITE) null else taskEditor.equipmentId, equipmentDescription = if (value == WorkSubjectType.SITE) "" else taskEditor.equipmentDescription) },
                         taskEditor.equipmentId, { taskEditor = taskEditor.copy(equipmentId = it, equipmentDescription = "") }, taskEditor.equipmentDescription, { taskEditor = taskEditor.copy(equipmentDescription = it) },
-                        templates, taskEditor.reusableTemplateId, { taskEditor = taskEditor.copy(reusableTemplateId = it) }, equipment, allowKnownEquipment,
+                        templates,
+                        taskEditor.reusableTemplateId,
+                        { taskEditor = selectVisitSetupTemplateExplicitly(taskEditor, it) },
+                        templateSuggestion.preferredTemplateIds,
+                        if (!taskEditor.templateSelectionExplicit && taskEditor.editingTaskId == null && taskEditor.reusableTemplateId == templateSuggestion.autoSelectedTemplateId) templateSuggestion.source else VisitSetupTemplateSuggestionSource.NONE,
+                        equipment,
+                        allowKnownEquipment,
                         taskValid && editable, taskEditor.editingTaskId != null, editable, allowTemplateCreation, onCreateTemplate, ::saveTask,
                     )
                 }
@@ -474,7 +656,7 @@ internal fun VisitSetupForm(
                         DailyHeading("Tasks")
                         draft.tasks.forEachIndexed { index, task ->
                             VisitSetupTaskRow(index, task, templates, equipment, editable,
-                                onEdit = { taskEditor = VisitSetupTaskEditorState(task.taskName, task.subjectType, task.equipmentId, task.equipmentDescription, task.reusableTemplateId, task.stableUiId) },
+                                onEdit = { taskEditor = VisitSetupTaskEditorState(task.taskName, task.subjectType, task.equipmentId, task.equipmentDescription, task.reusableTemplateId, task.stableUiId, templateSelectionExplicit = true) },
                                 onRemove = { update(draft.copy(tasks = draft.tasks.filterNot { it.stableUiId == task.stableUiId })) },
                             )
                         }
@@ -486,33 +668,71 @@ internal fun VisitSetupForm(
         if (errorMessage != null) item { Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("visit-setup-error")) }
         if (targetReady) actionItems?.invoke(this)
         if (busy) item { Text("Saving…", modifier = Modifier.testTag("visit-setup-saving")) }
+            if (siteSelectionVisible) item { Spacer(Modifier.height(ServiceLoopUiTokens.Size.buttonPrimaryMin + ServiceLoopUiTokens.Space.lg)) }
+        }
+        if (draft.mode == VisitSetupMode.EXISTING && siteSelectionVisible) {
+            ServiceLoopPinnedBar(Modifier.align(Alignment.BottomCenter)) {
+                ServiceLoopPrimaryButton(
+                    "Continue",
+                    ::continueSiteSelection,
+                    Modifier.fillMaxWidth().testTag("visit-site-continue"),
+                    enabled = editable && stagedSiteId != null,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun VisitSiteSelectionRow(option: VisitSiteOption, enabled: Boolean, onSelected: (String) -> Unit) {
+private fun VisitSiteSelectionRow(option: VisitSiteOption, selected: Boolean, enabled: Boolean, onSelected: (String) -> Unit) {
     val colors = LocalServiceLoopTokens.current
-    val label = "Use ${option.name} at ${option.customerName} for this visit"
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
-            .selectable(selected = false, enabled = enabled, role = Role.RadioButton) { onSelected(option.id) }
-            .semantics { contentDescription = label; if (!enabled) disabled() }
-            .testTag("visit-site-${option.id}"),
-        color = colors.surface,
-        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
-        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+    val siteLabel = "${option.reference} ${option.name}"
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.fieldActionGap),
     ) {
-        Row(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.md), verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = false, onClick = null, enabled = enabled)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+        val shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field)
+        Box(
+            Modifier.weight(1f)
+                .heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
+                .clip(shape)
+                .background(colors.surface)
+                .drawWithContent {
+                    drawContent()
+                    drawRoundRect(
+                        color = colors.recordBorder,
+                        cornerRadius = CornerRadius(ServiceLoopUiTokens.Radius.field.toPx()),
+                        style = Stroke(
+                            width = ServiceLoopUiTokens.Stroke.record.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+                        ),
+                    )
+                }
+                .testTag("visit-site-${option.id}"),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.lg), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                 Text("${option.reference} · ${option.name}", style = ServiceLoopUiTokens.Type.itemTitle, color = colors.textPrimary)
                 Text(option.customerName, style = ServiceLoopUiTokens.Type.supporting, color = colors.textSecondary)
                 if (option.customerType == com.v16studio.serviceloop.domain.CustomerType.ONE_TIME) {
                     Text("One-time", style = ServiceLoopUiTokens.Type.meta, color = colors.textMuted)
                 }
             }
+        }
+        Box(
+            Modifier.size(ServiceLoopUiTokens.Size.touchMin)
+                .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
+                .clip(shape)
+                .background(if (selected) colors.action else colors.tonalCommandContainer)
+                .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) { onSelected(option.id) }
+                .semantics {
+                    contentDescription = if (selected) "$siteLabel selected for this visit" else "Select $siteLabel for this visit"
+                    if (!enabled) disabled()
+                }
+                .testTag("visit-site-${option.id}-select"),
+            contentAlignment = Alignment.Center,
+        ) {
+            ServiceLoopIcon(ServiceLoopIcons.CheckFat, null, Modifier.size(ServiceLoopUiTokens.Size.icon), if (selected) colors.selection else colors.tonalCommandInk)
         }
     }
 }
@@ -522,6 +742,7 @@ private fun VisitSetupTaskEditor(
     taskName: String, onTaskName: (String) -> Unit, subjectType: WorkSubjectType, onSubjectType: (WorkSubjectType) -> Unit,
     equipmentId: String?, onEquipmentId: (String?) -> Unit, equipmentDescription: String, onEquipmentDescription: (String) -> Unit,
     templates: List<TemplateSummary>, reusableTemplateId: String?, onReusableTemplateId: (String?) -> Unit,
+    preferredTemplateIds: List<String>, suggestionSource: VisitSetupTemplateSuggestionSource,
     equipment: List<EquipmentSummary>, allowKnownEquipment: Boolean, valid: Boolean, editing: Boolean, editable: Boolean, allowTemplateCreation: Boolean,
     onCreateTemplate: () -> Unit, onSave: () -> Unit,
 ) {
@@ -540,7 +761,17 @@ private fun VisitSetupTaskEditor(
                     if (equipmentId == null) DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional", enabled = editable)
                 }
             }
-            InspectionChecklistSelector(templates, reusableTemplateId, onReusableTemplateId, "task-template", onCreateTemplate, enabled = editable && allowTemplateCreation, required = !editing || reusableTemplateId != null)
+            InspectionChecklistSelector(
+                templates,
+                reusableTemplateId,
+                onReusableTemplateId,
+                "task-template",
+                onCreateTemplate,
+                enabled = editable && allowTemplateCreation,
+                required = !editing || reusableTemplateId != null,
+                preferredTemplateIds = preferredTemplateIds,
+                suggestionSource = suggestionSource,
+            )
             OutlinedButton(onSave, enabled = valid && editable, modifier = Modifier.fillMaxWidth().testTag(if (editing) "update-task" else "add-task")) { Text(if (editing) "Update task" else "Add task") }
         }
     }
@@ -596,12 +827,18 @@ internal fun InspectionChecklistSelector(
     label: String = "Inspection checklist",
     enabled: Boolean = true,
     required: Boolean = true,
+    preferredTemplateIds: List<String> = emptyList(),
+    suggestionSource: VisitSetupTemplateSuggestionSource = VisitSetupTemplateSuggestionSource.NONE,
 ) {
     val active = templates.filter { it.state == "ACTIVE" }
     val selectedDisabled = templates.firstOrNull { it.id == selectedTemplateId && it.state == "DISABLED" }
+    val orderedActive = buildList {
+        addAll(preferredTemplateIds.mapNotNull { id -> active.firstOrNull { it.id == id } })
+        addAll(active.filterNot { template -> preferredTemplateIds.contains(template.id) })
+    }.distinctBy { it.id }
     val options = buildList<Pair<String?, String>> {
         add(null to "None")
-        addAll(active.map { it.id to "${it.name} (v${it.revisionNumber})" })
+        addAll(orderedActive.map { it.id to "${it.name} (v${it.revisionNumber})" })
         selectedDisabled?.let { add(it.id to "${it.name} (v${it.revisionNumber}) · Disabled") }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
@@ -618,6 +855,12 @@ internal fun InspectionChecklistSelector(
                 enabled = enabled,
                 content = { ServiceLoopIcon(ServiceLoopIcons.PlusBold, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
+        }
+        when (suggestionSource) {
+            VisitSetupTemplateSuggestionSource.EQUIPMENT_PLAN -> Text("Suggested from this equipment's service plan.", style = ServiceLoopUiTokens.Type.meta, color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("$testTag-suggestion"))
+            VisitSetupTemplateSuggestionSource.SITE_PLANS -> Text("Suggested from this site's service plans.", style = ServiceLoopUiTokens.Type.meta, color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("$testTag-suggestion"))
+            VisitSetupTemplateSuggestionSource.ONLY_ACTIVE_TEMPLATE -> Text("Only active inspection checklist.", style = ServiceLoopUiTokens.Type.meta, color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("$testTag-suggestion"))
+            VisitSetupTemplateSuggestionSource.NONE -> Unit
         }
         if (required && active.isEmpty() && selectedDisabled == null) {
             ServiceLoopNotice(

@@ -97,7 +97,8 @@ class B037OwnerReviewRenderTest {
                 )
             }
             capture("create-visit-existing-top")
-            compose.onNodeWithTag("visit-site-site").performClick()
+            compose.onNodeWithTag("visit-site-site-select").performClick()
+            compose.onNodeWithTag("visit-site-continue").performClick()
             compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-appointment-time"))
             capture("create-visit-existing-appointment")
 
@@ -141,7 +142,8 @@ class B037OwnerReviewRenderTest {
                     nav = rememberNavController(),
                 )
             }
-            compose.onNodeWithTag("visit-site-site").performClick()
+            compose.onNodeWithTag("visit-site-site-select").performClick()
+            compose.onNodeWithTag("visit-site-continue").performClick()
             compose.onNodeWithTag("new-visit-form").performScrollToNode(hasTestTag("field-appointment-time"))
             capture("dark-create-visit-appointment")
 
@@ -179,7 +181,8 @@ class B037OwnerReviewRenderTest {
         val dueService = DueService("plan", "P-001", "Annual service", "2026-09-20", "obligation", "equipment", "EQ-001", "Boiler", "site", "Workshop", "customer", "Acme", null, DueBucket.UPCOMING)
         try {
             setVisitContent(viewModel, state, sites)
-            compose.onNodeWithTag("visit-site-site").performClick()
+            compose.onNodeWithTag("visit-site-site-select").performClick()
+            compose.onNodeWithTag("visit-site-continue").performClick()
             compose.onNodeWithTag("field-appointment-service-date-yyyy-mm-dd").performTextReplacement("2026-09-20")
             pressBack()
             compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()
@@ -189,7 +192,8 @@ class B037OwnerReviewRenderTest {
             compose.onNodeWithText("Discard unsaved changes?").assertDoesNotExist()
 
             setVisitContent(viewModel, state, sites)
-            compose.onNodeWithTag("visit-site-site").performClick()
+            compose.onNodeWithTag("visit-site-site-select").performClick()
+            compose.onNodeWithTag("visit-site-continue").performClick()
             compose.onNodeWithTag("field-appointment-time").performTextInput("09:00")
             pressBack()
             compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()

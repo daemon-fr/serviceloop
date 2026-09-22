@@ -420,15 +420,30 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun visitSites(): List<VisitSiteOption> = dao.activeVisitSites().map { site ->
+        val customerType = CustomerType.fromCode(site.customerType)
+        val activeEquipment = dao.equipmentForSite(site.id).filter { it.state == "ACTIVE" }
+        val activePlansByEquipment = activeEquipment.associate { equipment ->
+            equipment.id to dao.plansForEquipment(equipment.id).filter { it.state == "ACTIVE" }
+        }
         VisitSiteOption(
             site.id,
             site.reference,
             site.name,
             site.customerName,
-             dao.equipmentForSite(site.id).filter { it.state == "ACTIVE" }.map { item ->
-                EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, site.customerName, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, CustomerType.fromCode(site.customerType))
-             },
-             CustomerType.fromCode(site.customerType),
+            activeEquipment.map { item ->
+                EquipmentSummary(
+                    item.id,
+                    item.name,
+                    item.reference,
+                    item.technicianIdentifier,
+                    site.name,
+                    site.customerName,
+                    activePlansByEquipment[item.id].orEmpty().minOfOrNull { it.currentDueDate },
+                    customerType,
+                )
+            },
+            customerType,
+            activePlansByEquipment.mapValues { (_, plans) -> plans.mapNotNull { it.reusableTemplateId }.toSet() },
         )
     }
 

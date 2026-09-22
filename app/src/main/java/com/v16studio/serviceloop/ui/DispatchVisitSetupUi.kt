@@ -129,9 +129,19 @@ internal fun DispatchVisitEditorScreen(
                 val dao = database.serviceLoopDao()
                 val customers = dao.allCustomers().associateBy { it.id }
                 val equipment = dao.allEquipment().filter { it.state == "ACTIVE" }.groupBy { it.siteId }
+                val activePlans = dao.allPlans().filter { it.state == "ACTIVE" }.groupBy { it.equipmentId }
                 val sites = dao.allSites().filter { it.state == "ACTIVE" }.mapNotNull { site ->
                     val customer = customers[site.customerId] ?: return@mapNotNull null
-                    VisitSiteOption(site.id, site.reference, site.name, customer.name, equipment[site.id].orEmpty().map { equipmentSummary(it, customer.name, site.name) }, CustomerType.fromCode(customer.customerType))
+                    val siteEquipment = equipment[site.id].orEmpty()
+                    VisitSiteOption(
+                        site.id,
+                        site.reference,
+                        site.name,
+                        customer.name,
+                        siteEquipment.map { item -> equipmentSummary(entity = item, customerName = customer.name, siteName = site.name).copy(nearestDueDate = activePlans[item.id].orEmpty().minOfOrNull { plan -> plan.currentDueDate }) },
+                        CustomerType.fromCode(customer.customerType),
+                        siteEquipment.associate { item -> item.id to activePlans[item.id].orEmpty().mapNotNull { plan -> plan.reusableTemplateId }.toSet() },
+                    )
                 }
                 val visit = visitId?.let { service.outboxVisits().firstOrNull { value -> value.dispatchVisitId == it } }
                 val loadedItems = visitId?.let { service.outboxItems(it) }.orEmpty().map { (item, assignees) ->
@@ -317,6 +327,7 @@ internal fun DispatchVisitEditorScreen(
         allowTemplateCreation = !readOnly,
         onRefreshTemplates = onRefreshTemplates,
         templateReturnNav = nav,
+        startInConfiguration = loadedVisit != null,
         onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") },
         preludeItems = {
             if (loadedVisit != null) {
