@@ -8,6 +8,22 @@ data class CustomerDetail(
     val customerType: CustomerType = CustomerType.STANDARD,
     val canMarkOneTime: Boolean = true,
     val oneTimeBlockReason: String? = null,
+    val repeatableContacts: List<CustomerContactDetail> = emptyList(),
+)
+
+data class CustomerContactDetail(
+    val id: String,
+    val personName: String,
+    val channel: String,
+    val value: String,
+    val modifiedAtEpochMillis: Long,
+)
+
+data class CustomerContactInput(
+    val customerId: String,
+    val personName: String = "",
+    val channel: String,
+    val value: String,
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)

@@ -40,7 +40,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -265,6 +265,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
                 .joinToString(" · ")
             Row(
                 Modifier.fillMaxWidth()
+                    .background(if (items.indexOf(agendaItem) % 2 == 0) tokens.surface else tokens.surfaceSubtle)
                     .heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
                     .clickable(role = Role.Button) {
                         when (agendaItem.kind) {
@@ -280,6 +281,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
             ) {
+                ServiceLoopIcon(
+                    when (agendaItem.kind) {
+                        OperationalWorkKind.VISIT -> ServiceLoopIcons.Work
+                        OperationalWorkKind.SERVICE -> ServiceLoopIcons.Calendar
+                        OperationalWorkKind.FOLLOW_UP -> ServiceLoopIcons.PencilSimple
+                    },
+                    agendaItem.kind.title,
+                    Modifier.size(ServiceLoopUiTokens.Size.icon),
+                    tokens.icon,
+                )
                 Text(inline, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = ServiceLoopUiTokens.Type.itemTitle)
                 ServiceLoopIcon(ServiceLoopIcons.Disclosure, null, Modifier.size(ServiceLoopUiTokens.Size.icon), tokens.icon)
             }

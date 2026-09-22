@@ -227,7 +227,7 @@ object FixedServiceRecordPdf {
             RawLine(model.businessName, LineStyle.TITLE),
             RawLine("Service record ${model.visitReference} · Revision ${model.revisionNumber}", LineStyle.META),
             RawLine("Service date: ${model.actualServiceDate}", LineStyle.BODY),
-            RawLine("Technician: ${model.technicianName}", LineStyle.BODY),
+            RawLine("Technician: ${model.technicianName}${model.technicianDesignation?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", LineStyle.BODY),
             RawLine(model.businessContact, LineStyle.BODY),
             RawLine("Customer & site", LineStyle.SECTION),
             RawLine("${model.customerReference.orEmpty()} · ${model.customerName}", LineStyle.BODY),

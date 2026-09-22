@@ -178,6 +178,7 @@ data class CompletionLine(
     val currentObligationOutstanding: Boolean = false,
     val capturedObligationId: String? = null,
     val checklistResults: List<ReviewChecklistResult> = emptyList(),
+    val photos: List<PhotoEntry> = emptyList(),
 )
 
 data class ReviewChecklistResult(val label: String, val result: String)
@@ -255,6 +256,7 @@ data class PublicReportModel(
     val publicVoidReason: String? = null,
     val publicNote: String? = null,
     val dispatch: PublicDispatchProvenance? = null,
+    val technicianDesignation: String? = null,
 )
 
 data class FinalRecordDetail(

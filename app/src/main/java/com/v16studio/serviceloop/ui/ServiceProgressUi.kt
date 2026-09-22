@@ -101,9 +101,9 @@ internal fun ServiceProgressNavigator(
                             modifier = Modifier.testTag("$rowTagPrefix-${item.workItemId}"),
                             selected = selected,
                             selectedBackground = false,
-                            showDisclosure = true,
+                            showDisclosure = !selected && group.items.size > 1,
                             contentPadding = PaddingValues(horizontal = 0.dp, vertical = ServiceLoopUiTokens.Space.md),
-                            onClick = { onSelect(item) },
+                            onClick = if (selected) null else ({ onSelect(item) }),
                             showDivider = index < group.items.lastIndex,
                         )
                     }

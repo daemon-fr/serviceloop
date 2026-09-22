@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui
 
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*

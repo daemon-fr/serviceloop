@@ -66,6 +66,13 @@ class DispatchPackageService(
         when{p==null->dispatch.insertTechnician(DispatchTechnicianEntity(v.technicianId,name,now,now,designation));p.displayName==name&&p.designation==designation->Unit;confirmRename->dispatch.updateTechnician(p.copy(displayName=name,designation=designation,modifiedAtEpochMillis=now));else->error("Technician ID already exists with a different name or designation; confirm the update")}
     }
     suspend fun importTechnicianManually(v:TechnicianIdentity,confirmRename:Boolean=false){val normalized=TechnicianIdCodec.normalize(v.technicianId)?:throw IllegalArgumentException("Technician ID is not a valid ServiceLoop Technician ID.");importTechnician(v.copy(technicianId=normalized),confirmRename)}
+    suspend fun updateTechnicianMetadata(technicianId:String, name:String, designation:String?, notes:String?) {
+        val current = dispatch.technician(technicianId) ?: error("Technician missing")
+        val normalizedName = name.trim(); require(normalizedName.isNotBlank()) { "Actual name is required" }
+        val normalizedDesignation = designation?.trim()?.takeIf { it.isNotEmpty() }; require(normalizedDesignation.orEmpty().length <= 200) { "Team designation or badge is too long" }
+        val normalizedNotes = notes?.trim()?.takeIf { it.isNotEmpty() }; require(normalizedNotes.orEmpty().length <= 1000) { "Notes are too long" }
+        dispatch.updateTechnician(current.copy(displayName = normalizedName, designation = normalizedDesignation, notes = normalizedNotes, modifiedAtEpochMillis = System.currentTimeMillis()))
+    }
     suspend fun technicianRenameReview(v:TechnicianIdentity)=dispatch.technician(v.technicianId)?.takeIf{it.displayName!=v.name||it.designation!=v.designation}?.let{TechnicianRenameReview(v,it.displayName,it.designation)}
     suspend fun technicians()=dispatch.technicians();suspend fun createTeam(name:String):String{require(name.trim().isNotEmpty());val id=UUID.randomUUID().toString();val n=System.currentTimeMillis();dispatch.insertTeam(DispatchTeamEntity(id,name.trim(),n,n));return id}
     suspend fun renameTeam(id:String,name:String){val team=dispatch.team(id)?:error("Team missing");require(name.trim().isNotEmpty());dispatch.updateTeam(team.copy(name=name.trim(),modifiedAtEpochMillis=System.currentTimeMillis()))}

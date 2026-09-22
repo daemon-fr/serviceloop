@@ -265,6 +265,10 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM working_visits ORDER BY actualServiceDate, reference") suspend fun reminderVisits(): List<WorkingVisitEntity>
     @Query("UPDATE working_visits SET appointmentReminderLeadMinutes=:minutes WHERE id=:id AND state='BOOKED'") suspend fun updateAppointmentReminderLead(id: String, minutes: Int?): Int
     @Query("SELECT * FROM customers ORDER BY reference") suspend fun allCustomers(): List<CustomerEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomerContact(value: CustomerContactEntity)
+    @Query("UPDATE customer_contacts SET personName=:personName, channel=:channel, value=:value, modifiedAtEpochMillis=:modifiedAt WHERE id=:id AND customerId=:customerId") suspend fun updateCustomerContact(id: String, customerId: String, personName: String?, channel: String, value: String, modifiedAt: Long): Int
+    @Query("DELETE FROM customer_contacts WHERE id=:id AND customerId=:customerId") suspend fun deleteCustomerContact(id: String, customerId: String): Int
+    @Query("SELECT * FROM customer_contacts WHERE customerId=:customerId ORDER BY modifiedAtEpochMillis DESC, id") suspend fun customerContacts(customerId: String): List<CustomerContactEntity>
     @Query("SELECT * FROM sites ORDER BY reference") suspend fun allSites(): List<SiteEntity>
     @Query("SELECT * FROM equipment ORDER BY reference") suspend fun allEquipment(): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans ORDER BY reference") suspend fun allPlans(): List<ServicePlanEntity>

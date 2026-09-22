@@ -43,7 +43,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -271,7 +271,6 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                 ServiceLoopPrivateLabel("Private equipment note", style = ServiceLoopUiTokens.Type.label)
-                ServiceLoopPrivateLabel("PRIVATE · Not included in customer report", style = ServiceLoopUiTokens.Type.meta)
                 Text(detail.privateNote,style=ServiceLoopUiTokens.Type.body)
             }
         }

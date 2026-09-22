@@ -215,6 +215,7 @@ class RecoveryPackage(
         normalizeLegacyReminderState(root)
         normalizeWorkingInputBuffers(root)
         normalizeB026State(root)
+        normalizeCustomerContacts(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -382,6 +383,19 @@ class RecoveryPackage(
         tableRows(root, "dispatch_item_bindings").forEach { row ->
             if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
             if (!row.has("equipmentDescriptionSnapshot")) row.put("equipmentDescriptionSnapshot", JSONObject.NULL)
+        }
+    }
+
+    private fun normalizeCustomerContacts(root: JSONObject) {
+        val tables = root.getJSONArray("tables")
+        if ((root.optInt("schemaVersion", SCHEMA_VERSION) < 16) && (0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "customer_contacts" }) {
+            val contacts = JSONArray()
+            val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "customers" }?.plus(1) ?: 0
+            tables.put(JSONObject().put("name", "customer_contacts").put("rows", contacts))
+            for (index in tables.length() - 1 downTo insertAt + 1) tables.put(index, tables.get(index - 1))
+            tables.put(insertAt, JSONObject().put("name", "customer_contacts").put("rows", contacts))
+            tables.remove(tables.length() - 1)
+            root.put("schemaVersion", SCHEMA_VERSION)
         }
     }
 
@@ -580,8 +594,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 15
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 16
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -591,7 +605,7 @@ class RecoveryPackage(
         const val MAX_ROWS_PER_TABLE = 1_000_000
         val MAGIC = byteArrayOf('S'.code.toByte(), 'L'.code.toByte(), 'B'.code.toByte(), 'K'.code.toByte())
         val TABLE_ORDER = listOf(
-            "customers", "sites", "equipment", "service_plans", "service_obligations",
+            "customers", "customer_contacts", "sites", "equipment", "service_plans", "service_obligations",
             "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items",
             "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments",
             "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items",

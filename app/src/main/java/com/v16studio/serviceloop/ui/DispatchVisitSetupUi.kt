@@ -7,12 +7,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -361,7 +362,7 @@ internal fun DispatchVisitEditorScreen(
             }
             item {
                 var expanded by rememberSaveable(visitId) { mutableStateOf(false) }
-                Column(Modifier.fillMaxWidth().clickable(enabled = !readOnly) { expanded = !expanded }.padding(vertical = ServiceLoopUiTokens.Space.md), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact).clickable(enabled = !readOnly) { expanded = !expanded }.padding(vertical = ServiceLoopUiTokens.Space.md), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                     Text("Reference & instructions", style = MaterialTheme.typography.titleMedium)
                     Text(if (manager.isBlank() && instructions.isBlank()) "Optional" else "Details entered", style = MaterialTheme.typography.bodySmall)
                     if (expanded) {
@@ -401,7 +402,7 @@ private fun DispatchAssigneeDialog(participants: List<com.v16studio.serviceloop.
     var staged by remember(selected) { mutableStateOf(selected) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Assign work") },
-        text = { Column { Text("Leave everyone unchecked to assign this work to everyone on the selected Teams.", style = MaterialTheme.typography.bodySmall); participants.forEach { person -> Row(Modifier.fillMaxWidth().clickable { staged = if (person.technicianId in staged) staged - person.technicianId else staged + person.technicianId }, verticalAlignment = Alignment.CenterVertically) { Checkbox(person.technicianId in staged, null); Text(person.displayName) } } } },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) { Text("Leave everyone unchecked to assign this work to everyone on the selected Teams.", style = MaterialTheme.typography.bodySmall); participants.forEach { person -> Row(Modifier.fillMaxWidth().heightIn(min = ServiceLoopUiTokens.Size.touchMin).clickable { staged = if (person.technicianId in staged) staged - person.technicianId else staged + person.technicianId }.padding(vertical = ServiceLoopUiTokens.Space.xs), verticalAlignment = Alignment.CenterVertically) { Checkbox(person.technicianId in staged, null, contentDescription = "Assign ${person.displayName}"); Text(person.displayName) } } } },
         dismissButton = { ServiceLoopTextAction("Cancel", onDismiss) },
         confirmButton = { ServiceLoopPrimaryButton("Apply", { onApply(staged) }) },
     )

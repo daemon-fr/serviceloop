@@ -21,6 +21,7 @@ data class DispatchTechnicianEntity(
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
     val designation: String? = null,
+    val notes: String? = null,
 )
 
 @Entity(tableName = "dispatch_teams", indices = [Index(value = ["name"], unique = true)])

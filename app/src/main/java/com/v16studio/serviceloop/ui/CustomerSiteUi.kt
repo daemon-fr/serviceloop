@@ -21,6 +21,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAdaptiveActionRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
@@ -52,8 +53,55 @@ internal fun CustomerDetailScreen(
     val capabilities = LocalWorkspaceCapabilities.current
     val context = LocalContext.current
     var handoffStatus by rememberSaveable { mutableStateOf<String?>(null) }
+    var showContactForm by rememberSaveable { mutableStateOf(false) }
+    var contactPerson by rememberSaveable { mutableStateOf("") }
+    var contactValue by rememberSaveable { mutableStateOf("") }
+    var contactChannel by rememberSaveable { mutableStateOf("PHONE") }
+    var editingContactId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deletingContactId by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable(detail.id) { mutableStateOf("SITES") }
     val colors = LocalServiceLoopTokens.current
+    val viewState by viewModel.state.collectAsState()
+    if (showContactForm) {
+        AlertDialog(
+            onDismissRequest = { showContactForm = false },
+            title = { Text(if (editingContactId == null) "Add customer contact" else "Edit customer contact") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                    DailyField(contactPerson, { contactPerson = it }, "Person or label (optional)")
+                    Text("Channel", style = MaterialTheme.typography.labelLarge)
+                    ServiceLoopChoiceGroup(
+                        options = listOf("PHONE" to "Phone", "SMS" to "SMS", "WHATSAPP" to "WhatsApp", "EMAIL" to "Email", "OTHER" to "Other"),
+                        selected = contactChannel,
+                        onSelected = { contactChannel = it },
+                        testTagPrefix = "customer-contact-channel",
+                    )
+                    DailyField(contactValue, { contactValue = it }, "Contact value · Required")
+                }
+            },
+            dismissButton = { TextButton({ showContactForm = false }) { Text("Cancel") } },
+            confirmButton = {
+                Button({
+                    val input = CustomerContactInput(detail.id, contactPerson, contactChannel, contactValue)
+                    val contactId = editingContactId
+                    if (contactId == null) viewModel.createCustomerContact(input) {
+                        contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+                    } else viewModel.updateCustomerContact(contactId, input) {
+                        editingContactId = null; contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+                    }
+                }, enabled = contactValue.isNotBlank() && !viewState.operationInProgress) { Text(if (editingContactId == null) "Save contact" else "Save changes") }
+            },
+        )
+    }
+    deletingContactId?.let { contactId ->
+        AlertDialog(
+            onDismissRequest = { deletingContactId = null },
+            title = { Text("Remove customer contact?") },
+            text = { Text("This additional contact will be removed from the customer. The primary contact fields remain unchanged.") },
+            dismissButton = { TextButton({ deletingContactId = null }) { Text("Cancel") } },
+            confirmButton = { Button({ viewModel.deleteCustomerContact(detail.id, contactId) { deletingContactId = null; viewModel.loadCustomer(detail.id) } }) { Text("Remove") } },
+        )
+    }
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item {
             Column(Modifier.fillMaxWidth().background(colors.surface)) {
@@ -76,6 +124,38 @@ internal fun CustomerDetailScreen(
         item { Column(Modifier.padding(horizontal = 16.dp)) { ServiceLoopSectionDivider(); DailyHeading("Active follow-ups"); Spacer(Modifier.height(ServiceLoopUiTokens.Space.md)); ServiceLoopPrimaryButton("Add follow-up",{nav.navigate("follow-up/new/${detail.id}")},Modifier.fillMaxWidth()) } }
         items(detail.openFollowUps) { follow -> ServiceLoopEntityRecord("${follow.reference} · ${follow.title}",metadata="Due ${follow.dueDate}", modifier = Modifier.padding(horizontal = 16.dp), operationalState = OperationalWorkClassifier.classifyFollowUp(follow.state, follow.dueDate, businessDate, dueSoonHorizonDays)){nav.navigate("follow-up/${follow.id}")} }
         if (detail.recentContacts.isNotEmpty()) item { Box(Modifier.padding(horizontal = 16.dp)) { DailyHeading("Recent contact") } }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    DailyHeading("Additional contacts")
+                    if (capabilities.canManageRegister) ServiceLoopSecondaryButton("Add contact", { showContactForm = true }, Modifier.testTag("add-customer-contact"))
+                }
+                if (detail.repeatableContacts.isEmpty()) Text("No additional contacts saved.", style = MaterialTheme.typography.bodySmall)
+                detail.repeatableContacts.forEach { contact ->
+                    ServiceLoopDenseNavigableRow(
+                        title = listOf(contact.personName, contact.value).filter { it.isNotBlank() }.joinToString(" · "),
+                        context = contact.channel.lowercase().replaceFirstChar { it.uppercase() },
+                        leadingIcon = when (contact.channel) { "PHONE" -> ServiceLoopIcons.Call; "SMS", "WHATSAPP" -> ServiceLoopIcons.Sms; "EMAIL" -> ServiceLoopIcons.Mail; else -> ServiceLoopIcons.Customers },
+                        modifier = Modifier.testTag("customer-repeatable-contact-${contact.id}"),
+                        onClick = {
+                            handoffStatus = when (contact.channel) {
+                                "PHONE" -> handoff(context, Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(contact.value)}")), "dialer")
+                                "SMS" -> handoff(context, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.value)}")), "SMS composer")
+                                "EMAIL" -> handoff(context, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${Uri.encode(contact.value)}")), "email composer")
+                                "WHATSAPP" -> handoff(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/${contact.value.filter(Char::isDigit)}")), "WhatsApp")
+                                else -> null
+                            }
+                        },
+                    )
+                    if (capabilities.canManageRegister) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                            TextButton({ editingContactId = contact.id; contactPerson = contact.personName; contactValue = contact.value; contactChannel = contact.channel; showContactForm = true }, Modifier.testTag("edit-customer-contact-${contact.id}")) { Text("Edit") }
+                            TextButton({ deletingContactId = contact.id }, Modifier.testTag("delete-customer-contact-${contact.id}")) { Text("Remove") }
+                        }
+                    }
+                }
+            }
+        }
         items(detail.recentContacts, key = { it.id }) { note ->
             ServiceLoopDenseNavigableRow(
                 title = "${note.reference} · ${contactChannelLabel(note.channel)}",
@@ -108,7 +188,7 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
             item { LongTextEditor(note, { note = it }, "Private customer note", true) }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control")) {
-                    Checkbox(
+                    com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(
                         checked = oneTimeCustomer,
                         onCheckedChange = { checked -> if (!oneTimeBlocked || !checked) oneTimeCustomer = checked },
                         enabled = !oneTimeBlocked,
@@ -176,8 +256,8 @@ internal fun SiteEditorScreen(customerId: String?, existing: SiteDetail?, paddin
     UnsavedChangesGuard(name!=existing?.name.orEmpty()||address!=existing?.address.orEmpty()||contact!=existing?.contactName.orEmpty()||phone!=existing?.phone.orEmpty()||email!=existing?.email.orEmpty()||note!=existing?.privateAccessNote.orEmpty()||default!=(existing?.isDefault?:false)||useCustomerContact!=originallyInherited,nav)
     EditorColumn(padding, state, tag = "site-editor") {
         item { DailyHeading(if (existing == null) "Add site" else "Edit ${existing.reference}") }
-        item { DailyField(name, { name = it }, "Site name · Required"); DailyField(address, { address = it }, "Address"); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(useCustomerContact, { useCustomerContact = it }); Text("Use customer contact") }; if (!useCustomerContact) { DailyField(contact, { contact = it }, "Contact override"); DailyField(phone, { phone = it }, "Phone override"); DailyField(email, { email = it }, "Email override") } else Text("Customer contact is inherited; any staged overrides remain available if inheritance is turned off before Save.", style = MaterialTheme.typography.bodySmall) }
-        item { LongTextEditor(note, { note = it }, "PRIVATE access note", true); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(default, { default = it }); Text("Default site for this customer") } }
+        item { DailyField(name, { name = it }, "Site name · Required"); DailyField(address, { address = it }, "Address"); Row(verticalAlignment = Alignment.CenterVertically) { com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(useCustomerContact, { useCustomerContact = it }, contentDescription = "Use customer contact"); Text("Use customer contact") }; if (!useCustomerContact) { DailyField(contact, { contact = it }, "Contact override"); DailyField(phone, { phone = it }, "Phone override"); DailyField(email, { email = it }, "Email override") } else Text("Customer contact is inherited; any staged overrides remain available if inheritance is turned off before Save.", style = MaterialTheme.typography.bodySmall) }
+        item { LongTextEditor(note, { note = it }, "PRIVATE access note", true); Row(verticalAlignment = Alignment.CenterVertically) { com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(default, { default = it }, contentDescription = "Default site for this customer"); Text("Default site for this customer") } }
         item { Button({ val input = SiteInput(name, address, contact.takeUnless { useCustomerContact }.orEmpty(), phone.takeUnless { useCustomerContact }.orEmpty(), email.takeUnless { useCustomerContact }.orEmpty(), note, default); if (existing == null) viewModel.createSite(customerId!!, input) { nav.navigate("site/$it") { popUpTo("site/new/$customerId") { inclusive = true } } } else viewModel.updateSite(existing.id, input) { nav.popBackStack() } }, enabled = name.isNotBlank() && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-site")) { Text("Save site") } }
     }
 }

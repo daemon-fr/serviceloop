@@ -63,6 +63,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrivateLabel
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -417,7 +418,7 @@ internal fun ServiceScreen(
             item {
                 ServiceLoopSurfaceCard(modifier = Modifier.testTag("work-performed-section")) {
                     Text("Work performed", style = MaterialTheme.typography.titleLarge)
-                    Text("Customer report", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                     Text("Included in customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)
                     val initialWork = draft.rawInputs[ServiceDraftFieldKeys.WORK] ?: draft.workPerformed
                     var work by rememberSaveable(draft.workItemId, initialWork) { mutableStateOf(initialWork) }
                     ServiceLoopLongTextEditor(

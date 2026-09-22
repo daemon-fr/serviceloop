@@ -43,7 +43,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -179,11 +179,12 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>, profile: BusinessProfile?, state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    val context = LocalContext.current
     LazyColumn(Modifier.padding(padding).testTag("completion-review-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text("Review the service details before finalizing.", style = MaterialTheme.typography.titleMedium) }
         if (state.visitReportIdentity?.ready != true) item { AccentCard { Text("This visit needs a captured report identity before finalization."); if (profile?.ready == true) Button(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.fillMaxWidth().testTag("capture-report-identity")) { Text("Use current business identity for this visit") } else Button(onClick = { nav.navigate("business-profile") }, modifier = Modifier.fillMaxWidth()) { Text("Set business identity") } } }
         else item { AccentCard { Text("Report identity", style = MaterialTheme.typography.titleMedium); Text("${state.visitReportIdentity.businessName} · ${state.visitReportIdentity.technicianName}"); TextButton(onClick = { viewModel.refreshVisitReportIdentity(visitId) }, modifier = Modifier.testTag("refresh-report-identity")) { Text("Update from current profile") } } }
-        items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav) }
+        items(lines) { line -> CompletionLineCard(visitId, line, state.saveStatus is SaveStatus.Saving, viewModel, nav, context) }
         item { ServiceLoopSurfaceCard { Text("Customer report review", style = MaterialTheme.typography.titleMedium); Text("Review what will appear in the customer record. Private notes are never included.") } }
         state.error?.let { message -> item { Text("Finalization failed — $message", color = MaterialTheme.colorScheme.error) } }
         item { ServiceLoopPrimaryButton(label = if (state.finalizing) "Finalizing record" else "Finalize record", onClick = { viewModel.finalizeVisit(visitId) }, enabled = state.visitReportIdentity?.ready == true && lines.isNotEmpty() && lines.all { it.blockers.isEmpty() }, busy = state.finalizing, modifier = Modifier.fillMaxWidth().testTag("finalize-record").semantics { contentDescription = "Finalize record" }) }
@@ -191,7 +192,7 @@ internal fun CompletionReviewScreen(visitId: String, lines: List<CompletionLine>
 }
 
 @Composable
-private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Boolean, viewModel: ServiceLoopViewModel, nav: NavHostController, context: android.content.Context) {
     AccentCard {
         Text(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription), style = MaterialTheme.typography.labelLarge)
         Text(line.serviceName, style = MaterialTheme.typography.titleMedium)
@@ -206,6 +207,17 @@ private fun CompletionLineCard(visitId: String, line: CompletionLine, saving: Bo
             Text("Checklist", style = MaterialTheme.typography.labelLarge)
             line.checklistResults.forEachIndexed { index, item ->
                 Text("${item.label} — ${item.result}", modifier = Modifier.testTag("review-checklist-item-${line.workItemId}-$index"))
+            }
+        }
+        if (line.photos.isNotEmpty()) {
+            Text("Photos in customer report", style = MaterialTheme.typography.labelLarge)
+            line.photos.forEach { photo ->
+                val bitmap = remember(photo.id, photo.relativePath) { BitmapFactory.decodeFile(File(context.filesDir, photo.relativePath).absolutePath) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (bitmap != null) Image(bitmap.asImageBitmap(), photo.caption ?: "Service photo", Modifier.size(56.dp), contentScale = ContentScale.Crop)
+                    Column(Modifier.weight(1f)) { Text(photo.caption?.takeIf(String::isNotBlank) ?: "Service photo"); Text(if (photo.includedInReport) "Included" else "Excluded", style = MaterialTheme.typography.bodySmall) }
+                    com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(photo.includedInReport, { included -> viewModel.updatePhoto(visitId, line.workItemId, photo.id, photo.caption, included) }, contentDescription = "Include photo in customer report")
+                }
             }
         }
         if (!line.notPerformedReason.isNullOrBlank()) Text("Reason · ${line.notPerformedReason}")

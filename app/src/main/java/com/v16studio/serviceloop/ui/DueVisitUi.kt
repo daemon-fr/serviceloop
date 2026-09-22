@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -16,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,6 +44,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopResponsivePair
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopWorkItemRow
 import com.v16studio.serviceloop.ui.designsystem.serviceLoopFocusRing
@@ -169,16 +174,19 @@ private fun AdHocWorkEditor(
     onAdd: (AdHocWorkInput) -> Unit,
     onCreateTemplate: () -> Unit = {},
     nav: NavHostController? = null,
+    collapseByDefault: Boolean = false,
 ) {
     var taskName by rememberSaveable { mutableStateOf("") }
     var subjectType by rememberSaveable { mutableStateOf(WorkSubjectType.SITE) }
     var equipmentId by rememberSaveable { mutableStateOf<String?>(null) }
     var equipmentDescription by rememberSaveable { mutableStateOf("") }
     var templateId by rememberSaveable { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable { mutableStateOf(!collapseByDefault) }
     val createdTemplateId = nav?.currentBackStackEntry?.savedStateHandle?.getStateFlow<String?>("created-inspection-template-id", null)?.collectAsState()
     LaunchedEffect(createdTemplateId?.value) {
         createdTemplateId?.value?.let { createdId ->
             templateId = createdId
+            expanded = true
             nav.currentBackStackEntry?.savedStateHandle?.remove<String>("created-inspection-template-id")
         }
     }
@@ -189,7 +197,11 @@ private fun AdHocWorkEditor(
     }
     Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Add task", fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column { Text("Add task", fontWeight = FontWeight.Bold); if (!expanded) Text("Add extra work to this visit", style = MaterialTheme.typography.bodySmall) }
+                Text(if (expanded) "⌃" else "⌄", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = if (expanded) "Collapse Add task" else "Expand Add task" })
+            }
+            if (expanded) {
             DailyField(taskName, { taskName = it }, "Task name · Required")
             Text("Subject", fontWeight = FontWeight.Medium)
             ServiceLoopChoicePair(listOf(WorkSubjectType.SITE to "Site", WorkSubjectType.EQUIPMENT to "Equipment"), subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } }, testTagPrefix = "visit-task-subject")
@@ -201,6 +213,7 @@ private fun AdHocWorkEditor(
             InspectionChecklistSelector(templates, templateId, { templateId = it }, "visit-task-template", onCreateTemplate)
             ServiceLoopPrimaryButton("Add task", { val input = AdHocWorkInput(taskName.trim(), subjectType, equipmentId, equipmentDescription.trim(), templateId); onAdd(input); taskName = ""; subjectType = WorkSubjectType.SITE; equipmentId = null; equipmentDescription = ""; templateId = null }, Modifier.fillMaxWidth().testTag("add-visit-task"), enabled = valid && !busy)
              if (!allowKnownEquipment) Text("This task will remain local to the new visit.", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -287,15 +300,16 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
         item { DispatchVisitPanel(detail) }
          item { val calendar=state.visitCalendarState;Card(Modifier.fillMaxWidth().testTag("visit-calendar")){Column(Modifier.padding(12.dp)){Text("Calendar",fontWeight=FontWeight.Bold);Text(calendar?.label?:"Checking Calendar status", modifier = Modifier.testTag("visit-calendar-status"));if(calendar?.label=="Calendar integration is off") ServiceLoopNavigationButton("Calendar settings",{nav.navigate("calendar")},Modifier.fillMaxWidth().testTag("visit-calendar-settings"));when(calendar?.action){"Add to Calendar","Recreate event"->OutlinedButton({viewModel.addVisitToCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-add")){Text(calendar.action)};"Remove from Calendar"->OutlinedButton({viewModel.removeVisitFromCalendar(detail.id)},Modifier.fillMaxWidth().testTag("visit-calendar-remove")){Text(calendar.action)}};calendar?.eventId?.let{id->TextButton({viewModel.calendarEventIntent(id)?.let(context::startActivity)}){Text("Open Calendar event")}}}} }
         val serviceProgress = state.serviceProgress
-        if (capabilities.canPerformFieldWork && serviceProgress?.visitId == detail.id) item {
+         if (capabilities.canPerformFieldWork && serviceProgress?.visitId == detail.id) item {
             VisitServiceProgressOverview(serviceProgress, onSelect = { item ->
                 viewModel.focusService(item.workItemId)
                 nav.navigate("inspection/${item.workItemId}")
             })
-        } else {
-            items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",capabilities.canPerformFieldWork && detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){if(capabilities.canPerformFieldWork) nav.navigate("inspection/${line.workItemId}")} }
+         } else {
+             if (!capabilities.canPerformFieldWork && detail.state == "WORKING") item { ServiceLoopNotice("Field work is performed by technicians", "This role can inspect and coordinate this Visit, but cannot execute its Services.", ServiceLoopNoticeKind.Info) }
+             items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",capabilities.canPerformFieldWork && detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){if(capabilities.canPerformFieldWork) nav.navigate("inspection/${line.workItemId}")} }
         }
-        if(capabilities.canPerformFieldWork && capabilities.canCreateLocalWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav) }
+         if(capabilities.canPerformFieldWork && capabilities.canCreateLocalWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav, collapseByDefault = detail.id.isNotBlank()) }
         if (detail.state == "BOOKED") item {
             var rescheduleSaved by rememberSaveable(detail.id) { mutableStateOf(false) }
             val rescheduleDateValid = runCatching { LocalDate.parse(newDate) }.isSuccess

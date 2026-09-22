@@ -20,6 +20,21 @@ data class CustomerEntity(
 )
 
 @Entity(
+    tableName = "customer_contacts",
+    foreignKeys = [ForeignKey(CustomerEntity::class, ["id"], ["customerId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("customerId")],
+)
+data class CustomerContactEntity(
+    @PrimaryKey val id: String,
+    val customerId: String,
+    val personName: String?,
+    val channel: String,
+    val value: String,
+    val createdAtEpochMillis: Long,
+    val modifiedAtEpochMillis: Long,
+)
+
+@Entity(
     tableName = "sites",
     foreignKeys = [ForeignKey(CustomerEntity::class, ["id"], ["customerId"], onDelete = ForeignKey.RESTRICT)],
     indices = [Index("customerId"), Index(value = ["reference"], unique = true)],
@@ -250,6 +265,8 @@ data class FinalRecordRevisionEntity(
     val correctionReason: String? = null,
     /** Public revision-level note, structurally separate from privateInternalNote. */
     val publicNote: String? = null,
+    /** Frozen at finalization; never read back from the mutable Technician directory. */
+    val technicianDesignation: String? = null,
 )
 
 @Entity(

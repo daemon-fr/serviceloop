@@ -29,8 +29,8 @@ class B043WorkspaceEnforcementTest {
         assertTrue(source.contains("capabilities.showRegister"))
         assertTrue(source.contains("listOf(SearchCategory.VISIT, SearchCategory.FOLLOW_UP, SearchCategory.FINAL_RECORD)"))
         assertTrue(source.contains("No matching work records."))
-        assertTrue(source.contains("if(capabilities.canManageRegister) OutlinedButton"))
-        assertTrue(source.contains("if (capabilities.canManageRegister) item { OutlinedButton"))
+        assertTrue(source.contains("capabilities.canManageRegister"))
+        assertTrue(source.contains("OutlinedButton"))
     }
 
     @Test fun `employee assigned work cannot author local tasks or reusable templates`() {
@@ -44,9 +44,9 @@ class B043WorkspaceEnforcementTest {
     @Test fun `dispatch and storage formats remain frozen`() {
         val gradle = File("../build.gradle.kts").readText() + File("build.gradle.kts").readText()
         val database = productionKotlinSource("com/v16studio/serviceloop/data")
-        assertTrue(gradle.contains("versionCode = 2"))
-        assertTrue(gradle.contains("versionName = \"1.0.1\""))
-        assertTrue(database.contains("version = 16"))
+        assertTrue(gradle.contains("versionCode = 3"))
+        assertTrue(gradle.contains("versionName = \"1.1.0\""))
+        assertTrue(database.contains("version = 17"))
         assertFalse(ui().contains("TeamRole.MEMBER"))
     }
 

@@ -197,65 +197,77 @@ fun ServiceLoopAdaptiveActionRow(
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val stack = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.8f
-        if (stack) {
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
-            ) {
-                actions.forEach { action -> action() }
+        val gap = ServiceLoopUiTokens.Space.sm
+        Layout(
+            content = { actions.forEach { action -> action() } },
+            modifier = Modifier.fillMaxWidth().widthIn(max = maxWidth),
+        ) { measurables, constraints ->
+            if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
+            val gapPx = gap.roundToPx()
+            val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(ServiceLoopUiTokens.Size.touchMin.roundToPx()) }
+            val rows = mutableListOf<MutableList<Int>>()
+            var current = mutableListOf<Int>()
+            var currentWidth = 0
+            natural.forEachIndexed { index, width ->
+                val nextWidth = if (current.isEmpty()) width else currentWidth + gapPx + width
+                if (current.isNotEmpty() && nextWidth > constraints.maxWidth) {
+                    rows += current
+                    current = mutableListOf()
+                    currentWidth = 0
+                }
+                current += index
+                currentWidth = if (current.size == 1) width else currentWidth + gapPx + width
             }
-        } else {
-            val gap = ServiceLoopUiTokens.Space.sm
-            Layout(
-                content = { actions.forEach { action -> action() } },
-                modifier = Modifier.fillMaxWidth(),
-            ) { measurables, constraints ->
-                if (measurables.isEmpty()) return@Layout layout(constraints.minWidth, 0) {}
-                val gapPx = gap.roundToPx()
-                val available = (constraints.maxWidth - gapPx * (measurables.size - 1)).coerceAtLeast(0)
-                val minimum = measurables.map { it.minIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
-                val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).coerceAtLeast(1) }
-                val minimumTotal = minimum.sum()
-                val widths = if (minimumTotal >= available) {
-                    minimum.map { (available.toLong() * it / minimumTotal).toInt().coerceAtLeast(1) }.toMutableList()
-                } else {
-                    val allocated = minimum.toMutableList()
-                    var remaining = available - minimumTotal
-                    val desiredExtras = natural.mapIndexed { index, width -> (width - minimum[index]).coerceAtLeast(0) }
-                    val desiredTotal = desiredExtras.sum()
-                    val towardNatural = minOf(remaining, desiredTotal)
-                    if (towardNatural > 0 && desiredTotal > 0) {
-                        desiredExtras.forEachIndexed { index, extra ->
-                            allocated[index] += (towardNatural.toLong() * extra / desiredTotal).toInt()
-                        }
-                        remaining -= allocated.sum() - minimumTotal
-                    }
-                    if (remaining > 0) {
-                        allocated.indices.forEach { index ->
-                            allocated[index] += remaining / allocated.size + if (index < remaining % allocated.size) 1 else 0
-                        }
-                    }
-                    allocated
-                }.also { allocated ->
-                    val difference = available - allocated.sum()
-                    if (allocated.isNotEmpty()) allocated[allocated.lastIndex] = (allocated.last() + difference).coerceAtLeast(1)
-                }
-                val height = measurables.mapIndexed { index, measurable -> measurable.maxIntrinsicHeight(widths[index]) }
-                    .maxOrNull()
-                    ?.coerceIn(constraints.minHeight, constraints.maxHeight)
-                    ?: constraints.minHeight
-                val placeables = measurables.mapIndexed { index, measurable ->
-                    measurable.measure(Constraints.fixed(widths[index], height))
-                }
-                layout(constraints.maxWidth, height) {
+            if (current.isNotEmpty()) rows += current
+
+            val placeables = measurables.mapIndexed { index, measurable ->
+                val row = rows.first { index in it }
+                val rowNatural = row.sumOf { natural[it] } + gapPx * (row.size - 1)
+                val width = if (row.size == 1) constraints.maxWidth else natural[index] +
+                    ((constraints.maxWidth - rowNatural).coerceAtLeast(0) / row.size)
+                measurable.measure(Constraints.fixed(width.coerceAtLeast(ServiceLoopUiTokens.Size.touchMin.roundToPx()), constraints.maxHeight))
+            }
+            val rowHeights = rows.map { row -> row.maxOf { placeables[it].height } }
+            val height = (rowHeights.sum() + gapPx * (rows.size - 1)).coerceIn(constraints.minHeight, constraints.maxHeight)
+            layout(constraints.maxWidth, height) {
+                var y = 0
+                rows.forEachIndexed { rowIndex, row ->
                     var x = 0
-                    placeables.forEach { placeable ->
-                        placeable.placeRelative(x, 0)
-                        x += placeable.width + gapPx
+                    row.forEach { index ->
+                        placeables[index].placeRelative(x, y)
+                        x += placeables[index].width + gapPx
                     }
+                    y += rowHeights[rowIndex] + gapPx
                 }
             }
+        }
+    }
+}
+
+/** The single ServiceLoop checkbox treatment. The whole 48dp surface is the control. */
+@Composable
+fun ServiceLoopCheckbox(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentDescription: String? = null,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Box(
+        modifier = modifier.size(ServiceLoopUiTokens.Size.touchMin)
+            .then(if (onCheckedChange == null) Modifier else Modifier.toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange))
+            .semantics { contentDescription?.let { this.contentDescription = it } },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(28.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(if (checked) colors.action else colors.selection)
+                .border(ServiceLoopUiTokens.Stroke.outline, if (checked) colors.action else colors.selectionOutline, RoundedCornerShape(7.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) ServiceLoopIcon(ServiceLoopIcons.SelectionChecked, null, Modifier.size(24.dp), colors.onAction)
         }
     }
 }
@@ -285,18 +297,17 @@ fun <T> ServiceLoopChoiceGroup(
 @Composable
 fun ServiceSectionStripe(title: String, modifier: Modifier = Modifier, testTag: String? = null) {
     val tokens = LocalServiceLoopTokens.current
-    val dark = tokens.canvas == ServiceLoopUiTokens.DarkColors.canvas
-    val background = if (dark) Color(0xFFD5DFE2) else Color(0xFF182A30)
-    val ink = if (dark) Color(0xFF10191C) else Color.White
+    val background = tokens.surfaceSubtle
+    val ink = tokens.textPrimary
     Box(
         modifier.fillMaxWidth().background(background)
-            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+            .drawBehind { drawLine(tokens.outlineDecorative, Offset(0f, 0f), Offset(size.width, 0f), ServiceLoopUiTokens.Stroke.divider.toPx()) }
             .padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.xs)
             .semantics { heading() }
             .then(if (testTag == null) Modifier else Modifier.testTag(testTag)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = ink, style = ServiceLoopUiTokens.Type.label, textAlign = TextAlign.Center)
+        Text(title, color = ink, style = ServiceLoopUiTokens.Type.sectionTitle, textAlign = TextAlign.Center)
     }
 }
 /** A compact, wrapped single-choice family for short numeric, time, and unit presets. */
@@ -311,9 +322,7 @@ fun <T> ServiceLoopPresetChoiceGroup(
     singleRow: Boolean = false,
 ) {
     if (singleRow) {
-        BoxWithConstraints(modifier.fillMaxWidth()) {
-            val scroll = maxWidth < 280.dp || LocalDensity.current.fontScale > 1.3f
-            val rowModifier = Modifier.fillMaxWidth().then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+            val rowModifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
                 options.forEach { (value, label) ->
                     ServiceLoopPresetChoice(
@@ -322,12 +331,11 @@ fun <T> ServiceLoopPresetChoiceGroup(
                         label = label,
                         enabled = enabled,
                         compact = true,
-                        modifier = (if (scroll) Modifier.widthIn(min = ServiceLoopUiTokens.Size.touchMin) else Modifier.weight(1f))
+                        modifier = Modifier.widthIn(min = ServiceLoopUiTokens.Size.touchMin)
                             .then(if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value")),
                     )
                 }
             }
-        }
     } else {
         FlowRow(
             modifier = modifier.fillMaxWidth(),

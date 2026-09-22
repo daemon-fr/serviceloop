@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui
 
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
+
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -145,15 +147,11 @@ internal fun dispatchService(context:Context)=DispatchPackageService((context.ap
         }
         if(selectedRows.isNotEmpty())ServiceLoopPinnedBar(Modifier.testTag("dispatch-batch-actions")){
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${selectedRows.size} selected",Modifier.weight(1f).testTag("dispatch-selected-count"),style=MaterialTheme.typography.titleMedium);ServiceLoopTextAction("Clear",{checked=emptySet()},Modifier.testTag("dispatch-clear-selection"))}
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Layout.buttonGap)){
-                 ServiceLoopPrimaryButton("Export (${selectedRows.size})",{when{selectedRows.size>DispatchPackageCodec.MAX_VISITS->error="A work package can contain at most ${DispatchPackageCodec.MAX_VISITS} Visits. Reduce the selection.";selectedRows.any{it.outboxStatus==DispatchOutboxStatus.CONCLUDED}->error="Concluded Visits must be reopened before export.";selectedRows.any{it.outboxStatus==DispatchOutboxStatus.CANCELED&&it.lastExportedGeneration==null}->error="A canceled Draft has no technician export to send.";selectedRows.any{(itemCounts[it.dispatchVisitId]?:0)==0}->error="Every selected Visit needs at least one work item before export.";else->{nav.currentBackStackEntry?.savedStateHandle?.set("dispatch-export-ids",ArrayList(selectedRows.map{it.dispatchVisitId}));nav.navigate("dispatch-export-review")}}},Modifier.weight(1f).testTag("dispatch-export-selected"))
-                Box { ServiceLoopIconAction("More selected visit actions",{moreOpen=true},Modifier.testTag("dispatch-more-selection"),content = { ServiceLoopIcon(ServiceLoopIcons.More,null,Modifier.size(ServiceLoopUiTokens.Size.icon),LocalServiceLoopTokens.current.action) });DropdownMenu(moreOpen,{moreOpen=false}){
-                    if(selectedRows.all{it.outboxStatus==DispatchOutboxStatus.DRAFT||it.outboxStatus==DispatchOutboxStatus.DISPATCHED})DropdownMenuItem({Text("Cancel")},{moreOpen=false;pendingStatusAction="cancel"},Modifier.testTag("dispatch-cancel-selected"))
-                    if(canConcludeDelegatedWork&&selectedRows.all{it.outboxStatus==DispatchOutboxStatus.DISPATCHED})DropdownMenuItem({Text("Mark concluded")},{moreOpen=false;pendingStatusAction="conclude"},Modifier.testTag("dispatch-conclude-selected"))
-                    else if(canConcludeDelegatedWork&&selectedRows.all{it.outboxStatus==DispatchOutboxStatus.CONCLUDED})DropdownMenuItem({Text("Reopen")},{moreOpen=false;pendingStatusAction="reopen"},Modifier.testTag("dispatch-reopen-selected"))
-                    else DropdownMenuItem({Text("No status action for mixed selection")},{moreOpen=false},enabled=false)
-                }}
-            }
+             ServiceLoopAdaptiveActionRow(listOf(
+                 { ServiceLoopPrimaryButton("Export (${selectedRows.size})",{when{selectedRows.size>DispatchPackageCodec.MAX_VISITS->error="A work package can contain at most ${DispatchPackageCodec.MAX_VISITS} Visits. Reduce the selection.";selectedRows.any{it.outboxStatus==DispatchOutboxStatus.CONCLUDED}->error="Concluded Visits must be reopened before export.";selectedRows.any{it.outboxStatus==DispatchOutboxStatus.CANCELED&&it.lastExportedGeneration==null}->error="A canceled Draft has no technician export to send.";selectedRows.any{(itemCounts[it.dispatchVisitId]?:0)==0}->error="Every selected Visit needs at least one work item before export.";else->{nav.currentBackStackEntry?.savedStateHandle?.set("dispatch-export-ids",ArrayList(selectedRows.map{it.dispatchVisitId}));nav.navigate("dispatch-export-review")}}},Modifier.fillMaxWidth().testTag("dispatch-export-selected")) },
+                 { if(selectedRows.all{it.outboxStatus==DispatchOutboxStatus.DRAFT||it.outboxStatus==DispatchOutboxStatus.DISPATCHED})ServiceLoopSecondaryButton("Cancel visits",{pendingStatusAction="cancel"},Modifier.fillMaxWidth().testTag("dispatch-cancel-selected")) },
+                 { if(canConcludeDelegatedWork&&selectedRows.all{it.outboxStatus==DispatchOutboxStatus.DISPATCHED})ServiceLoopSecondaryButton("Mark concluded",{pendingStatusAction="conclude"},Modifier.fillMaxWidth().testTag("dispatch-conclude-selected")) else if(canConcludeDelegatedWork&&selectedRows.all{it.outboxStatus==DispatchOutboxStatus.CONCLUDED})ServiceLoopSecondaryButton("Reopen",{pendingStatusAction="reopen"},Modifier.fillMaxWidth().testTag("dispatch-reopen-selected")) },
+             ))
         }
     }
 }

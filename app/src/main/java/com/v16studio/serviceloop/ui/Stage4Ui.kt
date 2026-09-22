@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui
 
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
+
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -40,6 +42,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -113,10 +117,11 @@ internal fun ContactNoteScreen(note: ContactNoteDetail?, padding: PaddingValues,
                 Text(it, modifier = Modifier.testTag("contact-note-error-reason"))
             }
         } else if (!correctionExpanded) {
-            TextButton(
+            Text("Keeps the original note in history and records a correction reason.", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
                 { correctionExpanded = true },
-                Modifier.testTag("contact-note-mark-entered-in-error"),
-            ) { Text("Mark entered in error") }
+                Modifier.testTag("contact-note-mark-entered-in-error").semantics { contentDescription = "Mark entered in error" },
+            ) { Text("Mark note as entered in error") }
         } else {
             LongTextEditor(reason, { reason = it }, "Reason · Required", false, compact = true)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.buttonGap)) {

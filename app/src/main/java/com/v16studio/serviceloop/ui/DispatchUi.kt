@@ -13,17 +13,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -68,9 +70,7 @@ import com.v16studio.serviceloop.data.DispatchDuplicateDecision
 import com.v16studio.serviceloop.data.HandoffReview
 import com.v16studio.serviceloop.data.DispatchTechnicianSnapshot
 import com.v16studio.serviceloop.data.DispatchVisitBindingEntity
-import com.v16studio.serviceloop.data.TECHNICIAN_IDENTITY_MIME
 import com.v16studio.serviceloop.data.TechnicianIdentity
-import com.v16studio.serviceloop.data.TechnicianIdentityCodec
 import com.v16studio.serviceloop.data.TechnicianIdCodec
 import com.v16studio.serviceloop.data.SERVICE_LOOP_SYNC_MIME
 import com.v16studio.serviceloop.data.ServiceLoopSyncEnvelopeCodec
@@ -229,21 +229,6 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
                 Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
                 Text("Copy ID")
             }
-            OutlinedButton(
-                {
-                    value?.let { identity ->
-                        scope.launch {
-                            withContext(Dispatchers.IO) { TechnicianIdentityCodec.encode(identity) }
-                                .let { bytes -> shareFile(context, "technician-identity", "serviceloop-${identity.technicianId.take(8)}.sltech", TECHNICIAN_IDENTITY_MIME, bytes, "Share ServiceLoop Technician identity", "ServiceLoop technician identity", "ServiceLoop technician identity\nGenerated with ServiceLoop") }
-                        }
-                    }
-                },
-                Modifier.fillMaxWidth(),
-            ) {
-                ServiceLoopIcon(ServiceLoopIcons.Share, null, Modifier.size(ServiceLoopUiTokens.Size.icon))
-                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
-                Text("Share identity")
-            }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
@@ -258,15 +243,20 @@ private fun dispatchImportSubjectLabel(work:DispatchWork,equipment:DispatchEquip
 
 @Composable internal fun DispatchTechniciansScreen(padding:PaddingValues){
     val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope()
-    var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var id by rememberSaveable{mutableStateOf("")};var name by rememberSaveable{mutableStateOf("")};var designation by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<com.v16studio.serviceloop.data.TechnicianRenameReview?>(null)}
+    var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var id by rememberSaveable{mutableStateOf("")};var name by rememberSaveable{mutableStateOf("")};var designation by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<com.v16studio.serviceloop.data.TechnicianRenameReview?>(null)};var edit by remember{mutableStateOf<com.v16studio.serviceloop.data.DispatchTechnicianEntity?>(null)}
     fun reload(){scope.launch{techs=withContext(Dispatchers.IO){svc.technicians()}}}
     fun submit(value:TechnicianIdentity,manual:Boolean=false){scope.launch{runCatching{val normalized=if(manual)value.copy(technicianId=com.v16studio.serviceloop.data.TechnicianIdCodec.normalize(value.technicianId)?:throw IllegalArgumentException("Technician ID is not a valid ServiceLoop Technician ID."))else value;withContext(Dispatchers.IO){svc.technicianRenameReview(normalized)} to normalized}.onSuccess{(review,normalized)->if(review!=null)rename=review else scope.launch{withContext(Dispatchers.IO){if(manual)svc.importTechnicianManually(normalized) else svc.importTechnician(normalized)};id="";name="";designation="";reload()}}.onFailure{error=it.message}}}
     LaunchedEffect(Unit){reload()}
-    val open=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let{scope.launch{runCatching{withContext(Dispatchers.IO){val bytes=context.contentResolver.openInputStream(it)!!.use{x->x.readBounded(TechnicianIdentityCodec.MAX_BYTES)};TechnicianIdentityCodec.decode(bytes)}}.onSuccess(::submit).onFailure{if(it is CancellationException)throw it else error=it.message}}}}
     rename?.let{review->AlertDialog(modifier=Modifier.testTag("technician-rename-dialog"),onDismissRequest={rename=null},title={Text("Technician ID already exists")},text={Text("Old name: ${review.existingName}${review.existingDesignation?.let{" · $it"}.orEmpty()}\nIncoming name: ${review.incoming.name}${review.incoming.designation?.let{" · $it"}.orEmpty()}")},dismissButton={TextButton({rename=null},Modifier.testTag("technician-rename-keep")){Text("Keep existing")}},confirmButton={Button({scope.launch{withContext(Dispatchers.IO){svc.importTechnician(review.incoming,true)};rename=null;id="";name="";designation="";reload()}},Modifier.testTag("technician-rename-update")){Text("Update technician")}})}
-    LazyColumn(Modifier.padding(padding).testTag("dispatch-technicians"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Text("Technicians",style=MaterialTheme.typography.headlineSmall);Text("Technician IDs route readable unsigned files; they are not authentication.");Button({open.launch(arrayOf(TECHNICIAN_IDENTITY_MIME,"application/json"))},Modifier.fillMaxWidth()){Text("Import .sltech")};OutlinedTextField(id,{id=it},label={Text("Technician ID")},modifier=Modifier.fillMaxWidth().testTag("manual-technician-id"));OutlinedTextField(name,{name=it},label={Text("Actual name")},modifier=Modifier.fillMaxWidth());OutlinedTextField(designation,{designation=it},label={Text("Team designation or badge (optional)")},modifier=Modifier.fillMaxWidth());OutlinedButton({submit(TechnicianIdentity(id,name.trim(),designation.trim().takeIf{it.isNotEmpty()}),true)},enabled=id.isNotBlank()&&name.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("manual-technician-add")){Text("Add manually")};error?.let{Text(it,color=MaterialTheme.colorScheme.error)}};items(techs){tech->Column{Text(tech.displayName,style=MaterialTheme.typography.titleMedium);tech.designation?.takeIf{it.isNotBlank()}?.let{Text(it,style=MaterialTheme.typography.bodyMedium)};Text(tech.technicianId,style=MaterialTheme.typography.bodySmall)}}}
+    edit?.let { tech ->
+        var editName by remember(tech.technicianId) { mutableStateOf(tech.displayName) }
+        var editDesignation by remember(tech.technicianId) { mutableStateOf(tech.designation.orEmpty()) }
+        var editNotes by remember(tech.technicianId) { mutableStateOf(tech.notes.orEmpty()) }
+        AlertDialog(onDismissRequest={edit=null}, title={Text("Edit technician")}, text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Technician ID: ${tech.technicianId}",style=ServiceLoopUiTokens.Type.identifier);OutlinedTextField(editName,{editName=it},label={Text("Actual name")});OutlinedTextField(editDesignation,{editDesignation=it},label={Text("Team designation or badge (optional)")});OutlinedTextField(editNotes,{editNotes=it},label={Text("Notes / contact info (optional)")})}}, dismissButton={TextButton({edit=null}){Text("Cancel")}}, confirmButton={Button({scope.launch{runCatching{withContext(Dispatchers.IO){svc.updateTechnicianMetadata(tech.technicianId,editName,editDesignation,editNotes)}}.onSuccess{edit=null;reload()}.onFailure{error=it.message}}}){Text("Save")}})
+    }
+    LazyColumn(Modifier.padding(padding).testTag("dispatch-technicians"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Text("Technicians",style=MaterialTheme.typography.headlineSmall);Text("Technician IDs identify local directory entries; they are not accounts or passwords.");OutlinedTextField(id,{id=it},label={Text("Technician ID")},modifier=Modifier.fillMaxWidth().testTag("manual-technician-id"));OutlinedTextField(name,{name=it},label={Text("Actual name")},modifier=Modifier.fillMaxWidth());OutlinedTextField(designation,{designation=it},label={Text("Team designation or badge (optional)")},modifier=Modifier.fillMaxWidth());OutlinedButton({submit(TechnicianIdentity(id,name.trim(),designation.trim().takeIf{it.isNotEmpty()}),true)},enabled=id.isNotBlank()&&name.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("manual-technician-add")){Text("Add manually")};error?.let{Text(it,color=MaterialTheme.colorScheme.error)}};items(techs){tech->Column(Modifier.fillMaxWidth().clickable{edit=tech}.padding(vertical=8.dp)){Text(tech.displayName,style=MaterialTheme.typography.titleMedium);tech.designation?.takeIf{it.isNotBlank()}?.let{Text(it,style=MaterialTheme.typography.bodyMedium)};tech.notes?.takeIf{it.isNotBlank()}?.let{Text(it,style=MaterialTheme.typography.bodySmall)};Text(tech.technicianId,style=MaterialTheme.typography.bodySmall)}}}
 }
-@Composable internal fun DispatchTeamsScreen(padding:PaddingValues){val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var teams by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTeamDetail>())};var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var name by rememberSaveable{mutableStateOf("")};fun reload(){scope.launch{teams=withContext(Dispatchers.IO){svc.teams()};techs=withContext(Dispatchers.IO){svc.technicians()}}};LaunchedEffect(Unit){reload()};LazyColumn(Modifier.padding(padding).testTag("dispatch-teams"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Text("Teams and leaders",style=MaterialTheme.typography.headlineSmall);OutlinedTextField(name,{name=it},label={Text("New team name")},modifier=Modifier.fillMaxWidth());Button({scope.launch{withContext(Dispatchers.IO){svc.createTeam(name)};name="";reload()}},enabled=name.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Create team")}};items(teams){team->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(team.team.name,style=MaterialTheme.typography.titleMedium);Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Text("Member",Modifier.padding(horizontal=4.dp));Text("Technician",Modifier.weight(1f));Text("Leader",Modifier.padding(horizontal=4.dp))};techs.forEach{t->val member=team.members.find{it.first.technicianId==t.technicianId};Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(member!=null,{checked->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,checked,false)};reload()}},Modifier.semantics{contentDescription="Member — ${t.displayName}"});Text(t.displayName,Modifier.weight(1f));Checkbox(member?.second==true,{leader->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,true,leader)};reload()}},Modifier.semantics{contentDescription="Leader — ${t.displayName}"},enabled=member!=null)}}}}}}}
+@Composable internal fun DispatchTeamsScreen(padding:PaddingValues){val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var teams by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTeamDetail>())};var techs by remember{mutableStateOf(emptyList<com.v16studio.serviceloop.data.DispatchTechnicianEntity>())};var name by rememberSaveable{mutableStateOf("")};fun reload(){scope.launch{teams=withContext(Dispatchers.IO){svc.teams()};techs=withContext(Dispatchers.IO){svc.technicians()}}};LaunchedEffect(Unit){reload()};LazyColumn(Modifier.padding(padding).testTag("dispatch-teams"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Text("Teams and leaders",style=MaterialTheme.typography.headlineSmall);OutlinedTextField(name,{name=it},label={Text("New team name")},modifier=Modifier.fillMaxWidth());Button({scope.launch{withContext(Dispatchers.IO){svc.createTeam(name)};name="";reload()}},enabled=name.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Create team")}};items(teams){team->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp), horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Text(team.team.name,style=MaterialTheme.typography.titleLarge, modifier=Modifier.fillMaxWidth(), textAlign=androidx.compose.ui.text.style.TextAlign.Center);Spacer(Modifier.height(8.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Text("Member",Modifier.padding(horizontal=4.dp));Text("Technician",Modifier.weight(1f));Text("Leader",Modifier.padding(horizontal=4.dp))};techs.forEach{t->val member=team.members.find{it.first.technicianId==t.technicianId};Row(Modifier.fillMaxWidth().heightIn(min=ServiceLoopUiTokens.Size.touchMin),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(member!=null,{checked->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,checked,false)};reload()}},Modifier.semantics{contentDescription="Member — ${t.displayName}"});Text(t.displayName,Modifier.weight(1f));Checkbox(member?.second==true,{leader->scope.launch{withContext(Dispatchers.IO){svc.setTeamMember(team.team.id,t.technicianId,true,leader)};reload()}},Modifier.semantics{contentDescription="Leader — ${t.displayName}"},enabled=member!=null)}}}}}}}
 
 @Composable internal fun ImportDispatchPackageScreen(padding:PaddingValues,nav:NavHostController,viewModel:ServiceLoopViewModel,incomingUri:String?=null){
     val context=LocalContext.current;val svc=remember{service(context)};val scope=rememberCoroutineScope();var preview by remember{mutableStateOf<com.v16studio.serviceloop.data.DispatchPreview?>(null)};var error by remember{mutableStateOf<String?>(null)};var busy by remember{mutableStateOf(false)};var result by remember{mutableStateOf<String?>(null)}

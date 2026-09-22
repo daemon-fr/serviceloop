@@ -2,6 +2,8 @@ package com.v16studio.serviceloop.ui
 
 import com.v16studio.serviceloop.BuildConfig
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,7 +46,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -181,6 +183,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController, appearancePreferences: AppearancePreferences) {
     val appearanceMode by appearancePreferences.mode.collectAsState()
+    val context = LocalContext.current
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { SectionTitle("App"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
         item { SectionTitle("Business & work setup"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")}; ServiceLoopDenseNavigableRow("Team role settings",leadingIcon=ServiceLoopIcons.TeamRole,modifier=Modifier.testTag("settings-team-role")){nav.navigate("dispatch/settings")} }
@@ -188,14 +191,17 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
         item { SectionTitle("Data"); ServiceLoopDenseNavigableRow("Import / export data",leadingIcon=ServiceLoopIcons.ArrowsDownUp,modifier=Modifier.testTag("settings-data-transfer")){nav.navigate("data-transfer")}; ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
         item {
             Column(Modifier.testTag("settings-about"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-                SectionTitle("About")
-                Text("ServiceLoop", style = ServiceLoopUiTokens.Type.itemTitle)
-                Text(
-                    "Version ${BuildConfig.VERSION_NAME}",
-                    style = ServiceLoopUiTokens.Type.supporting,
-                    color = LocalServiceLoopTokens.current.textSecondary,
-                    modifier = Modifier.testTag("settings-about-version"),
-                )
+                SectionTitle("About ServiceLoop")
+                ServiceLoopDenseNavigableRow("Version ${BuildConfig.VERSION_NAME}", context = "Build ${BuildConfig.VERSION_CODE}", leadingIcon = ServiceLoopIcons.Info, modifier = Modifier.testTag("settings-about-version")) {}
+                ServiceLoopDenseNavigableRow("Report a bug", leadingIcon = ServiceLoopIcons.Report, modifier = Modifier.testTag("settings-report-bug")) {
+                    val body = "ServiceLoop version: ${BuildConfig.VERSION_NAME}\nVersion code: ${BuildConfig.VERSION_CODE}\nAndroid: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:placeholder@mail.com")).apply {
+                            putExtra(Intent.EXTRA_SUBJECT, "ServiceLoop ${BuildConfig.VERSION_NAME} bug report")
+                            putExtra(Intent.EXTRA_TEXT, body)
+                        })
+                    }.onFailure { Toast.makeText(context, "No email app is available", Toast.LENGTH_SHORT).show() }
+                }
             }
         }
     }
@@ -256,9 +262,9 @@ internal fun ReminderSettingsScreen(state: UiState, padding: PaddingValues, view
     LazyColumn(Modifier.padding(padding).testTag("reminder-settings"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
         item { Text("Local reminders", style = MaterialTheme.typography.titleLarge); Text("${state.reminderRuntimeState.label}. Reminders may be delayed. Work lists remain the source of truth."); Text("Work summaries channel: ${if(state.reminderRuntimeState.summariesChannelEnabled) "available" else "blocked"}"); Text("Appointment reminders channel: ${if(state.reminderRuntimeState.appointmentsChannelEnabled) "available" else "blocked"}"); state.reminderRuntimeState.schedulingError?.let { Text("Scheduling error: $it", color = MaterialTheme.colorScheme.error) }; Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(requested, ::toggleDelivery, modifier = Modifier.testTag("reminder-delivery")); Text("Request local reminders") }; if (changed && requested) Text("Android permission changes are external and are not undone by Cancel.", style = MaterialTheme.typography.bodySmall) }
         item { HorizontalDivider(); Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.dailySummaryEnabled, { draft = draft.copy(dailySummaryEnabled = it) }); Text("Daily work summary") }; OutlinedTextField(timeText, { timeText = it }, label = { Text("Summary time · HH:mm") }, modifier = Modifier.fillMaxWidth().testTag("summary-time")); Text("Summary days"); SummaryDayChoices(draft){draft=it}; if (draft.dailySummaryEnabled && draft.summaryDaysMask and ReminderPreferences.ALL_DAYS == 0) Text("Select at least one summary day", color = MaterialTheme.colorScheme.error) }
-        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopPresetChoiceGroup(listOf(1 to "1 day", 7 to "7 days", 14 to "14 days", 30 to "30 days"),draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon"); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Due-soon horizon", fontWeight = FontWeight.Bold); ServiceLoopPresetChoiceGroup(listOf(1 to "1 day", 7 to "7 days", 14 to "14 days", 30 to "30 days"),draft.dueSoonHorizonDays,{draft=draft.copy(dueSoonHorizonDays=it)},testTagPrefix="due-horizon", singleRow = true); Text("This also controls the Home and default Due services horizon.", style = MaterialTheme.typography.bodySmall) }
         item { Text("Summary content", fontWeight = FontWeight.Bold); ReminderToggle("Due services", draft.includeDueServices) { draft = draft.copy(includeDueServices = it) }; ReminderToggle("Visits", draft.includeVisits) { draft = draft.copy(includeVisits = it) }; ReminderToggle("Follow-ups", draft.includeFollowUps) { draft = draft.copy(includeFollowUps = it) }; ReminderToggle("Unfinished visits", draft.includeUnfinishedVisits) { draft = draft.copy(includeUnfinishedVisits = it) }; ReminderToggle("Backup reminder", draft.includeBackupReminder) { draft = draft.copy(includeBackupReminder = it) } }
-        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopPresetChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS, draft.defaultAppointmentLeadMinutes, { draft = draft.copy(defaultAppointmentLeadMinutes = it) }, testTagPrefix = "appointment-lead"); if (draft.defaultAppointmentLeadMinutes == ReminderPreferences.LEGACY_APPOINTMENT_LEAD_MINUTES) Text("Current saved lead: 2h. Choose a new preset to replace it.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("legacy-default-appointment-lead")) }
+        item { HorizontalDivider(); ReminderToggle("Approximate appointment alerts", draft.appointmentAlertsEnabled) { draft = draft.copy(appointmentAlertsEnabled = it) }; Text("Default appointment lead", fontWeight = FontWeight.Bold); ServiceLoopPresetChoiceGroup(ReminderPreferences.APPOINTMENT_LEAD_PRESETS, draft.defaultAppointmentLeadMinutes, { draft = draft.copy(defaultAppointmentLeadMinutes = it) }, testTagPrefix = "appointment-lead", singleRow = true); if (draft.defaultAppointmentLeadMinutes == ReminderPreferences.LEGACY_APPOINTMENT_LEAD_MINUTES) Text("Current saved lead: 2h. Choose a new preset to replace it.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("legacy-default-appointment-lead")) }
         item { ServiceLoopActionStack { OutlinedButton({ context.startActivity((context.applicationContext as com.v16studio.serviceloop.ServiceLoopApplication).container.reminderCoordinator.openAndroidSettingsIntent()) }, Modifier.fillMaxWidth()) { Text("Open Android notification settings") }; OutlinedButton(viewModel::sendTestNotification, Modifier.fillMaxWidth().testTag("send-test-notification")) { Text("Send test notification") } }; state.operationMessage?.let { Text(it) } }
         item { SaveStateBanner(state.reminderSaveStatus); Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg)); ServiceLoopActionStack { ServiceLoopPrimaryButton(if (state.reminderSaveStatus is SaveStatus.Saving) "Saving reminder settings" else "Save reminder settings", { if (parsedTime != null) viewModel.saveReminderSettings(normalized, requested) }, enabled = parsedTime != null && (!draft.dailySummaryEnabled || draft.summaryDaysMask and ReminderPreferences.ALL_DAYS != 0), busy = state.reminderSaveStatus is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().testTag("save-reminders")); TextButton({ nav.popBackStack() }, Modifier.fillMaxWidth()) { Text("Cancel / Back") } } }
     }

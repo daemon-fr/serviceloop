@@ -207,9 +207,16 @@ class ServiceLoopViewModel(
         requestVersions[token.key] == token.version && datasetGeneration == token.datasetGeneration
     }
 
-    private fun advanceDatasetGeneration() = synchronized(requestLock) {
-        datasetGeneration += 1L
-        requestVersions.clear()
+    private fun advanceDatasetGeneration() {
+        val scopeToRestart = synchronized(requestLock) {
+            datasetGeneration += 1L
+            requestVersions.clear()
+            operationalDashboardScope
+        }
+        operationalDashboardJob?.cancel()
+        operationalDashboardJob = null
+        operationalDashboardScope = null
+        scopeToRestart?.let(::observeOperationalDashboard)
     }
 
     init {
@@ -581,6 +588,7 @@ class ServiceLoopViewModel(
     fun calendarEventIntent(eventId:Long)=calendarCoordinator?.eventIntent(eventId)
 
     fun setAppointmentReminderLead(visitId: String, minutes: Int?) = runOperation({ repository.setAppointmentReminderLead(visitId, minutes); visitId }) { loadVisit(it) }
+    fun updatePhoto(visitId: String, workItemId: String, photoId: String, caption: String?, included: Boolean) = runOperation({ repository.updatePhoto(workItemId, photoId, caption, included); visitId }) { loadCompletion(it) }
     fun loadFieldEvidence(workItemId: String) {
         val request = issueRequest("fieldEvidence")
         viewModelScope.launch {
@@ -604,6 +612,9 @@ class ServiceLoopViewModel(
     fun createCustomer(input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.createCustomer(input) }, onSuccess)
     fun createCustomerWithFirstSite(customer: CustomerInput, site: SiteInput, onSuccess: (Pair<String, String>) -> Unit) = runOperation({ repository.createCustomerWithFirstSite(customer, site) }, onSuccess)
     fun updateCustomer(id: String, input: CustomerInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateCustomer(id, input); id }, onSuccess)
+    fun createCustomerContact(input: CustomerContactInput, onSuccess: (String) -> Unit = {}) = runOperation({ repository.createCustomerContact(input) }, onSuccess)
+    fun updateCustomerContact(id: String, input: CustomerContactInput, onSuccess: () -> Unit = {}) = runOperation({ repository.updateCustomerContact(id, input); id }, { onSuccess() })
+    fun deleteCustomerContact(customerId: String, contactId: String, onSuccess: () -> Unit = {}) = runOperation({ repository.deleteCustomerContact(customerId, contactId); contactId }, { onSuccess() })
     fun createSite(customerId: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.createSite(customerId, input) }, onSuccess)
     fun updateSite(id: String, input: SiteInput, onSuccess: (String) -> Unit) = runOperation({ repository.updateSite(id, input); id }, onSuccess)
     fun createEquipment(siteId: String, input: EquipmentInput, onSuccess: (String) -> Unit) = runOperation({ repository.createEquipment(siteId, input) }, onSuccess)

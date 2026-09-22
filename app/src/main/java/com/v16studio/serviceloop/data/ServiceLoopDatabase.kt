@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
-        CustomerEntity::class, SiteEntity::class, EquipmentEntity::class,
+        CustomerEntity::class, CustomerContactEntity::class, SiteEntity::class, EquipmentEntity::class,
         ServicePlanEntity::class, ServiceObligationEntity::class,
         TemplateSnapshotEntity::class, ChecklistItemSnapshotEntity::class,
         WorkingVisitEntity::class, WorkItemEntity::class,
@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -48,7 +48,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -376,6 +376,16 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS customer_contacts (id TEXT NOT NULL PRIMARY KEY, customerId TEXT NOT NULL, personName TEXT, channel TEXT NOT NULL, value TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL, FOREIGN KEY(customerId) REFERENCES customers(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_customer_contacts_customerId ON customer_contacts(customerId)")
+                db.execSQL("ALTER TABLE dispatch_technicians ADD COLUMN notes TEXT")
+                db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN technicianDesignation TEXT")
+                configureStage4Tracking(db)
+            }
+        }
+
         private fun configureReminderDefaults(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,180)")
         }
@@ -386,7 +396,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
 
         internal fun configureStage4Tracking(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
-            val tracked = listOf("customers", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "reminder_preferences")
+            val tracked = listOf("customers", "customer_contacts", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "reminder_preferences")
             val existing = mutableSetOf<String>()
             db.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor -> while (cursor.moveToNext()) existing += cursor.getString(0) }
             tracked.filter { it in existing }.forEach { table ->

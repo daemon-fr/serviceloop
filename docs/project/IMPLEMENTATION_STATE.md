@@ -301,3 +301,6 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - SL-5C establishes the functional freeze for B-013; it does not claim current copy/UI is final.
 - Localization is intentionally deferred under B-017.
 - B-008 cannot be satisfied by emulator/AI/owner-only review.
+# B047 post-pilot hardening
+
+The B047 UI/UX and narrow persistence hardening is implemented on `codex/b047-post-pilot-ui-hardening`. See [B047_POST_PILOT_UI_HARDENING.md](B047_POST_PILOT_UI_HARDENING.md) for the scoped changes and transport boundary.
