@@ -1463,3 +1463,20 @@ This refactor is complete when:
 - Final gates: `:app:testDebugUnitTest` PASS (441 tests), `:app:assembleDebug` PASS, `:app:lintDebug` PASS, `:app:assembleDebugAndroidTest` PASS, and `git diff --check` PASS.
 - Domain-instrumented migration verification: `Migration1To2Test` PASS, 11/11, on the dynamically resolved `Pixel 10a ServiceLoop` emulator (`emulator-5554` for this run). The APK was built first and installed explicitly with `adb -s <resolved-serial> install -r`.
 - Full legacy UI suite and HUMAN/RENDERED owner review were not run in this pass; those remain separate acceptance evidence.
+
+## 36. B044 owner-review correction pass — 2026-09-22
+
+**Status: IMPLEMENTED AND VERIFIED / READY FOR OWNER REVIEW**
+
+- Correction branch: `codex/b044-visit-setup-harmonization`; correction start SHA: `8e1154854d23d2f5df4cd72df10a58f8cbbf8c59`.
+- Dispatch plan-backed item IDs now use a per-editor-session work-key map with a fresh UUID for each new key; persisted IDs remain authoritative across recomposition and saves.
+- Existing saved plan-backed Dispatch items are materialized from their persisted snapshot on edit. Current Due Services data is used for new selections only; unmatched saved plan items remain preserved.
+- Canceled and concluded Dispatch editors expose disabled shared controls and task rows cannot invoke edit callbacks. Planned work now distinguishes loading, empty-ready, and unavailable/error states with the adopted copy and Retry behavior.
+- The shared Visit header/tabs are edge-to-edge, customer/site selection precedes the rest of the form, site search rows use radio semantics, new BOOKED dates are guarded in both UI and repository/domain paths, and save actions require a valid target plus work/team prerequisites.
+- New tasks require an active inspection checklist while existing historical/no-checklist tasks remain editable. The template-create saved-state bridge consumes `created-inspection-template-id` once, refreshes templates, waits for the returned row, and auto-selects it for local and Dispatch Visit setup.
+- Equipment selection is rendered as individual radio/selectable records. Requested Visit detail, Follow-up, and Customer Work gateway spacing corrections were applied with existing semantic anchors retained.
+- Template persistence investigation found no production persistence defect: Room v16 migration history preserves `reusable_templates`, `reusable_template_revisions`, and `reusable_template_items`; application ID remains `com.v16studio.serviceloop`; no debug/release clear/uninstall/reset script was found. The canonical debug database was present on-device at `databases/serviceloop.db`; the device shell has no `sqlite3`, so no template-row count was claimed. No speculative persistence code change was made.
+- Final local gates are recorded after the last production edit: `:app:testDebugUnitTest` PASS (446 tests, 0 failures/errors/skips), `:app:assembleDebug` PASS, `:app:lintDebug` PASS, `:app:assembleDebugAndroidTest` PASS, and `git diff --check` to be rechecked at the final Git gate.
+- Canonical AVD `Pixel 10a ServiceLoop` was resolved dynamically as `emulator-5554`; physical Pixel 6 Pro was not used for acceptance. Fresh debug and Android-test APKs were explicitly installed with `adb -s <resolved-serial> install -r`. Canonical-only B037 owner-render/back-guard instrumentation passed 2/2, and harmonized B026 Dispatch UI instrumentation passed 3/3. B037 light/dark Visit captures were visually inspected from the generated PNGs.
+- A Gradle connected-runner attempt was stopped after it discovered the attached physical phone; it is not acceptance evidence. The focused coordinator class still contains four pre-harmonization selector/scroll assumptions and is not claimed as a final correction-pass pass; targeted B037/B026 coverage is the claimed UI evidence.
+- No Room schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup format, release tag, merge, or protected `master` change was made.

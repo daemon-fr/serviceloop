@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 
 private data class DispatchLoadedSetup(
     val sites: List<VisitSiteOption>,
@@ -59,6 +60,9 @@ private data class DispatchLoadedSetup(
     val teamIds: List<String>,
     val items: List<Pair<DispatchOutboxItemDraft, List<String>>>,
 )
+
+internal fun dispatchItemIdForWorkKey(sessionIds: MutableMap<String, String>, workKey: String): String =
+    sessionIds.getOrPut(workKey) { UUID.randomUUID().toString() }
 
 private fun equipmentSummary(entity: EquipmentEntity, customerName: String, siteName: String) = EquipmentSummary(
     id = entity.id,
@@ -84,6 +88,9 @@ internal fun DispatchVisitEditorScreen(
     dueServicesOverride: List<DueService> = emptyList(),
     templatesOverride: List<TemplateSummary> = emptyList(),
     businessZoneId: String = ZoneId.systemDefault().id,
+    plannedWorkState: DueServicesProjection = DueServicesProjection.Available(dueServicesOverride),
+    onRetryDueServices: () -> Unit = {},
+    onRefreshTemplates: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val database = databaseOverride ?: (context.applicationContext as ServiceLoopApplication).container.database
@@ -111,6 +118,7 @@ internal fun DispatchVisitEditorScreen(
     var assigneeKey by remember { mutableStateOf<String?>(null) }
     var showCancel by remember { mutableStateOf(false) }
     var cancelReason by rememberSaveable(visitId) { mutableStateOf("") }
+    val dispatchItemIdByWorkKey = remember(visitId) { mutableMapOf<String, String>() }
 
     fun fingerprint() = listOf(draft, manager, instructions, appointmentZone, selectedTeams.sorted(), assignments.toSortedMap().mapValues { it.value.sorted() }).toString()
     fun updateAssignments(key: String, value: Set<String>) { assignments = assignments.toMutableMap().also { it[key] = value } }
@@ -146,7 +154,8 @@ internal fun DispatchVisitEditorScreen(
             loadedVisit = loaded.visit
             selectedTeams = loaded.teamIds.toSet()
             originalItems = loaded.items
-            val due = dueServicesOverride
+            dispatchItemIdByWorkKey.clear()
+            val due = (plannedWorkState as? DueServicesProjection.Available)?.rows.orEmpty()
             val selectedPlanIds = linkedSetOf<String>()
             val tasks = mutableListOf<VisitSetupTaskDraft>()
             val unmatched = linkedMapOf<String, DispatchOutboxItemDraft>()
@@ -156,6 +165,7 @@ internal fun DispatchVisitEditorScreen(
                 val dueService = item.servicePlanReference?.let { reference -> due.firstOrNull { it.planReference == reference && (loaded.visit == null || it.siteId == loaded.visit.siteId) } }
                 if (dueService != null) {
                     val key = "PLAN:${dueService.planId}"
+                    dispatchItemIdByWorkKey[key] = item.dispatchItemId
                     selectedPlanIds += dueService.planId
                     loadedAssignments[key] = assignees.toSet()
                     order += key
@@ -189,17 +199,23 @@ internal fun DispatchVisitEditorScreen(
             baselineFingerprint = fingerprint()
         }
     }
-    LaunchedEffect(visitId, dueServicesOverride.size, sitesOverride.size) { load() }
+    val plannedWorkStatePhase = when (plannedWorkState) {
+        DueServicesProjection.Unresolved -> "loading"
+        is DueServicesProjection.Available -> "ready"
+        is DueServicesProjection.Unavailable -> "error"
+    }
+    LaunchedEffect(visitId, dueServicesOverride.size, sitesOverride.size, plannedWorkStatePhase) { load() }
 
     val sites = sitesOverride.ifEmpty { localSites }
-    val dueServices = dueServicesOverride
+    val dueServices = (plannedWorkState as? DueServicesProjection.Available)?.rows.orEmpty()
     val templates = templatesOverride
     val readOnly = loadedVisit?.outboxStatus in setOf(DispatchOutboxStatus.CONCLUDED, DispatchOutboxStatus.CANCELED)
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
     val participants = teams.filter { it.team.id in selectedTeams }.flatMap { it.members.map { member -> member.first } }.distinctBy { it.technicianId }
     val dateValid = runCatching { LocalDate.parse(draft.serviceDate) }.isSuccess
     val timeValid = draft.appointmentTime.isBlank() || parseAppointmentTimeInput(draft.appointmentTime) != null
-    val commonValid = dateValid && timeValid && if (draft.mode == VisitSetupMode.NEW) draft.newCustomer.isValidForCreate() else selectedSite != null
+    val hasWork = draft.tasks.isNotEmpty() || unmatchedItems.isNotEmpty() || draft.selectedPlanIds.any { planId -> dueServices.any { it.planId == planId } }
+    val commonValid = dateValid && timeValid && hasWork && if (draft.mode == VisitSetupMode.NEW) draft.newCustomer.isValidForCreate() else selectedSite != null
     val changed = initialized && baselineFingerprint != fingerprint()
     UnsavedChangesGuard(changed, nav)
 
@@ -223,16 +239,17 @@ internal fun DispatchVisitEditorScreen(
         val byKey = linkedMapOf<String, DispatchOutboxItemDraft>()
         dueServices.filter { it.planId in draft.selectedPlanIds }.forEach { due ->
             val key = "PLAN:${due.planId}"
-            val original = originalItems.firstOrNull { it.first.servicePlanReference == due.planReference }?.first
-            byKey[key] = DispatchOutboxItemDraft(
-                dispatchItemId = original?.dispatchItemId ?: "plan-${due.planId}",
-                subjectType = WorkSubjectType.EQUIPMENT,
-                equipmentId = due.equipmentId,
-                taskName = due.planName,
-                servicePlanReference = due.planReference,
-                dueDateSnapshot = due.dueDate,
-                assignedTechnicianIds = assignments[key].orEmpty().toList(),
-            )
+            val original = dispatchItemIdByWorkKey[key]?.let { id -> originalItems.firstOrNull { it.first.dispatchItemId == id }?.first }
+            byKey[key] = original?.copy(assignedTechnicianIds = assignments[key].orEmpty().toList())
+                ?: DispatchOutboxItemDraft(
+                    dispatchItemId = dispatchItemIdForWorkKey(dispatchItemIdByWorkKey, key),
+                    subjectType = WorkSubjectType.EQUIPMENT,
+                    equipmentId = due.equipmentId,
+                    taskName = due.planName,
+                    servicePlanReference = due.planReference,
+                    dueDateSnapshot = due.dueDate,
+                    assignedTechnicianIds = assignments[key].orEmpty().toList(),
+                )
         }
         draft.tasks.forEach { task ->
             val key = "TASK:${task.stableUiId}"
@@ -286,15 +303,17 @@ internal fun DispatchVisitEditorScreen(
         modifier = setupModifier,
         draft = draft,
         sites = sites,
-        dueServices = dueServices,
         templates = templates,
         businessDate = businessDate,
         editable = !readOnly && !busy,
         busy = busy,
         errorMessage = error,
         onDraftChange = { draft = it },
-        onRetryDueServices = {},
+        plannedWorkState = plannedWorkState,
+        onRetryDueServices = onRetryDueServices,
         allowTemplateCreation = !readOnly,
+        onRefreshTemplates = onRefreshTemplates,
+        templateReturnNav = nav,
         onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") },
         preludeItems = {
             item {
@@ -342,7 +361,7 @@ internal fun DispatchVisitEditorScreen(
         actionItems = {
             item {
                 ServiceLoopPinnedBar {
-                    if (!readOnly) ServiceLoopPrimaryButton(if (visitId == null) "Save draft" else "Save changes", ::save, Modifier.fillMaxWidth().testTag("dispatch-save-visit"), enabled = !busy, busy = busy)
+                    if (!readOnly) ServiceLoopPrimaryButton(if (visitId == null) "Save draft" else "Save changes", ::save, Modifier.fillMaxWidth().testTag("dispatch-save-visit"), enabled = !busy && commonValid && selectedTeams.isNotEmpty() && participants.isNotEmpty(), busy = busy)
                     if (loadedVisit?.outboxStatus in setOf(DispatchOutboxStatus.DRAFT, DispatchOutboxStatus.DISPATCHED)) ServiceLoopSecondaryButton("Cancel visit", { cancelReason = ""; showCancel = true }, Modifier.fillMaxWidth().testTag("dispatch-cancel-visit"), enabled = !busy)
                     if (canConcludeDelegatedWork && loadedVisit?.outboxStatus == DispatchOutboxStatus.DISPATCHED) ServiceLoopSecondaryButton("Mark concluded", { scope.launch { runCatching { withContext(Dispatchers.IO) { service.concludeOutboxVisits(listOf(requireNotNull(visitId))) } }.onSuccess { nav.popBackStack() }.onFailure { if (it is CancellationException) throw it else error = it.message } } }, Modifier.fillMaxWidth().testTag("dispatch-conclude-visit"), enabled = !changed && !busy)
                     if (canConcludeDelegatedWork && loadedVisit?.outboxStatus == DispatchOutboxStatus.CONCLUDED) ServiceLoopPrimaryButton("Reopen", { scope.launch { runCatching { withContext(Dispatchers.IO) { service.reopenOutboxVisits(listOf(requireNotNull(visitId))) } }.onSuccess { load() }.onFailure { if (it is CancellationException) throw it else error = it.message } } }, Modifier.fillMaxWidth().testTag("dispatch-reopen-visit"))

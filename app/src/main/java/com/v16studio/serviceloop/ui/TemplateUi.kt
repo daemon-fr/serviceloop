@@ -429,7 +429,7 @@ internal fun TemplateEditorScreen(
     fun finish(id: String) {
         viewModel.loadTemplates()
         if (returnTo != null) {
-            nav.previousBackStackEntry?.savedStateHandle?.set("created-inspection-template-id", id)
+            nav.previousBackStackEntry?.savedStateHandle?.set(CREATED_INSPECTION_TEMPLATE_ID_KEY, id)
             nav.popBackStack()
         } else {
             nav.navigate("template/$id") { launchSingleTop = true }

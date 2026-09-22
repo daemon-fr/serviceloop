@@ -304,11 +304,12 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
                 { viewModel.startVisit(detail.id) { id ->
                     val target = viewModel.state.value.serviceProgress?.preferredResumeItem()?.workItemId
                     if (target != null) nav.navigate("inspection/$target") else nav.navigate("visit/$id")
-                } },
-                enabled = detail.lines.isNotEmpty() && !state.operationInProgress,
-                modifier = Modifier.fillMaxWidth().testTag("start-visit"),
+            } },
+            enabled = detail.lines.isNotEmpty() && !state.operationInProgress,
+            modifier = Modifier.fillMaxWidth().testTag("start-visit"),
             ) { Text("Start visit") }
             if (capabilities.canPerformFieldWork && detail.lines.isEmpty()) Text("Add at least one service line before starting.")
+            Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
             AppointmentReminderSelector(
                 currentOverrideMinutes = detail.appointmentReminderLeadMinutes,
                 resolvedDefaultMinutes = state.reminderPreferences?.defaultAppointmentLeadMinutes ?: ReminderPreferences().defaultAppointmentLeadMinutes,

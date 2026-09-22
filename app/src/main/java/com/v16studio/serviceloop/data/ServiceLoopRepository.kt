@@ -24,6 +24,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.sync.withLock
 
+internal fun validateNewBookedVisitDate(state: String, serviceDate: String, businessDate: LocalDate) {
+    val parsed = LocalDate.parse(serviceDate)
+    require(state != "BOOKED" || !parsed.isBefore(businessDate)) {
+        "A booked visit cannot be scheduled in the past. Choose today or a future date, or record past work."
+    }
+}
+
 interface ServiceLoopRepository {
     suspend fun home(): HomeSummary
     suspend fun operationalDashboard(scope: WorkScope): OperationalDashboardProjection {
@@ -619,7 +626,7 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String = database.withTransaction {
-        require(planIds.isNotEmpty()) { "Select at least one due service" }; require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); LocalDate.parse(serviceDate)
+        require(planIds.isNotEmpty()) { "Select at least one due service" }; require(state in setOf("BOOKED", "WORKING", "HISTORICAL")); validateNewBookedVisitDate(state, serviceDate, businessTime.today())
         val historical = state == "HISTORICAL"
         val plans = planIds.distinct().map { dao.plan(it) ?: error("Service plan no longer exists") }; val equipment = plans.map { dao.equipment(it.equipmentId) ?: error("Equipment no longer exists") }; val sites = equipment.map { it.siteId }.distinct(); require(sites.size == 1) { "One visit can contain work at one site only" }
         val site = dao.site(sites.single()) ?: error("Site no longer exists"); val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")
@@ -764,7 +771,7 @@ class RoomServiceLoopRepository(
         allowKnownEquipment: Boolean,
     ): String {
         require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
-        LocalDate.parse(serviceDate)
+        validateNewBookedVisitDate(state, serviceDate, businessTime.today())
         require(planIds.isNotEmpty() || adHocWork.isNotEmpty()) { "Select planned work or add a task" }
         val site = dao.site(siteId) ?: error("Site no longer exists")
         val customer = dao.customer(site.customerId) ?: error("Customer no longer exists")

@@ -121,6 +121,7 @@ fun <T> ServiceLoopContentTabs(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     testTagPrefix: String? = null,
+    enabled: Boolean = true,
 ) {
     val c = LocalServiceLoopTokens.current
     val gap = ServiceLoopUiTokens.Space.xs
@@ -145,8 +146,8 @@ fun <T> ServiceLoopContentTabs(
                             }
                         }
                         .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
-                        .clickable(role = Role.Tab, interactionSource = interactionSource, indication = null) { onSelected(value) }.focusable()
-                        .semantics { this.role = Role.Tab; this.selected = active }
+                        .clickable(enabled = enabled, role = Role.Tab, interactionSource = interactionSource, indication = null) { onSelected(value) }.focusable()
+                        .semantics { this.role = Role.Tab; this.selected = active; if (!enabled) disabled() }
                         .padding(horizontal = ServiceLoopUiTokens.Space.xs, vertical = ServiceLoopUiTokens.Space.md),
                     contentAlignment = Alignment.Center,
                 ) { Text(label, style = ServiceLoopUiTokens.Type.label, color = if (active) c.action else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, softWrap = true, maxLines = 2) }
@@ -604,6 +605,7 @@ fun ServiceLoopEntityRecord(
     selectionChecked: Boolean? = null,
     onSelectionChange: ((Boolean) -> Unit)? = null,
     operationalState: OperationalWorkState? = null,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val c = LocalServiceLoopTokens.current
@@ -625,8 +627,8 @@ fun ServiceLoopEntityRecord(
                 )
             }
             .testTag("entity-record-card")
-            .clickable(role = Role.Button, onClick = onClick).focusable()
-            .semantics { contentDescription = actionDescription ?: "Open $title" },
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).focusable()
+            .semantics { contentDescription = actionDescription ?: "Open $title"; if (!enabled) disabled() },
     ) {
         val selectable = selectionChecked != null && onSelectionChange != null
         Column(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.lg), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {

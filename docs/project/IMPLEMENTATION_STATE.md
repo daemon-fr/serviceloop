@@ -233,6 +233,14 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Room is v16 with only nullable `dispatch_outbox_items.reusableTemplateId`; `.slwork`, `.slinsp`, and backup formats remain unchanged. Android metadata remains version `1.0.1` / code 2.
 - Verification: 441 JVM unit tests PASS; `:app:assembleDebug`, `:app:lintDebug`, `:app:assembleDebugAndroidTest`, and `git diff --check` PASS. Domain-instrumented `Migration1To2Test` PASS (11/11) on the dynamically resolved canonical `Pixel 10a ServiceLoop` emulator. Full legacy UI suite and HUMAN/RENDERED owner review were not run for B044.
 
+### B044 owner-review correction pass — 2026-09-22
+
+- Implemented on `codex/b044-visit-setup-harmonization` from correction start SHA `8e1154854d23d2f5df4cd72df10a58f8cbbf8c59`; final SHA is recorded at the Git handoff gate.
+- Corrected Dispatch plan-backed identity and snapshot authority, shared read-only semantics, explicit Due Services projection states, full-width Visit header/tabs, progressive target disclosure, selectable site/equipment rows, BOOKED-date validation, required new-task checklist behavior, template return/auto-selection, and requested spacing.
+- Template persistence investigation was source/schema plus read-only canonical-device inspection: Room v16 preserves the reusable-template tables, the app ID is unchanged, the on-device `serviceloop.db` exists, and no clear/uninstall script or persistence defect was found. `sqlite3` was unavailable in the device shell, so no row-count claim was made.
+- Verification after the last production edit: 446 JVM unit tests PASS; `:app:assembleDebug` PASS; `:app:lintDebug` PASS; `:app:assembleDebugAndroidTest` PASS. Canonical-only B037 owner-render/back-guard instrumentation PASS 2/2 and harmonized B026 Dispatch UI instrumentation PASS 3/3. B037 generated light/dark Visit captures were visually inspected. HUMAN/RENDERED evidence is limited to those focused captures; no broader owner acceptance is implied.
+- A connected Gradle invocation was halted after it selected both the canonical AVD and an attached physical Pixel 6 Pro; no physical-device result is claimed. No Room/schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup-format, release-tag, protected-branch, or merge change was made.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

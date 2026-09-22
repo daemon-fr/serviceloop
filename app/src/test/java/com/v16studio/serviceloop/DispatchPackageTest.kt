@@ -302,6 +302,24 @@ class DispatchPackageTest {
         assertEquals(visitId,updatedId);assertEquals(itemId,service.outboxItems(visitId).single().first.dispatchItemId);assertEquals("Inspect and test",service.outboxItems(visitId).single().first.taskName);assertNull(db.dispatchDao().outboxVisit(visitId)!!.lastExportedGeneration)
     }
 
+    @Test fun savedPlanBackedOutboxItemsRemainAuthoritativeAcrossNoOpEditorRefresh()=runTest{
+        val(site,team)=coordinatorFixture()
+        val dao=db.serviceLoopDao()
+        dao.insertPlans(listOf(ServicePlanEntity("PLAN-EDITOR","EO","PLAN-EDITOR","Original annual service",1,"YEARS","2026-09-20","ACTIVE", "OBL-EDITOR")))
+        dao.insertObligations(listOf(ServiceObligationEntity("OBL-EDITOR","PLAN-EDITOR",1,"2026-09-20",1)))
+        val first=service.saveOutboxVisit(DispatchOutboxEditorDraft(managerReference="PLAN-SNAPSHOT",siteId=site,serviceDate="2026-09-25",appointmentZoneId="Europe/Bucharest",teamIds=listOf(team),items=listOf(DispatchOutboxItemDraft("stable-plan-item",WorkSubjectType.EQUIPMENT,"EO",taskName="Original saved task",servicePlanReference="PLAN-EDITOR",dueDateSnapshot="2026-09-20"))))
+        val before=db.dispatchDao().outboxItems(first).single()
+        dao.updatePlan(dao.plan("PLAN-EDITOR")!!.copy(name="Current plan name",currentDueDate="2026-10-20"))
+        dao.updateCurrentObligationDueDate("OBL-EDITOR","2026-10-20")
+        service.saveOutboxVisit(DispatchOutboxEditorDraft(first,db.dispatchDao().outboxVisit(first)!!.modifiedAtEpochMillis,"PLAN-SNAPSHOT",site,"2026-09-25",null,"Europe/Bucharest",null,listOf(team),listOf(DispatchOutboxItemDraft("stable-plan-item",WorkSubjectType.EQUIPMENT,"EO",taskName="Current plan name",servicePlanReference="PLAN-EDITOR",dueDateSnapshot="2026-10-20"))))
+        val after=db.dispatchDao().outboxItems(first).single()
+        assertEquals(before.dispatchItemId,after.dispatchItemId)
+        assertEquals(before.taskName,after.taskName)
+        assertEquals(before.servicePlanReference,after.servicePlanReference)
+        assertEquals(before.dueDateSnapshot,after.dueDateSnapshot)
+        assertEquals(before.equipmentId,after.equipmentId)
+    }
+
     @Test fun coherentEditorSaveRejectsStaleConcludedAndInvalidDefinitionsAtomically()=runTest{
         val(site,team)=coordinatorFixture();val id=outbox("EDITOR-GUARD");val original=db.dispatchDao().outboxVisit(id)!!;val originalItem=service.outboxItems(id).single().first
         service.rescheduleOutboxVisit(id,"2026-09-30",null,"Europe/Bucharest")

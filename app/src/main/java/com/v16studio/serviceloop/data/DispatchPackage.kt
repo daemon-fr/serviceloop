@@ -83,6 +83,20 @@ class DispatchPackageService(
             require(draft.expectedModifiedAtEpochMillis==existing.modifiedAtEpochMillis){"This Dispatch Visit changed after the editor was opened. Reopen it and review the latest version."}
         }
         require(draft.newCustomerSite == null || draft.dispatchVisitId == null){"New customer details are only available for a new Visit"}
+        val existingItems=existing?.let{dispatch.outboxItems(it.dispatchVisitId)}.orEmpty()
+        val existingById=existingItems.associateBy{it.dispatchItemId}
+        val materializedItems=draft.items.map{incoming->
+            val saved=existingById[incoming.dispatchItemId]
+            if(saved?.servicePlanReference!=null) incoming.copy(
+                subjectType=WorkSubjectType.fromCode(saved.subjectType),
+                equipmentId=saved.equipmentId,
+                equipmentDescription=saved.equipmentDescription.orEmpty(),
+                taskName=saved.taskName,
+                servicePlanReference=saved.servicePlanReference,
+                dueDateSnapshot=saved.dueDateSnapshot,
+                reusableTemplateId=saved.reusableTemplateId,
+            ) else incoming
+        }
         val site=if(draft.newCustomerSite!=null){
             createCustomerWithFirstSiteInTransaction(dao, draft.newCustomerSite).site
         }else{
@@ -93,19 +107,19 @@ class DispatchPackageService(
         val teamIds=draft.teamIds.distinct()
         require(teamIds.isNotEmpty()){"Choose at least one Team"}
         require(teamIds.all{dispatch.team(it)!=null}){"A selected Team no longer exists"}
-        require(draft.items.map{it.dispatchItemId}.distinct().size==draft.items.size){"Duplicate work item identity"}
+        require(materializedItems.isNotEmpty()){"Select planned work or add a task"}
+        require(materializedItems.map{it.dispatchItemId}.distinct().size==materializedItems.size){"Duplicate work item identity"}
         val participants=dispatch.allTeamMembers().filter{it.teamId in teamIds}.map{it.technicianId}.toSet()
         require(participants.isNotEmpty()){ "Selected Teams need at least one Technician" }
-        draft.items.forEach{item->
+        materializedItems.forEach{item->
             require(item.dispatchItemId.isNotBlank()){"Work item identity is missing"}
             require(item.taskName.trim().isNotEmpty()){"Every work item needs a task name"}
             validateOutboxSubject(site,customer,item.subjectType,item.equipmentId,item.equipmentDescription,item.servicePlanReference,item.dueDateSnapshot,item.reusableTemplateId)
             require(item.assignedTechnicianIds.distinct().all{it in participants}){"An item assignee is outside the selected Teams"}
         }
         val id=existing?.dispatchVisitId?:UUID.randomUUID().toString()
-        val existingItems=if(existing==null) emptyList() else dispatch.outboxItems(id)
         val allExistingItems=dispatch.outboxItems().associateBy{it.dispatchItemId}
-        draft.items.forEach{item->require(allExistingItems[item.dispatchItemId]?.dispatchVisitId in setOf(null,id)){"Work item belongs to another Visit"}}
+        materializedItems.forEach{item->require(allExistingItems[item.dispatchItemId]?.dispatchVisitId in setOf(null,id)){"Work item belongs to another Visit"}}
         val now=System.currentTimeMillis()
         val modified=existing?.modifiedAtEpochMillis?.let{maxOf(now,it+1)}?:now
         val value=(existing?:DispatchOutboxVisitEntity(id,null,site.id,date,time,zone,null,null,null,null,now,now)).copy(
@@ -115,11 +129,11 @@ class DispatchPackageService(
         if(existing==null)dispatch.insertOutboxVisit(value) else dispatch.updateOutboxVisit(value)
         dispatch.clearOutboxVisitTeams(id)
         dispatch.insertOutboxVisitTeams(teamIds.map{DispatchOutboxVisitTeamEntity(id,it)})
-        val keptIds=draft.items.map{it.dispatchItemId}.toSet()
+        val keptIds=materializedItems.map{it.dispatchItemId}.toSet()
         existingItems.filter{it.dispatchItemId !in keptIds}.forEach{dispatch.deleteOutboxItem(it.dispatchItemId)}
         val remaining=existingItems.filter{it.dispatchItemId in keptIds}.associateBy{it.dispatchItemId}
         remaining.values.forEachIndexed{index,item->dispatch.updateOutboxItem(item.copy(position=-index-1))}
-        draft.items.forEachIndexed{index,item->
+        materializedItems.forEachIndexed{index,item->
             val normalizedDescription=item.equipmentDescription.trim().takeIf{it.isNotEmpty()}
             val entity=DispatchOutboxItemEntity(item.dispatchItemId,id,index,item.equipmentId,item.taskName.trim(),item.servicePlanReference?.trim()?.takeIf{it.isNotEmpty()},item.dueDateSnapshot?.trim()?.takeIf{it.isNotEmpty()},item.subjectType.code,normalizedDescription,item.reusableTemplateId?.trim()?.takeIf{it.isNotEmpty()})
             if(item.dispatchItemId in remaining)dispatch.updateOutboxItem(entity) else dispatch.insertOutboxItem(entity)

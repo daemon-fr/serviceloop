@@ -3,6 +3,9 @@ package com.v16studio.serviceloop.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +27,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +47,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.AdHocWorkInput
@@ -60,6 +71,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopOutlinedButtonAdapter as OutlinedButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
@@ -73,6 +86,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 
 internal enum class VisitSetupMode { EXISTING, NEW }
+
+internal const val CREATED_INSPECTION_TEMPLATE_ID_KEY = "created-inspection-template-id"
+internal const val PAST_BOOKED_VISIT_DATE_MESSAGE =
+    "A booked visit cannot be scheduled in the past. Choose today or a future date, or record past work."
 
 internal data class VisitSetupTaskDraft(
     val stableUiId: String = UUID.randomUUID().toString(),
@@ -169,12 +186,41 @@ internal fun VisitSetupDraft.hasDiscardableBranchContent(): Boolean =
 private fun CustomerCreationDraft.toInputOrNull() = if (isValidForCreate()) toInput() else null
 
 @Composable
+private fun VisitSetupTemplateReturnBridge(
+    nav: NavHostController,
+    templates: List<TemplateSummary>,
+    onRefreshTemplates: () -> Unit,
+    onTemplateSelected: (String) -> Unit,
+) {
+    val entry = nav.currentBackStackEntry
+    val returnedTemplateId = entry?.savedStateHandle
+        ?.getStateFlow<String?>(CREATED_INSPECTION_TEMPLATE_ID_KEY, null)
+        ?.collectAsState()
+        ?.value
+    var pendingTemplateId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(returnedTemplateId) {
+        returnedTemplateId?.let { id ->
+            pendingTemplateId = id
+            entry?.savedStateHandle?.remove<String>(CREATED_INSPECTION_TEMPLATE_ID_KEY)
+            onRefreshTemplates()
+        }
+    }
+    LaunchedEffect(pendingTemplateId, templates) {
+        pendingTemplateId?.takeIf { id -> templates.any { it.id == id && it.state == "ACTIVE" } }?.let { id ->
+            onTemplateSelected(id)
+            pendingTemplateId = null
+        }
+    }
+}
+
+@Composable
 internal fun VisitSetupForm(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
+    contentPadding: PaddingValues = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp),
     draft: VisitSetupDraft,
     sites: List<VisitSiteOption>,
-    dueServices: List<DueService>,
+    plannedWorkState: DueServicesProjection,
     templates: List<TemplateSummary>,
     businessDate: java.time.LocalDate,
     editable: Boolean = true,
@@ -184,6 +230,9 @@ internal fun VisitSetupForm(
     onRetryDueServices: () -> Unit = {},
     allowTemplateCreation: Boolean = true,
     onCreateTemplate: () -> Unit = {},
+    onRefreshTemplates: () -> Unit = {},
+    templateReturnNav: NavHostController? = null,
+    dateErrorMessage: String? = null,
     preludeItems: (LazyListScope.() -> Unit)? = null,
     extensionItems: (LazyListScope.() -> Unit)? = null,
     actionItems: (LazyListScope.() -> Unit)? = null,
@@ -199,6 +248,14 @@ internal fun VisitSetupForm(
     var pendingSiteChange by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf<VisitSetupMode?>(null) }
 
+    val dueServices = (plannedWorkState as? DueServicesProjection.Available)?.rows.orEmpty()
+    val plannedWorkError = when (val state = plannedWorkState) {
+        is DueServicesProjection.Available -> state.updateError
+        is DueServicesProjection.Unavailable -> state.message
+        DueServicesProjection.Unresolved -> null
+    }
+    val plannedWorkLoading = plannedWorkState is DueServicesProjection.Unresolved
+
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
     val matchingSites = sites.filter { option ->
         siteQuery.isNotBlank() || option.customerType == com.v16studio.serviceloop.domain.CustomerType.STANDARD
@@ -212,6 +269,10 @@ internal fun VisitSetupForm(
         subjectType == WorkSubjectType.SITE -> equipmentId == null && equipmentDescription.isBlank()
         !allowKnownEquipment -> equipmentId == null && equipmentDescription.length <= 500
         else -> equipmentDescription.isBlank() && (equipmentId == null || equipment.any { it.id == equipmentId })
+    } && (reusableTemplateId != null || draft.tasks.firstOrNull { it.stableUiId == editingTaskId }?.reusableTemplateId == null && editingTaskId != null)
+
+    templateReturnNav?.let { nav ->
+        VisitSetupTemplateReturnBridge(nav, templates, onRefreshTemplates) { id -> reusableTemplateId = id }
     }
 
     fun update(next: VisitSetupDraft) { if (editable) onDraftChange(next) }
@@ -277,95 +338,153 @@ internal fun VisitSetupForm(
         )
     }
 
+    val targetReady = when (draft.mode) {
+        VisitSetupMode.EXISTING -> selectedSite != null
+        VisitSetupMode.NEW -> draft.newCustomer.isValidForCreate()
+    }
+
     LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
         preludeItems?.invoke(this)
         item {
-            VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
-            Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
-            Box(Modifier.fillMaxWidth().testTag("visit-mode-tabs")) {
-                ServiceLoopContentTabs(
-                    listOf(VisitSetupMode.EXISTING to "Existing", VisitSetupMode.NEW to "New"),
-                    draft.mode,
-                    ::requestMode,
-                    testTagPrefix = "visit-mode",
-                )
-            }
-        }
-        if (draft.mode == VisitSetupMode.NEW) {
-            item {
-                CustomerCreationForm(draft.newCustomer, { update(draft.copy(newCustomer = it)) }, editable = editable)
-                Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
-                VisitSetupSectionHeading("Set up visit", "visit-setup-heading")
-            }
-        } else {
-            item {
-                Text("Customer / site", fontWeight = FontWeight.Bold)
-                if (selectedSite != null) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.fieldActionGap)) {
-                        Text("${selectedSite.customerName} · ${selectedSite.name}", Modifier.weight(1f))
-                        ServiceLoopFieldAction("Change customer or site", ::requestSiteChange, Modifier.testTag("visit-change-customer-site"), enabled = editable, content = { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) })
-                    }
-                } else {
-                    DailyField(siteQuery, { siteQuery = it }, "Find customer or site", enabled = editable)
+            val colors = LocalServiceLoopTokens.current
+            Column(Modifier.fillMaxWidth().background(colors.surface)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                    VisitSetupSectionHeading("Choose a customer", "choose-visit-customer")
+                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
                 }
-            }
-            if (selectedSite == null) {
-                items(matchingSites, key = { "visit-site-${it.id}" }) { option ->
-                    ServiceLoopEntityRecord("${option.reference} · ${option.name}", option.customerName, if (option.customerType == com.v16studio.serviceloop.domain.CustomerType.ONE_TIME) "One-time" else null, modifier = Modifier.testTag("visit-site-${option.id}"), onClick = { if (editable) selectSite(option.id) })
-                }
-                if (matchingSites.isEmpty()) item { Text(if (sites.isEmpty()) "Add a customer site before creating a visit." else "No matching customer sites.") }
-            } else {
-                if (selectedSite.customerType == com.v16studio.serviceloop.domain.CustomerType.ONE_TIME) item { Text("One-time customers use ad-hoc work.") }
-                if (selectedSite.customerType == com.v16studio.serviceloop.domain.CustomerType.STANDARD) {
-                    item {
-                        Text("Planned work", fontWeight = FontWeight.Bold)
-                        if (dueServices.isEmpty()) {
-                            Text("Planned services are unavailable or none are due.", color = if (dueServices.isEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                            OutlinedButton(onRetryDueServices, enabled = editable, modifier = Modifier.fillMaxWidth().testTag("retry-due-services")) { Text("Retry") }
-                        }
-                        availablePlans.forEach { due ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(due.planId in draft.selectedPlanIds, { checked -> if (editable) update(draft.copy(selectedPlanIds = if (checked) draft.selectedPlanIds + due.planId else draft.selectedPlanIds - due.planId)) }, enabled = editable, modifier = Modifier.testTag("visit-plan-${due.planId}"))
-                                Text("${due.equipmentName} · ${due.planName} · Due ${due.dueDate}")
-                            }
-                        }
-                        if (dueServices.isNotEmpty() && availablePlans.isEmpty()) Text("No unclaimed current plans at this site.")
-                    }
-                }
-                item { VisitSetupSectionHeading("Set up visit", "visit-setup-heading") }
-            }
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
-                VisitDateInput(draft.serviceDate, { update(draft.copy(serviceDate = it)) }, businessDate.plusDays(1), enabled = editable)
-                VisitTimeInput(draft.appointmentTime, { update(draft.copy(appointmentTime = it)) }, enabled = editable)
-            }
-        }
-        if (draft.mode == VisitSetupMode.NEW || selectedSite != null) {
-            item {
-                VisitSetupTaskEditor(
-                    taskName, { taskName = it }, subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } },
-                    equipmentId, { equipmentId = it; equipmentDescription = "" }, equipmentDescription, { equipmentDescription = it },
-                    templates, reusableTemplateId, { reusableTemplateId = it }, equipment, allowKnownEquipment,
-                    taskValid && editable, editingTaskId != null, allowTemplateCreation, onCreateTemplate, ::saveTask,
-                )
-            }
-        }
-        if (draft.tasks.isNotEmpty()) {
-            item {
-                DailyHeading("Tasks")
-                draft.tasks.forEachIndexed { index, task ->
-                    VisitSetupTaskRow(index, task, templates, equipment, editable,
-                        onEdit = { taskName = task.taskName; subjectType = task.subjectType; equipmentId = task.equipmentId; equipmentDescription = task.equipmentDescription; reusableTemplateId = task.reusableTemplateId; editingTaskId = task.stableUiId },
-                        onRemove = { update(draft.copy(tasks = draft.tasks.filterNot { it.stableUiId == task.stableUiId })) },
+                Box(Modifier.fillMaxWidth().testTag("visit-mode-tabs")) {
+                    ServiceLoopContentTabs(
+                        listOf(VisitSetupMode.EXISTING to "Existing", VisitSetupMode.NEW to "New"),
+                        draft.mode,
+                        ::requestMode,
+                        testTagPrefix = "visit-mode",
+                        enabled = editable,
                     )
                 }
             }
         }
-        extensionItems?.invoke(this)
+        if (draft.mode == VisitSetupMode.NEW) {
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                    CustomerCreationForm(draft.newCustomer, { update(draft.copy(newCustomer = it)) }, editable = editable)
+                    if (targetReady) {
+                        Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
+                        VisitSetupSectionHeading("Set up visit", "visit-setup-heading")
+                    }
+                }
+            }
+        } else {
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                    Text("Customer / site", fontWeight = FontWeight.Bold)
+                    if (selectedSite != null) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Layout.fieldActionGap)) {
+                            Text("${selectedSite.customerName} · ${selectedSite.name}", Modifier.weight(1f))
+                            ServiceLoopFieldAction("Change customer or site", ::requestSiteChange, Modifier.testTag("visit-change-customer-site"), enabled = editable, content = { ServiceLoopIcon(ServiceLoopIcons.Search, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) })
+                        }
+                    } else {
+                        DailyField(siteQuery, { siteQuery = it }, "Find customer or site", enabled = editable)
+                    }
+                }
+            }
+            if (selectedSite == null) {
+                items(matchingSites, key = { "visit-site-${it.id}" }) { option ->
+                    VisitSiteSelectionRow(option, editable, ::selectSite)
+                }
+                if (matchingSites.isEmpty()) item { Text(if (sites.isEmpty()) "Add a customer site before creating a visit." else "No matching customer sites.", modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) }
+            } else {
+                if (selectedSite.customerType == com.v16studio.serviceloop.domain.CustomerType.ONE_TIME) item { Text("One-time customers use ad-hoc work.", modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) }
+                if (selectedSite.customerType == com.v16studio.serviceloop.domain.CustomerType.STANDARD) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                            Text("Planned work", fontWeight = FontWeight.Bold)
+                            when {
+                                plannedWorkLoading -> Text("Reading planned services", color = LocalServiceLoopTokens.current.textSecondary, modifier = Modifier.testTag("planned-work-loading"))
+                                plannedWorkError != null -> ServiceLoopNotice(
+                                    "Planned services are unavailable.",
+                                    plannedWorkError,
+                                    ServiceLoopNoticeKind.Error,
+                                    action = { OutlinedButton(onRetryDueServices, enabled = editable, modifier = Modifier.fillMaxWidth().testTag("retry-due-services")) { Text("Retry") } },
+                                )
+                                else -> {
+                                    availablePlans.forEach { due ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Checkbox(due.planId in draft.selectedPlanIds, { checked -> if (editable) update(draft.copy(selectedPlanIds = if (checked) draft.selectedPlanIds + due.planId else draft.selectedPlanIds - due.planId)) }, enabled = editable, modifier = Modifier.testTag("visit-plan-${due.planId}"))
+                                            Text("${due.equipmentName} · ${due.planName} · Due ${due.dueDate}")
+                                        }
+                                    }
+                                    if (availablePlans.isEmpty()) Text("No unclaimed current plans at this site.")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (targetReady) item { VisitSetupSectionHeading("Set up visit", "visit-setup-heading", Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) }
+            }
+        }
+        if (targetReady) {
+            item {
+                Column(Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+                    VisitDateInput(draft.serviceDate, { update(draft.copy(serviceDate = it)) }, businessDate.plusDays(1), enabled = editable, errorMessage = dateErrorMessage)
+                    VisitTimeInput(draft.appointmentTime, { update(draft.copy(appointmentTime = it)) }, enabled = editable)
+                }
+            }
+            item {
+                Box(Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                    VisitSetupTaskEditor(
+                        taskName, { taskName = it }, subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } },
+                        equipmentId, { equipmentId = it; equipmentDescription = "" }, equipmentDescription, { equipmentDescription = it },
+                        templates, reusableTemplateId, { reusableTemplateId = it }, equipment, allowKnownEquipment,
+                        taskValid && editable, editingTaskId != null, editable, allowTemplateCreation, onCreateTemplate, ::saveTask,
+                    )
+                }
+            }
+            if (draft.tasks.isNotEmpty()) {
+                item {
+                    Column(Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
+                        DailyHeading("Tasks")
+                        draft.tasks.forEachIndexed { index, task ->
+                            VisitSetupTaskRow(index, task, templates, equipment, editable,
+                                onEdit = { taskName = task.taskName; subjectType = task.subjectType; equipmentId = task.equipmentId; equipmentDescription = task.equipmentDescription; reusableTemplateId = task.reusableTemplateId; editingTaskId = task.stableUiId },
+                                onRemove = { update(draft.copy(tasks = draft.tasks.filterNot { it.stableUiId == task.stableUiId })) },
+                            )
+                        }
+                    }
+                }
+            }
+            extensionItems?.invoke(this)
+        }
         if (errorMessage != null) item { Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("visit-setup-error")) }
-        actionItems?.invoke(this)
+        if (targetReady) actionItems?.invoke(this)
         if (busy) item { Text("Saving…", modifier = Modifier.testTag("visit-setup-saving")) }
+    }
+}
+
+@Composable
+private fun VisitSiteSelectionRow(option: VisitSiteOption, enabled: Boolean, onSelected: (String) -> Unit) {
+    val colors = LocalServiceLoopTokens.current
+    val label = "Use ${option.name} at ${option.customerName} for this visit"
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ServiceLoopUiTokens.Size.listRowMin)
+            .selectable(selected = false, enabled = enabled, role = Role.RadioButton) { onSelected(option.id) }
+            .semantics { contentDescription = label; if (!enabled) disabled() }
+            .testTag("visit-site-${option.id}"),
+        color = colors.surface,
+        border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, colors.outlineControl),
+        shape = RoundedCornerShape(ServiceLoopUiTokens.Radius.field),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.md), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = false, onClick = null, enabled = enabled)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                Text("${option.reference} · ${option.name}", style = ServiceLoopUiTokens.Type.itemTitle, color = colors.textPrimary)
+                Text(option.customerName, style = ServiceLoopUiTokens.Type.supporting, color = colors.textSecondary)
+                if (option.customerType == com.v16studio.serviceloop.domain.CustomerType.ONE_TIME) {
+                    Text("One-time", style = ServiceLoopUiTokens.Type.meta, color = colors.textMuted)
+                }
+            }
+        }
     }
 }
 
@@ -374,26 +493,52 @@ private fun VisitSetupTaskEditor(
     taskName: String, onTaskName: (String) -> Unit, subjectType: WorkSubjectType, onSubjectType: (WorkSubjectType) -> Unit,
     equipmentId: String?, onEquipmentId: (String?) -> Unit, equipmentDescription: String, onEquipmentDescription: (String) -> Unit,
     templates: List<TemplateSummary>, reusableTemplateId: String?, onReusableTemplateId: (String?) -> Unit,
-    equipment: List<EquipmentSummary>, allowKnownEquipment: Boolean, valid: Boolean, editing: Boolean, allowTemplateCreation: Boolean,
+    equipment: List<EquipmentSummary>, allowKnownEquipment: Boolean, valid: Boolean, editing: Boolean, editable: Boolean, allowTemplateCreation: Boolean,
     onCreateTemplate: () -> Unit, onSave: () -> Unit,
 ) {
     androidx.compose.material3.Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(if (editing) "Edit task" else "Add task", fontWeight = FontWeight.Bold)
-            DailyField(taskName, onTaskName, "Task name · Required", enabled = true)
+            DailyField(taskName, onTaskName, "Task name · Required", enabled = editable)
             Text("Subject", fontWeight = FontWeight.Medium)
-            ServiceLoopChoicePair(listOf(WorkSubjectType.SITE to "Site", WorkSubjectType.EQUIPMENT to "Equipment"), subjectType, onSubjectType, testTagPrefix = "task-subject")
+            ServiceLoopChoicePair(listOf(WorkSubjectType.SITE to "Site", WorkSubjectType.EQUIPMENT to "Equipment"), subjectType, onSubjectType, testTagPrefix = "task-subject", enabled = editable)
             if (subjectType == WorkSubjectType.EQUIPMENT) {
                 if (!allowKnownEquipment) {
                     Text("Describe the equipment for this new site.", style = MaterialTheme.typography.bodySmall)
-                    DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional")
+                    DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional", enabled = editable)
                 } else {
-                    ServiceLoopChoiceGroup(listOf<Pair<String?, String>>(null to "No specific equipment yet") + equipment.map { it.id to "${it.name} · ${it.reference}" }, equipmentId, onEquipmentId, testTagPrefix = "task-equipment")
-                    if (equipmentId == null) DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional")
+                    VisitEquipmentRadioList(listOf<Pair<String?, String>>(null to "No specific equipment yet") + equipment.map { it.id to "${it.reference} · ${it.name}" }, equipmentId, onEquipmentId, editable)
+                    if (equipmentId == null) DailyField(equipmentDescription, onEquipmentDescription, "Equipment description · Optional", enabled = editable)
                 }
             }
-            InspectionChecklistSelector(templates, reusableTemplateId, onReusableTemplateId, "task-template", onCreateTemplate, enabled = allowTemplateCreation)
-            OutlinedButton(onSave, enabled = valid, modifier = Modifier.fillMaxWidth().testTag(if (editing) "update-task" else "add-task")) { Text(if (editing) "Update task" else "Add task") }
+            InspectionChecklistSelector(templates, reusableTemplateId, onReusableTemplateId, "task-template", onCreateTemplate, enabled = editable && allowTemplateCreation, required = !editing || reusableTemplateId != null)
+            OutlinedButton(onSave, enabled = valid && editable, modifier = Modifier.fillMaxWidth().testTag(if (editing) "update-task" else "add-task")) { Text(if (editing) "Update task" else "Add task") }
+        }
+    }
+}
+
+@Composable
+private fun VisitEquipmentRadioList(
+    options: List<Pair<String?, String>>,
+    selected: String?,
+    onSelected: (String?) -> Unit,
+    enabled: Boolean,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+        options.forEach { (value, label) ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
+                    .background(if (value == selected) colors.selection else colors.surface, RoundedCornerShape(ServiceLoopUiTokens.Radius.field))
+                    .selectable(selected = value == selected, enabled = enabled, role = Role.RadioButton) { onSelected(value) }
+                    .semantics { if (!enabled) disabled() }
+                    .testTag("task-equipment-${value ?: "none"}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = value == selected, onClick = null, enabled = enabled)
+                Text(label, color = if (enabled) colors.textPrimary else colors.disabledText, style = ServiceLoopUiTokens.Type.supporting)
+            }
         }
     }
 }
@@ -404,7 +549,7 @@ private fun VisitSetupTaskRow(index: Int, task: VisitSetupTaskDraft, templates: 
         title = task.taskName,
         context = when (task.subjectType) { WorkSubjectType.SITE -> "Site"; WorkSubjectType.EQUIPMENT -> task.equipmentId?.let { id -> equipment.firstOrNull { it.id == id }?.name } ?: task.equipmentDescription.ifBlank { "Equipment not specified" } },
         metadata = task.reusableTemplateId?.let { id -> templates.firstOrNull { it.id == id }?.let { "Inspection checklist · ${it.name} (v${it.revisionNumber})" } } ?: "No checklist",
-        modifier = Modifier.testTag("visit-task-$index"), onClick = onEdit,
+        modifier = Modifier.testTag("visit-task-$index"), onClick = onEdit, enabled = enabled,
     )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onEdit, Modifier.weight(1f).testTag("visit-task-edit-$index"), enabled = enabled) { Text("Edit") }
@@ -421,6 +566,7 @@ internal fun InspectionChecklistSelector(
     onCreateTemplate: () -> Unit = {},
     label: String = "Inspection checklist",
     enabled: Boolean = true,
+    required: Boolean = true,
 ) {
     val active = templates.filter { it.state == "ACTIVE" }
     val selectedDisabled = templates.firstOrNull { it.id == selectedTemplateId && it.state == "DISABLED" }
@@ -444,7 +590,16 @@ internal fun InspectionChecklistSelector(
                 content = { ServiceLoopIcon(ServiceLoopIcons.PlusBold, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
         }
-        if (active.isEmpty() && selectedDisabled == null) Text("No inspection templates yet", modifier = Modifier.testTag("$testTag-none-available"), style = MaterialTheme.typography.bodySmall)
+        if (required && active.isEmpty() && selectedDisabled == null) {
+            ServiceLoopNotice(
+                "Inspection checklist required",
+                "Create an inspection template before adding this task.",
+                ServiceLoopNoticeKind.Warning,
+                modifier = Modifier.testTag("$testTag-required"),
+            )
+        } else if (required && selectedTemplateId == null) {
+            Text("Select an inspection checklist.", color = LocalServiceLoopTokens.current.errorInk, modifier = Modifier.testTag("$testTag-required-selection"), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -456,6 +611,7 @@ internal fun VisitDateInput(
     defaultDate: LocalDate,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    errorMessage: String? = null,
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
     val parsedDate = runCatching { LocalDate.parse(value) }.getOrNull()
@@ -471,6 +627,7 @@ internal fun VisitDateInput(
                 testTag = "field-appointment-service-date-yyyy-mm-dd",
                 leadingTestTag = "appointment-date-weekday",
                 keyboardType = KeyboardType.Ascii,
+                isError = errorMessage != null,
                 modifier = Modifier.weight(1f),
                 enabled = enabled,
             )
@@ -482,6 +639,7 @@ internal fun VisitDateInput(
                 content = { ServiceLoopIcon(ServiceLoopIcons.Calendar, null, Modifier.size(ServiceLoopUiTokens.Size.icon), LocalContentColor.current) },
             )
         }
+        errorMessage?.let { Text(it, color = LocalServiceLoopTokens.current.errorInk, style = ServiceLoopUiTokens.Type.meta, modifier = Modifier.testTag("appointment-date-error")) }
     }
     if (showPicker) {
         val initial = parsedDate ?: defaultDate
@@ -644,11 +802,14 @@ internal fun NewVisitScreen(
     val validDate = runCatching { java.time.LocalDate.parse(draft.serviceDate) }.isSuccess
     val validTime = draft.appointmentTime.isBlank() || parseAppointmentTimeInput(draft.appointmentTime) != null
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
-    val valid = validDate && validTime && !state.operationInProgress && if (draft.mode == VisitSetupMode.NEW) {
+    val targetReady = if (draft.mode == VisitSetupMode.NEW) draft.newCustomer.isValidForCreate() else selectedSite != null
+    val valid = targetReady && validDate && validTime && !state.operationInProgress && if (draft.mode == VisitSetupMode.NEW) {
         draft.newCustomer.isValidForCreate() && draft.tasks.isNotEmpty()
     } else {
         selectedSite != null && (draft.selectedPlanIds.isNotEmpty() || draft.tasks.isNotEmpty())
     }
+    val parsedDate = runCatching { java.time.LocalDate.parse(draft.serviceDate) }.getOrNull()
+    val pastBookedDate = parsedDate?.isBefore(state.businessDate) == true
     UnsavedChangesGuard(visitSetupIsDirty(baseline, draft), nav)
 
     fun save(targetState: String) {
@@ -672,23 +833,26 @@ internal fun NewVisitScreen(
     }
 
     VisitSetupForm(
-        modifier = Modifier.padding(padding),
+        modifier = Modifier.padding(padding).testTag("new-visit-form"),
         draft = draft,
         sites = sites,
-        dueServices = dueServices,
+        plannedWorkState = state.dueServicesProjection,
         templates = state.templates,
         businessDate = state.businessDate,
         busy = state.operationInProgress,
         errorMessage = state.error,
         onDraftChange = { draft = it },
         onRetryDueServices = viewModel::retryDueServices,
+        onRefreshTemplates = viewModel::loadTemplates,
+        templateReturnNav = nav,
         onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") },
+        dateErrorMessage = PAST_BOOKED_VISIT_DATE_MESSAGE.takeIf { pastBookedDate },
         actionItems = {
             item {
                 val parsed = runCatching { java.time.LocalDate.parse(draft.serviceDate) }.getOrNull()
                 val primary = when { parsed == null || parsed.isAfter(state.businessDate) -> "BOOKED"; parsed == state.businessDate -> "WORKING"; else -> "HISTORICAL" }
                 @Composable fun action(kind: String, label: String) {
-                    val enabled = valid && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate))
+                    val enabled = valid && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate)) && (kind != "BOOKED" || !pastBookedDate)
                     val click = { save(kind) }
                     if (primary == kind) ServiceLoopPrimaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("primary-visit-action-$kind"))
                     else ServiceLoopSecondaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth())

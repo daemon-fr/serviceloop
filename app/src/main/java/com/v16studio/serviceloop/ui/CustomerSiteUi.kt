@@ -63,9 +63,9 @@ internal fun CustomerDetailScreen(
                     Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
                 }
                 workDashboard?.takeIf { it.totalItemCount > 0 }?.mostUrgentState?.let { urgency ->
-                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
+                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
                     OperationalWorkGateway(workDashboard.totalItemCount, urgency, onClick = { nav.navigate("work-dashboard/customer/${detail.id}") }, modifier = Modifier.padding(horizontal = 16.dp))
-                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
+                    Spacer(Modifier.height(ServiceLoopUiTokens.Space.lg))
                 }
                 if ((workDashboard?.totalItemCount ?: 0) == 0) Spacer(Modifier.height(ServiceLoopUiTokens.Space.md))
                 ServiceLoopContentTabs(listOf("SITES" to "Sites", "EQUIPMENT" to "Equipment"),tab,{tab=it})

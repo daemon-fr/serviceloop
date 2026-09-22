@@ -24,10 +24,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.v16studio.serviceloop.data.CustomerEntity
 import com.v16studio.serviceloop.data.DispatchPackageService
 import com.v16studio.serviceloop.data.EquipmentEntity
+import com.v16studio.serviceloop.data.ReusableTemplateEntity
+import com.v16studio.serviceloop.data.ReusableTemplateRevisionEntity
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.SiteEntity
 import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.WorkSubjectType
+import com.v16studio.serviceloop.domain.TemplateSummary
 import com.v16studio.serviceloop.ui.DispatchSitePickerDialog
 import com.v16studio.serviceloop.ui.DispatchVisitEditorScreen
 import com.v16studio.serviceloop.ui.LocalDetailBackInterceptor
@@ -68,6 +71,8 @@ class B026DispatchV5UiTest {
                 ),
             )
             dao.insertEquipment(listOf(EquipmentEntity("one-time-equipment", "one-time-site", "EQ-OT", null, "Registered one-time equipment", null, null, null, null)))
+            dao.insertReusableTemplate(ReusableTemplateEntity("dispatch-template", "IT-DISPATCH", "Dispatch checklist", "dispatch-template-revision", "ACTIVE", 1))
+            dao.insertReusableTemplateRevision(ReusableTemplateRevisionEntity("dispatch-template-revision", "dispatch-template", 1, "Dispatch checklist", 1))
             val identity = service.identity()
             service.importTechnician(identity)
             teamId = service.createTeam("Dispatch team")
@@ -98,28 +103,30 @@ class B026DispatchV5UiTest {
 
     @Test fun newOneTimeEditorSavesSiteAndUnidentifiedWorkAtomically() {
         renderNewEditor()
-        compose.onNodeWithTag("dispatch-mode-ONE_TIME").performClick()
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-one-time-customer-name"))
-        compose.onNodeWithTag("dispatch-one-time-customer-name").performTextInput("Walk-in customer")
+        compose.onNodeWithTag("visit-mode-NEW").performClick()
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-customer-name-required"))
+        compose.onNodeWithTag("field-customer-name-required").performTextInput("Walk-in customer")
+        compose.onNodeWithTag("field-site-name-required").performTextInput("Walk-in site")
+        compose.onNodeWithTag("customer-creation-one-time-checkbox").performClick()
         compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-choose-teams"))
         compose.onNodeWithTag("dispatch-choose-teams").performClick()
         compose.onNodeWithTag("dispatch-team-$teamId").performClick()
         compose.onNodeWithTag("dispatch-team-apply").performClick()
 
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-add-item"))
-        compose.onNodeWithTag("dispatch-add-item").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("dispatch-subject-SITE").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("dispatch-subject-SITE").performClick()
-        compose.onNodeWithTag("dispatch-work-task").performTextInput("Inspect location")
-        compose.onNodeWithTag("dispatch-work-item-save").performClick()
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-task-name-required"))
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Inspect location")
+        compose.onNodeWithTag("task-template-selector").performClick()
+        compose.onNodeWithText("Dispatch checklist (v1)", substring = false).performClick()
+        compose.onNodeWithTag("add-task").performClick()
 
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-add-item"))
-        compose.onNodeWithTag("dispatch-add-item").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("dispatch-subject-EQUIPMENT").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("dispatch-subject-EQUIPMENT").performClick()
-        compose.onNodeWithTag("dispatch-equipment-description").performTextInput("Unit beside the gate")
-        compose.onNodeWithTag("dispatch-work-task").performTextInput("Identify unit")
-        compose.onNodeWithTag("dispatch-work-item-save").performClick()
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-task-name-required"))
+        compose.onNodeWithTag("task-subject-EQUIPMENT").performClick()
+        compose.onNodeWithTag("field-equipment-description-optional").performTextInput("Unit beside the gate")
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Identify unit")
+        compose.onNodeWithTag("task-template-selector").performClick()
+        compose.onNodeWithText("Dispatch checklist (v1)", substring = false).performClick()
+        compose.onNodeWithTag("add-task").performClick()
+        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-save-visit"))
         compose.onNodeWithTag("dispatch-save-visit").performClick()
 
         compose.waitUntil(10_000) { runBlocking { db.dispatchDao().outboxVisits().size == 1 } }
@@ -133,32 +140,20 @@ class B026DispatchV5UiTest {
 
     @Test fun existingOneTimeDispatchEditorCanAuthorKnownEquipment() {
         val visitId = runBlocking {
-            service.saveOutboxVisit(
-                com.v16studio.serviceloop.data.DispatchOutboxEditorDraft(
-                    managerReference = "JOB-OT",
-                    siteId = "one-time-site",
-                    serviceDate = "2026-09-25",
-                    appointmentLocalTime = "09:00",
-                    appointmentZoneId = "Europe/Bucharest",
-                    teamIds = listOf(teamId),
-                    items = emptyList(),
-                ),
-            )
+            service.createOutboxVisit("JOB-OT", "one-time-site", "2026-09-25", "09:00", "Europe/Bucharest", null, listOf(teamId))
         }
         renderEditor(visitId)
-        compose.onNodeWithTag("dispatch-new-visit").assertDoesNotExist()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("One-time customer", substring = false, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("dispatch-choose-site").performClick()
-        compose.onNodeWithTag("dispatch-site-search").performTextInput("One-time")
-        hideKeyboard()
-        compose.onNodeWithTag("dispatch-site-picker-list").performScrollToNode(hasTestTag("dispatch-site-one-time-site"))
-        compose.onNodeWithTag("dispatch-site-one-time-site").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("dispatch-add-item"))
-        compose.onNodeWithTag("dispatch-add-item").performClick()
-        compose.onNodeWithTag("dispatch-work-item-editor", useUnmergedTree = true).performScrollToNode(hasTestTag("dispatch-equipment-one-time-equipment"))
-        compose.onNodeWithTag("dispatch-equipment-one-time-equipment", useUnmergedTree = true).assertIsDisplayed().performClick()
-        compose.onNodeWithTag("dispatch-work-task").performTextInput("Inspect registered unit")
-        compose.onNodeWithTag("dispatch-work-item-save").performClick()
+        compose.onNodeWithTag("dispatch-visit-editor").assertIsDisplayed()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("One-time customers use ad-hoc work.", substring = false, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("field-task-name-required"))
+        compose.onNodeWithTag("task-subject-EQUIPMENT").performClick()
+        compose.onNodeWithTag("task-equipment-one-time-equipment").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("field-task-name-required").performTextInput("Inspect registered unit")
+        compose.onNodeWithTag("task-template-selector").performClick()
+        compose.onNodeWithText("Dispatch checklist (v1)", substring = false).performClick()
+        compose.onNodeWithTag("update-task").assertDoesNotExist()
+        compose.onNodeWithTag("add-task").performClick()
+        compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("dispatch-save-visit"))
         compose.onNodeWithTag("dispatch-save-visit").performClick()
         compose.waitUntil(10_000) { runBlocking { db.dispatchDao().outboxItems(visitId).size == 1 } }
         assertEquals("one-time-equipment", runBlocking { db.dispatchDao().outboxItems(visitId).single().equipmentId })
@@ -172,7 +167,7 @@ class B026DispatchV5UiTest {
                 ServiceLoopTheme(false) {
                     val nav = rememberNavController()
                     CompositionLocalProvider(LocalDetailBackInterceptor provides remember { mutableStateOf<(() -> Unit)?>(null) }) {
-                        DispatchVisitEditorScreen(PaddingValues(), nav, visitId, LocalDate.of(2026, 9, 13), service, db)
+                        DispatchVisitEditorScreen(PaddingValues(), nav, visitId, LocalDate.of(2026, 9, 13), service, db, templatesOverride = listOf(TemplateSummary("dispatch-template", "IT-DISPATCH", "Dispatch checklist", 1, 1, "ACTIVE")))
                     }
                 }
             }

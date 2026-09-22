@@ -1,15 +1,20 @@
 package com.v16studio.serviceloop
 
+import com.v16studio.serviceloop.data.validateNewBookedVisitDate
 import com.v16studio.serviceloop.domain.CustomerType
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import com.v16studio.serviceloop.ui.CustomerCreationDraft
 import com.v16studio.serviceloop.ui.VisitSetupDraft
 import com.v16studio.serviceloop.ui.VisitSetupMode
 import com.v16studio.serviceloop.ui.VisitSetupTaskDraft
+import com.v16studio.serviceloop.ui.dispatchItemIdForWorkKey
 import com.v16studio.serviceloop.ui.visitSetupIsDirty
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class B044VisitSetupTest {
@@ -40,5 +45,31 @@ class B044VisitSetupTest {
         assertFalse(visitSetupIsDirty(baseline, baseline.copy(siteId = "site-1")))
         assertTrue(visitSetupIsDirty(baseline, baseline.copy(selectedPlanIds = setOf("plan-1"))))
         assertTrue(visitSetupIsDirty(baseline, baseline.copy(tasks = listOf(VisitSetupTaskDraft(taskName = "Inspect", subjectType = WorkSubjectType.SITE, equipmentId = null, equipmentDescription = "", reusableTemplateId = null)))))
+    }
+
+    @Test
+    fun dispatchPlanItemIdsAreStableWithinAnEditorSessionAndUniquePerWorkKey() {
+        val ids = mutableMapOf<String, String>()
+
+        val first = dispatchItemIdForWorkKey(ids, "PLAN:annual-pump")
+        val sameWork = dispatchItemIdForWorkKey(ids, "PLAN:annual-pump")
+        val otherWork = dispatchItemIdForWorkKey(ids, "PLAN:boiler-room")
+
+        assertEquals(first, sameWork)
+        assertNotEquals(first, otherWork)
+        assertTrue(first.matches(Regex("[0-9a-f-]{36}")))
+        assertEquals(setOf("PLAN:annual-pump", "PLAN:boiler-room"), ids.keys)
+    }
+
+    @Test
+    fun newBookedVisitsRejectDatesBeforeTheBusinessDateButAllowTodayAndFuture() {
+        val today = LocalDate.of(2026, 9, 22)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            validateNewBookedVisitDate("BOOKED", "2026-09-21", today)
+        }
+        validateNewBookedVisitDate("BOOKED", "2026-09-22", today)
+        validateNewBookedVisitDate("BOOKED", "2026-09-23", today)
+        validateNewBookedVisitDate("HISTORICAL", "2026-09-21", today)
     }
 }
