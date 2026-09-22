@@ -6,8 +6,11 @@ import com.v16studio.serviceloop.domain.WorkSubjectType
 import com.v16studio.serviceloop.ui.CustomerCreationDraft
 import com.v16studio.serviceloop.ui.VisitSetupDraft
 import com.v16studio.serviceloop.ui.VisitSetupMode
+import com.v16studio.serviceloop.ui.VisitSetupTaskEditorState
 import com.v16studio.serviceloop.ui.VisitSetupTaskDraft
 import com.v16studio.serviceloop.ui.dispatchItemIdForWorkKey
+import com.v16studio.serviceloop.ui.restoreVisitSetupTaskEditorState
+import com.v16studio.serviceloop.ui.saveVisitSetupTaskEditorState
 import com.v16studio.serviceloop.ui.visitSetupIsDirty
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -18,6 +21,21 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class B044VisitSetupTest {
+    @Test
+    fun taskEditorStateSaverPreservesEquipmentTemplateAndEditingIdentity() {
+        val original = VisitSetupTaskEditorState(
+            taskName = "Inspect HVAC unit",
+            subjectType = WorkSubjectType.EQUIPMENT,
+            equipmentId = "equipment-1",
+            equipmentDescription = "Roof unit",
+            reusableTemplateId = "template-1",
+            editingTaskId = "task-1",
+        )
+        val saved = saveVisitSetupTaskEditorState(original)
+
+        assertEquals(original, restoreVisitSetupTaskEditorState(saved))
+    }
+
     @Test
     fun customerCreationDraftProducesCanonicalCustomerAndDefaultSite() {
         val input = CustomerCreationDraft(

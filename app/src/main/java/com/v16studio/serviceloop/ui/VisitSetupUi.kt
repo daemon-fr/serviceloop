@@ -102,6 +102,43 @@ internal data class VisitSetupTaskDraft(
     fun toAdHocWorkInput() = AdHocWorkInput(taskName, subjectType, equipmentId, equipmentDescription, reusableTemplateId)
 }
 
+internal data class VisitSetupTaskEditorState(
+    val taskName: String = "",
+    val subjectType: WorkSubjectType = WorkSubjectType.SITE,
+    val equipmentId: String? = null,
+    val equipmentDescription: String = "",
+    val reusableTemplateId: String? = null,
+    val editingTaskId: String? = null,
+)
+
+internal fun saveVisitSetupTaskEditorState(state: VisitSetupTaskEditorState): List<String> = listOf(
+    state.taskName,
+    state.subjectType.name,
+    state.equipmentId.orEmpty(),
+    state.equipmentDescription,
+    state.reusableTemplateId.orEmpty(),
+    state.editingTaskId.orEmpty(),
+)
+
+internal fun restoreVisitSetupTaskEditorState(values: List<String>): VisitSetupTaskEditorState? {
+    if (values.size != 6) return null
+    return runCatching {
+        VisitSetupTaskEditorState(
+            taskName = values[0],
+            subjectType = WorkSubjectType.valueOf(values[1]),
+            equipmentId = values[2].takeIf(String::isNotBlank),
+            equipmentDescription = values[3],
+            reusableTemplateId = values[4].takeIf(String::isNotBlank),
+            editingTaskId = values[5].takeIf(String::isNotBlank),
+        )
+    }.getOrNull()
+}
+
+internal val VisitSetupTaskEditorStateSaver = listSaver<VisitSetupTaskEditorState, String>(
+    save = { state -> saveVisitSetupTaskEditorState(state) },
+    restore = ::restoreVisitSetupTaskEditorState,
+)
+
 internal data class VisitSetupDraft(
     val mode: VisitSetupMode = VisitSetupMode.EXISTING,
     val siteId: String? = null,
@@ -217,7 +254,7 @@ private fun VisitSetupTemplateReturnBridge(
 @Composable
 internal fun VisitSetupForm(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp),
+    contentPadding: PaddingValues = PaddingValues(0.dp, 0.dp, 0.dp, 32.dp),
     draft: VisitSetupDraft,
     sites: List<VisitSiteOption>,
     plannedWorkState: DueServicesProjection,
@@ -238,12 +275,7 @@ internal fun VisitSetupForm(
     actionItems: (LazyListScope.() -> Unit)? = null,
 ) {
     var siteQuery by remember { mutableStateOf("") }
-    var taskName by remember { mutableStateOf("") }
-    var subjectType by remember { mutableStateOf(WorkSubjectType.SITE) }
-    var equipmentId by remember { mutableStateOf<String?>(null) }
-    var equipmentDescription by remember { mutableStateOf("") }
-    var reusableTemplateId by remember { mutableStateOf<String?>(null) }
-    var editingTaskId by remember { mutableStateOf<String?>(null) }
+    var taskEditor by rememberSaveable(stateSaver = VisitSetupTaskEditorStateSaver) { mutableStateOf(VisitSetupTaskEditorState()) }
     var pendingSiteId by remember { mutableStateOf<String?>(null) }
     var pendingSiteChange by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf<VisitSetupMode?>(null) }
@@ -265,21 +297,18 @@ internal fun VisitSetupForm(
     val availablePlans = dueServices.filter { it.siteId == draft.siteId && it.claimedVisitId == null }
     val equipment = selectedSite?.equipment.orEmpty()
     val allowKnownEquipment = draft.mode == VisitSetupMode.EXISTING && selectedSite != null
-    val taskValid = taskName.trim().isNotBlank() && taskName.trim().length <= 200 && when {
-        subjectType == WorkSubjectType.SITE -> equipmentId == null && equipmentDescription.isBlank()
-        !allowKnownEquipment -> equipmentId == null && equipmentDescription.length <= 500
-        else -> equipmentDescription.isBlank() && (equipmentId == null || equipment.any { it.id == equipmentId })
-    } && (reusableTemplateId != null || draft.tasks.firstOrNull { it.stableUiId == editingTaskId }?.reusableTemplateId == null && editingTaskId != null)
+    val taskValid = taskEditor.taskName.trim().isNotBlank() && taskEditor.taskName.trim().length <= 200 && when {
+        taskEditor.subjectType == WorkSubjectType.SITE -> taskEditor.equipmentId == null && taskEditor.equipmentDescription.isBlank()
+        !allowKnownEquipment -> taskEditor.equipmentId == null && taskEditor.equipmentDescription.length <= 500
+        else -> taskEditor.equipmentDescription.isBlank() && (taskEditor.equipmentId == null || equipment.any { it.id == taskEditor.equipmentId })
+    } && (taskEditor.reusableTemplateId != null || draft.tasks.firstOrNull { it.stableUiId == taskEditor.editingTaskId }?.reusableTemplateId == null && taskEditor.editingTaskId != null)
 
     templateReturnNav?.let { nav ->
-        VisitSetupTemplateReturnBridge(nav, templates, onRefreshTemplates) { id -> reusableTemplateId = id }
+        VisitSetupTemplateReturnBridge(nav, templates, onRefreshTemplates) { id -> taskEditor = taskEditor.copy(reusableTemplateId = id) }
     }
 
     fun update(next: VisitSetupDraft) { if (editable) onDraftChange(next) }
-    fun resetTask() {
-        taskName = ""; subjectType = WorkSubjectType.SITE; equipmentId = null
-        equipmentDescription = ""; reusableTemplateId = null; editingTaskId = null
-    }
+    fun resetTask() { taskEditor = VisitSetupTaskEditorState() }
     fun applyMode(next: VisitSetupMode) {
         update(
             draft.copy(
@@ -311,11 +340,11 @@ internal fun VisitSetupForm(
     }
     fun saveTask() {
         val task = VisitSetupTaskDraft(
-            stableUiId = editingTaskId ?: UUID.randomUUID().toString(),
-            taskName = taskName.trim(), subjectType = subjectType,
-            equipmentId = equipmentId, equipmentDescription = equipmentDescription.trim(), reusableTemplateId = reusableTemplateId,
+            stableUiId = taskEditor.editingTaskId ?: UUID.randomUUID().toString(),
+            taskName = taskEditor.taskName.trim(), subjectType = taskEditor.subjectType,
+            equipmentId = taskEditor.equipmentId, equipmentDescription = taskEditor.equipmentDescription.trim(), reusableTemplateId = taskEditor.reusableTemplateId,
         )
-        update(draft.copy(tasks = if (editingTaskId == null) draft.tasks + task else draft.tasks.map { if (it.stableUiId == editingTaskId) task else it }))
+        update(draft.copy(tasks = if (taskEditor.editingTaskId == null) draft.tasks + task else draft.tasks.map { if (it.stableUiId == taskEditor.editingTaskId) task else it }))
         resetTask()
     }
 
@@ -432,10 +461,10 @@ internal fun VisitSetupForm(
             item {
                 Box(Modifier.padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact)) {
                     VisitSetupTaskEditor(
-                        taskName, { taskName = it }, subjectType, { value -> subjectType = value; if (value == WorkSubjectType.SITE) { equipmentId = null; equipmentDescription = "" } },
-                        equipmentId, { equipmentId = it; equipmentDescription = "" }, equipmentDescription, { equipmentDescription = it },
-                        templates, reusableTemplateId, { reusableTemplateId = it }, equipment, allowKnownEquipment,
-                        taskValid && editable, editingTaskId != null, editable, allowTemplateCreation, onCreateTemplate, ::saveTask,
+                        taskEditor.taskName, { taskEditor = taskEditor.copy(taskName = it) }, taskEditor.subjectType, { value -> taskEditor = taskEditor.copy(subjectType = value, equipmentId = if (value == WorkSubjectType.SITE) null else taskEditor.equipmentId, equipmentDescription = if (value == WorkSubjectType.SITE) "" else taskEditor.equipmentDescription) },
+                        taskEditor.equipmentId, { taskEditor = taskEditor.copy(equipmentId = it, equipmentDescription = "") }, taskEditor.equipmentDescription, { taskEditor = taskEditor.copy(equipmentDescription = it) },
+                        templates, taskEditor.reusableTemplateId, { taskEditor = taskEditor.copy(reusableTemplateId = it) }, equipment, allowKnownEquipment,
+                        taskValid && editable, taskEditor.editingTaskId != null, editable, allowTemplateCreation, onCreateTemplate, ::saveTask,
                     )
                 }
             }
@@ -445,7 +474,7 @@ internal fun VisitSetupForm(
                         DailyHeading("Tasks")
                         draft.tasks.forEachIndexed { index, task ->
                             VisitSetupTaskRow(index, task, templates, equipment, editable,
-                                onEdit = { taskName = task.taskName; subjectType = task.subjectType; equipmentId = task.equipmentId; equipmentDescription = task.equipmentDescription; reusableTemplateId = task.reusableTemplateId; editingTaskId = task.stableUiId },
+                                onEdit = { taskEditor = VisitSetupTaskEditorState(task.taskName, task.subjectType, task.equipmentId, task.equipmentDescription, task.reusableTemplateId, task.stableUiId) },
                                 onRemove = { update(draft.copy(tasks = draft.tasks.filterNot { it.stableUiId == task.stableUiId })) },
                             )
                         }

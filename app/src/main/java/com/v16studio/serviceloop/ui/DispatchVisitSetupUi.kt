@@ -289,9 +289,12 @@ internal fun DispatchVisitEditorScreen(
                     newCustomerSite = if (draft.mode == VisitSetupMode.NEW) draft.newCustomer.toInput() else null,
                 )
                 scope.launch {
-                    runCatching { withContext(Dispatchers.IO) { service.saveOutboxVisit(editor) } }
-                        .onSuccess { nav.popBackStack() }
-                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "Could not save this Dispatch Visit." }
+                    val result = runCatching { withContext(Dispatchers.IO) { service.saveOutboxVisit(editor) } }
+                    if (result.isSuccess) {
+                        withContext(Dispatchers.Main.immediate) { nav.popBackStack() }
+                    } else {
+                        result.exceptionOrNull()?.let { if (it is CancellationException) throw it else error = it.message ?: "Could not save this Dispatch Visit." }
+                    }
                     busy = false
                 }
             }
@@ -316,8 +319,9 @@ internal fun DispatchVisitEditorScreen(
         templateReturnNav = nav,
         onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") },
         preludeItems = {
-            item {
-                loadedVisit?.let { visit ->
+            if (loadedVisit != null) {
+                item {
+                    val visit = requireNotNull(loadedVisit)
                     ServiceLoopStatusBadge(visit.outboxStatus.name)
                     if (visit.outboxStatus == DispatchOutboxStatus.DISPATCHED) ServiceLoopNotice("Dispatched", "Material changes create a later version only when this visit is exported again.", ServiceLoopNoticeKind.Info)
                     if (readOnly) ServiceLoopNotice("Read-only", "Canceled and Concluded visits cannot be edited.", ServiceLoopNoticeKind.Info)

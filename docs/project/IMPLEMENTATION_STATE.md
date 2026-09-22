@@ -241,6 +241,13 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Verification after the last production edit: 446 JVM unit tests PASS; `:app:assembleDebug` PASS; `:app:lintDebug` PASS; `:app:assembleDebugAndroidTest` PASS. Canonical-only B037 owner-render/back-guard instrumentation PASS 2/2 and harmonized B026 Dispatch UI instrumentation PASS 3/3. B037 generated light/dark Visit captures were visually inspected. HUMAN/RENDERED evidence is limited to those focused captures; no broader owner acceptance is implied.
 - A connected Gradle invocation was halted after it selected both the canonical AVD and an attached physical Pixel 6 Pro; no physical-device result is claimed. No Room/schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup-format, release-tag, protected-branch, or merge change was made.
 
+### B044 aftermath correction — 2026-09-22
+
+- Implemented on `codex/b044-visit-setup-harmonization` from aftermath start SHA `d8c6ab11590036780de459aeea3111ac9d7cbf31`; status is internally verified and ready for owner review, not OWNER ACCEPTED.
+- Visit setup top/bottom padding, conditional Dispatch prelude emission, and `rememberSaveable` task-editor scratch-state restoration were corrected without Room/schema or file-format changes. Coordinator UI tests were updated to current semantic/lazy-list behavior, and the rendered fixture now persists its active template rows before exercising save/export surfaces.
+- Final JVM gate: 447 tests PASS with 0 failures/errors/skips. Canonical UI-INSTRUMENTED evidence: coordinator 16/16, B026 Dispatch 3/3, and B037 owner-review render/back-guard 2/2. The debug APK was built before `adb -s emulator-5554 install -r`; the pre-existing active `IT-001 · test (v1)` reusable template remained visible after replacement installation without data clearing.
+- No Room/schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup-format, release tag, protected-branch, merge, or owner-acceptance change was made. Final commit SHA is recorded at the Git handoff gate.
+
 ## Toolchain / environment baseline
 
 - package/application ID: `com.v16studio.serviceloop`

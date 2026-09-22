@@ -1480,3 +1480,17 @@ This refactor is complete when:
 - Canonical AVD `Pixel 10a ServiceLoop` was resolved dynamically as `emulator-5554`; physical Pixel 6 Pro was not used for acceptance. Fresh debug and Android-test APKs were explicitly installed with `adb -s <resolved-serial> install -r`. Canonical-only B037 owner-render/back-guard instrumentation passed 2/2, and harmonized B026 Dispatch UI instrumentation passed 3/3. B037 light/dark Visit captures were visually inspected from the generated PNGs.
 - A Gradle connected-runner attempt was stopped after it discovered the attached physical phone; it is not acceptance evidence. The focused coordinator class still contains four pre-harmonization selector/scroll assumptions and is not claimed as a final correction-pass pass; targeted B037/B026 coverage is the claimed UI evidence.
 - No Room schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup format, release tag, merge, or protected `master` change was made.
+
+## 37. B044 aftermath correction — 2026-09-22
+
+**Status: IMPLEMENTED / INTERNALLY VERIFIED / READY FOR OWNER REVIEW**
+
+- Branch: `codex/b044-visit-setup-harmonization`; aftermath start SHA: `d8c6ab11590036780de459aeea3111ac9d7cbf31`.
+- The shared Visit setup now starts at the requested top edge (`0dp`) while retaining the requested bottom breathing room (`32dp`); the shared LazyColumn keeps its horizontal layout unchanged.
+- Dispatch status/dispatched/read-only prelude content is emitted only for an actually loaded Visit. New Dispatch setup no longer receives an empty prelude item.
+- Visit task-editor scratch state is one `rememberSaveable` state object with an explicit Saver covering task name, subject type, equipment identity/description, reusable-template identity, and editing identity. The Create Template → Save → Back bridge therefore retains the staged editor state without Room writes or schema changes. The Saver contract is covered by `B044VisitSetupTest`.
+- Stale coordinator UI assumptions were modernized to current semantic anchors and lazy-list scrolling. The rendered coordinator fixture now persists its active template revision/item rows, and Dispatch save navigation explicitly returns to the main thread after durable I/O.
+- Final JVM/unit gate: `:app:testDebugUnitTest` PASS — **447 tests, 0 failures, 0 errors, 0 skipped**. `:app:assembleDebug`, `:app:lintDebug`, `:app:assembleDebugAndroidTest`, and `git diff --check` PASS.
+- Canonical UI-INSTRUMENTED evidence on the dynamically resolved `Pixel 10a ServiceLoop` AVD (`emulator-5554` for this run): `DispatchCoordinatorUiTest` **16/16 PASS**, `B026DispatchV5UiTest` **3/3 PASS**, and `B037OwnerReviewRenderTest` **2/2 PASS**. The B037 light/dark capture path was exercised for rendered owner-review inspection; this remains HUMAN/RENDERED review evidence, not owner acceptance.
+- Replace-install persistence check: the debug APK was built first, installed with `adb -s emulator-5554 install -r`, and relaunched without clearing app data. The pre-existing active reusable template `IT-001 · test (v1)` remained visible with `Active` and `1 items` after replacement installation. No uninstall, reset, or physical-device evidence is claimed.
+- No Room schema/version, manifest/application ID, `.slwork`, `.slinsp`, backup-format, release-tag, merge, or protected `master` change was made. A full interactive Create Template round-trip was not separately claimed; the in-app replace-install persistence check and Saver/unit/Coordinator coverage are the recorded evidence.
