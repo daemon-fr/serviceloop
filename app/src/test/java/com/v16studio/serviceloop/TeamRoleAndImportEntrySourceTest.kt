@@ -64,15 +64,16 @@ class TeamRoleAndImportEntrySourceTest {
         assertFalse(app.contains("FilterChip"))
     }
 
-    @Test fun teamRoleSettingsUseAdoptedLabelsAndEmbedReceiverIdentity() {
+    @Test fun teamRoleSettingsKeepAdoptedChoicesAndMoveIdentityToItsOwnScreen() {
         val dispatch = productionKotlinSourceContaining("internal fun DispatchSettings")
         val policy = productionKotlinSourceContaining("internal val TEAM_ROLE_OPTIONS")
+        val team = productionKotlinSourceContaining("internal fun TeamWorkspaceScreen")
         assertTrue(policy.contains("I manage and perform my own service work."))
         assertTrue(policy.contains("I perform assigned work and coordinate other technicians."))
-        assertTrue(dispatch.contains("Send report copies to (optional)"))
-        assertTrue(dispatch.contains("canReceiveAssignedWork"))
-        assertTrue(dispatch.contains("TechnicianIdentityContent"))
-        assertFalse(dispatch.contains("Open Technician identity"))
+        assertFalse(dispatch.contains("Send report copies to (optional)"))
+        assertFalse(dispatch.contains("TechnicianIdentityContent()"))
+        assertTrue(team.contains("TeamWorkspaceContent.ID"))
+        assertTrue(team.contains("TeamWorkspaceContent.TRUSTED_IDS"))
     }
 
     @Test fun memberIdentityShowsTechnicianIdBeforeDesignationWithoutReportNameDuplication() {

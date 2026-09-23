@@ -18,12 +18,16 @@ class ContentTabsVisualStyleTest {
     }
 
     @Test
-    fun commonCallersProvideAnUpperSurfaceThroughTheirTabBoundary() {
+    fun rootWorkspacesShareOneTabHeaderWhileDetailTabsKeepTheirOwnSurface() {
         val app = productionKotlinSource("com/v16studio/serviceloop/ui")
+        val root = productionKotlinFunctionSource("fun <T> ServiceLoopRootSecondaryTabs")
         val dailyOperations = productionKotlinSourceContaining("Column(Modifier.fillMaxWidth().background(colors.surface))")
 
         assertTrue(app.contains("CUSTOMERS(\"customers\", \"Register\")"))
-        assertTrue(app.contains("Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp))"))
+        assertTrue(root.contains("height(80.dp).background(colors.surface).padding(top = 8.dp)"))
+        assertTrue(root.contains("ServiceLoopContentTabs(options, selected, onSelected"))
+        assertTrue(app.contains("ServiceLoopRootSecondaryTabs(WorkTab.entries"))
+        assertTrue(app.contains("ServiceLoopRootSecondaryTabs(listOf(\"CUSTOMERS\""))
         assertTrue(app.contains("Column(Modifier.fillMaxWidth().background(colors.surface))"))
         assertTrue(dailyOperations.contains("Column(Modifier.fillMaxWidth().background(colors.surface))"))
     }

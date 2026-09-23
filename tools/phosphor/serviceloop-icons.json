@@ -68,6 +68,7 @@
     "HomeVisit": "list-checks",
     "HomeService": "wrench",
     "HomeFollowUp": "flag",
-    "ContactOtherCamera": "camera"
+    "ContactOtherCamera": "camera",
+    "ContactOtherWebcam": "webcam"
   }
 }

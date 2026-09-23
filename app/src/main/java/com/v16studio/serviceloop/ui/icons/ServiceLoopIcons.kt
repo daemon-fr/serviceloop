@@ -49,6 +49,7 @@ object ServiceLoopIcons {
     @DrawableRes val HomeService = R.drawable.ic_sl_home_service
     @DrawableRes val HomeFollowUp = R.drawable.ic_sl_home_follow_up
     @DrawableRes val ContactOtherCamera = R.drawable.ic_sl_contact_other_camera
+    @DrawableRes val ContactOtherWebcam = R.drawable.ic_sl_contact_other_webcam
     @DrawableRes val Info = R.drawable.ic_sl_info
     @DrawableRes val InspectionTemplates = R.drawable.ic_sl_inspection_templates
     @DrawableRes val LocalSaved = R.drawable.ic_sl_local_saved

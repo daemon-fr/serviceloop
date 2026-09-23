@@ -178,16 +178,46 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveStatus, padding: PaddingValues, viewModel: ServiceLoopViewModel) {
-    val zone = profile?.zoneId ?: ZoneId.systemDefault().id
+internal fun BusinessProfileScreen(profile: BusinessProfile?, saveStatus: SaveStatus, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController) {
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences(DISPATCH_PREFS, 0) }
+    var zone by rememberSaveable(profile) { mutableStateOf(profile?.zoneId ?: ZoneId.systemDefault().id) }
+    var zoneSearch by rememberSaveable { mutableStateOf("") }
+    var selectingZone by remember { mutableStateOf(false) }
+    var reportCopyEmail by rememberSaveable(profile) { mutableStateOf(prefs.getString(OFFICE_EMAIL, "").orEmpty()) }
+    var pendingEmail by remember { mutableStateOf<String?>(null) }
+    var localError by remember { mutableStateOf<String?>(null) }
     var business by rememberSaveable(profile) { mutableStateOf(profile?.businessName.orEmpty()) }; var technician by rememberSaveable(profile) { mutableStateOf(profile?.technicianName.orEmpty()) }
     var phone by rememberSaveable(profile) { mutableStateOf(profile?.phone.orEmpty()) }; var email by rememberSaveable(profile) { mutableStateOf(profile?.email.orEmpty()) }; var address by rememberSaveable(profile) { mutableStateOf(profile?.postalAddress.orEmpty()) }
+    val changed = business != profile?.businessName.orEmpty() || technician != profile?.technicianName.orEmpty() || phone != profile?.phone.orEmpty() || email != profile?.email.orEmpty() || address != profile?.postalAddress.orEmpty() || zone != (profile?.zoneId ?: ZoneId.systemDefault().id) || reportCopyEmail != prefs.getString(OFFICE_EMAIL, "").orEmpty()
+    UnsavedChangesGuard(changed, nav)
+    LaunchedEffect(saveStatus) {
+        if (saveStatus is SaveStatus.Saved && pendingEmail != null) {
+            if (!prefs.edit().putString(OFFICE_EMAIL, pendingEmail!!.trim()).commit()) localError = "Report-copy recipient could not be saved on this device"
+            pendingEmail = null
+        } else if (saveStatus is SaveStatus.Failed) pendingEmail = null
+    }
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { Text("These details are frozen into each finalized record."); SaveStateBanner(saveStatus) }
+        item { Text("These details are frozen into each finalized record.") }
         item { OutlinedTextField(business, { business = it }, label = { Text("Business/display name · Required") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(technician, { technician = it }, label = { Text("Technician name · Required") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(phone, { phone = it }, label = { Text("Phone") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(address, { address = it }, label = { Text("Postal address") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
-        item { LabelledValue("Business time zone", zone, true); Button(onClick = { viewModel.saveBusinessProfile(BusinessProfile(business, technician, phone, email, address, zone)) }, enabled = business.isNotBlank() && technician.isNotBlank() && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth()) { Text("Save profile") } }
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("Business time zone", style = MaterialTheme.typography.titleMedium)
+            ServiceLoopDenseNavigableRow(zone, leadingIcon = ServiceLoopIcons.Time, modifier = Modifier.testTag("business-zone-selector")) { selectingZone = true }
+            OutlinedTextField(reportCopyEmail, { reportCopyEmail = it }, label = { Text("Send report copies to (optional)") }, modifier = Modifier.fillMaxWidth().testTag("business-office-email"))
+            if (saveStatus is SaveStatus.Saving) Text("Saving…")
+            if (saveStatus is SaveStatus.Failed) Text(saveStatus.message, color = MaterialTheme.colorScheme.error)
+            localError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(onClick = { pendingEmail = reportCopyEmail; localError = null; viewModel.saveBusinessProfile(BusinessProfile(business, technician, phone, email, address, zone)) }, enabled = business.isNotBlank() && technician.isNotBlank() && saveStatus !is SaveStatus.Saving, modifier = Modifier.fillMaxWidth().testTag("save-business-profile")) { Text("Save") }
+        }
     }
+    if (selectingZone) AlertDialog(
+        onDismissRequest = { selectingZone = false },
+        title = { Text("Business time zone") },
+        text = { Column { OutlinedTextField(zoneSearch, { zoneSearch = it }, label = { Text("Search time zones") }, modifier = Modifier.fillMaxWidth().testTag("business-zone-search")); LazyColumn(Modifier.heightIn(max = 360.dp)) { items(ZoneId.getAvailableZoneIds().asSequence().filter { it.contains(zoneSearch.trim(), ignoreCase = true) }.sorted().take(100).toList()) { candidate -> TextButton({ zone = candidate; selectingZone = false }, Modifier.fillMaxWidth().testTag("business-zone-${candidate.replace('/', '-')}") ) { Text(candidate) } } } } },
+        confirmButton = { TextButton({ selectingZone = false }) { Text("Cancel") } },
+    )
 }
 
 @Composable

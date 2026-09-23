@@ -115,7 +115,6 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(DISPATCH_PREFS, 0) }
     var role by rememberSaveable { mutableStateOf(context.teamRole()) }
-    var email by rememberSaveable { mutableStateOf(prefs.getString(OFFICE_EMAIL, "").orEmpty()) }
     val choices = TEAM_ROLE_OPTIONS
     LazyColumn(
         Modifier.padding(padding).testTag("team-role-settings"),
@@ -141,17 +140,6 @@ internal fun DispatchSettings(padding: PaddingValues, nav: NavHostController) {
                 Text(roleExplanation, style = ServiceLoopUiTokens.Type.supporting, modifier = Modifier.testTag("team-role-helper"))
             }
         }
-        item {
-            OutlinedTextField(
-                email,
-                { email = it; prefs.edit().putString(OFFICE_EMAIL, it.trim()).apply() },
-                label = { Text("Send report copies to (optional)") },
-                modifier = Modifier.fillMaxWidth().testTag("team-role-office-email"),
-            )
-        }
-        if (role.workspaceCapabilities.canReceiveAssignedWork) item {
-            TechnicianIdentityContent()
-        }
     }
 }
 
@@ -172,10 +160,14 @@ private fun TeamRoleChoice(
         color = if (selected) colors.selection else colors.surface,
         border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) colors.selectionOutline else colors.outlineControl),
     ) {
-        Column(
+        Row(
             Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
-            verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
+            androidx.compose.foundation.layout.Box(Modifier.size(32.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                if (selected) ServiceLoopIcon(ServiceLoopIcons.CheckFat, null, Modifier.size(24.dp), tint = colors.action)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
             Text(
                 option.title,
                 style = ServiceLoopUiTokens.Type.itemTitle,
@@ -189,12 +181,13 @@ private fun TeamRoleChoice(
                 color = colors.textSecondary,
                 modifier = Modifier.testTag("team-role-${option.role.name}-description"),
             )
+            }
         }
     }
 }
 
 @Composable
-internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
+internal fun TechnicianIdentityContent(modifier: Modifier = Modifier, showId: Boolean = true) {
     val context = LocalContext.current
     val svc = remember { service(context) }
     val scope = rememberCoroutineScope()
@@ -207,10 +200,12 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
         designation = loaded.designation.orEmpty()
     }
     Column(modifier.fillMaxWidth().testTag("technician-identity"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Technician identity", style = MaterialTheme.typography.titleLarge)
-        Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.")
-        Text("Technician ID", style = MaterialTheme.typography.labelLarge)
-        Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = ServiceLoopUiTokens.IdentifierStyle, modifier = Modifier.testTag("technician-id-value"))
+        if (showId) {
+            Text("Technician identity", style = MaterialTheme.typography.titleLarge)
+            Text("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.")
+            Text("Technician ID", style = MaterialTheme.typography.labelLarge)
+            Text(TechnicianIdCodec.display(value?.technicianId.orEmpty()), style = ServiceLoopUiTokens.IdentifierStyle, modifier = Modifier.testTag("technician-id-value"))
+        }
         OutlinedTextField(designation, { designation = it }, label = { Text("Team designation or badge (optional)") }, modifier = Modifier.fillMaxWidth().testTag("technician-designation"))
         ServiceLoopActionStack {
             Button(
@@ -224,7 +219,7 @@ internal fun TechnicianIdentityContent(modifier: Modifier = Modifier) {
                 enabled = value != null,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save") }
-            OutlinedButton(
+            if (showId) OutlinedButton(
                 { value?.let { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop Technician ID", it.technicianId)) } },
                 Modifier.fillMaxWidth(),
             ) {

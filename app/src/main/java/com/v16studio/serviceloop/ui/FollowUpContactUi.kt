@@ -45,7 +45,7 @@ internal fun contactChannelIcon(channel: String): Int = when (channel) {
     "SMS" -> ServiceLoopIcons.Sms
     "EMAIL" -> ServiceLoopIcons.Mail
     "IN_PERSON" -> ServiceLoopIcons.Person
-    else -> ServiceLoopIcons.ContactOtherCamera
+    else -> ServiceLoopIcons.ContactOtherWebcam
 }
 
 @Composable

@@ -153,6 +153,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopRootSecondaryTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPresetChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
@@ -195,14 +196,12 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
     LaunchedEffect(Unit) { viewModel.observeOperationalDashboard(WorkScope.Global) }
     var tab by rememberSaveable { mutableStateOf("DASHBOARD") }
     Column(Modifier.fillMaxSize().background(LocalServiceLoopTokens.current.canvas)) {
-        Box(Modifier.fillMaxWidth().background(LocalServiceLoopTokens.current.surface).padding(top = ServiceLoopUiTokens.Space.xs)) {
-            ServiceLoopContentTabs(
+        ServiceLoopRootSecondaryTabs(
                 listOf("DASHBOARD" to "Dashboard", "AGENDA" to "Agenda", "TEAM" to "Team"),
                 tab,
                 { tab = it },
                 testTagPrefix = "home-tab",
             )
-        }
         if (tab == "DASHBOARD") {
             LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
@@ -346,9 +345,7 @@ internal fun WorkScreen(
             ?: state.customerList.firstOrNull { it.id == customerScope.customerId }?.name
     }
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
-        Box(Modifier.fillMaxWidth().background(colors.surface).padding(top = 12.dp)) {
-            ServiceLoopContentTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
-        }
+        ServiceLoopRootSecondaryTabs(WorkTab.entries.map { it to it.label }, tab, onTabSelected)
         customerScopeName?.let { name ->
             Text(
                 "Customer: $name",

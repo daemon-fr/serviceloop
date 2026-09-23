@@ -147,6 +147,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNavigationButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopRootSecondaryTabs
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPresetChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
@@ -200,7 +201,7 @@ internal fun CustomersScreen(
     val visibleEquipment = equipment.filter { showOneTime || it.customerType == CustomerType.STANDARD }
     LaunchedEffect(tab) { if (tab == "TEMPLATES") viewModel?.loadTemplates() }
     LazyColumn(contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Column(Modifier.fillMaxWidth().background(colors.surface)) { Spacer(Modifier.height(12.dp)); ServiceLoopContentTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment", "TEMPLATES" to "Templates"),tab,{tab=it}) } }
+        item { ServiceLoopRootSecondaryTabs(listOf("CUSTOMERS" to "Customers", "SITES" to "Sites", "EQUIPMENT" to "Equipment", "TEMPLATES" to "Templates"), tab, { tab = it }) }
         item { Text(if (tab == "TEMPLATES") "Inspection templates" else "${tab.lowercase().replaceFirstChar { it.uppercase() }} register", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp, top = ServiceLoopUiTokens.Space.section, end = 16.dp)) }
         if (tab != "TEMPLATES") item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(showOneTime, { showOneTime = it; filterPreferences.saveShowOneTimeCustomers(it) }, modifier = Modifier.testTag("show-one-time-customers")); Text("Show one-time customers") } }
         item {
@@ -261,12 +262,15 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             Text(detail.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
             Text(listOfNotNull(detail.technicianIdentifier, detail.reference).joinToString(" · "), style = MaterialTheme.typography.titleMedium)
             Text(if (detail.makeModel.isBlank()) "Make/model not supplied" else detail.makeModel)
-            Text(detail.serialNumber?.let { "Serial $it" } ?: "Serial not supplied", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${detail.customerName}\n${detail.siteName}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
-            Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ServiceLoopNavigationButton("Customer", { nav.navigate("customer/${detail.customerId}") }, Modifier.weight(1f).testTag("equipment-customer-link"))
-                ServiceLoopNavigationButton("Site", { nav.navigate("site/${detail.siteId}") }, Modifier.weight(1f).testTag("equipment-site-link"), enabled = detail.siteId.isNotBlank())
+            detail.serialNumber?.takeIf { it.isNotBlank() }?.let {
+                Text("Serial $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(detail.customerName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { nav.navigate("customer/${detail.customerId}") }.testTag("equipment-customer-link"))
+                Text(" › ", style = MaterialTheme.typography.titleMedium)
+                Text(detail.siteName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(enabled = detail.siteId.isNotBlank()) { nav.navigate("site/${detail.siteId}") }.testTag("equipment-site-link"))
             }
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {

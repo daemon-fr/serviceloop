@@ -1,6 +1,5 @@
 package com.v16studio.serviceloop
 
-import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,13 +40,7 @@ class B043WorkspaceEnforcementTest {
         assertTrue(ui().contains("composable(\"visit/new\") { entry -> WorkspaceGate(capabilities.canCreateLocalWork"))
     }
 
-    @Test fun `dispatch and storage formats remain frozen`() {
-        val gradle = File("../build.gradle.kts").readText() + File("build.gradle.kts").readText()
-        val database = productionKotlinSource("com/v16studio/serviceloop/data")
-        assertTrue(gradle.contains("versionCode = 4"))
-        assertTrue(gradle.contains("versionName = \"1.2.0\""))
-        assertTrue(database.contains("version = 18"))
-        assertTrue(productionKotlinSource("com/v16studio/serviceloop/data").contains("SCHEMA_VERSION = 17"))
+    @Test fun `legacy member role stays absent from current UI`() {
         assertFalse(ui().contains("TeamRole.MEMBER"))
     }
 

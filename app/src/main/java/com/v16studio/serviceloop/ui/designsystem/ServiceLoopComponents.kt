@@ -115,6 +115,23 @@ fun ServiceLoopDetailToolbar(title: String, onBack: () -> Unit, topAction: (@Com
     }
 }
 
+/** Shared geometry for the three root workspace tab strips. */
+@Composable
+fun <T> ServiceLoopRootSecondaryTabs(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    testTagPrefix: String? = null,
+) {
+    val colors = LocalServiceLoopTokens.current
+    Box(
+        Modifier.fillMaxWidth().height(80.dp).background(colors.surface).padding(top = 8.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        ServiceLoopContentTabs(options, selected, onSelected, testTagPrefix = testTagPrefix)
+    }
+}
+
 @Composable
 fun <T> ServiceLoopContentTabs(
     options: List<Pair<T, String>>,

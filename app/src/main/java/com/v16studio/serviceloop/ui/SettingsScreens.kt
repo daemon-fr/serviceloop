@@ -185,13 +185,9 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
     val appearanceMode by appearancePreferences.mode.collectAsState()
     val context = LocalContext.current
     LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { SectionTitle("App"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
-        item { SectionTitle("Business"); ServiceLoopDenseNavigableRow("Business and report identity",leadingIcon=ServiceLoopIcons.Report){nav.navigate("business-profile")} }
-        item { SectionTitle("Reminders & calendar"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")} }
-        item { SectionTitle("Data / records"); ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+        item { SectionTitle("ServiceLoop app"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
         item {
             Column(Modifier.testTag("settings-about"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
-                SectionTitle("About ServiceLoop")
                 ServiceLoopDenseNavigableRow("Version ${BuildConfig.VERSION_NAME}", context = "Build ${BuildConfig.VERSION_CODE}", leadingIcon = ServiceLoopIcons.Info, modifier = Modifier.testTag("settings-about-version")) {}
                 ServiceLoopDenseNavigableRow("Report a bug", leadingIcon = ServiceLoopIcons.Bug, modifier = Modifier.testTag("settings-report-bug")) {
                     val body = "ServiceLoop version: ${BuildConfig.VERSION_NAME}\nVersion code: ${BuildConfig.VERSION_CODE}\nAndroid: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
@@ -204,6 +200,7 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
                 }
             }
         }
+        item { SectionTitle("Data & automation"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar integration",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")}; ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
     }
 }
 

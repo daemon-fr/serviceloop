@@ -142,7 +142,7 @@ class ServiceLoopDesignSystemTest {
     }
 
     @Test fun b031RegisterAndSearchKeepTheirFixedProductOrder() {
-        val directory = productionKotlinSourceContaining("ServiceLoopContentTabs(listOf(\"CUSTOMERS\"")
+        val directory = productionKotlinSourceContaining("ServiceLoopRootSecondaryTabs(listOf(\"CUSTOMERS\"")
         val search = productionKotlinSourceContaining("private enum class SearchCategory")
         assertTrue(directory.contains("\"TEMPLATES\" to \"Templates\""))
         assertTrue(search.indexOf("CUSTOMER(\"CUSTOMER\"") < search.indexOf("SITE(\"SITE\"") )

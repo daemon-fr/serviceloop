@@ -1,0 +1,47 @@
+# B049 — Unified Work Exchange, Reporting, Export Center, and Team IA
+
+**Status:** OWNER-APPROVED DESIGN / IMPLEMENTATION AUTHORITY
+
+The owner-approved B049 assignment is the implementation authority for this branch. New Dispatch work uses canonical WorkingVisit/WorkItem records as Visit truth, with Dispatch as an assignment/package/result overlay. ServiceLoop remains local-first and file-based, with immutable final history and exactly-once business effects. The milestone targets app 1.3.0/code 5, Room v19, Recovery v18, `.slsync` envelope v2, and FULL_WORKSPACE register v3.
+
+## Locked business meaning
+
+The canonical chain remains Customer → Site → Equipment → Service Plan/current obligation → Visit → work/checklist/evidence → completion review → immutable final history → report/next obligation/follow-up. Booking is not service, dispatch is not delivery, export is not receipt, finalization is not PDF generation, and local save is not backup. PERFORMED fulfills an eligible captured recurring obligation automatically; PARTLY_PERFORMED requires Fulfill or Keep due; NOT_PERFORMED never fulfills and needs a reason. Checklist completeness is derived from the captured snapshot and current answers. Corrections append immutable revisions; void retains truth. No backend, accounts, live sync, billing, inventory, customer portal, or unrelated enterprise scope is approved.
+
+## Workspace and UI
+
+One root tab header fixes geometry across Home, Work, and Register. Team separates full-width daily actions from dense configuration rows. Employee/Subcontractor import assignments and export results; Team Leader adds dispatch, result import, and report generation; Coordinator dispatches, imports results, and generates reports; Solo has no daily exchange actions. The management row order is Business and report identity, role, contextual ID, Trusted IDs, Technicians, Teams and leaders, Import shared data, Export data, with the exact role visibility matrix from the assignment. Stable local ID never changes on role change and is routing identity, not authentication. Trusted IDs remain local security configuration, excluded from FULL_WORKSPACE and included in Recovery.
+
+Settings has ServiceLoop app (Appearance, Version, Report a bug) and Data & automation (Reminders, Calendar integration, Image cleanup, History, Backup and recovery). Business/report identity moves to Team, includes validated searchable IANA time zone and report-copy recipient, and saves explicitly with an unsaved Back guard. Customer contacts move to a dedicated ordered manager with internal notes. Record Contact Other uses Phosphor webcam. Equipment detail uses a Customer › Site breadcrumb and suppresses absent serials.
+
+## Canonical Visit and Dispatch
+
+Room 18→19 must be non-destructive and add contact order/notes, unique nullable canonical Dispatch Visit/item links, result receipt/provenance/application state, aggregate report/source/rendition state, and image-retention metadata. Recovery 17→18 must preserve coherent B049 state. Legacy B048 unlinked Dispatch records remain usable. Coordinator can create and Book canonical Visits but cannot Start or perform technician field work; Team Leader can Book and Start; Employee cannot create arbitrary Visits. One New Visit form owns the common Customer/Site/date/time/work/template inputs, with an Assignment section for Team Leader/Coordinator. Saving assigned work atomically persists canonical Visit and WorkItems plus Dispatch overlay. Dispatch work package manages assignment and generation/export, using the actual shared Due Services card primitive and urgency classifier. Transport-relevant canonical edits change material identity/generation safely.
+
+## WORK_RESULT exchange
+
+WORK_RESULT is a new versioned structured `.slsync` purpose, not PDF transport. Imported WORK_ASSIGNMENT persists its envelope exporterId as assignment issuer. Each result package targets exactly one issuer; its outer exporterId identifies the technician workspace. Target ID must match the importer and exporter trust checks remain in force. Stable resultId identifies the logical result; sourceFinalRevisionId identifies the exact immutable revision. Re-export of the same revision is idempotent; a correction retains lineage without overwriting history.
+
+Only finalized assigned work is exportable. The result preserves dispatch Visit/item IDs, generation/material identity, documenting technician identity/name/designation, public and relevant private final facts, outcomes, recurrence effect, checklist, findings, parts, follow-ups, and all finalized photos with privacy/report flags. Transport photos are derivatives of owned originals: orientation honored, bounded decode, longest edge at most 1200px, JPEG quality at most 75, unnecessary metadata removed, size/hash measured on the derivative. Originals remain unchanged. Purpose-specific package bounds must be selected by representative measurement. Import validates the complete package before mutation, adopts imported evidence into Coordinator-owned storage, records exact receipts, handles partial results and stale conflicts explicitly, and applies recurrence at most once. Received remote work must never look like locally performed Coordinator work.
+
+## Export, reporting, and images
+
+One Customer → Site → Equipment scope filter with optional From/To dates serves Export Center and report selection; changing a parent clears incompatible children. Export Center offers Customer data, Work performed, Image Archive, and Custom family selection, outputting readable CSV/ZIP that is neither Backup nor arbitrary import. DATA_TRANSFER declares family versions and initially supports only safely mergeable inspection templates. TEMPLATE_SHARE stays readable but is no longer emitted.
+
+Team Leader/Coordinator can select one Customer and one or more concluded Visits for one aggregate customer PDF. A unified reportable final-revision projection includes local and imported truth. The generator freezes exact effective non-voided source revision IDs and renders from immutable models, with current workspace branding and immutable documenting-technician attribution. New report/source/rendition rows retain scope, source order, hash, size, page count, status, and identity snapshots. Later corrections do not change prior aggregate PDFs.
+
+Image cleanup defaults to Never and offers 1/3/6 months or 1 year for full-resolution originals. Finalized historical photos require a validated retained report-quality derivative before original deletion; working photos never expire automatically. Imported Coordinator-owned derivatives remain distinct. Image Archive is a separate deliberate external export, using the original if present and retained derivative otherwise.
+
+## Implementation record
+
+**Status:** IN PROGRESS — first UI checkpoint only. The target versions above are not claims about the current branch state. Protected `master` starts at `1fd51131b040ab62af3874c1106615b75f3008fe` and must remain there.
+
+Implemented in this checkpoint: shared Home/Work/Register root tab header; Team daily-action and management zones with role visibility; dedicated contextual ID and Trusted IDs routes; five-role selected check icon; Business/report identity moved to Team with explicit Save, searchable IANA timezone, report-copy recipient, and unsaved Back guard; Settings category reorganization (Image cleanup awaits its real retention implementation); Equipment breadcrumb/blank-serial behavior; Record Contact Other Phosphor webcam source-vector fallback. Existing identity designation editing remains on the dedicated ID screen. New WORK_RESULT and aggregate-report buttons are visibly disabled until their domain workflows exist.
+
+Current executable versions remain app `1.2.0`/code `4`, Room v18, Recovery v17, `.slsync` envelope v2, and FULL_WORKSPACE register v2. The B049 target app/Room/Recovery/register versions and all new purpose schemas are NOT IMPLEMENTED. No WORK_RESULT package bound has been selected because no representative result package has been measured.
+
+Verification at this checkpoint: Kotlin compilation PASS; 477 JVM tests PASS (0 failures/errors/skips); debug APK assembly PASS; lintDebug PASS; `git diff --check` PASS. The debug APK was replace-installed on the dynamically identified `Pixel 10a ServiceLoop` AVD without data clearing; the process remained alive after an eight-second wait and no fatal logcat line appeared in the sampled buffer. One Home screenshot was inspected in light appearance. This is a narrow runtime/rendered smoke, not full B049 UI evidence.
+
+NOT RUN: B049-specific domain/instrumented tests, Room/Recovery migrations (not implemented), full UI-instrumented role/contact/Dispatch/report journeys, dark screenshots, result/package/PDF tests, system picker/sharesheet handoff, and actual retention cleanup. The Phosphor generator could not run because `py -3` reported no installed Python; the webcam VectorDrawable was transcribed from the vendored `webcam-fill.svg` path without icon substitution.
+
+Remaining sequence: complete Stage 1 contacts and image-cleanup UI with their persistence; implement non-destructive v19/v18 state; converge new Dispatch work on canonical Visits; implement WORK_RESULT round trip and exactly-once ingestion; implement scope filter, Export Center, DATA_TRANSFER, aggregate reporting, and safe image retention; then run the full device/rendered/system and final Git gates. No B049 completion or owner acceptance is claimed at this checkpoint.
