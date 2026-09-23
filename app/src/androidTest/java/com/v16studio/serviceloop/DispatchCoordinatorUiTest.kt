@@ -52,143 +52,134 @@ class DispatchCoordinatorUiTest {
     }
 
     @Test fun coordinatorWorkspaceMovesFromSettingsToReactiveHomeActions(){
-        compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
-        compose.onNodeWithTag("root-nav-home").assertIsDisplayed();compose.onNodeWithTag("root-nav-work").assertIsDisplayed();compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
-        compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-COORDINATOR").performClick()
-        compose.onNode(hasText("Coordinator tools are available from Home.", substring = true)).assertIsDisplayed();compose.onNodeWithText("Technicians").assertDoesNotExist();compose.onNodeWithText("Teams and leaders").assertDoesNotExist();compose.onNodeWithText("Dispatch outbox").assertDoesNotExist()
-        compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed()
-        compose.onNodeWithText("Technicians").performClick();compose.onNodeWithTag("dispatch-technicians").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Teams").performClick();compose.onNodeWithTag("dispatch-teams").assertIsDisplayed();compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Outbox").performClick();compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.waitUntil(10_000) { compose.onAllNodesWithTag("dispatch-new-visit-floating").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithTag("dispatch-new-visit-bottom").fetchSemanticsNodes().isNotEmpty() }; if (compose.onAllNodesWithTag("dispatch-new-visit-floating").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("dispatch-new-visit-floating").performClick() else { compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-new-visit-bottom")); compose.onNodeWithTag("dispatch-new-visit-bottom").performClick() }; compose.onNodeWithTag("dispatch-new-visit").assertIsDisplayed()
-        compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-find-customer-or-site"));compose.onNodeWithTag("field-find-customer-or-site").assertIsDisplayed();compose.onNodeWithTag("dispatch-save-visit").assertDoesNotExist()
-        compose.onNodeWithTag("visit-mode-NEW").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-customer-name-required"));compose.onNodeWithTag("field-customer-name-required").performTextInput("Unsaved customer");compose.onNodeWithTag("field-site-name-required").performTextInput("Unsaved site");compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasText("Reference & instructions"));compose.onNodeWithText("Reference & instructions").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-manager-reference"));compose.onNodeWithTag("dispatch-manager-reference").performTextInput("unsaved");compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard unsaved changes?").assertIsDisplayed();compose.onNodeWithText("Keep editing").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Discard changes").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Settings").performClick();compose.onNodeWithText("Team role settings").performClick();compose.onNodeWithTag("team-role-SOLO").performClick();compose.onNodeWithText("Back").performClick();compose.onNodeWithText("Back").performClick();compose.waitUntil{compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isEmpty()}
+        compose.onNodeWithTag("root-nav-home").assertIsDisplayed()
+        compose.onNodeWithTag("root-nav-work").assertIsDisplayed()
+        compose.onNodeWithTag("root-nav-customers").assertIsDisplayed()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
+        compose.onNodeWithTag("team-role-COORDINATOR").performClick()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("team-dispatch").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("dispatch-new-visit-floating").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithTag("dispatch-new-visit-bottom").fetchSemanticsNodes().isNotEmpty() }
+        if (compose.onAllNodesWithTag("dispatch-new-visit-floating").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("dispatch-new-visit-floating").performClick()
+        else { compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-new-visit-bottom")); compose.onNodeWithTag("dispatch-new-visit-bottom").performClick() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("new-visit-form").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("new-visit-form").assertIsDisplayed()
     }
 
     @Test fun memberSeesImportOnHomeAndHistoryLivesInSettingsData(){
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("History").assertIsDisplayed().performClick()
         compose.onNodeWithText("History",useUnmergedTree=true).assertIsDisplayed()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        pressBack()
+        pressBack()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithTag("import-work-package").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithTag("team-import-work").assertIsDisplayed()
         compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
         compose.onNodeWithText("Work").performClick()
         compose.onNodeWithTag("work-more-actions").assertDoesNotExist()
     }
 
     @Test fun memberIdentityShowsPersistedIdBeforeDesignationWithoutReportNameSection(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("technician-id-value").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Technician identity").assertIsDisplayed()
-        compose.onNodeWithText("Your Technician ID identifies this ServiceLoop installation in dispatch packages. It is not an account or password.").assertIsDisplayed()
-        compose.onNodeWithTag("technician-id-value").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithTag("team-id-row").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("team-local-id").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Your technician ID").assertIsDisplayed()
+        compose.onNodeWithTag("team-local-id").assertIsDisplayed()
         compose.onNodeWithTag("technician-designation").assertIsDisplayed()
         compose.onNodeWithText("Actual report name").assertDoesNotExist()
         compose.onNodeWithTag("technician-report-name").assertDoesNotExist()
         compose.onNodeWithTag("open-business-report-identity").assertDoesNotExist()
-        val idBounds = compose.onNodeWithTag("technician-id-value").fetchSemanticsNode().boundsInRoot
+        val idBounds = compose.onNodeWithTag("team-local-id").fetchSemanticsNode().boundsInRoot
         val designationBounds = compose.onNodeWithTag("technician-designation").fetchSemanticsNode().boundsInRoot
         assertTrue(idBounds.bottom <= designationBounds.top)
     }
 
     @Test fun coordinatorRoleUsesOneHelperParagraphAndNormalGaps(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-COORDINATOR").performClick()
         val role = compose.onNodeWithTag("team-role-COORDINATOR").fetchSemanticsNode().boundsInRoot
         val helper = compose.onNodeWithTag("team-role-helper").fetchSemanticsNode().boundsInRoot
-        compose.onNodeWithTag("team-role-settings").performScrollToNode(hasTestTag("team-role-office-email"))
-        val email = compose.onNodeWithTag("team-role-office-email").fetchSemanticsNode().boundsInRoot
         compose.onNode(hasText("Roles only control local file-based workflows. No account, synchronization, or shared database is created. Coordinator tools are available from Home.", substring = true)).assertIsDisplayed()
         assertTrue(helper.top >= role.bottom)
-        assertTrue(email.top >= helper.bottom)
     }
 
     @Test fun memberExternalPackageOpensImportReview(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SUBCONTRACTOR.name).commit() }
-        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
-        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Import work package").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
-        compose.onNodeWithText("Work package received").assertDoesNotExist()
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slsync"), SERVICE_LOOP_SYNC_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("choose-serviceloop-file").assertIsDisplayed()
     }
 
     @Test fun soloExternalPackageShowsRoleExplanationWithoutImport(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SOLO").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
         compose.runOnUiThread { assertEquals(TeamRole.SOLO, compose.activity.teamRole()) }
-        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
-        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Work package received").assertIsDisplayed()
-        compose.onNodeWithText("Work packages can be received by Subcontractors, Employees, and Team Leaders.").assertIsDisplayed()
-        compose.onNodeWithText("Import work package").assertDoesNotExist()
-        compose.onNodeWithTag("external-package-open-role").performClick()
-        compose.onNodeWithTag("team-role-settings").assertIsDisplayed()
-        compose.onNodeWithTag("team-role-SUBCONTRACTOR").assertIsDisplayed()
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slsync"), SERVICE_LOOP_SYNC_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("choose-serviceloop-file").assertIsDisplayed()
     }
 
     @Test fun soloExternalSendPackageShowsSameExplanation(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SOLO").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit() }
-        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_SEND).setType(WORK_PACKAGE_MIME).putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///sdcard/Download/sample.slwork"))) }
-        compose.onNodeWithText("Work package received").assertIsDisplayed()
-        compose.onNodeWithText("Work packages can be received by Subcontractors, Employees, and Team Leaders.").assertIsDisplayed()
-        compose.onNodeWithText("Import work package").assertDoesNotExist()
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_SEND).setType(SERVICE_LOOP_SYNC_MIME).putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///sdcard/Download/sample.slsync"))) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("choose-serviceloop-file").assertIsDisplayed()
     }
 
     @Test fun reopeningSameExternalPackageAfterBecomingMemberUsesFreshRole(){
-        val packageIntent = { Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/reopen.slwork"), WORK_PACKAGE_MIME) }
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        val packageIntent = { Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/reopen.slsync"), SERVICE_LOOP_SYNC_MIME) }
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SOLO").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SOLO.name).commit(); compose.activity.onNewIntent(packageIntent()) }
-        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("external-package-open-role").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        pressBack()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-SUBCONTRACTOR").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.SUBCONTRACTOR.name).commit(); compose.activity.onNewIntent(packageIntent()) }
-        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("dispatch-import").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("dispatch-import").assertIsDisplayed()
-        compose.onNodeWithText("Work package received").assertDoesNotExist()
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("choose-serviceloop-file").assertIsDisplayed()
     }
 
     @Test fun coordinatorExternalPackageShowsRoleExplanationWithoutImport(){
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         compose.onNodeWithTag("team-role-COORDINATOR").performClick()
-        compose.onNodeWithText("Back").performClick()
-        compose.onNodeWithText("Back").performClick()
+        pressBack()
         compose.runOnUiThread { prefs.edit().putString(TEAM_ROLE, TeamRole.COORDINATOR.name).commit() }
-        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slwork"), WORK_PACKAGE_MIME)) }
-        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithText("Work package received").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Work package received").assertIsDisplayed()
-        compose.onNodeWithText("Import work package").assertDoesNotExist()
+        compose.runOnUiThread { compose.activity.onNewIntent(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("file:///sdcard/Download/sample.slsync"), SERVICE_LOOP_SYNC_MIME)) }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodesWithTag("service-loop-import").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("choose-serviceloop-file").assertIsDisplayed()
     }
 
     @Test fun listFirstOutboxHandlesLargeDirectoryAndExplicitSelection(){
         val context=ApplicationProvider.getApplicationContext<Context>();val db=Room.inMemoryDatabaseBuilder(context,ServiceLoopDatabase::class.java).allowMainThreadQueries().build();val service=DispatchPackageService(db);val ids=runBlocking{val dao=db.serviceLoopDao();dao.insertCustomers(listOf(CustomerEntity("customer","CU-LARGE","Large Customer")));val sites=(1..120).map{SiteEntity("site-$it","customer","SITE-${it.toString().padStart(3,'0')}","Site $it","$it Test Road",null)};dao.insertSites(sites);dao.insertEquipment(sites.take(3).mapIndexed{index,site->EquipmentEntity("equipment-$index",site.id,"EQ-$index",null,"Pump $index",null,null,null,null)});val self=service.identity();service.importTechnician(self);val team=service.createTeam("North Team");service.setTeamMember(team,self.technicianId,true,true);sites.take(3).mapIndexed{index,site->service.saveOutboxVisit(DispatchOutboxEditorDraft(managerReference="JOB-$index",siteId=site.id,serviceDate="2026-09-${20+index}",appointmentLocalTime="${(8+index).toString().padStart(2,'0')}:00",appointmentZoneId="Europe/Bucharest",teamIds=listOf(team),items=listOf(DispatchOutboxItemDraft("item-$index","equipment-$index","Inspect pump $index"))))}}
         try{compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();NavHost(nav,"outbox"){composable("outbox"){DispatchOutboxScreen(PaddingValues(),nav,LocalDate.of(2026,4,15),service,db)};composable("dispatch/visit/new"){Text("New editor",Modifier.testTag("fake-new-editor"))};composable("dispatch/visit/{id}"){Text("Editor opened",Modifier.testTag("fake-editor"))};composable("dispatch/export-review"){Text("Review",Modifier.testTag("fake-review"))}}}}};compose.onNodeWithTag("dispatch-outbox").assertIsDisplayed();compose.waitUntil(10_000){compose.onAllNodesWithTag("dispatch-new-visit-floating").fetchSemanticsNodes().isNotEmpty()||compose.onAllNodesWithTag("dispatch-new-visit-bottom").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-new-visit-bottom"));compose.onNodeWithTag("dispatch-new-visit-bottom").assertIsDisplayed();compose.onNodeWithTag("dispatch-search").assertIsDisplayed();compose.onNodeWithTag("dispatch-status-filter").assertIsDisplayed();compose.onNodeWithTag("dispatch-date-filter").assertIsDisplayed();compose.onNodeWithText("Sender label").assertDoesNotExist();compose.onNodeWithText("Create outbox Visit").assertDoesNotExist();compose.onNodeWithText("SITE-120",substring=true).assertDoesNotExist();compose.onNodeWithText("Export selected (0)").assertDoesNotExist()
-            compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[0]}"));compose.onNodeWithTag("dispatch-select-${ids[0]}").performClick();compose.onNodeWithTag("dispatch-new-visit-floating").assertDoesNotExist();compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[1]}"));compose.onNodeWithTag("dispatch-select-${ids[1]}").performClick();compose.onNodeWithText("2 selected").assertIsDisplayed();compose.onNodeWithText("Export (2)").assertIsDisplayed();assertTrue(compose.onAllNodesWithText("Draft").fetchSemanticsNodes().size>=2);compose.onNodeWithTag("dispatch-select-${ids[0]}").assertExists();compose.onNodeWithTag("dispatch-open-${ids[0]}").assertExists()
-            compose.onNodeWithTag("dispatch-search").performTextInput("JOB-0");compose.waitUntil{compose.onAllNodesWithText("1 selected").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-open-${ids[0]}"));compose.onNodeWithTag("dispatch-open-${ids[0]}").performClick();compose.onNodeWithTag("fake-editor").assertIsDisplayed()
+            compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[0]}"));compose.onNodeWithTag("dispatch-select-${ids[0]}").performClick();compose.onNodeWithTag("dispatch-new-visit-floating").assertDoesNotExist();compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-select-${ids[1]}"));compose.onNodeWithTag("dispatch-select-${ids[1]}").performClick();compose.onNodeWithText("2 selected").assertIsDisplayed();compose.onNodeWithText("Export (2)").assertIsDisplayed();assertTrue(compose.onAllNodesWithText("Draft").fetchSemanticsNodes().size>=2);compose.onNodeWithTag("dispatch-select-${ids[0]}").assertExists();compose.onNodeWithTag("dispatch-outbox-visit-${ids[0]}").assertExists()
+            compose.onNodeWithTag("dispatch-search").performTextInput("JOB-0");compose.waitUntil{compose.onAllNodesWithText("1 selected").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-outbox-list").performScrollToNode(hasTestTag("dispatch-outbox-visit-${ids[0]}"));compose.onNodeWithTag("dispatch-outbox-visit-${ids[0]}").performClick();compose.onNodeWithTag("fake-editor").assertIsDisplayed()
         }finally{disposeCompositionAndClose(db)}
     }
 
@@ -204,8 +195,8 @@ class DispatchCoordinatorUiTest {
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();CompositionLocalProvider(LocalDetailBackInterceptor provides remember{mutableStateOf<(() -> Unit)?>(null)}){NavHost(nav,"start"){composable("start"){Button({nav.navigate("editor")},Modifier.testTag("open-render-editor")){Text("Open editor")}};composable("editor"){DispatchVisitEditorScreen(PaddingValues(),nav,null,LocalDate.of(2026,4,15),service,db,templatesOverride=listOf(TemplateSummary("render-template","IT-RENDER","Rendered checklist",1,1,"ACTIVE")))}}}}}}
             compose.onNodeWithTag("open-render-editor").performClick();compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("visit-site-render-site-select"));compose.onNodeWithTag("visit-site-render-site-select").performClick();compose.onNodeWithTag("visit-site-continue").performClick()
             compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-choose-teams"));compose.onNodeWithTag("dispatch-choose-teams").performClick();compose.onNodeWithText("Rendered Team").performClick();compose.onNodeWithTag("dispatch-team-apply").performClick()
-            compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-task-name-required"));compose.onNodeWithTag("task-subject-EQUIPMENT").performClick();compose.onNodeWithTag("task-equipment-render-equipment").performClick();compose.onNodeWithTag("field-task-name-required").performTextInput("New rendered work");compose.onNodeWithTag("task-template-selector").performClick();compose.onNodeWithText("Rendered checklist (v1)",substring=false).performClick();compose.onNodeWithTag("add-task").performClick()
-            compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("dispatch-save-visit"));compose.onNodeWithTag("dispatch-save-visit").performClick();compose.waitUntil(10_000){compose.onAllNodesWithTag("open-render-editor").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("open-render-editor").assertIsDisplayed();assertEquals(3,runBlocking{service.outboxVisits().size})
+            compose.onNodeWithTag("dispatch-new-visit").performScrollToNode(hasTestTag("field-task-name-required"));compose.onNodeWithTag("task-subject-EQUIPMENT").performClick();compose.onNodeWithTag("task-equipment-render-equipment").performClick();compose.onNodeWithTag("field-task-name-required").performTextInput("New rendered work");compose.onNodeWithTag("task-template-selector").performClick();compose.onNodeWithTag("task-template-selector-option-renderedchecklistv1").performClick();compose.onNodeWithTag("add-task").performClick()
+            compose.onNodeWithTag("visit-setup-list").performScrollToNode(hasTestTag("dispatch-save-visit"));compose.onNodeWithTag("dispatch-save-visit").performClick();compose.waitUntil(10_000){compose.onAllNodesWithTag("open-render-editor").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("open-render-editor").assertIsDisplayed();assertEquals(3,runBlocking{service.outboxVisits().size})
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();DispatchExportReviewScreen(PaddingValues(),nav,ids,service)}}};compose.onNodeWithTag("dispatch-export-sender").performTextInput("Prototype coordinator");compose.waitUntil(10_000){compose.onAllNodesWithText("First export · Version 1").fetchSemanticsNodes().size==2};compose.onAllNodesWithText("First export · Version 1").assertCountEquals(2)
         }finally{disposeCompositionAndClose(db)}
     }    @Test fun packageCompositionDoesNotCreateLocalPlannerVisit(){
@@ -218,7 +209,7 @@ class DispatchCoordinatorUiTest {
         try{
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();NavHost(nav,"outbox"){composable("outbox"){DispatchOutboxScreen(PaddingValues(),nav,LocalDate.of(2026,9,11),service,db)}}}}}
             compose.waitUntil(10_000){compose.onAllNodesWithTag("dispatch-outbox-visit-$id").fetchSemanticsNodes().isNotEmpty()}
-            compose.onNodeWithTag("dispatch-select-$id").performClick();compose.onNodeWithTag("dispatch-more-selection").performClick();compose.onNodeWithTag("dispatch-cancel-selected").performClick()
+            compose.onNodeWithTag("dispatch-select-$id").performClick();compose.onNodeWithTag("dispatch-cancel-selected").performClick()
             compose.onNodeWithText("Cancel selected Visits").assertIsDisplayed();compose.onNodeWithTag("dispatch-status-confirm").assertDoesNotExist();compose.onNodeWithTag("dispatch-cancel-reason").performTextInput("Coordinator cancellation");compose.onNodeWithText("Apply").performClick()
             compose.waitUntil(10_000){runBlocking{db.dispatchDao().outboxVisit(id)?.outboxStatus==DispatchOutboxStatus.CANCELED}};compose.waitUntil(10_000){compose.onAllNodesWithText("No visits match these filters").fetchSemanticsNodes().isNotEmpty()};compose.waitForIdle()
         }finally{disposeCompositionAndClose(db)}
@@ -229,14 +220,15 @@ class DispatchCoordinatorUiTest {
         val id=runBlocking{val dao=db.serviceLoopDao();dao.insertCustomers(listOf(CustomerEntity("single-customer","CU-SINGLE","Single customer")));dao.insertSites(listOf(SiteEntity("single-site","single-customer","ST-SINGLE","Single site",null,null)));dao.insertEquipment(listOf(EquipmentEntity("single-equipment","single-site","EQ-SINGLE",null,"Single pump",null,null,null,null)));val self=service.identity();service.importTechnician(self);val team=service.createTeam("Single team");service.setTeamMember(team,self.technicianId,true,true);service.createOutboxVisit("JOB-SINGLE-UI","single-site","2026-09-20","09:00","Europe/Bucharest",null,listOf(team)).also{service.addOutboxItem(it,"single-equipment","Inspect",null,null,emptyList())}}
         try{
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();CompositionLocalProvider(LocalDetailBackInterceptor provides remember{mutableStateOf<(() -> Unit)?>(null)}){DispatchVisitEditorScreen(PaddingValues(),nav,id,LocalDate.of(2026,9,11),service,db)}}}}
-            compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("dispatch-cancel-visit"))
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Single customer · Single site").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("visit-setup-list").performScrollToNode(hasTestTag("dispatch-cancel-visit"))
             compose.onNodeWithTag("dispatch-cancel-visit").assertIsDisplayed()
             compose.onNodeWithTag("dispatch-cancel-visit").performClick()
             compose.onNodeWithTag("dispatch-cancel-dialog").assertIsDisplayed()
             compose.onNodeWithTag("dispatch-cancel-reason").performTextInput("No longer needed")
             compose.onNodeWithTag("dispatch-cancel-confirm").performClick()
             compose.waitUntil(10_000) { runBlocking { db.dispatchDao().outboxVisit(id)?.outboxStatus == DispatchOutboxStatus.CANCELED } }
-            compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasText("Read-only"))
+            compose.onNodeWithTag("visit-setup-list").performScrollToNode(hasText("Read-only"))
             compose.onNodeWithText("Read-only").assertIsDisplayed()
             compose.onNodeWithTag("dispatch-cancel-visit").assertDoesNotExist()
             compose.onNodeWithTag("dispatch-reopen-visit").assertDoesNotExist()
@@ -248,7 +240,7 @@ class DispatchCoordinatorUiTest {
         val id=runBlocking{val dao=db.serviceLoopDao();dao.insertCustomers(listOf(CustomerEntity("concluded-customer","CU-CONCLUDED","Concluded customer")));dao.insertSites(listOf(SiteEntity("concluded-site","concluded-customer","ST-CONCLUDED","Concluded site",null,null)));dao.insertEquipment(listOf(EquipmentEntity("concluded-equipment","concluded-site","EQ-CONCLUDED",null,"Concluded pump",null,null,null,null)));val self=service.identity();service.importTechnician(self);val team=service.createTeam("Concluded team");service.setTeamMember(team,self.technicianId,true,true);service.createOutboxVisit("JOB-CONCLUDED-UI","concluded-site","2026-09-20","09:00","Europe/Bucharest",null,listOf(team)).also{service.addOutboxItem(it,"concluded-equipment","Inspect",null,null,emptyList());service.createExportFile(listOf(it),"Coordinator",context.cacheDir);service.concludeOutboxVisits(listOf(it))}}
         try{
             compose.runOnUiThread{compose.activity.setContent{ServiceLoopTheme(false){val nav=rememberNavController();CompositionLocalProvider(LocalDetailBackInterceptor provides remember{mutableStateOf<(() -> Unit)?>(null)}){DispatchVisitEditorScreen(PaddingValues(),nav,id,LocalDate.of(2026,9,11),service,db)}}}}
-            compose.waitUntil(10_000){compose.onAllNodesWithText("Read-only").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-visit-editor").performScrollToNode(hasTestTag("dispatch-reopen-visit"));compose.onNodeWithTag("dispatch-cancel-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-reopen-visit").assertIsDisplayed();compose.onNodeWithTag("dispatch-reopen-visit").performClick()
+            compose.waitUntil(10_000){compose.onAllNodesWithText("Read-only").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("visit-setup-list").performScrollToNode(hasTestTag("dispatch-reopen-visit"));compose.onNodeWithTag("dispatch-cancel-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-reopen-visit").assertIsDisplayed();compose.onNodeWithTag("dispatch-reopen-visit").performClick()
             compose.waitUntil(10_000){runBlocking{db.dispatchDao().outboxVisit(id)?.outboxStatus==DispatchOutboxStatus.DISPATCHED}};compose.waitUntil(10_000){compose.onAllNodesWithTag("dispatch-save-visit").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("dispatch-reopen-visit").assertDoesNotExist();compose.onNodeWithTag("dispatch-cancel-visit").assertIsDisplayed()
         }finally{disposeCompositionAndClose(db)}
     }

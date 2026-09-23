@@ -67,7 +67,7 @@ class B048CustomerContactsUiTest {
         }
 
         compose.onNodeWithTag("customer-editor-additional-contacts").performScrollTo()
-        compose.onNodeWithText("Contacts").assertIsDisplayed()
+        compose.onNodeWithTag("customer-editor-list-contacts").assertIsDisplayed()
         compose.onNodeWithTag("customer-editor-add-contact").assertIsDisplayed().performClick()
         compose.onNodeWithText("Add customer contact").assertIsDisplayed()
         compose.onNodeWithText("Person or label (optional)").assertIsDisplayed()

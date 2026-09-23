@@ -84,6 +84,7 @@ class DispatchPackageService(
         val time=draft.appointmentLocalTime?.trim()?.takeIf{it.isNotEmpty()}?.let{LocalTime.parse(it).toString()}
         val zone=ZoneId.of(draft.appointmentZoneId.trim()).id
         val existing=draft.dispatchVisitId?.let{dispatch.outboxVisit(it)}
+        require(existing?.localVisitId==null) { "Linked Visits must be edited from the canonical Visit" }
         if(draft.dispatchVisitId!=null){
             require(existing!=null){"Outbox Visit no longer exists"}
             require(existing.outboxStatus!=DispatchOutboxStatus.CONCLUDED){"Reopen this concluded Visit before editing"}
@@ -202,23 +203,34 @@ class DispatchPackageService(
     suspend fun outboxParticipants(visitId:String)=expand(visitId)
     suspend fun outboxTeamIds(visitId:String)=dispatch.outboxVisitTeams(visitId).map{it.teamId}
     suspend fun outboxVisits()=dispatch.outboxVisits();private suspend fun expand(id:String):Pair<List<DispatchTechnicianEntity>,Set<String>>{val teams=dispatch.outboxVisitTeams(id).map{it.teamId}.toSet();val members=dispatch.allTeamMembers().filter{it.teamId in teams};val tech=dispatch.technicians().associateBy{it.technicianId};return members.mapNotNull{tech[it.technicianId]}.distinctBy{it.technicianId} to members.filter{it.isLeader}.map{it.technicianId}.toSet()}
-    suspend fun rescheduleOutboxVisit(id:String,date:String,time:String?,zone:String){LocalDate.parse(date);time?.let(LocalTime::parse);ZoneId.of(zone);val value=dispatch.outboxVisit(id)?:error("Outbox visit missing");require(value.outboxStatus!=DispatchOutboxStatus.CONCLUDED){"Reopen this concluded Visit before editing"};dispatch.updateOutboxVisit(value.copy(serviceDate=date,appointmentLocalTime=time,appointmentZoneId=zone,modifiedAtEpochMillis=modifiedAfter(value)))}
+    suspend fun rescheduleOutboxVisit(id:String,date:String,time:String?,zone:String){LocalDate.parse(date);time?.let(LocalTime::parse);ZoneId.of(zone);val value=dispatch.outboxVisit(id)?:error("Outbox visit missing");require(value.localVisitId==null){"Linked Visits must be rescheduled from the canonical Visit"};require(value.outboxStatus!=DispatchOutboxStatus.CONCLUDED){"Reopen this concluded Visit before editing"};dispatch.updateOutboxVisit(value.copy(serviceDate=date,appointmentLocalTime=time,appointmentZoneId=zone,modifiedAtEpochMillis=modifiedAfter(value)))}
     private suspend fun compose(o:DispatchOutboxVisitEntity,g:Int):DispatchVisit{
-        val site=dao.site(o.siteId)?:error("Site missing")
+        val localVisit=o.localVisitId?.let { dao.visit(it) ?: error("Linked Visit missing") }
+        val site=dao.site(localVisit?.siteId ?: o.siteId)?:error("Site missing")
         val customer=dao.customer(site.customerId)?:error("Customer missing")
         val teamIds=dispatch.outboxVisitTeams(o.dispatchVisitId).map{it.teamId}
         val allTeams=dispatch.teams().associateBy{it.id};val members=dispatch.allTeamMembers();val tech=dispatch.technicians().associateBy{it.technicianId}
         val teams=teamIds.map{id->val t=allTeams[id]?:error("Team missing");val m=members.filter{it.teamId==id};DispatchTeamSnapshot(id,t.name,m.map{it.technicianId}.sorted(),m.filter{it.isLeader}.map{it.technicianId}.sorted())}
         val participants=teams.flatMap{it.memberIds}.distinct().sorted().map{tech[it]?.let{x->DispatchTechnicianSnapshot(x.technicianId,x.displayName,x.designation)}?:error("Technician missing")}
         val items=dispatch.outboxItems(o.dispatchVisitId).map{i->
-            val subject=WorkSubjectType.fromCode(i.subjectType)
-            val equipment=validateOutboxSubject(site,customer,subject,i.equipmentId,i.equipmentDescription.orEmpty(),i.servicePlanReference,i.dueDateSnapshot)
+            val localWork=i.localWorkItemId?.let { dao.workItem(it) ?: error("Linked work item missing") }
+            require(localWork==null || localWork.visitId==localVisit?.id) { "Linked work item belongs to another Visit" }
+            val subject=WorkSubjectType.fromCode(localWork?.subjectType ?: i.subjectType)
+            val equipment=if(localWork!=null) localWork.equipmentId?.let { dao.equipment(it) ?: error("Linked Equipment missing") }
+                else validateOutboxSubject(site,customer,subject,i.equipmentId,i.equipmentDescription.orEmpty(),i.servicePlanReference,i.dueDateSnapshot)
             val assigned=dispatch.outboxItemAssignees(i.dispatchItemId).map{it.technicianId}.sorted().map{tech[it]?.let{x->DispatchTechnicianSnapshot(x.technicianId,x.displayName,x.designation)}?:error("Technician missing")}
             val snapshot=snapshotForOutboxItem(i)
-            DispatchWork(i.dispatchItemId,subject,equipment?.reference,i.equipmentDescription?.trim()?.takeIf{equipment==null&&!it.isNullOrBlank()},i.taskName,i.servicePlanReference,i.dueDateSnapshot,assigned,snapshot?.snapshotId)
+            DispatchWork(i.dispatchItemId,subject,localWork?.equipmentReferenceSnapshot ?: equipment?.reference,
+                (localWork?.equipmentDescriptionSnapshot ?: i.equipmentDescription)?.trim()?.takeIf{equipment==null&&!it.isNullOrBlank()},
+                localWork?.serviceNameSnapshot ?: i.taskName,localWork?.planReferenceSnapshot ?: i.servicePlanReference,
+                localWork?.dueDateSnapshot ?: i.dueDateSnapshot,assigned,snapshot?.snapshotId)
         }
         require(items.isNotEmpty())
-        return DispatchVisit(o.dispatchVisitId,g,o.managerReference,o.serviceDate,o.appointmentLocalTime,o.appointmentZoneId,site.reference,o.instructions,teams,participants,teams.flatMap{it.leaderIds}.distinct().sorted(),items,if(o.canceledAtEpochMillis!=null)"CANCELED" else "ACTIVE",o.cancellationReason)
+        val zone=localVisit?.appointmentZoneId ?: o.appointmentZoneId
+        val time=localVisit?.scheduledAtEpochMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.of(zone)).toLocalTime().withSecond(0).withNano(0).toString() }
+        return DispatchVisit(o.dispatchVisitId,g,o.managerReference,localVisit?.actualServiceDate ?: o.serviceDate,
+            if(localVisit!=null) time else o.appointmentLocalTime,zone,site.reference,o.instructions,teams,participants,
+            teams.flatMap{it.leaderIds}.distinct().sorted(),items,if(o.canceledAtEpochMillis!=null)"CANCELED" else "ACTIVE",o.cancellationReason)
     }
     private suspend fun snapshotForPlanReference(reference:String?):DispatchInspectionSnapshot? {
         val plan = reference?.let { ref -> dao.allPlans().firstOrNull { it.reference == ref } } ?: return null
@@ -245,8 +257,16 @@ class DispatchPackageService(
         )
         return draft.copy(snapshotId = DispatchPackageCodec.contentAddressedSnapshotId(draft))
     }
-    private suspend fun snapshotForOutboxItem(item:DispatchOutboxItemEntity):DispatchInspectionSnapshot? =
-        item.reusableTemplateId?.let { templateId -> snapshotForTemplateId(templateId) } ?: snapshotForPlanReference(item.servicePlanReference)
+    private suspend fun snapshotForOutboxItem(item:DispatchOutboxItemEntity):DispatchInspectionSnapshot? {
+        if(item.localWorkItemId!=null){
+            val work=dao.workItem(item.localWorkItemId)?:error("Linked work item missing")
+            val frozen=work.templateSnapshotId?.let { dao.templateSnapshot(it) } ?: return null
+            val draft=DispatchInspectionSnapshot("",frozen.templateName,null,frozen.revision,
+                dao.checklistItems(frozen.id).map { DispatchInspectionItem(it.position,it.label,it.responseType,it.unit,it.required,it.privateGuidance) })
+            return draft.copy(snapshotId=DispatchPackageCodec.contentAddressedSnapshotId(draft))
+        }
+        return item.reusableTemplateId?.let { templateId -> snapshotForTemplateId(templateId) } ?: snapshotForPlanReference(item.servicePlanReference)
+    }
     private suspend fun inspectionSnapshotsFor(visit:DispatchVisit):List<DispatchInspectionSnapshot> = visit.work.mapNotNull { work ->
         work.inspectionSnapshotId?.let { expected ->
             dispatch.outboxItems().firstOrNull { it.dispatchItemId == work.dispatchItemId }?.let { snapshotForOutboxItem(it) }
@@ -262,7 +282,7 @@ class DispatchPackageService(
     suspend fun commitPreparedExport(prepared:DispatchExportPreparation)=database.withTransaction{val now=System.currentTimeMillis();prepared.packageValue.visits.forEach{visit->val current=dispatch.outboxVisit(visit.dispatchVisitId)?:error("Outbox visit missing");val expected=prepared.expected[visit.dispatchVisitId]?:error("Prepared Visit missing");val currentVisit=compose(current,visit.generation);require(current.outboxStatus!=DispatchOutboxStatus.CONCLUDED&&current.modifiedAtEpochMillis==expected.first&&DispatchPackageCodec.materialHash(currentVisit,inspectionSnapshotsFor(currentVisit))==expected.second){"Dispatch Visit changed while the work package was being prepared"}};require(packageSourceHash(prepared.packageValue.visits,prepared.packageValue.inspectionSnapshots)==prepared.sourceHash){"Dispatch directory data changed while the work package was being reviewed"};prepared.packageValue.visits.forEach{visit->val current=dispatch.outboxVisit(visit.dispatchVisitId)?:error("Outbox visit missing");val expected=prepared.expected.getValue(visit.dispatchVisitId);dispatch.updateOutboxVisit(current.copy(lastExportedGeneration=visit.generation,lastExportedMaterialHash=expected.second,lastExportedAtEpochMillis=now,lastExportedCancellationAtEpochMillis=if(visit.transportLifecycle=="CANCELED")current.canceledAtEpochMillis else current.lastExportedCancellationAtEpochMillis))}}
     suspend fun createExportFile(ids:List<String>,sender:String,cacheRoot:File):DispatchExportArtifact=createExportFile(prepareExport(ids,sender),cacheRoot)
     suspend fun createExportFile(prepared:DispatchExportPreparation,cacheRoot:File):DispatchExportArtifact{val visits=prepared.packageValue.visits;val first=visits.minOf{it.serviceDate};val last=visits.maxOf{it.serviceDate};val directory=File(cacheRoot,"work-packages").apply{check(isDirectory||mkdirs()){"Cannot create work-package cache"}};val suffix=prepared.packageValue.packageId.take(8);val final=File(directory,"serviceloop-dispatch-${first}_${last}-${visits.size}-visits-$suffix.slsync");val temp=File(directory,".${prepared.packageValue.packageId}.tmp");val exporterId=ServiceLoopPeerTrustStore(database).localIdentity().technicianId;val envelope=ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(prepared.packageValue,exporterId);try{mutationFault.checkpoint("before_export_file_write");temp.outputStream().use{it.write(envelope);it.fd.sync()};require(temp.isFile&&temp.readBytes().contentEquals(envelope)){"Work-package file verification failed"};mutationFault.checkpoint("after_export_file_write_before_commit");check(temp.renameTo(final)){"Cannot finalize work-package file"};require(final.isFile&&final.readBytes().contentEquals(envelope)){"Work-package file verification failed"};commitPreparedExport(prepared);return DispatchExportArtifact(prepared.packageValue,final)}catch(failure:Throwable){temp.delete();final.delete();if(failure is CancellationException)throw failure;throw failure}}
-    suspend fun concludeOutboxVisits(ids:List<String>)=database.withTransaction{val selected=ids.distinct();require(selected.isNotEmpty());val current=selected.map{dispatch.outboxVisit(it)?:error("Outbox visit missing")};require(current.all{it.outboxStatus==DispatchOutboxStatus.DISPATCHED}){"Every selected Visit must be Dispatched"};current.forEach{val changedAt=modifiedAfter(it);dispatch.updateOutboxVisit(it.copy(concludedAtEpochMillis=changedAt,modifiedAtEpochMillis=changedAt))}}
+    suspend fun concludeOutboxVisits(ids:List<String>)=database.withTransaction{val selected=ids.distinct();require(selected.isNotEmpty());val current=selected.map{dispatch.outboxVisit(it)?:error("Outbox visit missing")};require(current.all{it.outboxStatus==DispatchOutboxStatus.DISPATCHED}){"Every selected Visit must be Dispatched"};current.forEach{visit->if(visit.localVisitId!=null&&dao.finalRecordForVisit(visit.localVisitId)==null){val expected=dispatch.outboxItems(visit.dispatchVisitId).map{it.dispatchItemId}.toSet();val received=dao.appliedWorkResultReceipts(visit.dispatchVisitId).map{it.dispatchItemId}.toSet();require(expected.isNotEmpty()&&expected.all{it in received}){"Awaiting final results for assigned work"}};val changedAt=modifiedAfter(visit);dispatch.updateOutboxVisit(visit.copy(concludedAtEpochMillis=changedAt,modifiedAtEpochMillis=changedAt))}}
     suspend fun cancelOutboxVisits(ids:List<String>,reason:String)=database.withTransaction{val selected=ids.distinct();require(selected.isNotEmpty());val normalized=reason.trim();require(normalized.isNotEmpty()){"Cancellation reason is required"};val current=selected.map{dispatch.outboxVisit(it)?:error("Outbox visit missing")};require(current.all{it.outboxStatus==DispatchOutboxStatus.DRAFT||it.outboxStatus==DispatchOutboxStatus.DISPATCHED}){"Only Draft or Dispatched Visits can be canceled"};current.forEach{val changedAt=modifiedAfter(it);dispatch.updateOutboxVisit(it.copy(canceledAtEpochMillis=changedAt,cancellationReason=normalized,modifiedAtEpochMillis=changedAt,lastExportedCancellationAtEpochMillis=null))}}
     suspend fun reopenOutboxVisits(ids:List<String>)=database.withTransaction{val selected=ids.distinct();require(selected.isNotEmpty());val current=selected.map{dispatch.outboxVisit(it)?:error("Outbox visit missing")};require(current.all{it.outboxStatus==DispatchOutboxStatus.CONCLUDED}){"Every selected Visit must be Concluded"};current.forEach{dispatch.updateOutboxVisit(it.copy(concludedAtEpochMillis=null,modifiedAtEpochMillis=modifiedAfter(it)))}}
     private fun modifiedAfter(value:DispatchOutboxVisitEntity)=maxOf(System.currentTimeMillis(),value.modifiedAtEpochMillis+1)
@@ -343,7 +363,7 @@ class DispatchPackageService(
             val equipment=dao.allEquipment().associateBy{it.reference}.toMutableMap();p.value.equipment.filter{it.reference in neededEquipment}.forEach{x->if(x.reference !in equipment){val s=sites[x.siteReference]?:error("Missing site");EquipmentEntity(stable("dispatch-equipment",x.reference),s.id,x.reference,x.identifier,x.name,x.make,x.model,x.serial,null).also{dao.insertEquipment(listOf(it));equipment[x.reference]=it}}}
             val now=System.currentTimeMillis(); val snapshots=p.value.inspectionSnapshots.associateBy { it.snapshotId }
             activeVisits.forEach{v->val pv=actionable.getValue(v.dispatchVisitId);val r=projected.getValue(v);when(pv.classification){
-                DispatchVisitClassification.NEW_VISIT->{val s=sites[v.siteReference]?:error("Missing site");val c=customers.values.single{it.id==s.customerId};val local=stable("dispatch-visit",v.dispatchVisitId);dao.insertVisits(listOf(WorkingVisitEntity(local,"D-${v.dispatchVisitId.take(12)}",c.id,s.id,v.serviceDate,c.name,s.name,s.address,"BOOKED",now,c.reference,s.reference,scheduledAtEpochMillis=scheduled(v),appointmentZoneId=v.appointmentZoneId)));dispatch.insertVisitBinding(DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v,p.value.inspectionSnapshots),incoming(v,r,p.value.inspectionSnapshots),now,now));r.forEach{(i,role)->insertItem(v,i,role,local,equipment,snapshots)};created+=local}
+                DispatchVisitClassification.NEW_VISIT->{val s=sites[v.siteReference]?:error("Missing site");val c=customers.values.single{it.id==s.customerId};val local=stable("dispatch-visit",v.dispatchVisitId);dao.insertVisits(listOf(WorkingVisitEntity(local,"D-${v.dispatchVisitId.take(12)}",c.id,s.id,v.serviceDate,c.name,s.name,s.address,"BOOKED",now,c.reference,s.reference,scheduledAtEpochMillis=scheduled(v),appointmentZoneId=v.appointmentZoneId)));dispatch.insertVisitBinding(DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v,p.value.inspectionSnapshots),incoming(v,r,p.value.inspectionSnapshots),now,now,exporterId));r.forEach{(i,role)->insertItem(v,i,role,local,equipment,snapshots)};created+=local}
                 DispatchVisitClassification.UPDATE->{applyUpdate(v,p.value,pv.localVisitId!!,equipment,now,r);updated+=pv.localVisitId}
                 DispatchVisitClassification.CANCELED->{
                     if(pv.localVisitId==null){
@@ -354,7 +374,7 @@ class DispatchPackageService(
                         val local=stable("dispatch-visit",v.dispatchVisitId)
                         val canceledVisit=WorkingVisitEntity(local,"D-${v.dispatchVisitId.take(12)}",c.id,s.id,v.serviceDate,incomingCustomer.name,incomingSite.name,incomingSite.address,"CANCELED",now,incomingCustomer.reference,incomingSite.reference,scheduledAtEpochMillis=scheduled(v),appointmentZoneId=v.appointmentZoneId,cancellationReason=v.cancellationReason,cancelledAtEpochMillis=now,cancellationOrigin=VisitCancellationOrigin.COORDINATOR.code)
                         dao.insertVisits(listOf(canceledVisit))
-                        val binding=DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v,p.value.inspectionSnapshots),incoming(v,r,p.value.inspectionSnapshots),now,now)
+                        val binding=DispatchVisitBindingEntity(v.dispatchVisitId,local,v.generation,p.value.packageId,p.value.senderLabel,v.managerReference,v.instructions,techJson(v.participants),idsJson(v.leaderTechnicianIds),teamsJson(v.teams),DispatchPackageCodec.materialHash(v,p.value.inspectionSnapshots),incoming(v,r,p.value.inspectionSnapshots),now,now,exporterId)
                         dispatch.insertVisitBinding(binding)
                         r.forEach{(i,role)->insertItem(v,i,role,local,equipment,snapshots,i.equipmentReference?.let{reference->p.value.equipment.single{it.reference==reference}})}
                         appendEvent(canceledVisit,binding,"DISPATCH_COORDINATOR_CANCELED","Coordinator cancellation received for generation ${v.generation}: ${v.cancellationReason}; the first-seen local Visit was preserved as Canceled",null,now)

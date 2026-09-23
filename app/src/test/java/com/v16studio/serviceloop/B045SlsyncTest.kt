@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.CustomerContactInput
+import com.v16studio.serviceloop.domain.AdHocWorkInput
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.io.File
 import java.io.ByteArrayInputStream
@@ -60,10 +62,58 @@ class B045SlsyncTest {
         assertEquals(exporterId, decoded.manifest.exporterId)
         val envelope = ServiceLoopSyncEnvelopeCodec.decode(ServiceLoopSyncCodec.encode(original))
         assertEquals(2, envelope.manifest.formatVersion)
-        assertEquals(2, envelope.manifest.sections.single { it.name == "register" }.version)
+        assertEquals(3, envelope.manifest.sections.single { it.name == "register" }.version)
         assertEquals(2, envelope.manifest.sections.single { it.name == "team" }.version)
         assertEquals("office contact", decoded.register.customerContacts.single().personName)
         assertEquals("Technician note", decoded.team.technicians.single().notes)
+    }
+
+    @Test fun customerContactsKeepNotesAndTransactionalOrder() = runTest {
+        database.serviceLoopDao().insertCustomers(listOf(CustomerEntity("order-customer", "CU-ORDER", "Order customer")))
+        val repository = RoomServiceLoopRepository(database, time)
+        val first = repository.createCustomerContact(CustomerContactInput("order-customer", "Office", "PHONE", "123", "Internal first note"))
+        val second = repository.createCustomerContact(CustomerContactInput("order-customer", "Manager", "EMAIL", "manager@example.com", "Internal second note"))
+        repository.moveCustomerContact("order-customer", second, -1)
+        assertEquals(listOf(second, first), database.serviceLoopDao().customerContacts("order-customer").map { it.id })
+        repository.updateCustomerContact(first, CustomerContactInput("order-customer", "Office", "SMS", "456", "Edited note"))
+        assertEquals(2, database.serviceLoopDao().customerContacts("order-customer").last().position)
+        assertEquals("Edited note", database.serviceLoopDao().customerContacts("order-customer").last().notes)
+        repository.deleteCustomerContact("order-customer", second)
+        val remaining = database.serviceLoopDao().customerContacts("order-customer").single()
+        assertEquals(first, remaining.id)
+        assertEquals(1, remaining.position)
+        assertEquals("456", remaining.value)
+    }
+
+    @Test fun assignedVisitCreatesCanonicalWorkAndLinkedOutboxAtomically() = runTest {
+        val dao = database.serviceLoopDao()
+        val dispatch = database.dispatchDao()
+        dao.insertCustomers(listOf(CustomerEntity("assigned-customer", "CU-ASG", "Assigned customer")))
+        dao.insertSites(listOf(SiteEntity("assigned-site", "assigned-customer", "ST-ASG", "Assigned site", null, null)))
+        dispatch.insertTechnician(DispatchTechnicianEntity("tech-assigned", "Assigned technician", 1, 1))
+        dispatch.insertTeam(DispatchTeamEntity("team-assigned", "Assigned team", 1, 1))
+        dispatch.insertTeamMember(DispatchTeamMemberEntity("team-assigned", "tech-assigned", true))
+        val repository = RoomServiceLoopRepository(database, time)
+        val input = AssignedVisitInput(
+            siteId = "assigned-site", newCustomerSite = null, planIds = emptyList(),
+            tasks = listOf(AdHocWorkInput("Inspect site", WorkSubjectType.SITE)),
+            serviceDate = "2026-09-23", scheduledAtEpochMillis = null,
+            teamIds = listOf("team-assigned"), workAssignees = listOf(listOf("tech-assigned")),
+            managerReference = "JOB-1", instructions = "Check access",
+        )
+        val before = dao.visitCount()
+        assertTrue(runCatching { repository.createAssignedVisit(input.copy(workAssignees = listOf(listOf("outside-team")))) }.isFailure)
+        assertEquals(before, dao.visitCount())
+        val visitId = repository.createAssignedVisit(input)
+        assertEquals(before + 1, dao.visitCount())
+        assertEquals("BOOKED", dao.visit(visitId)?.state)
+        val work = dao.visitWorkItems(visitId).single()
+        val outbox = dispatch.outboxVisits().single { it.localVisitId == visitId }
+        val overlayItem = dispatch.outboxItems(outbox.dispatchVisitId).single()
+        assertEquals(work.id, overlayItem.localWorkItemId)
+        assertEquals("Inspect site", work.serviceNameSnapshot)
+        assertEquals("JOB-1", outbox.managerReference)
+        assertEquals(listOf("tech-assigned"), dispatch.outboxItemAssignees(overlayItem.dispatchItemId).map { it.technicianId })
     }
 
     @Test fun localIdentityAndTrustedIdsAreStableAndManageable() = runTest {
@@ -121,6 +171,55 @@ class B045SlsyncTest {
         assertEquals(local.technicianId, store.localIdentity().technicianId)
     }
 
+    @Test fun recoveryV18RoundTripPreservesB049HistoryAndOwnedDerivative() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.insertCustomers(listOf(CustomerEntity("b049-customer", "CU-B049", "B049 customer")))
+        dao.insertCustomerContacts(listOf(
+            CustomerContactEntity("b049-contact", "b049-customer", "Ada", "EMAIL", "ada@example.test", 1, 2, "Internal instructions", 1),
+            CustomerContactEntity("b049-contact-2", "b049-customer", "Bea", "PHONE", "+40123456789", 2, 2, null, 2),
+        ))
+        val result = RemoteFinalResultEntity(
+            id = "b049-remote", resultId = "b049-result", sourceFinalRevisionId = "b049-revision", dispatchVisitId = "b049-dispatch-visit", dispatchItemId = "b049-dispatch-item",
+            localVisitId = null, localWorkItemId = null, technicianId = exporterId, technicianName = "Ada", technicianDesignation = null,
+            customerId = "b049-customer", customerSnapshotJson = "{}", siteSnapshotJson = "{}", subjectSnapshotJson = "{}",
+            serviceDate = "2026-09-22", outcome = "PERFORMED", workPerformed = "Inspected", notPerformedReason = null,
+            checklistJson = "[]", findingsJson = "[]", partsJson = "[]", internalNotes = "Private history", followUpsJson = "[]", recurrenceJson = "{}", provenanceJson = "{}", importedAtEpochMillis = 3,
+        )
+        dao.insertRemoteFinalResult(result)
+        val receipt = WorkResultReceiptEntity("b049-receipt", "b049-package", "b049-result", "b049-revision", exporterId, exporterId, "b049-dispatch-visit", "b049-dispatch-item", 1, "material", 3, "payload", "APPLIED", null, 3, null)
+        dao.insertWorkResultReceipt(receipt)
+        val report = AggregateReportEntity("b049-aggregate", "b049-customer", "{}", null, null, null, null, "{}", 4, "READY")
+        dao.insertAggregateReport(report)
+        val source = AggregateReportSourceEntity("b049-aggregate", 1, "b049-revision", "REMOTE", "b049-dispatch-visit", "b049-remote")
+        dao.insertAggregateSources(listOf(source))
+        dao.insertAggregateRendition(AggregateReportRenditionEntity("b049-rendition", "b049-aggregate", null, null, null, null, 4, "PENDING", null))
+        val derivativeBytes = "retained B049 evidence".toByteArray()
+        val derivativePath = "retained/b049.jpg"
+        File(attachmentRoot, derivativePath).apply { parentFile!!.mkdirs(); writeBytes(derivativeBytes) }
+        val derivativeHash = java.security.MessageDigest.getInstance("SHA-256").digest(derivativeBytes).joinToString("") { "%02x".format(it) }
+        val retained = RetainedImageEntity("b049-retained", "FINAL_PHOTO", "b049-source-photo", null, 5, derivativePath, derivativeHash, derivativeBytes.size.toLong(), 12, 8, "image/jpeg", 4)
+        dao.insertRetainedImage(retained)
+
+        val recovery = RecoveryPackage(database, attachmentRoot)
+        val passphrase = "B049 recovery round trip".toCharArray()
+        val inspection = recovery.inspect(recovery.create(passphrase, false).bytes, passphrase)
+        assertTrue(inspection.complete)
+        dao.renameCustomer("b049-customer", "Changed after backup")
+        File(attachmentRoot, derivativePath).delete()
+        recovery.restore(inspection)
+
+        assertEquals("B049 customer", dao.customer("b049-customer")?.name)
+        assertEquals(listOf("b049-contact", "b049-contact-2"), dao.customerContacts("b049-customer").map { it.id })
+        assertEquals("Internal instructions", dao.customerContacts("b049-customer").first().notes)
+        assertEquals(listOf(1, 2), dao.customerContacts("b049-customer").map { it.position })
+        assertEquals(result, dao.remoteFinalResult("b049-result", "b049-revision"))
+        assertEquals(receipt, dao.workResultReceipt("b049-result", "b049-revision"))
+        assertEquals(report, dao.aggregateReport("b049-aggregate"))
+        assertEquals(listOf(source), dao.aggregateSources("b049-aggregate"))
+        assertEquals(retained, dao.retainedImage("FINAL_PHOTO", "b049-source-photo"))
+        assertEquals(derivativeBytes.toList(), File(attachmentRoot, derivativePath).readBytes().toList())
+    }
+
     @Test fun fullWorkspaceV1IsReadableButHasNoSourceId() {
         val legacy = asLegacyV1(ServiceLoopSyncCodec.encode(packageValue()))
         val decoded = ServiceLoopSyncCodec.decode(legacy)
@@ -140,7 +239,7 @@ class B045SlsyncTest {
         RecoveryPackage(database, attachmentRoot).normalizeTrustedServiceLoopIds(root)
 
         val tables = root.getJSONArray("tables")
-        assertEquals(17, root.getInt("schemaVersion"))
+        assertEquals(18, root.getInt("schemaVersion"))
         assertEquals("technician_identity", tables.getJSONObject(0).getString("name"))
         assertEquals(exporterId, tables.getJSONObject(0).getJSONArray("rows").getJSONObject(0).getString("technicianId"))
         assertEquals("trusted_service_loop_ids", tables.getJSONObject(1).getString("name"))
@@ -207,9 +306,16 @@ class B045SlsyncTest {
         val decodedWork = ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(work, exporterId))
         assertEquals(work, decodedWork)
         val transfer = InspectionTemplateTransfer("2026-09-22T10:00:00Z", listOf(InspectionTemplateTransferEntry("IT-1", "Safety", 1, listOf(DispatchInspectionItem(1, "Guard", "STATUS", null, true, null)))) )
-        val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer, exporterId))
+        val transferBytes = ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer, exporterId)
+        assertEquals("DATA_TRANSFER", ServiceLoopSyncEnvelopeCodec.decode(transferBytes).manifest.purpose)
+        val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(transferBytes)
         assertEquals(transfer.generatedAt, decodedTemplates.generatedAt)
         assertEquals(transfer.templates.single().copy(fingerprint = InspectionTemplateCodec.fingerprint(transfer.templates.single())), decodedTemplates.templates.single())
+        val legacyBytes = ServiceLoopSyncEnvelopeCodec.encode(
+            ServiceLoopSyncManifest("legacy-template-share", "Legacy templates", "TEMPLATE_SHARE", transfer.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
+            mapOf("inspections" to InspectionTemplateCodec.encode(transfer)),
+        )
+        assertEquals(decodedTemplates, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(legacyBytes))
     }
 
     @Test fun purposeRoutingRejectsUnknownAndFamilyFilteringKeepsReferencesValid() {
@@ -259,7 +365,7 @@ class B045SlsyncTest {
             customers = listOf(SyncCustomer("customer-1", "CU-001", "Customer One", null, null, null, null, "STANDARD", "ACTIVE")),
             sites = listOf(SyncSite("site-1", "customer-1", "ST-001", "Main site", "Test address", null, null, null, null, true, "ACTIVE")),
             equipment = listOf(SyncEquipment("equipment-1", "site-1", "EQ-001", "unit-1", "Boiler", "Maker", "Model", "Serial", null, "ACTIVE")),
-            customerContacts = listOf(SyncCustomerContact("contact-1", "customer-1", "office contact", "EMAIL", "office@example.com")),
+            customerContacts = listOf(SyncCustomerContact("contact-1", "customer-1", "office contact", "EMAIL", "office@example.com", position = 1)),
         ),
         inspections = SyncInspections(listOf(SyncTemplate("template-1", "IT-001", "Annual inspection", "ACTIVE", 1, listOf(SyncTemplateItem(1, "Condition", "STATUS", null, true, null))))),
         plans = SyncPlans(listOf(SyncPlan("plan-1", "P-001", "equipment-1", "Annual service", 1, "YEARS", "2026-09-22", "template-1", "ACTIVE"))),

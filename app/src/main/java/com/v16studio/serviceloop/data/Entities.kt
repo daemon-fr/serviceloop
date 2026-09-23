@@ -22,7 +22,7 @@ data class CustomerEntity(
 @Entity(
     tableName = "customer_contacts",
     foreignKeys = [ForeignKey(CustomerEntity::class, ["id"], ["customerId"], onDelete = ForeignKey.CASCADE)],
-    indices = [Index("customerId")],
+    indices = [Index("customerId"), Index(value = ["customerId", "position"], unique = true)],
 )
 data class CustomerContactEntity(
     @PrimaryKey val id: String,
@@ -32,6 +32,8 @@ data class CustomerContactEntity(
     val value: String,
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
+    val notes: String? = null,
+    @ColumnInfo(defaultValue = "0") val position: Int = 0,
 )
 
 @Entity(

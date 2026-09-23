@@ -39,6 +39,7 @@ import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.ServiceLoopApplication
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.CustomerType
+import com.v16studio.serviceloop.domain.OperationalWorkClassifier
 import com.v16studio.serviceloop.domain.WorkSubjectType
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -76,11 +77,13 @@ internal fun dispatchService(context:Context)=DispatchPackageService((context.ap
 @Composable internal fun DispatchOutboxScreen(padding:PaddingValues,nav:NavHostController,businessDate:LocalDate,serviceOverride:DispatchPackageService?=null,databaseOverride:ServiceLoopDatabase?=null,canConcludeDelegatedWork:Boolean=true){
     val context=LocalContext.current;val svc=remember(serviceOverride){serviceOverride?:dispatchService(context)};val db=databaseOverride?:(context.applicationContext as ServiceLoopApplication).container.database;val scope=rememberCoroutineScope();val lifecycleOwner=LocalLifecycleOwner.current
     var outbox by remember{mutableStateOf(emptyList<DispatchOutboxVisitEntity>())};var sites by remember{mutableStateOf(emptyList<SiteEntity>())};var customers by remember{mutableStateOf(emptyList<CustomerEntity>())};var itemCounts by remember{mutableStateOf(emptyMap<String,Int>())}
+    var canonicalVisits by remember { mutableStateOf(emptyMap<String, WorkingVisitEntity>()) }
+    var receivedCounts by remember { mutableStateOf(emptyMap<String, Int>()) }
     var search by rememberSaveable{mutableStateOf("")};var statusFilter by rememberSaveable{mutableStateOf("Active")};var dateFilter by rememberSaveable{mutableStateOf("All dates")};var customStart by rememberSaveable{mutableStateOf(businessDate.toString())};var customEnd by rememberSaveable{mutableStateOf(businessDate.plusDays(7).toString())};var checked by remember{mutableStateOf(setOf<String>())};var pendingStatusAction by remember{mutableStateOf<String?>(null)};var cancelReason by rememberSaveable{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)}
-    fun reload(){scope.launch{withContext(Dispatchers.IO){outbox=svc.outboxVisits();sites=db.serviceLoopDao().allSites();customers=db.serviceLoopDao().allCustomers();itemCounts=outbox.associate{it.dispatchVisitId to svc.outboxItems(it.dispatchVisitId).size}}}}
+    fun reload(){scope.launch{withContext(Dispatchers.IO){outbox=svc.outboxVisits();sites=db.serviceLoopDao().allSites();customers=db.serviceLoopDao().allCustomers();itemCounts=outbox.associate{it.dispatchVisitId to svc.outboxItems(it.dispatchVisitId).size};receivedCounts=outbox.associate{it.dispatchVisitId to db.serviceLoopDao().appliedWorkResultReceipts(it.dispatchVisitId).map { receipt -> receipt.dispatchItemId }.distinct().size};canonicalVisits=outbox.mapNotNull{row->row.localVisitId?.let{db.serviceLoopDao().visit(it)}?.let{row.dispatchVisitId to it}}.toMap()}}}
     LaunchedEffect(Unit){reload()};DisposableEffect(lifecycleOwner){val observer=LifecycleEventObserver{_,event->if(event==Lifecycle.Event.ON_RESUME)reload()};lifecycleOwner.lifecycle.addObserver(observer);onDispose{lifecycleOwner.lifecycle.removeObserver(observer)}}
     val today=businessDate;val monday=today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));val customRange=runCatching{LocalDate.parse(customStart)..LocalDate.parse(customEnd)}.getOrNull();val siteMap=sites.associateBy{it.id};val customerMap=customers.associateBy{it.id};val needle=search.trim().lowercase()
-    val visible=outbox.filter{visit->val statusMatch=when(statusFilter){"Active"->visit.outboxStatus in setOf(DispatchOutboxStatus.DRAFT,DispatchOutboxStatus.DISPATCHED);"Draft"->visit.outboxStatus==DispatchOutboxStatus.DRAFT;"Dispatched"->visit.outboxStatus==DispatchOutboxStatus.DISPATCHED;"Canceled"->visit.outboxStatus==DispatchOutboxStatus.CANCELED;"Concluded"->visit.outboxStatus==DispatchOutboxStatus.CONCLUDED;else->true};val date=LocalDate.parse(visit.serviceDate);val dateMatch=when(dateFilter){"Today"->date==today;"Tomorrow"->date==today.plusDays(1);"This week"->date in monday..monday.plusDays(6);"Next 7 days"->date in today..today.plusDays(6);"Custom range"->customRange?.let{date in it}==true;else->true};val site=siteMap[visit.siteId];val customer=site?.let{customerMap[it.customerId]};val searchMatch=needle.isEmpty()||listOf(visit.managerReference,site?.reference,site?.name,customer?.reference,customer?.name).any{it?.lowercase()?.contains(needle)==true};statusMatch&&dateMatch&&searchMatch}.sortedWith(compareBy({it.serviceDate},{it.appointmentLocalTime.orEmpty()},{it.createdAtEpochMillis},{it.dispatchVisitId}))
+    val visible=outbox.filter{visit->val statusMatch=when(statusFilter){"Active"->visit.outboxStatus in setOf(DispatchOutboxStatus.DRAFT,DispatchOutboxStatus.DISPATCHED);"Draft"->visit.outboxStatus==DispatchOutboxStatus.DRAFT;"Dispatched"->visit.outboxStatus==DispatchOutboxStatus.DISPATCHED;"Canceled"->visit.outboxStatus==DispatchOutboxStatus.CANCELED;"Concluded"->visit.outboxStatus==DispatchOutboxStatus.CONCLUDED;else->true};val canonical=canonicalVisits[visit.dispatchVisitId];val date=LocalDate.parse(canonical?.actualServiceDate?:visit.serviceDate);val dateMatch=when(dateFilter){"Today"->date==today;"Tomorrow"->date==today.plusDays(1);"This week"->date in monday..monday.plusDays(6);"Next 7 days"->date in today..today.plusDays(6);"Custom range"->customRange?.let{date in it}==true;else->true};val site=siteMap[canonical?.siteId?:visit.siteId];val customer=site?.let{customerMap[it.customerId]};val searchMatch=needle.isEmpty()||listOf(visit.managerReference,site?.reference,site?.name,customer?.reference,customer?.name).any{it?.lowercase()?.contains(needle)==true};statusMatch&&dateMatch&&searchMatch}.sortedWith(compareBy({canonicalVisits[it.dispatchVisitId]?.actualServiceDate?:it.serviceDate},{it.appointmentLocalTime.orEmpty()},{it.createdAtEpochMillis},{it.dispatchVisitId}))
     LaunchedEffect(visible.map{it.dispatchVisitId}){checked=checked.intersect(visible.map{it.dispatchVisitId}.toSet())};val selectedRows=visible.filter{it.dispatchVisitId in checked};val listState=rememberLazyListState();val actionState=rememberWorkNewVisitActionState(listState,DISPATCH_NEW_VISIT_SLOT_KEY);val listBottomPadding=if(selectedRows.isEmpty())workNewVisitListBottomPadding(actionState)else ServiceLoopUiTokens.Space.sm
     when(pendingStatusAction){
         "cancel" -> DispatchCancellationReasonDialog("Cancel selected Visits",cancelReason,selectedRows.any{it.outboxStatus==DispatchOutboxStatus.DISPATCHED},"Apply",onDismiss={pendingStatusAction=null;cancelReason=""}){reason->
@@ -117,28 +120,47 @@ internal fun dispatchService(context:Context)=DispatchPackageService((context.ap
         LazyColumn(Modifier.fillMaxSize().testTag("dispatch-outbox-list"),state=listState,contentPadding=PaddingValues(ServiceLoopUiTokens.Layout.pageInsetCompact,0.dp,ServiceLoopUiTokens.Layout.pageInsetCompact,listBottomPadding),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)){
             if(outbox.isEmpty())item{ServiceLoopNotice("No dispatch visits yet","Create a visit when work is ready to prepare for technicians.",ServiceLoopNoticeKind.Info)}
             else if(visible.isEmpty())item{ServiceLoopNotice(if(search.isNotBlank())"No matching dispatch visits" else "No visits match these filters","Clear search or change the active filters.",ServiceLoopNoticeKind.Info)}
-            visible.groupBy{it.serviceDate}.forEach { (date, visits) ->
+            visible.groupBy{canonicalVisits[it.dispatchVisitId]?.actualServiceDate?:it.serviceDate}.forEach { (date, visits) ->
                 item("heading-$date") { Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(dispatchDayHeading(date),style=ServiceLoopUiTokens.DayHeadingStyle,modifier=Modifier.weight(1f));Text("${visits.size} ${if(visits.size==1)"VISIT" else "VISITS"}",style=ServiceLoopUiTokens.DayHeadingStyle,color=LocalServiceLoopTokens.current.textSecondary)} }
                 items(visits,key={it.dispatchVisitId}){visit->
-                    val site=siteMap[visit.siteId];val customer=site?.let{customerMap[it.customerId]};val selected=visit.dispatchVisitId in checked
-                    ServiceLoopSurfaceCard(Modifier.testTag("dispatch-outbox-visit-${visit.dispatchVisitId}"),selected=selected){
-                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.Top){
-                            Box(Modifier.size(ServiceLoopUiTokens.Size.touchMin),contentAlignment=Alignment.Center){Checkbox(selected,{isChecked->checked=if(isChecked)checked+visit.dispatchVisitId else checked-visit.dispatchVisitId},Modifier.testTag("dispatch-select-${visit.dispatchVisitId}").semantics{contentDescription="Select visit ${visit.managerReference?:visit.dispatchVisitId}"})}
-                            Column(Modifier.weight(1f).serviceLoopFocusRing(ServiceLoopUiTokens.Radius.card).clickable(role=Role.Button){nav.navigate("dispatch/visit/${visit.dispatchVisitId}")}.testTag("dispatch-open-${visit.dispatchVisitId}").semantics{contentDescription="Open visit ${visit.managerReference?:visit.dispatchVisitId}"},verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)){
-                                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.Top){Text(visit.appointmentLocalTime?:"Date only",style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f));ServiceLoopStatusBadge(visit.outboxStatus.name)}
-                                 Text(if(customer?.let{CustomerType.fromCode(it.customerType)}==CustomerType.ONE_TIME)"${customer?.name?:"Customer unavailable"} · One-time" else customer?.name?:"Customer unavailable",style=MaterialTheme.typography.titleMedium)
-                                Text(listOfNotNull(site?.name,site?.address).joinToString(" · ").ifBlank{"Site unavailable"},color=LocalServiceLoopTokens.current.textSecondary)
-                                Text("${visit.managerReference?:visit.dispatchVisitId.take(8)} · ${itemCounts[visit.dispatchVisitId]?:0} ${if((itemCounts[visit.dispatchVisitId]?:0)==1)"work item" else "work items"}${visit.lastExportedGeneration?.let{" · Version $it"}.orEmpty()}",color=LocalServiceLoopTokens.current.textSecondary,style=MaterialTheme.typography.bodyMedium)
-                                 if((itemCounts[visit.dispatchVisitId]?:0)==0)Text("Needs a work item before export",color=LocalServiceLoopTokens.current.errorInk,style=MaterialTheme.typography.bodyMedium)
-                                 if(visit.outboxStatus==DispatchOutboxStatus.CANCELED){
-                                     when{
-                                         visit.cancellationExportPending->Text("Cancellation export pending",color=LocalServiceLoopTokens.current.warningInk,style=MaterialTheme.typography.bodyMedium)
-                                         visit.lastExportedGeneration!=null->Text("Cancellation exported · Version ${visit.lastExportedGeneration}",color=LocalServiceLoopTokens.current.textSecondary,style=MaterialTheme.typography.bodyMedium)
-                                     }
-                                 }
-                            }
-                        }
+                    val canonical=canonicalVisits[visit.dispatchVisitId]
+                    val site=siteMap[canonical?.siteId?:visit.siteId];val customer=site?.let{customerMap[it.customerId]};val selected=visit.dispatchVisitId in checked
+                    val appointmentInstant = runCatching {
+                        canonical?.scheduledAtEpochMillis?.let(java.time.Instant::ofEpochMilli)
+                            ?: visit.appointmentLocalTime?.let { LocalDate.parse(visit.serviceDate).atTime(LocalTime.parse(it)).atZone(ZoneId.of(visit.appointmentZoneId)).toInstant() }
+                    }.getOrNull()
+                    val urgency = if (visit.outboxStatus == DispatchOutboxStatus.DRAFT || visit.outboxStatus == DispatchOutboxStatus.DISPATCHED)
+                        OperationalWorkClassifier.classifyBookedVisit(canonical?.actualServiceDate?:visit.serviceDate, appointmentInstant?.toEpochMilli(), businessDate, java.time.Instant.now(), ZoneId.systemDefault(), 14)
+                    else null
+                    val cancellation = when {
+                        visit.outboxStatus != DispatchOutboxStatus.CANCELED -> null
+                        visit.cancellationExportPending -> "Cancellation export pending"
+                        visit.lastExportedGeneration != null -> "Cancellation exported · Version ${visit.lastExportedGeneration}"
+                        else -> null
                     }
+                    ServiceLoopEntityRecord(
+                        title = canonical?.scheduledAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(ZoneId.of(canonical.appointmentZoneId?:visit.appointmentZoneId)).toLocalTime().withSecond(0).withNano(0).toString() } ?: if(canonical!=null) "Date only" else visit.appointmentLocalTime ?: "Date only",
+                        context = listOfNotNull(
+                            (customer?.name ?: "Customer unavailable") + if (customer?.let { CustomerType.fromCode(it.customerType) } == CustomerType.ONE_TIME) " · One-time" else "",
+                            listOfNotNull(site?.name, site?.address).joinToString(" · ").ifBlank { "Site unavailable" },
+                        ).joinToString("\n"),
+                        metadata = listOfNotNull(
+                            "${visit.managerReference ?: visit.dispatchVisitId.take(8)} · ${itemCounts[visit.dispatchVisitId] ?: 0} ${if ((itemCounts[visit.dispatchVisitId] ?: 0) == 1) "work item" else "work items"}",
+                            visit.lastExportedGeneration?.let { "Version $it" },
+                            receivedCounts[visit.dispatchVisitId]?.takeIf { it > 0 }?.let { "$it/${itemCounts[visit.dispatchVisitId] ?: 0} results received" },
+                            if ((itemCounts[visit.dispatchVisitId] ?: 0) == 0) "Needs a work item before export" else null,
+                            cancellation,
+                        ).joinToString(" · "),
+                        status = if (visit.outboxStatus == DispatchOutboxStatus.DISPATCHED && (receivedCounts[visit.dispatchVisitId] ?: 0) > 0 && (receivedCounts[visit.dispatchVisitId] ?: 0) < (itemCounts[visit.dispatchVisitId] ?: 0)) "Awaiting results" else visit.outboxStatus.name,
+                        modifier = Modifier.testTag("dispatch-outbox-visit-${visit.dispatchVisitId}"),
+                        selected = selected,
+                        actionDescription = "Open visit ${visit.managerReference ?: visit.dispatchVisitId}",
+                        selectionChecked = selected,
+                        onSelectionChange = { isChecked -> checked = if (isChecked) checked + visit.dispatchVisitId else checked - visit.dispatchVisitId },
+                        selectionTestTag = "dispatch-select-${visit.dispatchVisitId}",
+                        operationalState = urgency,
+                        onClick = { nav.navigate(canonical?.let { "visit/${it.id}" } ?: "dispatch/visit/${visit.dispatchVisitId}") },
+                    )
                 }
             }
             item(key=DISPATCH_NEW_VISIT_SLOT_KEY){WorkNewVisitReservedSlot({nav.navigate("dispatch/visit/new")},slotTestTag="dispatch-new-visit-slot",actionTestTag="dispatch-new-visit-bottom")}

@@ -62,7 +62,7 @@ class ServiceLoopAdaptiveTabsTest {
 
         cases.forEach { (width, fontScale) ->
             compose.runOnUiThread {
-        compose.setContent {
+                compose.activity.setContent {
                     val deviceDensity = LocalDensity.current.density
                     val fittedDensity = deviceDensity * minOf(1f, 400f / width)
                     CompositionLocalProvider(LocalDensity provides Density(fittedDensity, fontScale)) {
@@ -225,13 +225,13 @@ class ServiceLoopAdaptiveTabsTest {
             businessZoneId = "Europe/Bucharest",
         )
         val viewModel = ServiceLoopViewModel(RetryRepository()) {}
-        compose.setContent {
+        compose.runOnUiThread { compose.activity.setContent {
             ServiceLoopTheme {
                 Box(Modifier.width(360.dp).fillMaxHeight().testTag("due-screen-with-navigation-inset")) {
                     DueServicesScreen(rows, PaddingValues(bottom = 80.dp), state, viewModel, rememberNavController())
                 }
             }
-        }
+        } }
         compose.waitForIdle()
 
         assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())

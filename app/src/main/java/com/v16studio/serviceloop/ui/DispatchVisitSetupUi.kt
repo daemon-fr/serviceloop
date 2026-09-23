@@ -220,7 +220,7 @@ internal fun DispatchVisitEditorScreen(
     val sites = sitesOverride.ifEmpty { localSites }
     val dueServices = (plannedWorkState as? DueServicesProjection.Available)?.rows.orEmpty()
     val templates = templatesOverride
-    val readOnly = loadedVisit?.outboxStatus in setOf(DispatchOutboxStatus.CONCLUDED, DispatchOutboxStatus.CANCELED)
+    val readOnly = loadedVisit?.localVisitId != null || loadedVisit?.outboxStatus in setOf(DispatchOutboxStatus.CONCLUDED, DispatchOutboxStatus.CANCELED)
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
     val participants = teams.filter { it.team.id in selectedTeams }.flatMap { it.members.map { member -> member.first } }.distinctBy { it.technicianId }
     val dateValid = runCatching { LocalDate.parse(draft.serviceDate) }.isSuccess
@@ -336,7 +336,8 @@ internal fun DispatchVisitEditorScreen(
                     val visit = requireNotNull(loadedVisit)
                     ServiceLoopStatusBadge(visit.outboxStatus.name)
                     if (visit.outboxStatus == DispatchOutboxStatus.DISPATCHED) ServiceLoopNotice("Dispatched", "Material changes create a later version only when this visit is exported again.", ServiceLoopNoticeKind.Info)
-                    if (readOnly) ServiceLoopNotice("Read-only", "Canceled and Concluded visits cannot be edited.", ServiceLoopNoticeKind.Info)
+                    if (loadedVisit?.localVisitId != null) ServiceLoopNavigationButton("Open canonical Visit", { nav.navigate("visit/${loadedVisit?.localVisitId}") }, Modifier.fillMaxWidth())
+                    if (readOnly) ServiceLoopNotice("Read-only", if (loadedVisit?.localVisitId != null) "Edit this Visit from its canonical record." else "Canceled and Concluded visits cannot be edited.", ServiceLoopNoticeKind.Info)
                 }
             }
         },
@@ -387,7 +388,7 @@ internal fun DispatchVisitEditorScreen(
 }
 
 @Composable
-private fun DispatchTeamSelectionDialog(teams: List<DispatchTeamDetail>, selected: Set<String>, onDismiss: () -> Unit, onApply: (Set<String>) -> Unit) {
+internal fun DispatchTeamSelectionDialog(teams: List<DispatchTeamDetail>, selected: Set<String>, onDismiss: () -> Unit, onApply: (Set<String>) -> Unit) {
     var staged by remember(selected) { mutableStateOf(selected) }
     AlertDialog(
         modifier = Modifier.testTag("dispatch-team-picker"), onDismissRequest = onDismiss, title = { Text("Choose teams") },
@@ -398,7 +399,7 @@ private fun DispatchTeamSelectionDialog(teams: List<DispatchTeamDetail>, selecte
 }
 
 @Composable
-private fun DispatchAssigneeDialog(participants: List<com.v16studio.serviceloop.data.DispatchTechnicianEntity>, selected: Set<String>, onDismiss: () -> Unit, onApply: (Set<String>) -> Unit) {
+internal fun DispatchAssigneeDialog(participants: List<com.v16studio.serviceloop.data.DispatchTechnicianEntity>, selected: Set<String>, onDismiss: () -> Unit, onApply: (Set<String>) -> Unit) {
     var staged by remember(selected) { mutableStateOf(selected) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Assign work") },

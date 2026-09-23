@@ -200,7 +200,7 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
                 }
             }
         }
-        item { SectionTitle("Data & automation"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar integration",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")}; ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+        item { SectionTitle("Data & automation"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar integration",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")}; ServiceLoopDenseNavigableRow("Image cleanup",context="Keep report-quality copies of finalized photos",leadingIcon=ServiceLoopIcons.Photo,modifier=Modifier.testTag("settings-image-cleanup")){nav.navigate("image-cleanup")}; ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
     }
 }
 

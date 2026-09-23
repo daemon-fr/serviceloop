@@ -126,7 +126,11 @@ internal class ServiceLoopSyncImporter(
 
     private suspend fun insertRegister(register: SyncRegister, importedAt: Long) {
         dao.insertCustomers(register.customers.map { CustomerEntity(it.id, it.reference, it.name, it.contactName, it.phone, it.email, it.privateNote, it.state, it.customerType) })
-        if (register.customerContacts.isNotEmpty()) dao.insertCustomerContacts(register.customerContacts.map { CustomerContactEntity(it.id, it.customerId, it.personName, it.channel, it.value, importedAt, importedAt) })
+        if (register.customerContacts.isNotEmpty()) dao.insertCustomerContacts(register.customerContacts.groupBy { it.customerId }.flatMap { (_, contacts) ->
+            contacts.sortedWith(compareBy<SyncCustomerContact>({ it.position.takeIf { position -> position > 0 } ?: Int.MAX_VALUE }, { it.id })).mapIndexed { index, contact ->
+                CustomerContactEntity(contact.id, contact.customerId, contact.personName, contact.channel, contact.value, importedAt, importedAt, contact.notes, index + 1)
+            }
+        })
         dao.insertSites(register.sites.map { SiteEntity(it.id, it.customerId, it.reference, it.name, it.address, it.privateAccessNote, it.contactName, it.phone, it.email, it.isDefault, it.state) })
         dao.insertEquipment(register.equipment.map { EquipmentEntity(it.id, it.siteId, it.reference, it.technicianIdentifier, it.name, it.make, it.model, it.serialNumber, it.privateNote, it.state) })
     }

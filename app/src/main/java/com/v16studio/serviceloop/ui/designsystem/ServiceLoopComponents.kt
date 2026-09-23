@@ -291,7 +291,8 @@ fun ServiceLoopCheckbox(
 ) {
     val colors = LocalServiceLoopTokens.current
     val glyphTint = when {
-        !enabled -> colors.disabledText
+        !enabled && checked -> colors.disabledText.copy(alpha = .55f)
+        !enabled -> colors.disabledText.copy(alpha = .28f)
         checked -> colors.action
         else -> colors.recordBorder.copy(alpha = .55f)
     }
@@ -664,6 +665,7 @@ fun ServiceLoopEntityRecord(
     actionDescription: String? = null,
     selectionChecked: Boolean? = null,
     onSelectionChange: ((Boolean) -> Unit)? = null,
+    selectionTestTag: String = "entity-record-selection",
     operationalState: OperationalWorkState? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -713,7 +715,7 @@ fun ServiceLoopEntityRecord(
                 checked = selectionChecked!!,
                 onCheckedChange = onSelectionChange,
                 modifier = Modifier.align(Alignment.TopStart)
-                    .testTag("entity-record-selection")
+                    .testTag(selectionTestTag)
                     .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field),
                 enabled = enabled,
                 contentDescription = "Select $title",

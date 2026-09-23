@@ -138,6 +138,7 @@ interface ServiceLoopRepository {
     suspend fun createCustomerContact(input: CustomerContactInput): String = error("Customer contacts unavailable")
     suspend fun updateCustomerContact(id: String, input: CustomerContactInput): Long = error("Customer contacts unavailable")
     suspend fun deleteCustomerContact(customerId: String, contactId: String): Long = error("Customer contacts unavailable")
+    suspend fun moveCustomerContact(customerId: String, contactId: String, direction: Int): Long = error("Customer contact ordering unavailable")
     suspend fun createSite(customerId: String, input: SiteInput): String = error("Site editor unavailable")
     suspend fun updateSite(id: String, input: SiteInput): Long = error("Site editor unavailable")
     suspend fun createEquipment(siteId: String, input: EquipmentInput): String = error("Equipment editor unavailable")
@@ -153,6 +154,7 @@ interface ServiceLoopRepository {
     suspend fun cloneTemplate(id: String): String = error("Template clone unavailable")
     suspend fun createVisit(planIds: List<String>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
     suspend fun createVisitForSite(siteId: String, planIds: List<String>, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String = error("Visit setup unavailable")
+    suspend fun createAssignedVisit(input: AssignedVisitInput): String = error("Assigned Visit setup unavailable")
     @Suppress("DEPRECATION")
     suspend fun createNewCustomerVisit(input: CustomerWithFirstSiteInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long? = null): String =
         createNewCustomerVisit(
@@ -393,7 +395,7 @@ class RoomServiceLoopRepository(
         val equipment = siteEntities.flatMap { site -> dao.equipmentForSite(site.id).map { item -> EquipmentSummary(item.id, item.name, item.reference, item.technicianIdentifier, site.name, customer.name, dao.plansForEquipment(item.id).filter { it.state == "ACTIVE" }.minOfOrNull { it.currentDueDate }, customerType) } }
         val followUps = dao.followUpsForCustomer(id).filter { it.state == "OPEN" }.map { followUpDetail(it) }
         val contacts = dao.contactNotesForCustomer(id).take(5).map { ContactNoteDetail(it.id, it.reference, it.channel, it.occurredAtEpochMillis, it.outcome, it.privateNote.orEmpty(), it.enteredInError, it.errorReason) }
-        val repeatableContacts = dao.customerContacts(id).map { CustomerContactDetail(it.id, it.personName.orEmpty(), it.channel, it.value, it.modifiedAtEpochMillis) }
+        val repeatableContacts = dao.customerContacts(id).map { CustomerContactDetail(it.id, it.personName.orEmpty(), it.channel, it.value, it.modifiedAtEpochMillis, it.notes.orEmpty(), it.position) }
         val hasServicePlans = dao.servicePlanCountForCustomer(id) > 0
         return CustomerDetail(customer.id, customer.reference, customer.name, customer.contactName.orEmpty(), customer.phone.orEmpty(), customer.email.orEmpty(), customer.privateNote.orEmpty(), sites, equipment, followUps, contacts, customer.state, customerType, canMarkOneTime = customerType == CustomerType.ONE_TIME || !hasServicePlans, oneTimeBlockReason = if (customerType == CustomerType.STANDARD && hasServicePlans) "This customer has recurring service plans and cannot be marked one-time." else null, repeatableContacts = repeatableContacts)
     }
@@ -540,11 +542,15 @@ class RoomServiceLoopRepository(
         require(input.channel in setOf("PHONE", "SMS", "EMAIL", "WHATSAPP", "OTHER")) { "Choose a supported contact channel" }
         require(input.value.trim().isNotEmpty() && input.value.trim().length <= 300) { "Contact value must be between 1 and 300 characters" }
         require(input.personName.trim().length <= 200) { "Contact name must be 200 characters or fewer" }
-        dao.customer(input.customerId) ?: error("Customer no longer exists")
+        require(input.notes.trim().length <= 2000) { "Contact notes must be 2000 characters or fewer" }
         writeGate.beforeWrite()
         val now = businessTime.instant().toEpochMilli()
         val id = UUID.randomUUID().toString()
-        dao.insertCustomerContact(CustomerContactEntity(id, input.customerId, clean(input.personName), input.channel, input.value.trim(), now, now))
+        database.withTransaction {
+            dao.customer(input.customerId) ?: error("Customer no longer exists")
+            val position = dao.customerContacts(input.customerId).size + 1
+            dao.insertCustomerContact(CustomerContactEntity(id, input.customerId, clean(input.personName), input.channel, input.value.trim(), now, now, clean(input.notes), position))
+        }
         return id
     }
 
@@ -552,15 +558,43 @@ class RoomServiceLoopRepository(
         require(input.channel in setOf("PHONE", "SMS", "EMAIL", "WHATSAPP", "OTHER")) { "Choose a supported contact channel" }
         require(input.value.trim().isNotEmpty() && input.value.trim().length <= 300) { "Contact value must be between 1 and 300 characters" }
         require(input.personName.trim().length <= 200) { "Contact name must be 200 characters or fewer" }
+        require(input.notes.trim().length <= 2000) { "Contact notes must be 2000 characters or fewer" }
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
-        check(dao.updateCustomerContact(id, input.customerId, clean(input.personName), input.channel, input.value.trim(), now) == 1) { "Customer contact no longer exists" }
+        check(dao.updateCustomerContact(id, input.customerId, clean(input.personName), input.channel, input.value.trim(), clean(input.notes), now) == 1) { "Customer contact no longer exists" }
         return now
     }
 
     override suspend fun deleteCustomerContact(customerId: String, contactId: String): Long {
         writeGate.beforeWrite(); val now = businessTime.instant().toEpochMilli()
-        check(dao.deleteCustomerContact(contactId, customerId) == 1) { "Customer contact no longer exists" }
+        database.withTransaction {
+            check(dao.deleteCustomerContact(contactId, customerId) == 1) { "Customer contact no longer exists" }
+            normalizeCustomerContactPositions(customerId)
+        }
         return now
+    }
+
+    override suspend fun moveCustomerContact(customerId: String, contactId: String, direction: Int): Long {
+        require(direction == -1 || direction == 1)
+        writeGate.beforeWrite()
+        val now = businessTime.instant().toEpochMilli()
+        database.withTransaction {
+            val contacts = dao.customerContacts(customerId)
+            val index = contacts.indexOfFirst { it.id == contactId }
+            check(index >= 0) { "Customer contact no longer exists" }
+            val other = index + direction
+            if (other in contacts.indices) {
+                check(dao.setCustomerContactPosition(customerId, contactId, 0) == 1)
+                check(dao.setCustomerContactPosition(customerId, contacts[other].id, contacts[index].position) == 1)
+                check(dao.setCustomerContactPosition(customerId, contactId, contacts[other].position) == 1)
+            }
+        }
+        return now
+    }
+
+    private suspend fun normalizeCustomerContactPositions(customerId: String) {
+        val contacts = dao.customerContacts(customerId)
+        contacts.forEachIndexed { index, contact -> dao.setCustomerContactPosition(customerId, contact.id, -index - 1) }
+        contacts.forEachIndexed { index, contact -> dao.setCustomerContactPosition(customerId, contact.id, index + 1) }
     }
 
     override suspend fun createSite(customerId: String, input: SiteInput): String {
@@ -704,6 +738,47 @@ class RoomServiceLoopRepository(
         return database.withTransaction { createVisitForSiteInTransaction(siteId, planIds, adHocWork, state, serviceDate, scheduledAtEpochMillis, allowKnownEquipment = true) }
     }
 
+    override suspend fun createAssignedVisit(input: AssignedVisitInput): String {
+        require(input.teamIds.isNotEmpty()) { "Choose at least one Team" }
+        require(input.planIds.distinct().size == input.planIds.size) { "Duplicate planned work" }
+        require(input.workAssignees.size == input.planIds.size + input.tasks.size) { "Every work item needs an assignment choice" }
+        validateNewBookedVisitDate("BOOKED", input.serviceDate, businessTime.today())
+        writeGate.beforeWrite()
+        return database.withTransaction {
+            val teams = input.teamIds.distinct()
+            require(teams.all { dispatchDao.team(it) != null }) { "A selected Team no longer exists" }
+            val participants = dispatchDao.allTeamMembers().filter { it.teamId in teams }.map { it.technicianId }.toSet()
+            require(participants.isNotEmpty()) { "Selected Teams need at least one Technician" }
+            require(input.workAssignees.all { ids -> ids.distinct().size == ids.size && ids.all { it in participants } }) { "An item assignee is outside the selected Teams" }
+            val siteId = input.newCustomerSite?.let { createCustomerWithFirstSiteInTransaction(dao, it).site.id }
+                ?: requireNotNull(input.siteId) { "Choose a Site" }
+            val visitId = createVisitForSiteInTransaction(siteId, input.planIds, input.tasks, "BOOKED", input.serviceDate, input.scheduledAtEpochMillis, allowKnownEquipment = input.newCustomerSite == null, captureBookedTemplates = true)
+            val workItems = dao.visitWorkItems(visitId)
+            check(workItems.size == input.workAssignees.size)
+            val now = businessTime.instant().toEpochMilli()
+            val dispatchVisitId = UUID.randomUUID().toString()
+            val zone = businessTime.zoneId
+            val localTime = input.scheduledAtEpochMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalTime().withSecond(0).withNano(0).toString() }
+            dispatchDao.insertOutboxVisit(DispatchOutboxVisitEntity(
+                dispatchVisitId, clean(input.managerReference), siteId, input.serviceDate, localTime,
+                zone.id, clean(input.instructions), null, null, null, now, now, localVisitId = visitId,
+            ))
+            dispatchDao.insertOutboxVisitTeams(teams.map { DispatchOutboxVisitTeamEntity(dispatchVisitId, it) })
+            workItems.forEachIndexed { index, work ->
+                val dispatchItemId = UUID.randomUUID().toString()
+                val templateId = if (index < input.planIds.size) dao.plan(input.planIds[index])?.reusableTemplateId
+                    else input.tasks[index - input.planIds.size].reusableTemplateId
+                dispatchDao.insertOutboxItem(DispatchOutboxItemEntity(
+                    dispatchItemId, dispatchVisitId, index, work.equipmentId, work.serviceNameSnapshot,
+                    work.planReferenceSnapshot, work.dueDateSnapshot, work.subjectType,
+                    work.equipmentDescriptionSnapshot, templateId, work.id,
+                ))
+                dispatchDao.insertOutboxItemAssignees(input.workAssignees[index].map { DispatchOutboxItemAssigneeEntity(dispatchItemId, it) })
+            }
+            visitId
+        }
+    }
+
     override suspend fun createNewCustomerVisit(input: CustomerWithFirstSiteInput, adHocWork: List<AdHocWorkInput>, state: String, serviceDate: String, scheduledAtEpochMillis: Long?): String {
         require(adHocWork.isNotEmpty()) { "Add at least one task" }
         require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
@@ -824,6 +899,7 @@ class RoomServiceLoopRepository(
         serviceDate: String,
         scheduledAtEpochMillis: Long?,
         allowKnownEquipment: Boolean,
+        captureBookedTemplates: Boolean = false,
     ): String {
         require(state in setOf("BOOKED", "WORKING", "HISTORICAL"))
         validateNewBookedVisitDate(state, serviceDate, businessTime.today())
@@ -871,7 +947,7 @@ class RoomServiceLoopRepository(
             val equipment = planEquipment[index]
             val obligation = obligations[index]
             if (!historical) dao.insertVisitClaim(VisitClaimEntity(obligation.id, visitId, now))
-            val snapshotId = if (state == "BOOKED") null else captureTemplateSnapshot(plan.reusableTemplateId, visitId, plan.id, now, allowDisabled = true)
+            val snapshotId = if (state == "BOOKED" && !captureBookedTemplates) null else captureTemplateSnapshot(plan.reusableTemplateId, visitId, plan.id, now, allowDisabled = true)
             val workId = UUID.randomUUID().toString()
             val item = WorkItemEntity(
                 id = workId,
@@ -2015,7 +2091,7 @@ class RoomServiceLoopRepository(
         dao.insertFinalRecord(FinalRecordEntity(recordId, visitId, revisionId, now)); dao.insertFinalRevision(FinalRecordRevisionEntity(revisionId, recordId, 1, visit.reference, visit.actualServiceDate, now, visit.customerNameSnapshot, visit.siteNameSnapshot, visit.siteAddressSnapshot, profile.businessName, profile.technicianName, profile.phone.ifBlank { null }, profile.email.ifBlank { null }, profile.postalAddress.ifBlank { null }, profile.zoneId, null, visit.customerReferenceSnapshot, visit.siteReferenceSnapshot, technicianDesignation = technicianDesignation))
         if (dispatchBinding != null) {
             val identity = checkNotNull(dispatchIdentity)
-            dispatchDao.insertFinalDispatchVisit(FinalDispatchVisitEntity(revisionId, dispatchBinding.dispatchVisitId, dispatchBinding.appliedGeneration, dispatchBinding.managerReference, dispatchBinding.senderLabel, identity.technicianId, identity.displayName))
+            dispatchDao.insertFinalDispatchVisit(FinalDispatchVisitEntity(revisionId, dispatchBinding.dispatchVisitId, dispatchBinding.appliedGeneration, dispatchBinding.managerReference, dispatchBinding.senderLabel, identity.technicianId, identity.displayName, dispatchBinding.appliedMaterialHash, dispatchBinding.assignmentIssuerId))
         }
         prepared.forEachIndexed { index, p ->
             val finalItemId = stableId("final-work", revisionId, p.item.id); val fulfills = p.item.fulfillsCurrentObligation == true
@@ -2040,7 +2116,7 @@ class RoomServiceLoopRepository(
     override suspend fun finalRecordRevision(recordId: String, revisionId: String, renditionId: String?): FinalRecordDetail? {
         val record = dao.finalRecord(recordId) ?: return null; val revision = dao.finalRevision(revisionId)?.takeIf { it.recordId == recordId } ?: return null; val items = dao.finalWorkItems(revision.id)
         val dispatchItemByFinalId = dispatchDao.finalDispatchItems(revision.id).associateBy { it.finalWorkItemId }
-        val publicLines = items.map { item -> val dispatchItem=dispatchItemByFinalId[item.id]; PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { if (item.equipmentId == null) null else "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { PublicPhoto(it.storedRelativePath, it.sha256, it.byteSize, it.mimeType, it.caption, it.addedInCorrection, it.addedAtEpochMillis) }, historyOnly=item.planId!=null&&item.capturedObligationId==null, dispatchItemId=dispatchItem?.dispatchItemId, dispatchAssignment=dispatchItem?.let { if(it.assignmentMeaning=="EVERYONE") "Everyone" else { val people=DispatchPackageService(database).parseTech(it.assignedTechniciansJson);val duplicateNames=people.groupingBy{x->x.name}.eachCount();people.joinToString { t -> if(duplicateNames[t.name]!!>1) "${t.name} (${t.technicianId.take(8)})" else t.name } } }, dispatchDocumentationRole=dispatchItem?.localDocumentationRole, subjectType=WorkSubjectType.fromCode(item.subjectType), equipmentDescription=item.equipmentDescription) }
+        val publicLines = items.map { item -> val dispatchItem=dispatchItemByFinalId[item.id]; PublicWorkLine(item.position, item.equipmentName, item.equipmentReference, listOfNotNull(item.equipmentIdentifier, item.equipmentMake, item.equipmentModel, item.equipmentSerial).joinToString(" · ").ifBlank { if (item.equipmentId == null) null else "Not recorded" }, item.serviceName, item.outcome, item.publicWorkNote, item.notPerformedReason, item.fulfilledObligation, item.oldDueDate, item.nextDueDate, dao.finalChecklistItems(item.id).map { q -> PublicChecklistItem(q.position, q.label, q.responseType, q.unit, q.required, q.disposition, q.textValue ?: q.numberValue, q.reason) }, item.planReference, item.planId != null, dao.finalParts(item.id).map { PublicPart(it.description, it.quantity, it.unit) }, dao.finalPhotos(item.id).map { resolvedFinalPhoto(it) }, historyOnly=item.planId!=null&&item.capturedObligationId==null, dispatchItemId=dispatchItem?.dispatchItemId, dispatchAssignment=dispatchItem?.let { if(it.assignmentMeaning=="EVERYONE") "Everyone" else { val people=DispatchPackageService(database).parseTech(it.assignedTechniciansJson);val duplicateNames=people.groupingBy{x->x.name}.eachCount();people.joinToString { t -> if(duplicateNames[t.name]!!>1) "${t.name} (${t.technicianId.take(8)})" else t.name } } }, dispatchDocumentationRole=dispatchItem?.localDocumentationRole, subjectType=WorkSubjectType.fromCode(item.subjectType), equipmentDescription=item.equipmentDescription) }
         val finalDispatch = dispatchDao.finalDispatchVisit(revision.id)?.let { PublicDispatchProvenance(it.dispatchVisitId,it.generation,it.managerReference,it.senderLabel,it.documentingTechnicianId,it.documentingTechnicianName) }
         val model = PublicReportModel(record.id, revision.id, revision.revisionNumber, revision.visitReference, revision.actualServiceDate, revision.recordedAtEpochMillis, revision.businessName, revision.technicianName, listOfNotNull(revision.businessPhone, revision.businessEmail, revision.businessAddress).joinToString(" · "), revision.customerName, revision.siteName, revision.siteAddress, publicLines, revision.customerReference, revision.siteReference, record.voided, record.publicVoidReason, revision.publicNote, finalDispatch, revision.technicianDesignation)
         val renditionEntity = renditionId?.let { dao.reportRenditionById(it)?.takeIf { row -> row.revisionId == revision.id } } ?: dao.reportRendition(revision.id)
@@ -2049,6 +2125,17 @@ class RoomServiceLoopRepository(
     }
 
     private fun stableId(vararg parts: String) = UUID.nameUUIDFromBytes(parts.joinToString(":").toByteArray()).toString()
+
+    private suspend fun resolvedFinalPhoto(photo: FinalPhotoEntryEntity): PublicPhoto {
+        val original = attachmentRoot?.let { File(it, photo.storedRelativePath) }
+        if (original?.isFile == true && original.length() == photo.byteSize && sha256(original) == photo.sha256)
+            return PublicPhoto(photo.storedRelativePath, photo.sha256, photo.byteSize, photo.mimeType, photo.caption, photo.addedInCorrection, photo.addedAtEpochMillis)
+        val retained = dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)
+            ?: dao.retainedImage("FINAL_PHOTO", photo.id)
+            ?: dao.retainedImageByOriginalPath(photo.storedRelativePath)
+            ?: return PublicPhoto(photo.storedRelativePath, photo.sha256, photo.byteSize, photo.mimeType, photo.caption, photo.addedInCorrection, photo.addedAtEpochMillis)
+        return PublicPhoto(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize, retained.derivativeMimeType, photo.caption, photo.addedInCorrection, photo.addedAtEpochMillis)
+    }
 
     private suspend fun workingItem(workItemId: String): WorkItemEntity {
         val item=dao.workItem(workItemId)?:error("Work item no longer exists")

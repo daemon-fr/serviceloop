@@ -82,10 +82,22 @@ object OperationalWorkClassifier {
         if (lifecycle == VisitLifecycleState.WORKING) return OperationalWorkState.IN_PROGRESS
         if (lifecycle != VisitLifecycleState.BOOKED) return null
 
-        val appointment = visit.scheduledAtEpochMillis?.let(Instant::ofEpochMilli)
+        return classifyBookedVisit(visit.actualServiceDate, visit.scheduledAtEpochMillis, today, now, businessZone, dueSoonHorizonDays)
+    }
+
+    /** Shared scheduling classification for canonical Visits and legacy unlinked Outbox rows. */
+    fun classifyBookedVisit(
+        serviceDateText: String,
+        scheduledAtEpochMillis: Long?,
+        today: LocalDate,
+        now: Instant,
+        businessZone: ZoneId,
+        dueSoonHorizonDays: Int,
+    ): OperationalWorkState? {
+        val appointment = scheduledAtEpochMillis?.let(Instant::ofEpochMilli)
         if (appointment != null && appointment.isBefore(now)) return OperationalWorkState.OVERDUE
 
-        val serviceDate = visit.actualServiceDate.toLocalDateOrNull() ?: return null
+        val serviceDate = serviceDateText.toLocalDateOrNull() ?: return null
         if (appointment == null && serviceDate.isBefore(today)) return OperationalWorkState.OVERDUE
 
         val applicableDate = appointment?.atZone(businessZone)?.toLocalDate() ?: serviceDate

@@ -35,8 +35,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DispatchVisitBindingEntity::class, DispatchItemBindingEntity::class,
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
+        WorkResultReceiptEntity::class, RemoteFinalResultEntity::class, RemoteResultPhotoEntity::class,
+        AggregateReportEntity::class, AggregateReportSourceEntity::class, AggregateReportRenditionEntity::class,
+        RetainedImageEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -48,7 +51,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -392,6 +395,43 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_contacts ADD COLUMN notes TEXT")
+                db.execSQL("ALTER TABLE customer_contacts ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE customer_contacts SET position = (SELECT COUNT(*) FROM customer_contacts preceding WHERE preceding.customerId = customer_contacts.customerId AND (preceding.modifiedAtEpochMillis > customer_contacts.modifiedAtEpochMillis OR (preceding.modifiedAtEpochMillis = customer_contacts.modifiedAtEpochMillis AND preceding.id <= customer_contacts.id)))")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_customer_contacts_customerId_position ON customer_contacts(customerId, position)")
+                db.execSQL("ALTER TABLE dispatch_outbox_visits ADD COLUMN localVisitId TEXT")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_outbox_visits_localVisitId ON dispatch_outbox_visits(localVisitId)")
+                db.execSQL("ALTER TABLE dispatch_outbox_items ADD COLUMN localWorkItemId TEXT")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_outbox_items_localWorkItemId ON dispatch_outbox_items(localWorkItemId)")
+                db.execSQL("ALTER TABLE dispatch_visit_bindings ADD COLUMN assignmentIssuerId TEXT")
+                db.execSQL("ALTER TABLE final_dispatch_visits ADD COLUMN assignmentMaterialHash TEXT")
+                db.execSQL("ALTER TABLE final_dispatch_visits ADD COLUMN assignmentIssuerId TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS work_result_receipts (id TEXT NOT NULL PRIMARY KEY, packageId TEXT NOT NULL, resultId TEXT NOT NULL, sourceFinalRevisionId TEXT NOT NULL, assignmentIssuerId TEXT NOT NULL, exporterId TEXT NOT NULL, dispatchVisitId TEXT NOT NULL, dispatchItemId TEXT NOT NULL, assignmentGeneration INTEGER NOT NULL, assignmentMaterialHash TEXT NOT NULL, receivedAtEpochMillis INTEGER NOT NULL, payloadSha256 TEXT NOT NULL, status TEXT NOT NULL, conflictReason TEXT, appliedAtEpochMillis INTEGER, recurrenceAppliedAtEpochMillis INTEGER)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_result_receipts_packageId ON work_result_receipts(packageId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_work_result_receipts_resultId_sourceFinalRevisionId ON work_result_receipts(resultId, sourceFinalRevisionId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_result_receipts_dispatchVisitId ON work_result_receipts(dispatchVisitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_work_result_receipts_dispatchItemId ON work_result_receipts(dispatchItemId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS remote_final_results (id TEXT NOT NULL PRIMARY KEY, resultId TEXT NOT NULL, sourceFinalRevisionId TEXT NOT NULL, dispatchVisitId TEXT NOT NULL, dispatchItemId TEXT NOT NULL, localVisitId TEXT, localWorkItemId TEXT, technicianId TEXT NOT NULL, technicianName TEXT NOT NULL, technicianDesignation TEXT, customerId TEXT, customerSnapshotJson TEXT NOT NULL, siteSnapshotJson TEXT NOT NULL, subjectSnapshotJson TEXT NOT NULL, serviceDate TEXT NOT NULL, outcome TEXT NOT NULL, workPerformed TEXT, notPerformedReason TEXT, checklistJson TEXT NOT NULL, findingsJson TEXT NOT NULL, partsJson TEXT NOT NULL, internalNotes TEXT, followUpsJson TEXT NOT NULL, recurrenceJson TEXT NOT NULL, provenanceJson TEXT NOT NULL, importedAtEpochMillis INTEGER NOT NULL, voidedAtEpochMillis INTEGER)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_remote_final_results_resultId_sourceFinalRevisionId ON remote_final_results(resultId,sourceFinalRevisionId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_remote_final_results_dispatchVisitId ON remote_final_results(dispatchVisitId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_remote_final_results_dispatchItemId ON remote_final_results(dispatchItemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_remote_final_results_customerId ON remote_final_results(customerId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS remote_result_photos (id TEXT NOT NULL PRIMARY KEY, remoteFinalResultId TEXT NOT NULL, sourcePhotoId TEXT NOT NULL, relativePath TEXT NOT NULL, sha256 TEXT NOT NULL, byteSize INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, mimeType TEXT NOT NULL, caption TEXT, dispatchItemId TEXT NOT NULL, includeInReport INTEGER NOT NULL, visibility TEXT NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_remote_result_photos_remoteFinalResultId_sourcePhotoId ON remote_result_photos(remoteFinalResultId,sourcePhotoId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS aggregate_reports (id TEXT NOT NULL PRIMARY KEY, customerId TEXT NOT NULL, customerSnapshotJson TEXT NOT NULL, siteId TEXT, equipmentId TEXT, fromDate TEXT, throughDate TEXT, businessSnapshotJson TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_aggregate_reports_customerId ON aggregate_reports(customerId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS aggregate_report_sources (aggregateReportId TEXT NOT NULL, sourceOrder INTEGER NOT NULL, sourceFinalRevisionId TEXT NOT NULL, sourceKind TEXT NOT NULL, visitId TEXT NOT NULL, sourceEntityId TEXT NOT NULL, PRIMARY KEY(aggregateReportId,sourceOrder))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_aggregate_report_sources_sourceFinalRevisionId ON aggregate_report_sources(sourceFinalRevisionId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS aggregate_report_renditions (id TEXT NOT NULL PRIMARY KEY, aggregateReportId TEXT NOT NULL, relativePath TEXT, sha256 TEXT, byteSize INTEGER, pageCount INTEGER, generatedAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL, failureReason TEXT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_aggregate_report_renditions_aggregateReportId ON aggregate_report_renditions(aggregateReportId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS retained_images (id TEXT NOT NULL PRIMARY KEY, sourceKind TEXT NOT NULL, sourceId TEXT NOT NULL, originalRelativePath TEXT, originalDeletedAtEpochMillis INTEGER, derivativeRelativePath TEXT NOT NULL, derivativeSha256 TEXT NOT NULL, derivativeByteSize INTEGER NOT NULL, derivativeWidth INTEGER NOT NULL, derivativeHeight INTEGER NOT NULL, derivativeMimeType TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_retained_images_sourceKind_sourceId ON retained_images(sourceKind,sourceId)")
+                configureStage4Tracking(db)
+            }
+        }
+
         private fun configureReminderDefaults(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,180)")
         }
@@ -402,7 +442,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
 
         internal fun configureStage4Tracking(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO recovery_metadata(id,datasetId,firstBusinessWriteAtEpochMillis,lastBusinessWriteAtEpochMillis,lastBackupAttemptAtEpochMillis,lastVerifiedFullBackupAtEpochMillis,lastVerifiedSnapshotAtEpochMillis,lastVerifiedDestination,lastVerifiedSize,backupReminderDays,restoredFromIncompleteCopy,restrictedRecoveryState) VALUES('primary', lower(hex(randomblob(16))), NULL, NULL, NULL, NULL, NULL, NULL, NULL, 7, 0, 0)")
-            val tracked = listOf("customers", "customer_contacts", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "reminder_preferences")
+            val tracked = listOf("customers", "customer_contacts", "sites", "equipment", "service_plans", "service_obligations", "template_snapshots", "checklist_item_snapshots", "working_visits", "work_items", "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers", "working_responses", "attachments", "follow_ups", "business_profiles", "final_records", "final_record_revisions", "final_work_items", "final_checklist_items", "report_renditions", "reusable_templates", "reusable_template_revisions", "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims", "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events", "correction_drafts", "correction_work_items", "change_entries", "equipment_moves", "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members", "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees", "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items", "work_result_receipts", "remote_final_results", "remote_result_photos", "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images", "reminder_preferences")
             val existing = mutableSetOf<String>()
             db.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor -> while (cursor.moveToNext()) existing += cursor.getString(0) }
             tracked.filter { it in existing }.forEach { table ->

@@ -60,7 +60,8 @@ class WorkFilterSelectorStyleTest {
         val stage4 = productionKotlinSourceContaining("ServiceLoopActionStack")
         val coordinator = productionKotlinSource("com/v16studio/serviceloop/ui")
 
-        assertTrue(components.contains(".testTag(\"entity-record-selection\")"))
+        assertTrue(components.contains("selectionTestTag: String = \"entity-record-selection\""))
+        assertTrue(components.contains(".testTag(selectionTestTag)"))
         assertTrue(components.contains("Modifier.testTag(glyphTestTag)"))
         assertTrue(components.contains(".testTag(\"entity-record-title\")"))
         assertTrue(components.contains("Modifier.fillMaxWidth().padding(ServiceLoopUiTokens.Space.lg)"))

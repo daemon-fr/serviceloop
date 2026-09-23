@@ -202,6 +202,13 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM business_profiles WHERE id='primary'") suspend fun businessProfile(): BusinessProfileEntity?
     @Query("SELECT * FROM final_records WHERE visitId=:visitId") suspend fun finalRecordForVisit(visitId: String): FinalRecordEntity?
     @Query("SELECT * FROM final_records WHERE id=:id") suspend fun finalRecord(id: String): FinalRecordEntity?
+    @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun workResultReceipt(resultId: String, revisionId: String): WorkResultReceiptEntity?
+    @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND status='APPLIED' ORDER BY appliedAtEpochMillis DESC LIMIT 1") suspend fun appliedWorkResultLineage(resultId: String): WorkResultReceiptEntity?
+    @Query("SELECT * FROM remote_final_results WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun remoteFinalResult(resultId: String, revisionId: String): RemoteFinalResultEntity?
+    @Query("SELECT * FROM work_result_receipts WHERE dispatchVisitId=:visitId AND status='APPLIED'") suspend fun appliedWorkResultReceipts(visitId: String): List<WorkResultReceiptEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertWorkResultReceipt(value: WorkResultReceiptEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRemoteFinalResult(value: RemoteFinalResultEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRemoteResultPhotos(values: List<RemoteResultPhotoEntity>)
     @Query("SELECT * FROM final_record_revisions WHERE id=:id") suspend fun finalRevision(id: String): FinalRecordRevisionEntity?
     @Query("SELECT * FROM final_work_items WHERE revisionId=:revisionId ORDER BY position") suspend fun finalWorkItems(revisionId: String): List<FinalWorkItemEntity>
     @Query("SELECT * FROM final_checklist_items WHERE finalWorkItemId=:workItemId ORDER BY position") suspend fun finalChecklistItems(workItemId: String): List<FinalChecklistItemEntity>
@@ -219,6 +226,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM follow_ups WHERE customerId=:customerId ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUpsForCustomer(customerId: String): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups ORDER BY CASE state WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate, reference") suspend fun followUps(): List<FollowUpEntity>
     @Query("SELECT * FROM follow_ups WHERE id=:id") suspend fun followUp(id: String): FollowUpEntity?
+    @Query("SELECT * FROM follow_ups WHERE sourceWorkItemId=:workItemId ORDER BY reference") suspend fun followUpsForSourceWorkItem(workItemId: String): List<FollowUpEntity>
     @Query("SELECT * FROM contact_notes WHERE customerId=:customerId ORDER BY occurredAtEpochMillis DESC, reference") suspend fun contactNotesForCustomer(customerId: String): List<ContactNoteEntity>
     @Query("SELECT * FROM contact_notes WHERE id=:id") suspend fun contactNote(id: String): ContactNoteEntity?
     @Query("SELECT * FROM reusable_templates ORDER BY name, reference") suspend fun reusableTemplates(): List<ReusableTemplateEntity>
@@ -267,9 +275,10 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM customers ORDER BY reference") suspend fun allCustomers(): List<CustomerEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomerContact(value: CustomerContactEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomerContacts(values: List<CustomerContactEntity>)
-    @Query("UPDATE customer_contacts SET personName=:personName, channel=:channel, value=:value, modifiedAtEpochMillis=:modifiedAt WHERE id=:id AND customerId=:customerId") suspend fun updateCustomerContact(id: String, customerId: String, personName: String?, channel: String, value: String, modifiedAt: Long): Int
+    @Query("UPDATE customer_contacts SET personName=:personName, channel=:channel, value=:value, notes=:notes, modifiedAtEpochMillis=:modifiedAt WHERE id=:id AND customerId=:customerId") suspend fun updateCustomerContact(id: String, customerId: String, personName: String?, channel: String, value: String, notes: String?, modifiedAt: Long): Int
     @Query("DELETE FROM customer_contacts WHERE id=:id AND customerId=:customerId") suspend fun deleteCustomerContact(id: String, customerId: String): Int
-    @Query("SELECT * FROM customer_contacts WHERE customerId=:customerId ORDER BY modifiedAtEpochMillis DESC, id") suspend fun customerContacts(customerId: String): List<CustomerContactEntity>
+    @Query("SELECT * FROM customer_contacts WHERE customerId=:customerId ORDER BY position, id") suspend fun customerContacts(customerId: String): List<CustomerContactEntity>
+    @Query("UPDATE customer_contacts SET position=:position WHERE id=:id AND customerId=:customerId") suspend fun setCustomerContactPosition(customerId: String, id: String, position: Int): Int
     @Query("SELECT * FROM sites ORDER BY reference") suspend fun allSites(): List<SiteEntity>
     @Query("SELECT * FROM equipment ORDER BY reference") suspend fun allEquipment(): List<EquipmentEntity>
     @Query("SELECT * FROM service_plans ORDER BY reference") suspend fun allPlans(): List<ServicePlanEntity>
@@ -277,6 +286,20 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM final_records ORDER BY createdAtEpochMillis") suspend fun allFinalRecords(): List<FinalRecordEntity>
     @Query("SELECT * FROM follow_ups ORDER BY reference") suspend fun allFollowUps(): List<FollowUpEntity>
     @Query("SELECT * FROM attachments ORDER BY id") suspend fun allAttachments(): List<AttachmentEntity>
+    @Query("SELECT * FROM retained_images WHERE sourceKind=:kind AND sourceId=:sourceId") suspend fun retainedImage(kind: String, sourceId: String): RetainedImageEntity?
+    @Query("SELECT * FROM retained_images WHERE originalRelativePath=:path LIMIT 1") suspend fun retainedImageByOriginalPath(path: String): RetainedImageEntity?
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRetainedImage(value: RetainedImageEntity)
+    @Update suspend fun updateRetainedImage(value: RetainedImageEntity)
+    @Query("SELECT * FROM remote_final_results WHERE voidedAtEpochMillis IS NULL ORDER BY serviceDate, id") suspend fun activeRemoteFinalResults(): List<RemoteFinalResultEntity>
+    @Query("SELECT * FROM remote_result_photos WHERE remoteFinalResultId=:resultId ORDER BY id") suspend fun remoteResultPhotos(resultId: String): List<RemoteResultPhotoEntity>
+    @Query("SELECT r.* FROM remote_final_results r JOIN work_result_receipts w ON w.resultId=r.resultId AND w.sourceFinalRevisionId=r.sourceFinalRevisionId WHERE w.status='APPLIED' AND r.voidedAtEpochMillis IS NULL ORDER BY r.serviceDate, r.id") suspend fun reportableRemoteFinalResults(): List<RemoteFinalResultEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateReport(value: AggregateReportEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateSources(values: List<AggregateReportSourceEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateRendition(value: AggregateReportRenditionEntity)
+    @Update suspend fun updateAggregateRendition(value: AggregateReportRenditionEntity)
+    @Query("SELECT * FROM aggregate_reports WHERE id=:id") suspend fun aggregateReport(id: String): AggregateReportEntity?
+    @Query("SELECT * FROM aggregate_report_sources WHERE aggregateReportId=:id ORDER BY sourceOrder") suspend fun aggregateSources(id: String): List<AggregateReportSourceEntity>
+    @Query("SELECT * FROM aggregate_report_renditions WHERE aggregateReportId=:id ORDER BY generatedAtEpochMillis DESC") suspend fun aggregateRenditions(id: String): List<AggregateReportRenditionEntity>
     @Query("SELECT visitId FROM visit_claims WHERE obligationId=:obligationId LIMIT 1") suspend fun claimForObligation(obligationId: String): String?
     @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
     @Query("UPDATE service_obligations SET dueDate=:dueDate WHERE id=:id AND consumedAtEpochMillis IS NULL") suspend fun updateCurrentObligationDueDate(id: String, dueDate: String): Int

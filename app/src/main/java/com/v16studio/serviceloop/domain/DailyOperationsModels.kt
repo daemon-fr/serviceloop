@@ -17,6 +17,8 @@ data class CustomerContactDetail(
     val channel: String,
     val value: String,
     val modifiedAtEpochMillis: Long,
+    val notes: String = "",
+    val position: Int = 0,
 )
 
 data class CustomerContactInput(
@@ -24,6 +26,7 @@ data class CustomerContactInput(
     val personName: String = "",
     val channel: String,
     val value: String,
+    val notes: String = "",
 )
 
 data class SiteSummary(val id: String, val reference: String, val name: String, val address: String, val equipmentCount: Int, val isDefault: Boolean)

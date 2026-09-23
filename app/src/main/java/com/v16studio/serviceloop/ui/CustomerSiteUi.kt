@@ -58,6 +58,7 @@ internal fun CustomerDetailScreen(
     var showContactForm by rememberSaveable { mutableStateOf(false) }
     var contactPerson by rememberSaveable { mutableStateOf("") }
     var contactValue by rememberSaveable { mutableStateOf("") }
+    var contactNotes by rememberSaveable { mutableStateOf("") }
     var contactChannel by rememberSaveable { mutableStateOf("PHONE") }
     var editingContactId by rememberSaveable { mutableStateOf<String?>(null) }
     var deletingContactId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -72,16 +73,18 @@ internal fun CustomerDetailScreen(
         onChannelChange = { contactChannel = it },
         value = contactValue,
         onValueChange = { contactValue = it },
+        notes = contactNotes,
+        onNotesChange = { contactNotes = it },
         busy = viewState.operationInProgress,
         testTagPrefix = "customer-contact",
         onDismiss = { showContactForm = false },
-        onSave = { person, channel, value ->
-            val input = CustomerContactInput(detail.id, person, channel, value)
+        onSave = { person, channel, value, notes ->
+            val input = CustomerContactInput(detail.id, person, channel, value, notes)
             val contactId = editingContactId
             if (contactId == null) viewModel.createCustomerContact(input) {
-                contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+                contactPerson = ""; contactValue = ""; contactNotes = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
             } else viewModel.updateCustomerContact(contactId, input) {
-                editingContactId = null; contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+                editingContactId = null; contactPerson = ""; contactValue = ""; contactNotes = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
             }
         },
     )
@@ -141,7 +144,7 @@ internal fun CustomerDetailScreen(
                     )
                     if (capabilities.canManageRegister) {
                         Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                            TextButton({ editingContactId = contact.id; contactPerson = contact.personName; contactValue = contact.value; contactChannel = contact.channel; showContactForm = true }, Modifier.testTag("edit-customer-contact-${contact.id}")) { Text("Edit") }
+                            TextButton({ editingContactId = contact.id; contactPerson = contact.personName; contactValue = contact.value; contactChannel = contact.channel; contactNotes = contact.notes; showContactForm = true }, Modifier.testTag("edit-customer-contact-${contact.id}")) { Text("Edit") }
                             TextButton({ deletingContactId = contact.id }, Modifier.testTag("delete-customer-contact-${contact.id}")) { Text("Remove") }
                         }
                     }
@@ -172,6 +175,7 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
     var removingAdditionalContact by remember { mutableStateOf<CustomerContactDetail?>(null) }
     var additionalContactPerson by rememberSaveable(existing?.id) { mutableStateOf("") }
     var additionalContactValue by rememberSaveable(existing?.id) { mutableStateOf("") }
+    var additionalContactNotes by rememberSaveable(existing?.id) { mutableStateOf("") }
     var additionalContactChannel by rememberSaveable(existing?.id) { mutableStateOf("PHONE") }
     var oneTimeCustomer by rememberSaveable(existing?.id) { mutableStateOf(existing?.customerType == CustomerType.ONE_TIME) }
     val oneTimeBlocked = existing != null && existing.customerType == CustomerType.STANDARD && !existing.canMarkOneTime
@@ -183,25 +187,10 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
             item { CustomerCreationForm(creationDraft, { creationDraft = it }) }
         } else {
             item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
-            item {
-                Column(Modifier.fillMaxWidth().testTag("customer-editor-additional-contacts"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Contacts", style = MaterialTheme.typography.titleMedium)
-                        ServiceLoopSecondaryButton("Add contact", { editingAdditionalContact = null; additionalContactPerson = ""; additionalContactValue = ""; additionalContactChannel = "PHONE"; showAdditionalContact = true }, Modifier.testTag("customer-editor-add-contact"))
-                    }
-                    if (existing.repeatableContacts.isEmpty()) Text("No additional contacts saved.", style = MaterialTheme.typography.bodySmall)
-                    existing.repeatableContacts.forEach { saved ->
-                        Column(Modifier.fillMaxWidth().testTag("customer-editor-contact-${saved.id}")) {
-                            Text(listOf(saved.personName, saved.value).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
-                            Text(saved.channel.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodySmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                                TextButton({ editingAdditionalContact = saved; additionalContactPerson = saved.personName; additionalContactValue = saved.value; additionalContactChannel = saved.channel; showAdditionalContact = true }, Modifier.testTag("customer-editor-edit-contact-${saved.id}")) { Text("Edit") }
-                                TextButton({ removingAdditionalContact = saved }, Modifier.testTag("customer-editor-remove-contact-${saved.id}")) { Text("Remove") }
-                            }
-                        }
-                    }
-                }
-            }
+            item { Row(Modifier.fillMaxWidth().testTag("customer-editor-additional-contacts"), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                ServiceLoopSecondaryButton("List contacts", { nav.navigate("customer/contacts/${existing.id}") }, Modifier.weight(1f).testTag("customer-editor-list-contacts"))
+                ServiceLoopSecondaryButton("Add contact", { editingAdditionalContact = null; additionalContactPerson = ""; additionalContactValue = ""; additionalContactNotes = ""; additionalContactChannel = "PHONE"; showAdditionalContact = true }, Modifier.weight(1f).testTag("customer-editor-add-contact"))
+            } }
             item { LongTextEditor(note, { note = it }, "Private customer note", true) }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control").semantics { if (oneTimeBlocked) disabled() }) {
@@ -235,11 +224,13 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
         onChannelChange = { additionalContactChannel = it },
         value = additionalContactValue,
         onValueChange = { additionalContactValue = it },
+        notes = additionalContactNotes,
+        onNotesChange = { additionalContactNotes = it },
         busy = state.operationInProgress,
         testTagPrefix = "customer-editor-contact",
         onDismiss = { showAdditionalContact = false },
-        onSave = { person, channel, value ->
-            val input = CustomerContactInput(existing.id, person, channel, value)
+        onSave = { person, channel, value, notes ->
+            val input = CustomerContactInput(existing.id, person, channel, value, notes)
             val editing = editingAdditionalContact
             if (editing == null) viewModel.createCustomerContact(input) { showAdditionalContact = false; viewModel.loadCustomer(existing.id) }
             else viewModel.updateCustomerContact(editing.id, input) { showAdditionalContact = false; editingAdditionalContact = null; viewModel.loadCustomer(existing.id) }
@@ -254,6 +245,60 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
 }
 
 @Composable
+internal fun CustomerContactsScreen(detail: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel) {
+    if (detail == null) return DailyEmpty(padding, "Reading contacts")
+    var editing by remember { mutableStateOf<CustomerContactDetail?>(null) }
+    var showForm by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<CustomerContactDetail?>(null) }
+    var person by rememberSaveable(detail.id) { mutableStateOf("") }
+    var channel by rememberSaveable(detail.id) { mutableStateOf("PHONE") }
+    var value by rememberSaveable(detail.id) { mutableStateOf("") }
+    var notes by rememberSaveable(detail.id) { mutableStateOf("") }
+    fun clearForm() { editing = null; person = ""; channel = "PHONE"; value = ""; notes = ""; showForm = false }
+    if (showForm) CustomerContactFormDialog(
+        editingContactId = editing?.id, person = person, onPersonChange = { person = it },
+        channel = channel, onChannelChange = { channel = it }, value = value, onValueChange = { value = it },
+        notes = notes, onNotesChange = { notes = it }, busy = state.operationInProgress,
+        testTagPrefix = "customer-contacts", onDismiss = { showForm = false },
+        onSave = { newPerson, newChannel, newValue, newNotes ->
+            val input = CustomerContactInput(detail.id, newPerson, newChannel, newValue, newNotes)
+            val selected = editing
+            if (selected == null) viewModel.createCustomerContact(input) { clearForm(); viewModel.loadCustomer(detail.id) }
+            else viewModel.updateCustomerContact(selected.id, input) { clearForm(); viewModel.loadCustomer(detail.id) }
+        },
+    )
+    deleting?.let { contact -> AlertDialog(
+        onDismissRequest = { deleting = null }, title = { Text("Delete contact?") },
+        text = { Text("This removes ${contact.value} from the customer directory.") },
+        dismissButton = { TextButton({ deleting = null }) { Text("Cancel") } },
+        confirmButton = { Button({ viewModel.deleteCustomerContact(detail.id, contact.id) { deleting = null; viewModel.loadCustomer(detail.id) } }, enabled = !state.operationInProgress) { Text("Delete") } },
+    ) }
+    LazyColumn(Modifier.padding(padding).testTag("customer-contacts-list"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Contacts", style = MaterialTheme.typography.titleLarge)
+            ServiceLoopSecondaryButton("Add contact", { clearForm(); showForm = true }, Modifier.testTag("customer-contacts-add"))
+        } }
+        if (detail.repeatableContacts.isEmpty()) item { Text("No contacts saved.") }
+        items(detail.repeatableContacts, key = { it.id }) { contact ->
+            Card(Modifier.fillMaxWidth().testTag("customer-contacts-${contact.id}")) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                    Text(contact.personName.ifBlank { contact.value }, style = MaterialTheme.typography.titleMedium)
+                    if (contact.personName.isNotBlank()) Text(contact.value)
+                    Text(contact.channel.lowercase().replaceFirstChar { it.uppercase() }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (contact.notes.isNotBlank()) Text("Notes · ${contact.notes}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                        TextButton({ editing = contact; person = contact.personName; channel = contact.channel; value = contact.value; notes = contact.notes; showForm = true }, Modifier.testTag("customer-contacts-edit-${contact.id}")) { Text("Edit") }
+                        TextButton({ deleting = contact }, Modifier.testTag("customer-contacts-delete-${contact.id}")) { Text("Delete") }
+                        TextButton({ viewModel.moveCustomerContact(detail.id, contact.id, -1) { viewModel.loadCustomer(detail.id) } }, enabled = contact.position > 1 && !state.operationInProgress, modifier = Modifier.testTag("customer-contacts-up-${contact.id}")) { Text("Move up") }
+                        TextButton({ viewModel.moveCustomerContact(detail.id, contact.id, 1) { viewModel.loadCustomer(detail.id) } }, enabled = contact.position < detail.repeatableContacts.size && !state.operationInProgress, modifier = Modifier.testTag("customer-contacts-down-${contact.id}")) { Text("Move down") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CustomerContactFormDialog(
     editingContactId: String?,
     person: String,
@@ -262,10 +307,12 @@ private fun CustomerContactFormDialog(
     onChannelChange: (String) -> Unit,
     value: String,
     onValueChange: (String) -> Unit,
+    notes: String,
+    onNotesChange: (String) -> Unit,
     busy: Boolean,
     testTagPrefix: String,
     onDismiss: () -> Unit,
-    onSave: (person: String, channel: String, value: String) -> Unit,
+    onSave: (person: String, channel: String, value: String, notes: String) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -281,12 +328,13 @@ private fun CustomerContactFormDialog(
                     testTagPrefix = "$testTagPrefix-channel",
                 )
                 DailyField(value, onValueChange, "Contact value · Required")
+                DailyField(notes, onNotesChange, "Notes (internal, optional)")
             }
         },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
         confirmButton = {
             Button(
-                { onSave(person, channel, value) },
+                { onSave(person, channel, value, notes) },
                 enabled = value.isNotBlank() && !busy,
                 modifier = Modifier.testTag("$testTagPrefix-save-contact"),
             ) { Text(if (editingContactId == null) "Save contact" else "Save changes") }

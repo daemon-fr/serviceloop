@@ -95,12 +95,12 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (role.workspaceCapabilities.canReceiveAssignedWork) {
                         ServiceLoopPrimaryButton("Import work package", { nav.navigate("dispatch/import/pick") }, Modifier.fillMaxWidth().testTag("team-import-work"))
-                        ServiceLoopSecondaryButton("Export work results", {}, Modifier.fillMaxWidth().testTag("team-export-results"), enabled = false)
+                        ServiceLoopSecondaryButton("Export work results", { nav.navigate("work-results/export") }, Modifier.fillMaxWidth().testTag("team-export-results"))
                     }
                     if (role.workspaceCapabilities.canUseCoordinatorTools) {
                         ServiceLoopPrimaryButton("Dispatch work package", { nav.navigate("dispatch/create") }, Modifier.fillMaxWidth().testTag("team-dispatch"))
-                        ServiceLoopSecondaryButton("Import work results", {}, Modifier.fillMaxWidth().testTag("team-import-results"), enabled = false)
-                        ServiceLoopSecondaryButton("Generate report", {}, Modifier.fillMaxWidth().testTag("team-generate-report"), enabled = false)
+                        ServiceLoopSecondaryButton("Import work results", { nav.navigate("import") }, Modifier.fillMaxWidth().testTag("team-import-results"))
+                        ServiceLoopSecondaryButton("Generate report", { nav.navigate("aggregate-report/new") }, Modifier.fillMaxWidth().testTag("team-generate-report"))
                     }
                 }
             }

@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -267,10 +268,13 @@ internal fun EquipmentScreen(detail: EquipmentDetail, nav: NavHostController, bu
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(detail.customerName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { nav.navigate("customer/${detail.customerId}") }.testTag("equipment-customer-link"))
+                    modifier = Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).wrapContentHeight(Alignment.CenterVertically)
+                        .clickable { nav.navigate("customer/${detail.customerId}") }.testTag("equipment-customer-link"))
                 Text(" › ", style = MaterialTheme.typography.titleMedium)
-                Text(detail.siteName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(enabled = detail.siteId.isNotBlank()) { nav.navigate("site/${detail.siteId}") }.testTag("equipment-site-link"))
+                Text(detail.siteName, style = MaterialTheme.typography.titleMedium,
+                    color = if (detail.siteId.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.heightIn(min = ServiceLoopUiTokens.Size.touchMin).wrapContentHeight(Alignment.CenterVertically)
+                        .clickable(enabled = detail.siteId.isNotBlank()) { nav.navigate("site/${detail.siteId}") }.testTag("equipment-site-link"))
             }
             if (detail.customerType == CustomerType.ONE_TIME) Text("One-time customer", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.testTag("one-time-customer-label"))
             if(detail.privateNote.isNotBlank()) Column(Modifier.padding(top=ServiceLoopUiTokens.Space.lg).testTag("equipment-private-note"),verticalArrangement=Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {

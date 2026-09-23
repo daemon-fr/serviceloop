@@ -49,8 +49,8 @@ class B043RoleWorkspaceUiTest {
     }
 
     @Test fun fiveRoleSettingsRenderAdoptedCopyAndOrder() {
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Team role settings").performClick()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.onNodeWithTag("team-role-identity").performClick()
         TEAM_ROLE_OPTIONS.forEach { option ->
             compose.onNodeWithTag("team-role-settings").performScrollToNode(hasTestTag("team-role-${option.role.name}"))
             compose.onNodeWithTag("team-role-${option.role.name}").assertIsDisplayed()
@@ -68,7 +68,7 @@ class B043RoleWorkspaceUiTest {
         assertWorkspace(TeamRole.COORDINATOR, register = true, receive = false, coordinate = true)
     }
 
-    @Test fun coordinatorDirectTechnicianAndLocalCreationRoutesAreBlocked() {
+    @Test fun coordinatorCanCreateVisitButCannotPerformFieldWorkAndEmployeeCannotCreateVisit() {
         compose.runOnUiThread {
             compose.activity.setTeamRole(TeamRole.COORDINATOR)
             val application = compose.activity.application as ServiceLoopApplication
@@ -83,6 +83,15 @@ class B043RoleWorkspaceUiTest {
             val viewModel = ServiceLoopViewModel(application.container.repository) {}
             compose.activity.setContent { ServiceLoopTheme(false) { ServiceLoopApp(viewModel, "visit/new") } }
         }
+        compose.onNodeWithTag("workspace-unavailable").assertDoesNotExist()
+        compose.onNodeWithText("Create visit").assertIsDisplayed()
+
+        compose.runOnUiThread {
+            compose.activity.setTeamRole(TeamRole.EMPLOYEE)
+            val application = compose.activity.application as ServiceLoopApplication
+            val viewModel = ServiceLoopViewModel(application.container.repository) {}
+            compose.activity.setContent { ServiceLoopTheme(false) { ServiceLoopApp(viewModel, "visit/new") } }
+        }
         compose.onNodeWithText("Local Visit creation is unavailable for the current Team role.").assertIsDisplayed()
 
         compose.runOnUiThread {
@@ -93,6 +102,15 @@ class B043RoleWorkspaceUiTest {
         }
         compose.onNodeWithTag("workspace-unavailable").assertDoesNotExist()
         compose.onNodeWithText("Service").assertIsDisplayed()
+
+        assertEquals(true, TeamRole.COORDINATOR.workspaceCapabilities.canCreateVisits)
+        assertEquals(false, TeamRole.COORDINATOR.workspaceCapabilities.canPerformFieldWork)
+        assertEquals(true, TeamRole.COORDINATOR.workspaceCapabilities.canAssignWork)
+        assertEquals(false, TeamRole.EMPLOYEE.workspaceCapabilities.canCreateVisits)
+        assertEquals(true, TeamRole.EMPLOYEE.workspaceCapabilities.canPerformFieldWork)
+        assertEquals(true, TeamRole.TEAM_LEADER.workspaceCapabilities.canCreateVisits)
+        assertEquals(true, TeamRole.TEAM_LEADER.workspaceCapabilities.canPerformFieldWork)
+        assertEquals(true, TeamRole.TEAM_LEADER.workspaceCapabilities.canAssignWork)
     }
 
     @Test fun legacyMemberCanonicalizesAndEmployeeSearchIsOperationalOnly() {
@@ -145,15 +163,15 @@ class B043RoleWorkspaceUiTest {
     private fun assertWorkspace(role: TeamRole, register: Boolean, receive: Boolean, coordinate: Boolean) {
         compose.runOnUiThread { compose.activity.setTeamRole(role) }
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag("root-nav-customers").fetchSemanticsNodes().isNotEmpty() == register &&
-                compose.onAllNodesWithTag("import-work-package").fetchSemanticsNodes().isNotEmpty() == receive &&
-                compose.onAllNodesWithTag("coordinator-home-actions").fetchSemanticsNodes().isNotEmpty() == coordinate
+            compose.onAllNodesWithTag("root-nav-customers").fetchSemanticsNodes().isNotEmpty() == register
         }
         compose.onNodeWithTag("root-nav-home").assertIsDisplayed()
         compose.onNodeWithTag("root-nav-work").assertIsDisplayed()
         if (register) compose.onNodeWithTag("root-nav-customers").assertIsDisplayed() else compose.onNodeWithTag("root-nav-customers").assertDoesNotExist()
-        if (receive) compose.onNodeWithTag("import-work-package").assertIsDisplayed() else compose.onNodeWithTag("import-work-package").assertDoesNotExist()
-        if (coordinate) compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed() else compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        if (receive) compose.onNodeWithTag("team-import-work").assertIsDisplayed() else compose.onNodeWithTag("team-import-work").assertDoesNotExist()
+        if (coordinate) compose.onNodeWithTag("team-dispatch").assertIsDisplayed() else compose.onNodeWithTag("team-dispatch").assertDoesNotExist()
+        compose.onNodeWithTag("home-tab-DASHBOARD").performClick()
         compose.onNodeWithTag("root-nav-work").performClick()
         if (role.workspaceCapabilities.canCreateVisits) {
             compose.waitUntil(5_000) {

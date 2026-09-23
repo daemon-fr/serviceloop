@@ -307,3 +307,17 @@ data class DispatchOutboxEditorDraft(
     val items:List<DispatchOutboxItemDraft>,
     val newCustomerSite:CustomerWithFirstSiteInput?=null,
 )
+
+/** Assignment overlay for a newly created canonical Visit. Work assignees follow plan then task order. */
+data class AssignedVisitInput(
+    val siteId: String?,
+    val newCustomerSite: com.v16studio.serviceloop.domain.CustomerWithFirstSiteInput?,
+    val planIds: List<String>,
+    val tasks: List<com.v16studio.serviceloop.domain.AdHocWorkInput>,
+    val serviceDate: String,
+    val scheduledAtEpochMillis: Long?,
+    val teamIds: List<String>,
+    val workAssignees: List<List<String>>,
+    val managerReference: String?,
+    val instructions: String?,
+)

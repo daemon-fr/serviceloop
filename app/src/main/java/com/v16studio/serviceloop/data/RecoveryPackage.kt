@@ -182,7 +182,10 @@ class RecoveryPackage(
     private fun requiredFiles(root: JSONObject): List<RequiredFile> {
         val attachments = tableRows(root, "attachments").map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "ATTACHMENT") }
         val reports = tableRows(root, "report_renditions").filter { it.getString("status") in setOf("READY", "MISSING") && !it.isNull("sha256") }.map { RequiredFile(it.getString("relativePath"), it.optLong("byteSize"), it.getString("sha256"), "REPORT") }
-        val all = attachments + reports
+        val remotePhotos = tableRows(root, "remote_result_photos").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "REMOTE_PHOTO") }
+        val aggregateReports = tableRows(root, "aggregate_report_renditions").filter { it.getString("status") == "READY" }.map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "AGGREGATE_REPORT") }
+        val derivatives = tableRows(root, "retained_images").map { RequiredFile(it.getString("derivativeRelativePath"), it.getLong("derivativeByteSize"), it.getString("derivativeSha256"), "IMAGE_DERIVATIVE") }
+        val all = attachments + reports + remotePhotos + aggregateReports + derivatives
         require(all.map { it.path }.size == all.map { it.path }.toSet().size) { "Two database file references use the same path" }
         return all
     }
@@ -216,7 +219,9 @@ class RecoveryPackage(
         normalizeWorkingInputBuffers(root)
         normalizeB026State(root)
         normalizeCustomerContacts(root)
+        normalizeContactOrder(root)
         normalizeTrustedServiceLoopIds(root)
+        normalizeB049Tables(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -407,6 +412,22 @@ class RecoveryPackage(
         }
     }
 
+    private fun normalizeContactOrder(root: JSONObject) {
+        val rows = tableRows(root, "customer_contacts")
+        rows.groupBy { it.getString("customerId") }.values.forEach { contacts ->
+            val ordered = if (contacts.all { it.has("position") && it.optInt("position") > 0 } &&
+                contacts.map { it.optInt("position") }.toSet().size == contacts.size) {
+                contacts.sortedWith(compareBy<JSONObject> { it.getInt("position") }.thenBy { it.getString("id") })
+            } else {
+                contacts.sortedWith(compareByDescending<JSONObject> { it.optLong("modifiedAtEpochMillis") }.thenBy { it.getString("id") })
+            }
+            ordered.forEachIndexed { index, row ->
+                if (!row.has("notes")) row.put("notes", JSONObject.NULL)
+                row.put("position", index + 1)
+            }
+        }
+    }
+
     /** Recovery schema v17 adds device-local peer trust without inventing entries in old backups. */
     internal fun normalizeTrustedServiceLoopIds(root: JSONObject) {
         val tables = root.getJSONArray("tables")
@@ -415,6 +436,28 @@ class RecoveryPackage(
             for (index in tables.length() downTo insertAt + 1) tables.put(index, tables.get(index - 1))
             tables.put(insertAt, JSONObject().put("name", "trusted_service_loop_ids").put("rows", JSONArray()))
         }
+        root.put("schemaVersion", SCHEMA_VERSION)
+    }
+
+    private fun normalizeB049Tables(root: JSONObject) {
+        tableRows(root, "dispatch_outbox_visits").forEach { if (!it.has("localVisitId")) it.put("localVisitId", JSONObject.NULL) }
+        tableRows(root, "dispatch_outbox_items").forEach { if (!it.has("localWorkItemId")) it.put("localWorkItemId", JSONObject.NULL) }
+        tableRows(root, "dispatch_visit_bindings").forEach { if (!it.has("assignmentIssuerId")) it.put("assignmentIssuerId", JSONObject.NULL) }
+        tableRows(root, "final_dispatch_visits").forEach {
+            if (!it.has("assignmentMaterialHash")) it.put("assignmentMaterialHash", JSONObject.NULL)
+            if (!it.has("assignmentIssuerId")) it.put("assignmentIssuerId", JSONObject.NULL)
+        }
+        val tables = root.getJSONArray("tables")
+        val present = (0 until tables.length()).map { tables.getJSONObject(it).getString("name") }.toSet()
+        require(present.all { it in TABLE_ORDER }) { "Unexpected database table" }
+        val newTables = setOf("work_result_receipts", "remote_final_results", "remote_result_photos", "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images")
+        require(TABLE_ORDER.filterNot { it in newTables }.all { it in present }) { "Backup is missing an established business table" }
+        val normalized = JSONArray()
+        TABLE_ORDER.forEach { name ->
+            val existing = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == name }
+            normalized.put(if (existing != null) tables.getJSONObject(existing) else JSONObject().put("name", name).put("rows", JSONArray()))
+        }
+        root.put("tables", normalized)
         root.put("schemaVersion", SCHEMA_VERSION)
     }
 
@@ -614,8 +657,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 17
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, 16, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 18
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, 16, 17, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -636,6 +679,8 @@ class RecoveryPackage(
             "technician_identity", "trusted_service_loop_ids", "dispatch_technicians", "dispatch_teams", "dispatch_team_members",
             "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees",
             "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items",
+            "work_result_receipts", "remote_final_results", "remote_result_photos",
+            "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images",
             "reminder_preferences", "recovery_metadata",
         )
 

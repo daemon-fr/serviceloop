@@ -80,9 +80,15 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextField
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopLongTextEditor
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 import com.v16studio.serviceloop.domain.appointmentEpochMillis
+import com.v16studio.serviceloop.data.AssignedVisitInput
+import com.v16studio.serviceloop.data.DispatchTeamDetail
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.UUID
 import java.time.LocalDate
@@ -91,6 +97,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 
 internal enum class VisitSetupMode { EXISTING, NEW }
+
+private fun assignmentLabel(ids: Set<String>?, participants: List<com.v16studio.serviceloop.data.DispatchTechnicianEntity>): String =
+    ids.orEmpty().mapNotNull { id -> participants.firstOrNull { it.technicianId == id }?.displayName }
+        .joinToString(" · ").ifBlank { "Everyone on selected teams" }
 
 internal const val CREATED_INSPECTION_TEMPLATE_ID_KEY = "created-inspection-template-id"
 internal const val PAST_BOOKED_VISIT_DATE_MESSAGE =
@@ -548,7 +558,7 @@ internal fun VisitSetupForm(
     }
 
     Box(modifier.fillMaxWidth().fillMaxHeight()) {
-        LazyColumn(Modifier.fillMaxWidth().fillMaxHeight(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
+        LazyColumn(Modifier.fillMaxWidth().fillMaxHeight().testTag("visit-setup-list"), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md)) {
         preludeItems?.invoke(this)
         item {
             val colors = LocalServiceLoopTokens.current
@@ -1063,6 +1073,31 @@ internal fun NewVisitScreen(
     initialPlanIds: List<String> = emptyList(),
 ) {
     val capabilities = LocalWorkspaceCapabilities.current
+    val context = LocalContext.current
+    var teams by remember { mutableStateOf(emptyList<DispatchTeamDetail>()) }
+    var selectedTeamIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    var assignmentJson by rememberSaveable { mutableStateOf("{}") }
+    var showTeamPicker by remember { mutableStateOf(false) }
+    var assigneeKey by remember { mutableStateOf<String?>(null) }
+    var managerReference by rememberSaveable { mutableStateOf("") }
+    var dispatchInstructions by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(capabilities.canAssignWork) {
+        if (capabilities.canAssignWork) teams = withContext(Dispatchers.IO) { dispatchService(context).teams() }
+    }
+    val selectedTeams = selectedTeamIds.toSet()
+    val participants = teams.filter { it.team.id in selectedTeams }.flatMap { it.members.map { member -> member.first } }.distinctBy { it.technicianId }
+    val assignments = remember(assignmentJson) {
+        val obj = JSONObject(assignmentJson)
+        obj.keys().asSequence().associateWith { key -> obj.getJSONArray(key).let { array -> (0 until array.length()).map { array.getString(it) }.toSet() } }
+    }
+    fun setAssignment(key: String, ids: Set<String>) {
+        assignmentJson = JSONObject(assignmentJson).put(key, org.json.JSONArray(ids.sorted())).toString()
+    }
+    if (showTeamPicker) DispatchTeamSelectionDialog(teams, selectedTeams, { showTeamPicker = false }) { next ->
+        val allowed = teams.filter { it.team.id in next }.flatMap { it.members }.map { it.first.technicianId }.toSet()
+        if (assignments.values.all { ids -> ids.all { it in allowed } }) { selectedTeamIds = ArrayList(next.sorted()); showTeamPicker = false }
+    }
+    assigneeKey?.let { key -> DispatchAssigneeDialog(participants, assignments[key].orEmpty(), { assigneeKey = null }) { next -> setAssignment(key, next); assigneeKey = null } }
     val initialSite = dueServices.firstOrNull { it.planId in initialPlanIds }?.siteId
     val initialDate = state.businessDate.plusDays(1).toString()
     var draft by rememberSaveable(stateSaver = VisitSetupDraftSaver) {
@@ -1076,14 +1111,14 @@ internal fun NewVisitScreen(
     val validTime = draft.appointmentTime.isBlank() || parseAppointmentTimeInput(draft.appointmentTime) != null
     val selectedSite = sites.firstOrNull { it.id == draft.siteId }
     val targetReady = if (draft.mode == VisitSetupMode.NEW) draft.newCustomer.isValidForCreate() else selectedSite != null
-    val valid = targetReady && validDate && validTime && !state.operationInProgress && if (draft.mode == VisitSetupMode.NEW) {
+    val valid = targetReady && validDate && validTime && !state.operationInProgress && (selectedTeams.isEmpty() || participants.isNotEmpty()) && if (draft.mode == VisitSetupMode.NEW) {
         draft.newCustomer.isValidForCreate() && draft.tasks.isNotEmpty()
     } else {
         selectedSite != null && (draft.selectedPlanIds.isNotEmpty() || draft.tasks.isNotEmpty())
     }
     val parsedDate = runCatching { java.time.LocalDate.parse(draft.serviceDate) }.getOrNull()
     val pastBookedDate = parsedDate?.isBefore(state.businessDate) == true
-    UnsavedChangesGuard(visitSetupIsDirty(baseline, draft), nav)
+    UnsavedChangesGuard(visitSetupIsDirty(baseline, draft) || selectedTeams.isNotEmpty() || assignmentJson != "{}" || managerReference.isNotBlank() || dispatchInstructions.isNotBlank(), nav)
 
     fun save(targetState: String) {
         val scheduledAt = if (targetState == "BOOKED") runCatching {
@@ -1098,7 +1133,17 @@ internal fun NewVisitScreen(
                 }
             } else nav.navigate("visit/$id") { popUpTo(setupRoute) { inclusive = true } }
         }
-        if (draft.mode == VisitSetupMode.NEW) {
+        if (selectedTeams.isNotEmpty() && targetState == "BOOKED") {
+            val planIds = draft.selectedPlanIds.toList()
+            val assignees = planIds.map { assignments["PLAN:$it"].orEmpty().toList() } + draft.tasks.map { assignments["TASK:${it.stableUiId}"].orEmpty().toList() }
+            viewModel.createAssignedVisit(AssignedVisitInput(
+                siteId = draft.siteId.takeIf { draft.mode == VisitSetupMode.EXISTING },
+                newCustomerSite = draft.newCustomer.toInput().takeIf { draft.mode == VisitSetupMode.NEW },
+                planIds = planIds, tasks = adHoc, serviceDate = serviceDate, scheduledAtEpochMillis = scheduledAt,
+                teamIds = selectedTeamIds, workAssignees = assignees,
+                managerReference = managerReference, instructions = dispatchInstructions,
+            ), success)
+        } else if (draft.mode == VisitSetupMode.NEW) {
             viewModel.createNewCustomerVisit(draft.newCustomer.toInput(), adHoc, targetState, serviceDate, scheduledAt, success)
         } else {
             viewModel.createVisitForSite(requireNotNull(draft.siteId), draft.selectedPlanIds.toList(), adHoc, targetState, serviceDate, scheduledAt, success)
@@ -1120,12 +1165,32 @@ internal fun NewVisitScreen(
         templateReturnNav = nav,
         onCreateTemplate = { nav.navigate("template/new?returnTo=visit-setup") },
         dateErrorMessage = PAST_BOOKED_VISIT_DATE_MESSAGE.takeIf { pastBookedDate },
+        extensionItems = {
+            if (capabilities.canAssignWork) item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Layout.pageInsetCompact), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                    Text("Assignment", style = MaterialTheme.typography.titleMedium)
+                    ServiceLoopSecondaryButton(teams.filter { it.team.id in selectedTeams }.joinToString(" · ") { it.team.name }.ifBlank { "Choose teams" }, { showTeamPicker = true }, Modifier.fillMaxWidth().testTag("visit-choose-teams"))
+                    if (selectedTeams.isNotEmpty()) {
+                        state.dueServices.filter { it.planId in draft.selectedPlanIds }.forEach { due ->
+                            val key = "PLAN:${due.planId}"
+                            ServiceLoopSecondaryButton("${due.planName} · ${assignmentLabel(assignments[key], participants)}", { assigneeKey = key }, Modifier.fillMaxWidth().testTag("visit-assign-${due.planId}"))
+                        }
+                        draft.tasks.forEach { task ->
+                            val key = "TASK:${task.stableUiId}"
+                            ServiceLoopSecondaryButton("${task.taskName} · ${assignmentLabel(assignments[key], participants)}", { assigneeKey = key }, Modifier.fillMaxWidth().testTag("visit-assign-${task.stableUiId}"))
+                        }
+                        ServiceLoopTextField(managerReference, { managerReference = it }, "Reference", modifier = Modifier.testTag("visit-manager-reference"))
+                        ServiceLoopLongTextEditor(dispatchInstructions, { dispatchInstructions = it }, "Instructions", private = false)
+                    }
+                }
+            }
+        },
         actionItems = {
             item {
                 val parsed = runCatching { java.time.LocalDate.parse(draft.serviceDate) }.getOrNull()
                 val primary = when { parsed == null || parsed.isAfter(state.businessDate) -> "BOOKED"; parsed == state.businessDate -> "WORKING"; else -> "HISTORICAL" }
                 @Composable fun action(kind: String, label: String) {
-                    val enabled = valid && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate)) && (kind != "BOOKED" || !pastBookedDate)
+                    val enabled = valid && (selectedTeams.isEmpty() || kind == "BOOKED") && (kind != "HISTORICAL" || parsed != null && !parsed.isAfter(state.businessDate)) && (kind != "BOOKED" || !pastBookedDate)
                     val click = { save(kind) }
                     if (primary == kind) ServiceLoopPrimaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("primary-visit-action-$kind"))
                     else ServiceLoopSecondaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth())

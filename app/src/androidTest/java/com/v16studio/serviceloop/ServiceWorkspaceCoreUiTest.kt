@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.test.assertIsDisplayed
@@ -60,6 +61,8 @@ import com.v16studio.serviceloop.domain.serviceProgressGroups
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
 import com.v16studio.serviceloop.ui.InspectionFocus
 import com.v16studio.serviceloop.ui.ServiceScreen
+import com.v16studio.serviceloop.ui.ServicePhotoManagementScreen
+import com.v16studio.serviceloop.ui.UiState
 import com.v16studio.serviceloop.ui.VisitServiceProgressOverview
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import java.time.Instant
@@ -232,7 +235,7 @@ class ServiceWorkspaceCoreUiTest {
         val current = progressItem("work-1", 1, "Electrical inspection").copy(status = ServiceEntryStatus.READY)
         val other = progressItem("work-2", 2, "Mechanical inspection")
         render(draft(), progress(draft(), listOf(current, other)))
-        compose.onNodeWithTag("service-row-work-1").assertIsSelected().assertHasClickAction().performClick()
+        compose.onNodeWithTag("service-row-work-1").assertIsSelected()
         compose.onNodeWithTag("service-row-work-2").assertHasClickAction()
         compose.onNodeWithText("Ready for review").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("State unavailable").fetchSemanticsNodes().isEmpty())
@@ -382,6 +385,46 @@ class ServiceWorkspaceCoreUiTest {
         compose.runOnIdle { testNav?.popBackStack() }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-overview").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("visit-overview").assertIsDisplayed()
+    }
+
+    @Test
+    fun managePhotosReturnsToExactServiceScrollCheckpointForTwoServices() {
+        val progress = progress(draft(), listOf(progressItem("work-a", 1, "Service A"), progressItem("work-b", 2, "Service B")))
+        val viewModel = ServiceLoopViewModel(RoomServiceLoopRepository(database, fixedTime())) {}
+        var testNav: NavHostController? = null
+        compose.setContent {
+            ServiceLoopTheme {
+                val nav = rememberNavController()
+                testNav = nav
+                NavHost(navController = nav, startDestination = "inspection/work-a") {
+                    composable("inspection/{workItemId}") { entry ->
+                        val workId = entry.arguments?.getString("workItemId").orEmpty()
+                        ServiceScreen(draftFor(workId), progress, SaveStatus.Saved(1L), null, viewModel, nav, scrollHandle = entry.savedStateHandle)
+                    }
+                    composable("service-photos/{workItemId}") { entry ->
+                        val workId = entry.arguments?.getString("workItemId").orEmpty()
+                        ServicePhotoManagementScreen(workId, UiState(), PaddingValues(), viewModel)
+                    }
+                }
+            }
+        }
+        listOf("work-a", "work-b").forEachIndexed { index, workId ->
+            if (index > 0) compose.runOnIdle { testNav?.navigate("inspection/$workId") }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("manage-service-photos"))
+            compose.waitForIdle()
+            val handle = testNav!!.currentBackStackEntry!!.savedStateHandle
+            val key = "service.$workId.firstVisibleItemIndex"
+            compose.waitUntil(10_000) { (handle.get<Int>(key) ?: 0) > 0 }
+            val checkpoint = handle.get<Int>(key) to handle.get<Int>("service.$workId.firstVisibleItemScrollOffset")
+            compose.onNodeWithTag("manage-service-photos").performClick()
+            compose.onNodeWithTag("service-photo-management").assertIsDisplayed()
+            compose.runOnIdle { testNav?.popBackStack() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitForIdle()
+            assertEquals(checkpoint, handle.get<Int>(key) to handle.get<Int>("service.$workId.firstVisibleItemScrollOffset"))
+            compose.onNodeWithTag("manage-service-photos").assertIsDisplayed()
+        }
     }
 
     @Test

@@ -54,7 +54,7 @@ data class DispatchTeamMemberEntity(val teamId: String, val technicianId: String
 @Entity(
     tableName = "dispatch_outbox_visits",
     foreignKeys = [ForeignKey(SiteEntity::class, ["id"], ["siteId"], onDelete = ForeignKey.RESTRICT)],
-    indices = [Index("siteId")],
+    indices = [Index("siteId"), Index(value = ["localVisitId"], unique = true)],
 )
 data class DispatchOutboxVisitEntity(
     @androidx.room.PrimaryKey val dispatchVisitId: String,
@@ -73,6 +73,7 @@ data class DispatchOutboxVisitEntity(
     val canceledAtEpochMillis: Long? = null,
     val cancellationReason: String? = null,
     val lastExportedCancellationAtEpochMillis: Long? = null,
+    val localVisitId: String? = null,
 )
 
 @Entity(
@@ -92,7 +93,7 @@ data class DispatchOutboxVisitTeamEntity(val dispatchVisitId: String, val teamId
         ForeignKey(DispatchOutboxVisitEntity::class, ["dispatchVisitId"], ["dispatchVisitId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(EquipmentEntity::class, ["id"], ["equipmentId"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("dispatchVisitId"), Index("equipmentId"), Index(value = ["dispatchVisitId", "position"], unique = true)],
+    indices = [Index("dispatchVisitId"), Index("equipmentId"), Index(value = ["dispatchVisitId", "position"], unique = true), Index(value = ["localWorkItemId"], unique = true)],
 )
 data class DispatchOutboxItemEntity(
     @androidx.room.PrimaryKey val dispatchItemId: String,
@@ -105,6 +106,7 @@ data class DispatchOutboxItemEntity(
     @androidx.room.ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
     val equipmentDescription: String? = null,
     val reusableTemplateId: String? = null,
+    val localWorkItemId: String? = null,
 )
 
 @Entity(
@@ -138,6 +140,7 @@ data class DispatchVisitBindingEntity(
     val controlledFingerprint: String,
     val importedAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
+    val assignmentIssuerId: String? = null,
 )
 
 @Entity(
@@ -180,6 +183,8 @@ data class FinalDispatchVisitEntity(
     val senderLabel: String,
     val documentingTechnicianId: String,
     val documentingTechnicianName: String,
+    val assignmentMaterialHash: String? = null,
+    val assignmentIssuerId: String? = null,
 )
 
 @Entity(

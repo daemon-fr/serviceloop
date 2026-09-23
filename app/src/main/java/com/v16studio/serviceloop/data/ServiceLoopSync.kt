@@ -103,6 +103,8 @@ data class SyncCustomerContact(
     val personName: String?,
     val channel: String,
     val value: String,
+    val notes: String? = null,
+    val position: Int = 0,
 )
 
 data class SyncTemplateItem(
@@ -379,16 +381,23 @@ data class SyncImportResult(val counts: SyncImportCounts, val importedAtEpochMil
 object ServiceLoopSyncEnvelopeCodec {
     const val FORMAT = "ServiceLoopSync"
     const val FORMAT_VERSION = 2
-    const val MAX_PACKAGE_BYTES = 16 * 1024 * 1024
-    const val MAX_EXPANDED_BYTES = 32L * 1024 * 1024
-    const val MAX_ENTRIES = 16
+    const val MAX_PACKAGE_BYTES = 64 * 1024 * 1024
+    const val MAX_EXPANDED_BYTES = 96L * 1024 * 1024
+    const val MAX_ENTRIES = 128
+    private const val SMALL_PACKAGE_BYTES = 16 * 1024 * 1024
+    private const val SMALL_EXPANDED_BYTES = 32L * 1024 * 1024
+    private const val SMALL_ENTRIES = 16
+
+    private fun limitsFor(purpose: String): Triple<Int, Long, Int> = if (purpose == "WORK_RESULT")
+        Triple(MAX_PACKAGE_BYTES, MAX_EXPANDED_BYTES, MAX_ENTRIES)
+    else Triple(SMALL_PACKAGE_BYTES, SMALL_EXPANDED_BYTES, SMALL_ENTRIES)
 
     fun encode(manifest: ServiceLoopSyncManifest, sections: Map<String, ByteArray>): ByteArray {
         require(manifest.formatVersion == FORMAT_VERSION) { "New ServiceLoop files must use envelope v2" }
         val exporterId = TechnicianIdCodec.normalize(manifest.exporterId.orEmpty())
             ?: throw IllegalArgumentException("A valid exporter ID is required")
         require(manifest.syncId.isNotBlank() && manifest.title.isNotBlank())
-        require(manifest.purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE"))
+        require(manifest.purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE", "WORK_RESULT", "DATA_TRANSFER"))
         Instant.parse(manifest.generatedAt)
         require(manifest.generatedWith == "ServiceLoop")
         require(manifest.sections.size == sections.size && manifest.sections.map { it.name }.toSet().size == sections.size)
@@ -397,8 +406,9 @@ object ServiceLoopSyncEnvelopeCodec {
             require(declaration.version > 0 && declaration.path == declaration.path.trim() && isSafeEntryName(declaration.path))
             entries[declaration.path] = sections[declaration.name] ?: error("Missing section ${declaration.name}")
         }
-        require(entries.size <= MAX_ENTRIES)
-        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } } }.toByteArray()
+        val limits = limitsFor(manifest.purpose)
+        require(entries.size <= limits.third && entries.values.sumOf { it.size.toLong() } <= limits.second) { "Sync exceeds purpose limits" }
+        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } } }.toByteArray().also { require(it.size <= limits.first) { "Sync exceeds purpose size limit" } }
     }
 
     fun decode(bytes: ByteArray): ServiceLoopSyncEnvelope {
@@ -417,6 +427,8 @@ object ServiceLoopSyncEnvelopeCodec {
         }
         val manifestObject = JSONObject(entries["manifest.json"]?.toString(Charsets.UTF_8) ?: error("Sync manifest is missing"))
         val manifest = parseManifest(manifestObject)
+        val limits = limitsFor(manifest.purpose)
+        require(bytes.size <= limits.first && expanded <= limits.second && entries.size <= limits.third) { "Sync exceeds purpose limits" }
         require(entries.keys == (setOf("manifest.json") + manifest.sections.map { it.path })) { "Sync entries do not match the manifest" }
         return ServiceLoopSyncEnvelope(manifest, manifest.sections.associate { it.name to entries.getValue(it.path) })
     }
@@ -434,14 +446,22 @@ object ServiceLoopSyncEnvelopeCodec {
     }
 
     fun wrapTemplateShare(value: InspectionTemplateTransfer, exporterId: String): ByteArray = encode(
-        ServiceLoopSyncManifest(UUID.randomUUID().toString(), "ServiceLoop inspection templates", "TEMPLATE_SHARE", value.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
-        mapOf("inspections" to InspectionTemplateCodec.encode(value)),
+        ServiceLoopSyncManifest(UUID.randomUUID().toString(), "ServiceLoop inspection templates", "DATA_TRANSFER", value.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
+        mapOf("transfer" to JSONObject().put("contentFamily", "INSPECTION_TEMPLATES").put("version", 1).toString().toByteArray(Charsets.UTF_8), "inspections" to InspectionTemplateCodec.encode(value)),
     )
 
     fun unwrapTemplateShare(bytes: ByteArray): InspectionTemplateTransfer {
         val envelope = decode(bytes)
-        require(envelope.manifest.purpose == "TEMPLATE_SHARE") { "This ServiceLoop file is not a template share" }
-        require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json"))) { "Invalid template-share sections" }
+        val inspectionSection = ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")
+        when (envelope.manifest.purpose) {
+            "TEMPLATE_SHARE" -> require(envelope.manifest.sections == listOf(inspectionSection)) { "Invalid legacy template-share sections" }
+            "DATA_TRANSFER" -> {
+                require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), inspectionSection)) { "Invalid data-transfer sections" }
+                val metadata = JSONObject(envelope.section("transfer").toString(Charsets.UTF_8))
+                require(metadata.length() == 2 && metadata.getString("contentFamily") == "INSPECTION_TEMPLATES" && metadata.getInt("version") == 1) { "Unsupported data-transfer content" }
+            }
+            else -> error("This ServiceLoop file does not contain inspection templates")
+        }
         return InspectionTemplateCodec.decode(envelope.section("inspections"))
     }
 
@@ -457,7 +477,7 @@ object ServiceLoopSyncEnvelopeCodec {
         val formatVersion = o.getInt("formatVersion")
         require(formatVersion in 1..FORMAT_VERSION) { "Unsupported ServiceLoop sync version" }
         val purpose = o.requiredText("purpose")
-        require(purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE"))
+        require(purpose in setOf("FULL_WORKSPACE", "WORK_ASSIGNMENT", "TEMPLATE_SHARE", "WORK_RESULT", "DATA_TRANSFER"))
         val generatedAt = o.requiredText("generatedAt"); Instant.parse(generatedAt)
         require(o.requiredText("generatedWith") == "ServiceLoop")
         val sectionsObject = o.getJSONArray("sections")
@@ -485,7 +505,7 @@ object ServiceLoopSyncCodec {
     const val MAX_EXPANDED_BYTES = 32L * 1024 * 1024
     const val MAX_ENTRIES = 16
     private val sectionNames = listOf("business", "register", "inspections", "plans", "team", "visits", "followups")
-    private val sectionVersions = mapOf("business" to 1, "register" to 2, "inspections" to 1, "plans" to 1, "team" to 2, "visits" to 1, "followups" to 1)
+    private val sectionVersions = mapOf("business" to 1, "register" to 3, "inspections" to 1, "plans" to 1, "team" to 2, "visits" to 1, "followups" to 1)
     private val expectedEntries = (listOf("manifest.json") + sectionNames.map { "$it.json" }).toSet()
 
     fun preview(value: ServiceLoopSyncPackage): SyncImportPreview = SyncImportPreview(value, SyncImportCounts(
@@ -523,7 +543,9 @@ object ServiceLoopSyncCodec {
     fun decode(bytes: ByteArray): ServiceLoopSyncPackage {
         val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes)
         require(envelope.manifest.purpose == PURPOSE_FULL_WORKSPACE) { "Unsupported ServiceLoop sync purpose" }
-        val expectedVersions = if (envelope.manifest.formatVersion == 1) sectionNames.associateWith { 1 } else sectionVersions
+        val registerVersion = envelope.manifest.sections.firstOrNull { it.name == "register" }?.version
+        require(registerVersion in setOf(1, 2, 3)) { "Unsupported register section version" }
+        val expectedVersions = if (envelope.manifest.formatVersion == 1) sectionNames.associateWith { 1 } else sectionVersions + ("register" to registerVersion!!)
         require(envelope.manifest.sections == sectionNames.map { ServiceLoopSyncSectionDeclaration(it, expectedVersions.getValue(it), "$it.json") }) { "Sync entries do not match the supported contract" }
         val sections = envelope.sections
         return ServiceLoopSyncPackage(
@@ -541,7 +563,7 @@ object ServiceLoopSyncCodec {
 
     private fun manifestJson(value: ServiceLoopSyncPackage) = JSONObject().put("format", FORMAT).put("formatVersion", FORMAT_VERSION).put("syncId", value.manifest.syncId).put("title", value.manifest.title).put("purpose", PURPOSE_FULL_WORKSPACE).put("generatedAt", value.manifest.generatedAt).put("generatedWith", "ServiceLoop").put("exporterId", value.manifest.exporterId).put("sections", JSONArray().also { array -> sectionNames.forEach { name -> array.put(JSONObject().put("name", name).put("version", sectionVersions.getValue(name)).put("path", "$name.json")) } }).toString()
     private fun businessJson(value: SyncBusinessProfile) = JSONObject().put("businessProfile", JSONObject().put("businessName", value.businessName).put("technicianName", value.technicianName).putNullable("phone", value.phone).putNullable("email", value.email).putNullable("postalAddress", value.postalAddress).put("zoneId", value.zoneId)).toString()
-    private fun registerJson(value: SyncRegister) = JSONObject().put("customers", JSONArray().also { a -> value.customers.forEach { c -> a.put(JSONObject().put("id", c.id).put("reference", c.reference).put("name", c.name).putNullable("contactName", c.contactName).putNullable("phone", c.phone).putNullable("email", c.email).putNullable("privateNote", c.privateNote).put("customerType", c.customerType).put("state", c.state)) } }).put("customerContacts", JSONArray().also { a -> value.customerContacts.forEach { c -> a.put(JSONObject().put("id", c.id).put("customerId", c.customerId).putNullable("personName", c.personName).put("channel", c.channel).put("value", c.value)) } }).put("sites", JSONArray().also { a -> value.sites.forEach { s -> a.put(JSONObject().put("id", s.id).put("customerId", s.customerId).put("reference", s.reference).put("name", s.name).putNullable("address", s.address).putNullable("privateAccessNote", s.privateAccessNote).putNullable("contactName", s.contactName).putNullable("phone", s.phone).putNullable("email", s.email).put("isDefault", s.isDefault).put("state", s.state)) } }).put("equipment", JSONArray().also { a -> value.equipment.forEach { e -> a.put(JSONObject().put("id", e.id).put("siteId", e.siteId).put("reference", e.reference).putNullable("technicianIdentifier", e.technicianIdentifier).put("name", e.name).putNullable("make", e.make).putNullable("model", e.model).putNullable("serialNumber", e.serialNumber).putNullable("privateNote", e.privateNote).put("state", e.state)) } }).toString()
+    private fun registerJson(value: SyncRegister) = JSONObject().put("customers", JSONArray().also { a -> value.customers.forEach { c -> a.put(JSONObject().put("id", c.id).put("reference", c.reference).put("name", c.name).putNullable("contactName", c.contactName).putNullable("phone", c.phone).putNullable("email", c.email).putNullable("privateNote", c.privateNote).put("customerType", c.customerType).put("state", c.state)) } }).put("customerContacts", JSONArray().also { a -> value.customerContacts.forEachIndexed { index, c -> a.put(JSONObject().put("id", c.id).put("customerId", c.customerId).putNullable("personName", c.personName).put("channel", c.channel).put("value", c.value).putNullable("notes", c.notes).put("position", c.position.takeIf { it > 0 } ?: index + 1)) } }).put("sites", JSONArray().also { a -> value.sites.forEach { s -> a.put(JSONObject().put("id", s.id).put("customerId", s.customerId).put("reference", s.reference).put("name", s.name).putNullable("address", s.address).putNullable("privateAccessNote", s.privateAccessNote).putNullable("contactName", s.contactName).putNullable("phone", s.phone).putNullable("email", s.email).put("isDefault", s.isDefault).put("state", s.state)) } }).put("equipment", JSONArray().also { a -> value.equipment.forEach { e -> a.put(JSONObject().put("id", e.id).put("siteId", e.siteId).put("reference", e.reference).putNullable("technicianIdentifier", e.technicianIdentifier).put("name", e.name).putNullable("make", e.make).putNullable("model", e.model).putNullable("serialNumber", e.serialNumber).putNullable("privateNote", e.privateNote).put("state", e.state)) } }).toString()
     private fun inspectionsJson(value: SyncInspections) = JSONObject().put("templates", JSONArray().also { a -> value.templates.forEach { t -> a.put(JSONObject().put("id", t.id).put("reference", t.reference).put("name", t.name).put("state", t.state).put("revision", t.revision).put("items", JSONArray().also { items -> t.items.forEach { i -> items.put(JSONObject().put("position", i.position).put("label", i.label).put("responseType", i.responseType).putNullable("unit", i.unit).put("required", i.required).putNullable("privateGuidance", i.privateGuidance)) } })) } }).toString()
     private fun plansJson(value: SyncPlans) = JSONObject().put("plans", JSONArray().also { a -> value.plans.forEach { p -> a.put(JSONObject().put("id", p.id).put("reference", p.reference).put("equipmentId", p.equipmentId).put("name", p.name).put("intervalCount", p.intervalCount).put("intervalUnit", p.intervalUnit).put("currentDueDate", p.currentDueDate).putNullable("templateId", p.templateId).put("state", p.state)) } }).toString()
     private fun teamJson(value: SyncTeamDirectory) = JSONObject().put("technicians", JSONArray().also { a -> value.technicians.forEach { t -> a.put(JSONObject().put("technicianId", t.technicianId).put("displayName", t.displayName).putNullable("designation", t.designation).putNullable("notes", t.notes)) } }).put("teams", JSONArray().also { a -> value.teams.forEach { t -> a.put(JSONObject().put("id", t.id).put("name", t.name).put("memberIds", JSONArray(t.memberIds)).put("leaderIds", JSONArray(t.leaderIds))) } }).toString()
@@ -564,7 +586,7 @@ object ServiceLoopSyncCodec {
         val customers=mutableListOf<SyncCustomer>(); arr("customers"){c->customers+=SyncCustomer(c.requiredText("id"),c.requiredText("reference"),c.requiredText("name"),c.nullableText("contactName"),c.nullableText("phone"),c.nullableText("email"),c.nullableText("privateNote"),c.requiredText("customerType"),c.requiredText("state"))}
         val sites=mutableListOf<SyncSite>(); arr("sites"){s->sites+=SyncSite(s.requiredText("id"),s.requiredText("customerId"),s.requiredText("reference"),s.requiredText("name"),s.nullableText("address"),s.nullableText("privateAccessNote"),s.nullableText("contactName"),s.nullableText("phone"),s.nullableText("email"),s.getBoolean("isDefault"),s.requiredText("state"))}
         val equipment=mutableListOf<SyncEquipment>(); arr("equipment"){e->equipment+=SyncEquipment(e.requiredText("id"),e.requiredText("siteId"),e.requiredText("reference"),e.nullableText("technicianIdentifier"),e.requiredText("name"),e.nullableText("make"),e.nullableText("model"),e.nullableText("serialNumber"),e.nullableText("privateNote"),e.requiredText("state"))}
-        val contacts=if(o.has("customerContacts")) o.getJSONArray("customerContacts").let{a->List(a.length()){val c=a.getJSONObject(it);SyncCustomerContact(c.requiredText("id"),c.requiredText("customerId"),c.nullableText("personName"),c.requiredText("channel"),c.requiredText("value"))}} else emptyList()
+        val contacts=if(o.has("customerContacts")) o.getJSONArray("customerContacts").let{a->List(a.length()){index->val c=a.getJSONObject(index);SyncCustomerContact(c.requiredText("id"),c.requiredText("customerId"),c.nullableText("personName"),c.requiredText("channel"),c.requiredText("value"),c.nullableText("notes"),c.optInt("position",index+1))}} else emptyList()
         return SyncRegister(customers,sites,equipment,contacts)
     }
     private fun parseInspections(o: JSONObject): SyncInspections { val templates=o.getJSONArray("templates").let { a -> List(a.length()){ val t=a.getJSONObject(it); val items=t.getJSONArray("items").let { x->List(x.length()){ val i=x.getJSONObject(it); SyncTemplateItem(i.getInt("position"),i.requiredText("label"),i.requiredText("responseType"),i.nullableText("unit"),i.getBoolean("required"),i.nullableText("privateGuidance")) } }; SyncTemplate(t.requiredText("id"),t.requiredText("reference"),t.requiredText("name"),t.requiredText("state"),t.getInt("revision"),items) } }; return SyncInspections(templates) }

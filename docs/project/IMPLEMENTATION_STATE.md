@@ -11,19 +11,20 @@ This file is the maintained first-stop implementation pointer. A fresh AI should
 Current B049 implementation line:
 
 - active branch: `codex/b049-work-exchange-reporting-export-center`
-- current remote checkpoint before this process-doc integration: `ac6c0d64d34c7f371f3c257225ea5252756c121e`
+- starting continuation revision: `5093fc116a08e3ce2a2cabc5540b1672b6ac64fe`
 - B049 source/base: B048 `cadc0668fe2ba5172d17a86a157323303a71d83f`
 - protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
-- current executable at the partial B049 checkpoint: `1.2.0` / versionCode `4`
-- current Room: v18
-- current Recovery: schema v17
-- B049 remains in progress; see the B049 milestone authority/checkpoint record for implemented vs remaining stages.
+- current executable: `1.3.0` / versionCode `5`
+- current Room: v19, with non-destructive 18→19 migration
+- current Recovery: schema v18, with 17→18 compatibility
+- FULL_WORKSPACE register: v3, with v2 read compatibility
+- B049 is implemented and verified on the branch for owner review. The final run passed 491 JVM tests, debug/Android-test/release assembly, lintDebug, an affected 49-test canonical-AVD suite, and seven focused device tests after the last production edit. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for the implementation record and retained authority; verify the final branch commit and remote parity directly in Git.
 
 For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
 
     docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
 
-After this process-doc integration, verify the branch HEAD directly rather than treating the pre-integration checkpoint SHA above as the current tip.
+Verify branch HEAD directly rather than treating the starting continuation SHA above as the current tip.
 
 ## Accepted baseline and active implementation line
 
