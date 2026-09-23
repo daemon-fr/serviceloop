@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-23
+**Updated:** 2026-09-24
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -11,14 +11,14 @@ This file is the maintained first-stop implementation pointer. A fresh AI should
 Current B049 implementation line:
 
 - active branch: `codex/b049-work-exchange-reporting-export-center`
-- starting continuation revision: `5093fc116a08e3ce2a2cabc5540b1672b6ac64fe`
-- B049 source/base: B048 `cadc0668fe2ba5172d17a86a157323303a71d83f`
+- continuation worktree starting revision: `83a67e4f784737b6c492ba434fd4157dbbebc92a`
+- B049 implementation base: `653a0978b8f6be560acacd45e26c2405ab23e526`; earlier B048 line: `cadc0668fe2ba5172d17a86a157323303a71d83f`
 - protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
 - current executable: `1.3.0` / versionCode `5`
 - current Room: v19, with non-destructive 18→19 migration
 - current Recovery: schema v18, with 17→18 compatibility
 - FULL_WORKSPACE register: v3, with v2 read compatibility
-- B049 is implemented and verified on the branch for owner review. The final run passed 492 JVM tests, debug/Android-test/release assembly, lintDebug, an affected 49-test canonical-AVD suite, and seven focused device tests after the prior export edit, and a delayed startup smoke after the final import correction. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for the implementation record and retained authority; verify the final branch commit and remote parity directly in Git.
+- B049 is implemented and verified for owner review on the designated branch. Final source gates passed 509 JVM tests, debug/Android-test/release builds, lintDebug, 12 canonical-AVD instrumented cases across seven classes plus a focused preview rerun, system picker/sharesheet handoffs, rendered inspection, and startup smoke. The canonical development-only v19 database was additively repaired and audited against its pre-test checkpoint; Room stays v19 with only the production 18→19 migration. B-008 pilot, owner acceptance, and merge remain outstanding. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for detailed evidence; verify final Git tip and remote parity directly.
 
 For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
 
@@ -331,7 +331,7 @@ The B047 UI/UX and narrow persistence hardening is implemented on `codex/b047-po
 
 Implemented on `codex/b048-team-trust-ux-hardening` from B047 SHA `527fa83f7c5f56cd33b08a10200c5cb20d0418b9`. App version target is 1.2.0 (code 4), Room v18, and Recovery schema v17. Home adds Dashboard / Agenda / Team. The existing durable `technician_identity` row remains the one stable local ServiceLoop ID; its Team label is Coordinator ID or Technician ID by role. Trusted IDs are device-local, included in Recovery, preserved by FULL_WORKSPACE replacement, and required at each `.slsync` mutation boundary. New envelope v2 files require `exporterId`; v1 files remain readable for verification and are verify-only. `register` section v2 carries repeatable customer contacts and `team` section v2 carries technician notes; Dispatch v5 and template payload semantics remain unchanged. The 477-test unit suite, debug APK, instrumentation APK, lint, and focused canonical AVD cases passed; detailed scope, evidence limits, and runtime evidence are in [B048_TEAM_TRUST_AND_UX_HARDENING.md](B048_TEAM_TRUST_AND_UX_HARDENING.md).
 
-## B049 active implementation line — partial UI checkpoint
+## B049 historical partial UI checkpoint — 2026-09-23 (superseded)
 
 The active implementation branch is `codex/b049-work-exchange-reporting-export-center`, created from B048 SHA `cadc0668fe2ba5172d17a86a157323303a71d83f`. [The B049 milestone authority and checkpoint record](B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md) describe the approved target and the first implemented UI slice. B049 is **in progress**: canonical Dispatch/Visit convergence, Room v19, Recovery v18, WORK_RESULT, DATA_TRANSFER, Export Center, aggregate reports, contact order/notes, and image retention are not yet implemented. The executable version remains 1.2.0/code 4 with Room v18 and Recovery v17. No protected-baseline integration is implied.
 
@@ -339,7 +339,7 @@ The 2026-09-23 owner-review continuation adds a partial correction slice on this
 
 A following capability checkpoint replaces the overloaded `canCreateLocalWork` gate with explicit `canCreateVisits` and `canAssignWork` fields. Coordinator can enter canonical Visit creation and Book due Services but cannot Start from its action bar or New Visit form; field Service routes remain guarded by `canPerformFieldWork`. This is a capability step toward, not completion of, canonical Visit/Dispatch convergence. The first focused Coordinator booking/no-Start UI test passed on the canonical AVD.
 
-## B049 independent-review correction — current implementation pointer
+## B049 independent-review correction checkpoint — 2026-09-23 (superseded)
 
 The B049 implementation is complete for owner review on `codex/b049-work-exchange-reporting-export-center`; it is not owner accepted or merged to protected `master`. The seven independent-review defects in the prior `a49acb0dec75c34438adfb6eb6da3228f58e9712` checkpoint were corrected in implementation commit `37241d1f199762970ac584e23ce3ba88b79a0974`, with final performed-export regression commit `f3712ea`. This section supersedes the historical partial-state pointer above. Verify the current branch HEAD directly in Git for the documentation checkpoint that follows the implementation commits.
 
@@ -347,8 +347,32 @@ Current versions: app `1.3.0`/code `5`, Room v19 with non-destructive final 18�
 
 Final correction verification: 497 JVM tests PASS (0 failures/errors/skips); debug, Android-test, and release APK builds PASS; lintDebug PASS; seven focused canonical AVD tests PASS, including Room 18→19, aggregate PDF, Export Center/role UI, aggregate light/dark capture, and a DOMAIN-INSTRUMENTED two-item WORK_RESULT/recurrence/Visit-reporting journey. The final debug APK was installed with `install -r` on the dynamically identified canonical AVD; delayed startup remained alive and sampled fatal logs were empty. The preserved AVD's intermediate development-only v19 database was backed up and additively repaired without wiping data or adding a production 19→19 migration. Aggregate light/dark captures were visually inspected; correction-pass SYSTEM-HANDOFF was NOT RUN and earlier picker evidence is historical. B-008 pilot and owner acceptance remain outstanding.
 
-## B049 native-sharing correction checkpoint — 2026-09-23
+## B049 native-sharing pre-continuation checkpoint — 2026-09-23 (superseded)
 
 The later owner amendment in the B049 authority supersedes the prior template-only DATA_TRANSFER and readable-only Export Center target. The correction branch now has the three cross-feature fixes: photo visibility and report inclusion have separate repository actions and accurate management labels; readable Image Archive privacy filters bytes and metadata; Recovery no longer requires an original deliberately removed after verified derivative retention; and voided finals are excluded from Work Performed regardless of the inactive master-data choice. DATA_TRANSFER metadata v2 has a versioned family/binary declaration codec, bounded by the shared envelope's 64/96 MiB and 128-entry limits; new inspection-template shares use v2 while old template purposes remain readable. Focused regressions and a 504-test full JVM suite passed, as did debug, Android-test, release, and lint gates.
 
-This is **not a completed B049 native-sharing implementation**. The generalized current-data merge and provenance bindings, immutable transferred-history/evidence persistence, native Export Center output selector, DATA_TRANSFER import preview and transaction, Room/Recovery extension, domain-instrumented round trip, and Android system handoffs remain outstanding. No native option is exposed in Export Center until it can produce a safely importable slice. The previous owner-review-complete statement above describes the earlier B049 contract only and does not apply to this later amendment.
+At this 2026-09-23 checkpoint, generalized current-data merge and provenance bindings, immutable transferred-history/evidence persistence, the native Export Center output selector, DATA_TRANSFER import preview and transaction, Room/Recovery extension, domain round trip, and Android system handoffs were still outstanding. The authorized final continuation completed these items; its implementation and verification record follows the adopted B049 authority in `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md`.
+
+## B049 native sharing, import, export, and reporting — 2026-09-24
+
+Status: IMPLEMENTED / VERIFIED FOR OWNER REVIEW on `codex/b049-work-exchange-reporting-export-center`. Worktree continuation started at `83a67e4f784737b6c492ba434fd4157dbbebc92a`, atop the B049 amendment at `653a0978b8f6be560acacd45e26c2405ab23e526`. App is `1.3.0` / code `5`; Room remains v19, Recovery v18, `.slsync` envelope v2, FULL_WORKSPACE register v3, WORK_RESULT v1, and DATA_TRANSFER v2.
+
+DATA_TRANSFER v2 implements the adopted eight families (REGISTER, SERVICE_PLANS, INSPECTION_TEMPLATES, PERFORMED_WORK, FOLLOW_UPS, CONTACT_NOTES, CHANGE_HISTORY, EVIDENCE), explicit family/section/version and validated binary declarations, trust checks, conservative source bindings and conflict handling for mutable current data, and atomic additive import. Export Center defaults to an importable ServiceLoop `.slsync`; readable `.zip` remains available. Both use the shared Customer/Site/Equipment, date, privacy, inactive, and revision scope. Immutable transferred results, history, evidence, notes, and changes keep original-origin provenance through relay workspaces; they never create local Visits, claims, execution, or recurrence effects. Exact retries are idempotent and conflicting immutable identities are rejected. The shared envelope retains 64 MiB compressed, 96 MiB expanded, and 128-entry limits. Aggregate customer reporting consumes effective local and transferred final revisions and freezes the selected sources.
+
+Room v19 adds `data_transfer_bindings`, `transferred_final_results`, `transferred_evidence`, and `transferred_history_entries`; the production migration remains 18→19. Recovery remains v18 with transfer-state round-trip coverage. No production 19→19 migration or Room v20 was introduced.
+
+Verification:
+
+- `:app:testDebugUnitTest`: 509 PASS, zero failures/errors/skips.
+- `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease`: PASS in the final source gate.
+- Canonical AVD instrumentation: 12 PASS across seven classes (migration 1; transfer domain round trip 1; Export Center/import-preview UI 5; rendered-evidence UI 1; Android system handoffs 2; WORK_RESULT domain journey 1; aggregate PDF 1), plus one focused import-preview rerun PASS.
+- SYSTEM-HANDOFF: native sharesheet opened for generated `.slsync`; Android document picker selected a generated DATA_TRANSFER v2 file and returned to import preview; picker cancellation returned cleanly. No actual recipient send or UI commit was performed. Domain-tested atomic import passed.
+- HUMAN/RENDERED: eight light/dark representative screen captures were retrieved and visually inspected; temporary captures were removed after review.
+- Canonical AVD startup smoke: the ordinary final debug APK was installed with `install -r`, launched, and remained alive after the delayed check with no sampled AndroidRuntime fatal error.
+- `git diff --check`: PASS at final handoff.
+
+Preserved AVD v19 repair: the original stopped `serviceloop.db` backup SHA-256 is `5084b0a55e0969b236ec94b7ff8139987eba5b4f99e3d23de9c806911e6599e3`; there was no active WAL at repair start. It passed `integrity_check`, had no FK violations, user_version 19, and intermediate Room hash `615a4c9e9c4138f231c750352aec7cf7`. Comparison with generated final `19.json` found all 59 common Room tables equivalent in columns, primary keys, FKs, and indices. The only differences were four absent B049 tables and their 17 expected indices; no existing object needed transformation or rebuild. Those four tables/indices were added to a copy, then final identity `980b236143a32be8bfeeba9abc79e57f` was written only after schema equivalence was established. The repaired DB SHA-256 is `ea0fca8353e27df56e03d224ebfa2d53ddf0d418e1ade0a36e8037c8a38b4c1a`; the 231 pre-existing rows were preserved. Integrity and FK checks passed.
+
+A stopped-app post-test snapshot including WAL/SHM (`serviceloop.db.after-tests`, `serviceloop.db.after-tests-wal`, `serviceloop.db.after-tests-shm`) also passed integrity/FK, version, identity, schema, and row-count checks. Its only data difference was `recovery_metadata.lastBusinessWriteAtEpochMillis`, changed by the device test run. A guarded Android SQLite audit restored only that timestamp to the backed-up pre-test value and verified the live database fingerprint exactly matched the repaired checkpoint. Original and audit snapshots remain in ignored `app/build/b049-avd-repair-backup`; temporary audit/repair source and device screenshots were removed. The ordinary final APK was reinstalled with `adb -s <dynamically resolved canonical serial> install -r`; no data clear or AVD reset occurred.
+
+B-008 real-technician pilot, owner acceptance, protected-master integration, and release are not claimed. B049 remains a reviewable milestone branch; this record does not imply owner acceptance or merge.

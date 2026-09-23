@@ -46,6 +46,10 @@ Image cleanup defaults to Never and offers 1/3/6 months or 1 year for full-resol
 
 ## Implementation record
 
+**Latest implementation status:** the authorized final continuation is complete for review; its current status and evidence are recorded at the end of this document. Earlier checkpoints retain their original dates and are historical where they conflict with that final record.
+
+
+
 **Continuation status (2026-09-23):** The `a49acb0` implementation was substantial but not yet independently accepted. Seven contract defects found in source review are corrected in the independent-review pass below. The checkpoint evidence following this paragraph is historical and is not evidence that `a49acb0` satisfied those seven contracts.
 
 The current code targets app `1.3.0`/code `5`, Room v19, Recovery v18, FULL_WORKSPACE register v3, and `.slsync` envelope v2. New assigned work uses one canonical Visit/WorkItem transaction plus linked Dispatch overlay; legacy unlinked Outbox remains usable. WORK_RESULT v1 carries structured immutable final truth and bounded JPEG derivatives, validates issuer/trust/target and retry identity, and stores remote final receipts separately from local execution. Stale results do not advance recurrence. A representative 12-photo result package measured 6,233,353 compressed bytes, with 1200×800, 519,452-byte derivatives from 1,126,524-byte source JPEGs. WORK_RESULT limits are 64 MiB compressed, 96 MiB expanded, and 128 ZIP entries.
@@ -2583,3 +2587,36 @@ DATA_TRANSFER v2 declares family identities, versions, sections, and validated b
 Evidence bytes are app-owned after import. Photo visibility (PUBLIC, PRIVATE, INTERNAL) and customer-report inclusion are independent: customer reports require PUBLIC and included; private/internal photos cannot be report-included. Both output formats respect the privacy selection. Image cleanup's deliberately removed original is not a mandatory Recovery file when a verified retained derivative exists. The derivative remains mandatory. Inactive master-data selection never resurrects voided final records as Work Performed; void events remain in explicit change/history output.
 
 The final B049 schema remains Room v19 and Recovery v18. Non-destructive migration from v18, Recovery round trips, legacy template decode, native import/export round trips, and Android system handoffs are required before this amendment is considered implemented and verified. The implementation status is recorded separately in `IMPLEMENTATION_STATE.md` and Git, not inferred from this authority text.
+
+## Final B049 implementation and verification record — 2026-09-24
+
+**Status: IMPLEMENTED / VERIFIED FOR OWNER REVIEW.** The final continuation was performed on `codex/b049-work-exchange-reporting-export-center`, starting from branch tip `83a67e4f784737b6c492ba434fd4157dbbebc92a` with B049 amendment base `653a0978b8f6be560acacd45e26c2405ab23e526`. This does not claim owner acceptance, release, or B-008 pilot completion.
+
+The implementation adds native DATA_TRANSFER v2 for the eight adopted families: REGISTER, SERVICE_PLANS, INSPECTION_TEMPLATES, PERFORMED_WORK, FOLLOW_UPS, CONTACT_NOTES, CHANGE_HISTORY, and EVIDENCE. Family/section versions and binary entries are declared and validated within the existing `.slsync` envelope v2 bounds (64 MiB compressed, 96 MiB expanded, 128 entries). Legacy TEMPLATE_SHARE remains readable. Trusted import validates the whole package before one additive Room transaction; absence never deletes local data. Current directory and plans use source-workspace bindings and conservative conflict handling. Imported performed results, corrections, follow-ups, notes, changes, and evidence retain source/origin/revision provenance, remain immutable, and relay with original origin intact. Exact retries are idempotent; conflicting immutable identities are rejected. No imported data fabricates local Visit execution, claims, or recurrence advancement.
+
+Export Center defaults to ServiceLoop file (`.slsync`) for another workspace and retains readable archive (`.zip`). The shared preset/family and Customer/Site/Equipment, inclusive date, privacy, inactive, and revision selection model applies to both. Import preview presents trust and conflict outcomes before apply. Aggregate reports include effective transferred results alongside local truth and freeze selected source revisions. Existing export privacy, evidence ownership, retained-derivative and void filtering rules remain enforced.
+
+Current versions are app `1.3.0` / versionCode `5`, Room v19, Recovery v18, `.slsync` envelope v2, FULL_WORKSPACE register v3, WORK_RESULT v1, and DATA_TRANSFER v2. Room migration remains non-destructive 18→19. The four new v19 tables are `data_transfer_bindings`, `transferred_final_results`, `transferred_evidence`, and `transferred_history_entries`; generated schema `19.json` contains the final form. No production 19→19 migration, Room v20, or destructive fallback exists.
+
+### Verification evidence
+
+- **TESTED — JVM:** final `:app:testDebugUnitTest`: 509 tests PASS, zero failures/errors/skips.
+- **TESTED — builds/lint:** `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease` all PASS in the final source gate.
+- **MIGRATION-TESTED:** `Room18To19MigrationTest`, 1 PASS; Recovery compatibility and round-trip tests are included in the passing JVM suite.
+- **DOMAIN-INSTRUMENTED:** DATA_TRANSFER two-workspace additive merge, immutable history/evidence, retry, relay-origin, and no-local-execution behavior: 1 PASS. WORK_RESULT completion/recurrence journey: 1 PASS.
+- **UI-INSTRUMENTED:** Export Center/import preview and role/scope/privacy coverage: 5 PASS. Rendered-evidence flow: 1 PASS. Aggregate PDF: 1 PASS.
+- **SYSTEM-HANDOFF:** `B049SystemHandoffUiTest`, 2 PASS. The real Android sharesheet opened for a produced `.slsync`; the document picker selected generated DATA_TRANSFER v2 and returned to import preview; cancellation returned without relaunch. No file was sent to an external recipient, and import was not committed from the UI. Atomic domain apply is covered separately.
+- **HUMAN/RENDERED:** eight representative light/dark screen captures were retrieved and visually inspected. Temporary captures were removed after review.
+- **Startup smoke:** the ordinary debug APK was installed with `install -r`, launched on the dynamically resolved canonical `Pixel_10a_ServiceLoop` AVD, and remained alive after the delayed check; no sampled AndroidRuntime fatal error appeared.
+- **DATABASE AUDIT:** the repaired Room v19 database and its post-test WAL snapshot passed integrity, FK, version, identity-hash, schema, and row-count checks. Full existing-row fingerprints matched after restoring one test-mutated recovery bookkeeping timestamp. Details and hashes follow.
+- **Git:** `git diff --check` PASS. Final designated branch/commit, remote parity, and unchanged protected `master` are reported at handoff.
+
+### Canonical AVD development-only v19 repair
+
+The `Pixel_10a_ServiceLoop` AVD held an intermediate, development-only v19 schema. After a clean app stop, the original main database was backed up before mutation (SHA-256 `5084b0a55e0969b236ec94b7ff8139987eba5b4f99e3d23de9c806911e6599e3`); no active WAL remained at repair start. The backup passed SQLite `integrity_check`, had no foreign-key violations, user_version 19, and intermediate Room identity `615a4c9e9c4138f231c750352aec7cf7`.
+
+Comparison against generated final `19.json` showed all 59 common Room tables already matched in columns, primary-key order, foreign keys, and indices. The only schema differences were four missing new tables and 17 associated indices. No existing column/table required transformation, no table was rebuilt, and no data was discarded. A separate copy received only those additive objects; the final Room identity hash `980b236143a32be8bfeeba9abc79e57f` was written after schema equivalence was proven. The repaired main database SHA-256 is `ea0fca8353e27df56e03d224ebfa2d53ddf0d418e1ade0a36e8037c8a38b4c1a`. All 231 pre-existing rows were preserved.
+
+The stopped-app post-test snapshot used for WAL-inclusive verification had main DB SHA-256 `9cca03cd03d0081c709fd1c688ec5686784441b5d75363ce12f35d139b1d2428`, WAL SHA-256 `f94fc4f2915808b097a2c4a25aecb379d458f7bce64549ca1f78fcf04d63d73b`, and SHM SHA-256 `2dde63569e1356ef9525935b5cbea829050fc423b1dbd2415b04e63a99a951cf`. Its schema, version, identity, FK/integrity results, table row counts, and all row fingerprints matched the repaired checkpoint except `recovery_metadata.lastBusinessWriteAtEpochMillis`. The audit restored that field to the pre-test value and verified the live AVD database returned to the repaired checkpoint’s complete data fingerprint. The snapshots remain under ignored `app/build/b049-avd-repair-backup`; temporary audit/repair tooling was removed. The ordinary final APK was reinstalled with `install -r`.
+
+B-008 external pilot, owner acceptance, release, and merge into protected `master` remain outstanding. No recipient delivery beyond opening the system sharesheet was claimed.
