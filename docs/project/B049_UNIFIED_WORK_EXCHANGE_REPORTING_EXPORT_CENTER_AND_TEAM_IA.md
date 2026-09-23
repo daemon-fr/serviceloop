@@ -56,7 +56,7 @@ Verification after the last production edit: 492 JVM tests passed with no failur
 
 ### Independent-review correction pass — 2026-09-23
 
-The correction starts at `a49acb0dec75c34438adfb6eb6da3228f58e9712` on `codex/b049-work-exchange-reporting-export-center`. Implementation commit `37241d1f199762970ac584e23ce3ba88b79a0974` corrects the seven review findings without a new milestone or version bump:
+The correction starts at `a49acb0dec75c34438adfb6eb6da3228f58e9712` on `codex/b049-work-exchange-reporting-export-center`. Implementation commit `37241d1f199762970ac584e23ce3ba88b79a0974` corrects the seven review findings, evidence commit `b7d0a6d0a302197b98efbfcc1111e04e262e5397` records verification, and `f3712ea` adds explicit locally completed Visit coverage to Work Performed export. No new milestone or version bump was made:
 
 1. Applied results now complete the linked canonical Visit and conclude its Outbox only when every Dispatch item has an applied remote receipt or locally finalized item truth. Manual Outbox conclusion enforces the same item test. Partial and stale results leave the Visit non-complete; retry does not repeat recurrence or completion. No Coordinator field execution is fabricated.
 2. Room v19 final-photo rows now freeze all present Service evidence with independent `includedInCustomerReport` and `visibility`; attachments default visibility to `PUBLIC`. First finalization and correction revisions preserve the evidence set. Customer report projections require both report inclusion and `PUBLIC`, while WORK_RESULT exports every frozen photo from its exact final revision, independent of later working-attachment changes. Retention and Image Archive cover report-excluded frozen evidence.
