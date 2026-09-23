@@ -110,4 +110,13 @@ class B049WorkResultImportTest {
         assertNotNull(wrong)
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { service.import(wrong) } }
     }
+
+    @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {
+        ServiceLoopPeerTrustStore(database).remove(exporter)
+        val bytes = packageBytes("untrusted", result(2))
+        assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { WorkResultImportService(database, root).import(bytes) } }
+        assertNull(database.serviceLoopDao().workResultReceipt("result-2", "revision-2"))
+        assertNull(database.serviceLoopDao().remoteFinalResult("result-2", "revision-2"))
+        assertEquals("DISPATCHED", database.dispatchDao().outboxVisit("dispatch-v")!!.outboxStatus.name)
+    }
 }

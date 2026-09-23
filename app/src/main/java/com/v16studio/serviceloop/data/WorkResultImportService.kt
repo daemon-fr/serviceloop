@@ -39,10 +39,18 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 }
             }
             database.withTransaction {
+                val currentIdentity = dispatch.technicianIdentity()?.technicianId ?: error("Local ServiceLoop identity is unavailable")
+                require(currentIdentity == preview.targetIssuerId) { "This result belongs to another assignment issuer" }
+                ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(preview.exporterId)
                 val now = System.currentTimeMillis()
                 prepared.forEach { item ->
                     if (item.preview.status == "ALREADY_RECEIVED") return@forEach
                     require(dao.workResultReceipt(item.preview.resultId, item.preview.sourceFinalRevisionId) == null) { "Result changed while importing" }
+                    require(dispatch.outboxVisit(item.preview.dispatchVisitId) == item.outbox &&
+                        dispatch.outboxItems(item.preview.dispatchVisitId).firstOrNull { it.dispatchItemId == item.preview.dispatchItemId } == item.item &&
+                        dispatch.outboxItemAssignees(item.preview.dispatchItemId).any { it.technicianId == preview.exporterId }) {
+                        "Assignment changed while importing; review the result again"
+                    }
                     val json = item.result.value
                     val work = json.getJSONObject("workSnapshot")
                     val resultDbId = stable("remote-final", item.preview.resultId, item.preview.sourceFinalRevisionId)

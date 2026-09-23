@@ -18,7 +18,7 @@ Current B049 implementation line:
 - current Room: v19, with non-destructive 18→19 migration
 - current Recovery: schema v18, with 17→18 compatibility
 - FULL_WORKSPACE register: v3, with v2 read compatibility
-- B049 is implemented and verified on the branch for owner review. The final run passed 491 JVM tests, debug/Android-test/release assembly, lintDebug, an affected 49-test canonical-AVD suite, and seven focused device tests after the last production edit. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for the implementation record and retained authority; verify the final branch commit and remote parity directly in Git.
+- B049 is implemented and verified on the branch for owner review. The final run passed 492 JVM tests, debug/Android-test/release assembly, lintDebug, an affected 49-test canonical-AVD suite, and seven focused device tests after the prior export edit, and a delayed startup smoke after the final import correction. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for the implementation record and retained authority; verify the final branch commit and remote parity directly in Git.
 
 For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
 
