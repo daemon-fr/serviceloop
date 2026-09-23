@@ -62,12 +62,12 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
     val effective = if (validDates) filter.copy(fromDate = from, toDate = to) else null
     LaunchedEffect(effective) {
         selected = emptySet()
-        results = if (effective == null) emptyList() else withContext(Dispatchers.IO) { service.reportable(effective) }
+        results = if (effective?.customerId == null) emptyList() else withContext(Dispatchers.IO) { service.reportable(effective) }
     }
     LazyColumn(Modifier.padding(padding).testTag("aggregate-report-new"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Aggregate customer report", style = MaterialTheme.typography.headlineSmall)
-            Text("Select one Customer and the concluded Visits to include. The PDF freezes their exact final revisions.")
+            Text("Select one Customer and the concluded Visits to include.")
             ServiceLoopFilterSelector("Customer", filter.customerId, listOf(null to "All customers") + customers.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withCustomer(it) }, testTag = "aggregate-customer")
             ServiceLoopFilterSelector("Site", filter.siteId, listOf(null to "All sites") + sites.filter { it.customerId == filter.customerId }.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withSite(it) }, enabled = filter.customerId != null, testTag = "aggregate-site")
             ServiceLoopFilterSelector("Equipment", filter.equipmentId, listOf(null to "All equipment") + equipment.filter { it.siteId == filter.siteId }.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withEquipment(it) }, enabled = filter.siteId != null, testTag = "aggregate-equipment")
@@ -79,7 +79,7 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
         item { Text("Visits · ${results.size}", style = MaterialTheme.typography.titleMedium) }
         items(results, key = { it.key }) { source ->
             ServiceLoopSelectionOption(source.key in selected, { selected = if (source.key in selected) selected - source.key else selected + source.key },
-                "${source.visitReference} · ${source.serviceDate} · ${source.technicians.joinToString(", ")} · ${source.sources.size} final source(s)", Modifier.testTag("aggregate-source-${source.key.replace(':','-')}"), selectedCheck = true)
+                "${source.visitReference} · ${source.serviceDate} · ${source.technicians.joinToString(", ")}", Modifier.testTag("aggregate-source-${source.key.replace(':','-')}"), selectedCheck = true)
         }
         item {
             ServiceLoopPrimaryButton("Generate customer PDF", { scope.launch {
