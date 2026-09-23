@@ -230,6 +230,7 @@ data class PublicWorkLine(
     val dispatchDocumentationRole: String? = null,
     val subjectType: WorkSubjectType = WorkSubjectType.EQUIPMENT,
     val equipmentDescription: String? = null,
+    val documentingTechnicianName: String? = null,
 )
 
 data class PublicPart(val description: String, val quantity: String, val unit: String)

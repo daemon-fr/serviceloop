@@ -118,9 +118,23 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 prepared.map { it.outbox.dispatchVisitId }.distinct().forEach { visitId ->
                     val outbox = dispatch.outboxVisit(visitId) ?: return@forEach
                     if (outbox.outboxStatus == DispatchOutboxStatus.DISPATCHED) {
-                        val expected = dispatch.outboxItems(visitId).map { it.dispatchItemId }.toSet()
+                        val items = dispatch.outboxItems(visitId)
+                        val localFinalWorkIds = outbox.localVisitId?.let { localId ->
+                            dao.finalRecordForVisit(localId)?.let { record -> dao.finalWorkItems(record.currentRevisionId).map { it.sourceWorkItemId }.toSet() }
+                        }.orEmpty()
                         val received = dao.appliedWorkResultReceipts(visitId).map { it.dispatchItemId }.toSet()
-                        if (expected.isNotEmpty() && expected.all { it in received }) dispatch.updateOutboxVisit(outbox.copy(concludedAtEpochMillis = now, modifiedAtEpochMillis = maxOf(now, outbox.modifiedAtEpochMillis + 1)))
+                        val complete = items.isNotEmpty() && items.all { item -> item.dispatchItemId in received || item.localWorkItemId in localFinalWorkIds }
+                        if (complete) {
+                            outbox.localVisitId?.let { localId ->
+                                val visit = dao.visit(localId) ?: error("Linked canonical Visit is missing")
+                                require(visit.state != "CANCELED") { "A canceled Visit cannot be completed by a result" }
+                                if (visit.state != "COMPLETED") {
+                                    dao.updateVisit(visit.copy(state = "COMPLETED", modifiedAtEpochMillis = now))
+                                    dao.releaseVisitClaims(localId)
+                                }
+                            }
+                            dispatch.updateOutboxVisit(outbox.copy(concludedAtEpochMillis = now, modifiedAtEpochMillis = maxOf(now, outbox.modifiedAtEpochMillis + 1)))
+                        }
                     }
                 }
             }

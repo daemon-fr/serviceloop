@@ -256,6 +256,7 @@ object FixedServiceRecordPdf {
                 raw += RawLine("Equipment identification: ${line.equipmentIdentification.orEmpty()}", LineStyle.BODY)
             }
             raw += RawLine("Service: ${line.planReference?.let { "$it · " }.orEmpty()}${line.serviceName}", LineStyle.BODY)
+            line.documentingTechnicianName?.let { raw += RawLine("Documenting Technician: $it", LineStyle.BODY) }
             val outcomeStyle = if (line.outcome == "NOT_PERFORMED" || line.outcome == "PARTLY_PERFORMED") LineStyle.ALERT else LineStyle.BODY
             raw += RawLine("Outcome: ${line.outcome.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }}", outcomeStyle)
             line.publicWorkNote?.let { raw += RawLine("Work performed: $it", LineStyle.BODY) }

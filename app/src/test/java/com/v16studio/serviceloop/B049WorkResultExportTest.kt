@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
@@ -8,12 +10,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.ByteArrayOutputStream
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -56,5 +60,56 @@ class B049WorkResultExportTest {
         assertEquals("revision", first.results.single().value.getString("sourceFinalRevisionId"))
         database.openHelper.writableDatabase.execSQL("UPDATE final_dispatch_visits SET documentingTechnicianId=?, documentingTechnicianName=? WHERE revisionId='revision'", arrayOf(issuer, "Wrong author"))
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { exchange.exportFinalRevisions(listOf("revision")) } }
+    }
+
+    @Test fun resultPhotosComeOnlyFromFrozenRevisionAndKeepIndependentFlags() = runTest {
+        val dao = database.serviceLoopDao()
+        ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
+        val frozen = listOf(
+            Triple("public", true, "PUBLIC"),
+            Triple("operational", false, "PUBLIC"),
+            Triple("private", true, "PRIVATE"),
+        )
+        frozen.forEachIndexed { index, (id, included, visibility) ->
+            val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(listOf(Color.RED, Color.BLUE, Color.GREEN)[index]) }
+            val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it); bitmap.recycle() }.toByteArray()
+            val path = "$id.jpg"
+            File(root, path).writeBytes(bytes)
+            val hash = WorkResultPackageCodec.sha256(bytes)
+            dao.insertAttachments(listOf(AttachmentEntity(id, "WORK_ITEM", "w", path, hash, null, "image/jpeg", included, "PRESENT", bytes.size.toLong(), "live-$id", visibility)))
+            dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("final-$id", "final-work", index + 1, id, path, hash, bytes.size.toLong(), "image/jpeg", "frozen-$id", includedInCustomerReport = included, visibility = visibility)))
+        }
+        val exchange = WorkResultExchangeService(database, root)
+        val first = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().photos
+        assertEquals(3, first.size)
+        assertEquals(listOf(true, false, true), first.map { it.includeInReport })
+        assertEquals(listOf("PUBLIC", "PUBLIC", "PRIVATE"), first.map { it.visibility })
+        assertEquals(listOf("frozen-public", "frozen-operational", "frozen-private"), first.map { it.caption })
+        database.openHelper.writableDatabase.execSQL("UPDATE attachments SET caption='changed', includedInCustomerReport=0, visibility='INTERNAL' WHERE id='public'")
+        dao.deleteAttachment("operational")
+        val second = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().photos
+        assertEquals(first.map { Triple(it.sourcePhotoId, it.caption, it.visibility) }, second.map { Triple(it.sourcePhotoId, it.caption, it.visibility) })
+        assertEquals(first.map { it.includeInReport }, second.map { it.includeInReport })
+        val repository = RoomServiceLoopRepository(database, object : com.v16studio.serviceloop.domain.BusinessTime {
+            override val zoneId = java.time.ZoneId.of("UTC")
+            override fun instant() = java.time.Instant.parse("2026-09-23T12:00:00Z")
+        }, attachmentRoot = root)
+        val publicPhotos = repository.finalRecordRevision("record", "revision")!!.public.lines.single().photos
+        assertEquals(1, publicPhotos.size)
+        assertTrue(publicPhotos.single().caption == "frozen-public")
+        dao.insertFinalRevision(dao.finalRevision("revision")!!.copy(id = "revision-2", revisionNumber = 2, supersedesRevisionId = "revision"))
+        dao.insertFinalWorkItems(listOf(dao.finalWorkItems("revision").single().copy(id = "final-work-2", revisionId = "revision-2")))
+        database.dispatchDao().insertFinalDispatchVisit(database.dispatchDao().finalDispatchVisit("revision")!!.copy(revisionId = "revision-2"))
+        database.dispatchDao().insertFinalDispatchItems(listOf(database.dispatchDao().finalDispatchItems("revision").single().copy(finalWorkItemId = "final-work-2")))
+        dao.insertFinalPhotos(listOf(dao.finalPhotos("final-work").single { it.sourceAttachmentId == "private" }
+            .copy(id = "corrected-private", finalWorkItemId = "final-work-2", position = 1, caption = "corrected-private")))
+        database.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId='revision-2' WHERE id='record'")
+        val oldAgain = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single()
+        val corrected = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision-2"))).results.single()
+        assertEquals(3, oldAgain.photos.size)
+        assertEquals("revision", oldAgain.value.getString("sourceFinalRevisionId"))
+        assertEquals(1, corrected.photos.size)
+        assertEquals("corrected-private", corrected.photos.single().caption)
+        assertEquals("revision-2", corrected.value.getString("sourceFinalRevisionId"))
     }
 }

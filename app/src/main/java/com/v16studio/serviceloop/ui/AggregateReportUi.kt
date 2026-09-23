@@ -24,7 +24,7 @@ import com.v16studio.serviceloop.ServiceLoopApplication
 import com.v16studio.serviceloop.data.AggregateReportService
 import com.v16studio.serviceloop.data.CustomerEntity
 import com.v16studio.serviceloop.data.EquipmentEntity
-import com.v16studio.serviceloop.data.ReportableFinalSource
+import com.v16studio.serviceloop.data.ReportableVisitSource
 import com.v16studio.serviceloop.data.SiteEntity
 import com.v16studio.serviceloop.domain.ServiceLoopScopeFilter
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFilterSelector
@@ -51,7 +51,7 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
     var filter by remember { mutableStateOf(ServiceLoopScopeFilter()) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<ReportableFinalSource>>(emptyList()) }
+    var results by remember { mutableStateOf<List<ReportableVisitSource>>(emptyList()) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -67,7 +67,7 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
     LazyColumn(Modifier.padding(padding).testTag("aggregate-report-new"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Aggregate customer report", style = MaterialTheme.typography.headlineSmall)
-            Text("Select one Customer and the concluded final results to include. The PDF freezes these exact revisions.")
+            Text("Select one Customer and the concluded Visits to include. The PDF freezes their exact final revisions.")
             ServiceLoopFilterSelector("Customer", filter.customerId, listOf(null to "All customers") + customers.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withCustomer(it) }, testTag = "aggregate-customer")
             ServiceLoopFilterSelector("Site", filter.siteId, listOf(null to "All sites") + sites.filter { it.customerId == filter.customerId }.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withSite(it) }, enabled = filter.customerId != null, testTag = "aggregate-site")
             ServiceLoopFilterSelector("Equipment", filter.equipmentId, listOf(null to "All equipment") + equipment.filter { it.siteId == filter.siteId }.map { it.id to "${it.reference} · ${it.name}" }, { filter = filter.withEquipment(it) }, enabled = filter.siteId != null, testTag = "aggregate-equipment")
@@ -76,10 +76,10 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
             if (!validDates) ServiceLoopNotice("Check dates", "Use YYYY-MM-DD and keep From on or before Through.", ServiceLoopNoticeKind.Error)
             if (filter.customerId == null) ServiceLoopNotice("Choose a Customer", "One Customer is required to generate a report.", ServiceLoopNoticeKind.Warning)
         }
-        item { Text("Final results · ${results.size}", style = MaterialTheme.typography.titleMedium) }
+        item { Text("Visits · ${results.size}", style = MaterialTheme.typography.titleMedium) }
         items(results, key = { it.key }) { source ->
             ServiceLoopSelectionOption(source.key in selected, { selected = if (source.key in selected) selected - source.key else selected + source.key },
-                "${source.visitReference} · ${source.serviceDate} · ${source.technicianName} · ${if(source.kind=="REMOTE") "Received" else "Local"}", Modifier.testTag("aggregate-source-${source.key.replace(':','-')}"), selectedCheck = true)
+                "${source.visitReference} · ${source.serviceDate} · ${source.technicians.joinToString(", ")} · ${source.sources.size} final source(s)", Modifier.testTag("aggregate-source-${source.key.replace(':','-')}"), selectedCheck = true)
         }
         item {
             ServiceLoopPrimaryButton("Generate customer PDF", { scope.launch {

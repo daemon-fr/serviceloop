@@ -36,6 +36,7 @@ class Room18To19MigrationTest {
             execSQL("INSERT INTO final_record_revisions(id,recordId,revisionNumber,visitReference,actualServiceDate,recordedAtEpochMillis,customerName,siteName,businessName,technicianName,businessZoneId) VALUES('rev','record',1,'V-1','2026-09-22',50,'Customer','Site','Business','Technician','Europe/Bucharest')")
             execSQL("INSERT INTO final_work_items(id,revisionId,position,sourceWorkItemId,serviceName,outcome,fulfilledObligation,subjectType) VALUES('fw','rev',1,'w','Service','DONE',0,'SITE')")
             execSQL("INSERT INTO final_photo_entries(id,finalWorkItemId,position,sourceAttachmentId,storedRelativePath,sha256,byteSize,mimeType,addedInCorrection) VALUES('fp','fw',1,'a','photos/a.jpg','abc',3,'image/jpeg',0)")
+            execSQL("INSERT INTO attachments(id,ownerType,ownerId,storedRelativePath,sha256,mimeType,includedInCustomerReport,availability,byteSize,caption) VALUES('a','WORK_ITEM','w','photos/a.jpg','abc','image/jpeg',1,'PRESENT',3,'Caption')")
             execSQL("INSERT INTO final_dispatch_visits(revisionId,dispatchVisitId,generation,senderLabel,documentingTechnicianId,documentingTechnicianName) VALUES('rev','in',1,'Coordinator','TECH-1','Technician')")
             close()
         }
@@ -47,7 +48,8 @@ class Room18To19MigrationTest {
             migrated.query("SELECT localVisitId FROM dispatch_outbox_visits WHERE dispatchVisitId='out'").use { row -> check(row.moveToFirst()); assertNull(row.getString(0)) }
             migrated.query("SELECT assignmentIssuerId FROM dispatch_visit_bindings WHERE dispatchVisitId='in'").use { row -> check(row.moveToFirst()); assertNull(row.getString(0)) }
             migrated.query("SELECT assignmentMaterialHash,assignmentIssuerId FROM final_dispatch_visits WHERE revisionId='rev'").use { row -> check(row.moveToFirst()); assertNull(row.getString(0)); assertNull(row.getString(1)) }
-            migrated.query("SELECT storedRelativePath FROM final_photo_entries WHERE id='fp'").use { row -> check(row.moveToFirst()); assertEquals("photos/a.jpg",row.getString(0)) }
+            migrated.query("SELECT storedRelativePath,sha256,byteSize,includedInCustomerReport,visibility FROM final_photo_entries WHERE id='fp'").use { row -> check(row.moveToFirst()); assertEquals("photos/a.jpg",row.getString(0)); assertEquals("abc",row.getString(1)); assertEquals(3L,row.getLong(2)); assertEquals(1,row.getInt(3)); assertEquals("PUBLIC",row.getString(4)) }
+            migrated.query("SELECT caption,visibility FROM attachments WHERE id='a'").use { row -> check(row.moveToFirst()); assertEquals("Caption",row.getString(0)); assertEquals("PUBLIC",row.getString(1)) }
             migrated.query("SELECT displayName FROM technician_identity WHERE id='primary'").use { row -> check(row.moveToFirst()); assertEquals("Technician",row.getString(0)) }
             migrated.query("SELECT name FROM trusted_service_loop_ids WHERE peerId='TRUST-1'").use { row -> check(row.moveToFirst()); assertEquals("Office",row.getString(0)) }
         }

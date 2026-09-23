@@ -178,6 +178,18 @@ class B045SlsyncTest {
             CustomerContactEntity("b049-contact", "b049-customer", "Ada", "EMAIL", "ada@example.test", 1, 2, "Internal instructions", 1),
             CustomerContactEntity("b049-contact-2", "b049-customer", "Bea", "PHONE", "+40123456789", 2, 2, null, 2),
         ))
+        dao.insertSites(listOf(SiteEntity("b049-site", "b049-customer", "ST-B049", "Site", null, null)))
+        dao.insertVisits(listOf(WorkingVisitEntity("b049-visit", "V-B049", "b049-customer", "b049-site", "2026-09-22", "B049 customer", "Site", null, "COMPLETED", 2)))
+        dao.insertWorkItems(listOf(WorkItemEntity("b049-work", "b049-visit", null, null, null, null, null, null, "Inspect", null, null, null, null, false, null, null, subjectType = "SITE")))
+        dao.insertFinalRecord(FinalRecordEntity("b049-final-record", "b049-visit", "b049-final-revision", 2))
+        dao.insertFinalRevision(FinalRecordRevisionEntity("b049-final-revision", "b049-final-record", 1, "V-B049", "2026-09-22", 2, "B049 customer", "Site", null, "Business", "Technician", null, null, null, "UTC", null))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("b049-final-work", "b049-final-revision", 1, "b049-work", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", null, null, false, null, null, null, null, null, null, subjectType = "SITE")))
+        val photoBytes = "owned B049 private evidence".toByteArray()
+        val photoPath = "attachments/b049-private.jpg"
+        File(attachmentRoot, photoPath).apply { parentFile!!.mkdirs(); writeBytes(photoBytes) }
+        val photoHash = java.security.MessageDigest.getInstance("SHA-256").digest(photoBytes).joinToString("") { "%02x".format(it) }
+        dao.insertAttachments(listOf(AttachmentEntity("b049-photo", "WORK_ITEM", "b049-work", photoPath, photoHash, null, "image/jpeg", false, "PRESENT", photoBytes.size.toLong(), "Private proof", "PRIVATE")))
+        dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("b049-final-photo", "b049-final-work", 1, "b049-photo", photoPath, photoHash, photoBytes.size.toLong(), "image/jpeg", "Private proof", includedInCustomerReport = false, visibility = "PRIVATE")))
         val result = RemoteFinalResultEntity(
             id = "b049-remote", resultId = "b049-result", sourceFinalRevisionId = "b049-revision", dispatchVisitId = "b049-dispatch-visit", dispatchItemId = "b049-dispatch-item",
             localVisitId = null, localWorkItemId = null, technicianId = exporterId, technicianName = "Ada", technicianDesignation = null,
@@ -218,6 +230,27 @@ class B045SlsyncTest {
         assertEquals(listOf(source), dao.aggregateSources("b049-aggregate"))
         assertEquals(retained, dao.retainedImage("FINAL_PHOTO", "b049-source-photo"))
         assertEquals(derivativeBytes.toList(), File(attachmentRoot, derivativePath).readBytes().toList())
+        assertEquals("PRIVATE", dao.attachment("b049-photo")?.visibility)
+        assertEquals(false, dao.finalPhotos("b049-final-work").single().includedInCustomerReport)
+        assertEquals("PRIVATE", dao.finalPhotos("b049-final-work").single().visibility)
+    }
+
+    @Test fun legacyRecoveryPhotoRowsGainPublicDefaultsWithoutChangingCurrentFlags() {
+        val legacyAttachment = JSONObject().put("id", "old-attachment").put("includedInCustomerReport", 0)
+        val currentAttachment = JSONObject().put("id", "current-attachment").put("visibility", "INTERNAL")
+        val legacyFinal = JSONObject().put("id", "old-final")
+        val currentFinal = JSONObject().put("id", "current-final").put("includedInCustomerReport", 0).put("visibility", "PRIVATE")
+        val root = JSONObject().put("schemaVersion", 17).put("tables", JSONArray()
+            .put(JSONObject().put("name", "attachments").put("rows", JSONArray().put(legacyAttachment).put(currentAttachment)))
+            .put(JSONObject().put("name", "final_photo_entries").put("rows", JSONArray().put(legacyFinal).put(currentFinal))))
+        RecoveryPackage(database, attachmentRoot).normalizeB049PhotoFlags(root)
+        assertEquals("PUBLIC", legacyAttachment.getString("visibility"))
+        assertEquals(0, legacyAttachment.getInt("includedInCustomerReport"))
+        assertEquals("INTERNAL", currentAttachment.getString("visibility"))
+        assertEquals(1, legacyFinal.getInt("includedInCustomerReport"))
+        assertEquals("PUBLIC", legacyFinal.getString("visibility"))
+        assertEquals(0, currentFinal.getInt("includedInCustomerReport"))
+        assertEquals("PRIVATE", currentFinal.getString("visibility"))
     }
 
     @Test fun fullWorkspaceV1IsReadableButHasNoSourceId() {

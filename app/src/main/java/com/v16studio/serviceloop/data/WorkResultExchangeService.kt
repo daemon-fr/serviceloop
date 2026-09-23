@@ -62,24 +62,19 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                     .put("visitReference", revision.visitReference).put("sourceVisitId", visit.id)
                     .put("recordedAt", Instant.ofEpochMilli(revision.recordedAtEpochMillis).toString())
                     .put("privateInternalNote", revision.privateInternalNote)
-                val attachmentRows = dao.workItemAttachments(item.sourceWorkItemId)
                 val finalPhotos = dao.finalPhotos(item.id)
-                val photos = (attachmentRows.map { it.id to Triple(it.storedRelativePath, it.sha256, it.byteSize) } +
-                    finalPhotos.map { it.sourceAttachmentId to Triple(it.storedRelativePath, it.sha256, it.byteSize) }).distinctBy { it.first }
-                    .map { (photoId, source) ->
-                        val attachment = attachmentRows.firstOrNull { it.id == photoId }
-                        val finalPhoto = finalPhotos.firstOrNull { it.sourceAttachmentId == photoId }
-                        val bytes = runCatching { readOwnedPhoto(source.first, source.second, source.third) }.getOrNull()
+                val photos = finalPhotos.map { finalPhoto ->
+                        val bytes = runCatching { readOwnedPhoto(finalPhoto.storedRelativePath, finalPhoto.sha256, finalPhoto.byteSize) }.getOrNull()
                             ?: run {
-                                val retained = dao.retainedImage("ATTACHMENT", photoId)
-                                    ?: finalPhoto?.let { dao.retainedImage("FINAL_PHOTO", it.id) }
-                                    ?: dao.retainedImageByOriginalPath(source.first)
+                                val retained = dao.retainedImage("ATTACHMENT", finalPhoto.sourceAttachmentId)
+                                    ?: dao.retainedImage("FINAL_PHOTO", finalPhoto.id)
+                                    ?: dao.retainedImageByOriginalPath(finalPhoto.storedRelativePath)
                                     ?: error("Final photo has no retained copy")
                                 readOwnedPhoto(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
                             }
                         val derivative = AppOwnedImageNormalizer.workResultDerivative(bytes)
-                        WorkResultPackageCodec.Photo(photoId, derivative.bytes, attachment?.caption ?: finalPhoto?.caption,
-                            attachment?.includedInCustomerReport ?: true, if (attachment?.includedInCustomerReport ?: true) "PUBLIC" else "PRIVATE",
+                        WorkResultPackageCodec.Photo(finalPhoto.sourceAttachmentId, derivative.bytes, finalPhoto.caption,
+                            finalPhoto.includedInCustomerReport, finalPhoto.visibility,
                             itemProvenance.dispatchItemId, derivative.width, derivative.height)
                     }
                 WorkResultPackageCodec.Result(value, photos)

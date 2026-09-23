@@ -65,4 +65,18 @@ class B049ExportCenterUiTest {
         compose.onNodeWithTag("image-cleanup").performScrollToNode(hasTestTag("save-image-cleanup"))
         compose.onNodeWithTag("save-image-cleanup").assertIsDisplayed()
     }
+
+    @Test fun workResultExportRouteEnforcesReceiverRolesAndTransferHasNoDuplicateVerify() {
+        listOf(TeamRole.SUBCONTRACTOR, TeamRole.EMPLOYEE, TeamRole.TEAM_LEADER).forEach { role ->
+            open("work-results/export", role)
+            compose.onNodeWithTag("work-results-export").assertIsDisplayed()
+        }
+        listOf(TeamRole.SOLO, TeamRole.COORDINATOR).forEach { role ->
+            open("work-results/export", role)
+            compose.onNodeWithTag("workspace-unavailable").assertIsDisplayed()
+        }
+        open("data-transfer", TeamRole.COORDINATOR)
+        compose.onNodeWithTag("data-transfer-import").assertIsDisplayed()
+        compose.onNodeWithTag("data-transfer-verify").assertDoesNotExist()
+    }
 }

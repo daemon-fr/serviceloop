@@ -397,6 +397,9 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
 
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN visibility TEXT NOT NULL DEFAULT 'PUBLIC'")
+                db.execSQL("ALTER TABLE final_photo_entries ADD COLUMN includedInCustomerReport INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE final_photo_entries ADD COLUMN visibility TEXT NOT NULL DEFAULT 'PUBLIC'")
                 db.execSQL("ALTER TABLE customer_contacts ADD COLUMN notes TEXT")
                 db.execSQL("ALTER TABLE customer_contacts ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("UPDATE customer_contacts SET position = (SELECT COUNT(*) FROM customer_contacts preceding WHERE preceding.customerId = customer_contacts.customerId AND (preceding.modifiedAtEpochMillis > customer_contacts.modifiedAtEpochMillis OR (preceding.modifiedAtEpochMillis = customer_contacts.modifiedAtEpochMillis AND preceding.id <= customer_contacts.id)))")

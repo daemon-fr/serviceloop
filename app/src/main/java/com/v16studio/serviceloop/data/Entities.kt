@@ -433,6 +433,7 @@ data class AttachmentEntity(
     val availability: String,
     val byteSize: Long = 0,
     val caption: String? = null,
+    @ColumnInfo(defaultValue = "'PUBLIC'") val visibility: String = "PUBLIC",
 )
 
 @Entity(tableName = "reusable_templates", indices = [Index(value = ["reference"], unique = true)])
@@ -568,6 +569,8 @@ data class FinalPhotoEntryEntity(
     val caption: String?,
     val addedInCorrection: Boolean = false,
     val addedAtEpochMillis: Long? = null,
+    @ColumnInfo(defaultValue = "1") val includedInCustomerReport: Boolean = true,
+    @ColumnInfo(defaultValue = "'PUBLIC'") val visibility: String = "PUBLIC",
 )
 
 @Entity(tableName = "plan_schedule_changes", foreignKeys = [ForeignKey(ServicePlanEntity::class, ["id"], ["planId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("planId")])

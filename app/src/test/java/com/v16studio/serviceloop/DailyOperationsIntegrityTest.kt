@@ -262,13 +262,17 @@ class DailyOperationsIntegrityTest {
         val ids = foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co", "Alex", zoneId = "Europe/Bucharest")); val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05"); val work = db.serviceLoopDao().firstWorkItemId(visit)!!
         repo.savePublicWork(work, "Completed one-off checks"); repo.saveCompletionDraft(work, "PERFORMED", false, null, null, null, null); repo.addPart(work, "Filter", "2.50", "pcs")
         val shownPhotoId = repo.savePhoto(work, testImageBytes(Color.RED), "shown.png", "image/png", false, "Filter housing")
-        repo.savePhoto(work, testImageBytes(Color.BLUE), "private.png", "image/png", false, "PRIVATE_PHOTO")
+        val excludedPhotoId = repo.savePhoto(work, testImageBytes(Color.BLUE), "private.png", "image/png", false, "PRIVATE_PHOTO")
         assertFalse(db.serviceLoopDao().attachment(shownPhotoId)!!.includedInCustomerReport)
         repo.setPhotoReportInclusion(work, shownPhotoId, true)
         val record = repo.finalRecord((repo.finalizeVisit(visit) as FinalizeResult.Success).recordId)!!; val line = record.public.lines.single()
         assertEquals("2.5", line.parts.single().quantity); assertEquals(1, line.photos.size); assertEquals("Filter housing", line.photos.single().caption); assertFalse(record.public.toString().contains("PRIVATE_PHOTO")); assertTrue(File(root, line.photos.single().relativePath).isFile)
         val finalWork = db.serviceLoopDao().finalWorkItems(record.public.revisionId).single()
-        assertEquals(listOf(shownPhotoId), db.serviceLoopDao().finalPhotos(finalWork.id).map { it.sourceAttachmentId })
+        val frozen = db.serviceLoopDao().finalPhotos(finalWork.id)
+        assertEquals(2, frozen.size)
+        assertTrue(frozen.single { it.sourceAttachmentId == shownPhotoId }.includedInCustomerReport)
+        assertFalse(frozen.single { it.sourceAttachmentId == excludedPhotoId }.includedInCustomerReport)
+        assertTrue(frozen.all { it.visibility == "PUBLIC" })
     }
 
     @Test fun finalizationWaitsForPhotoInclusionCheckpointAndFreezesItsSavedTruth() = runTest {
@@ -719,11 +723,15 @@ class DailyOperationsIntegrityTest {
         repo.saveCorrection(enriched.copy(reason = "Add corrected evidence", items = listOf(enriched.items.single().copy(photos = enriched.items.single().photos.map { if (it.sourceId == added.last().sourceId) it.copy(selected = false) else it }))))
         val revisionId = repo.commitCorrection(recordId); val owned = db.serviceLoopDao().attachmentsForOwner("FINAL_REVISION", revisionId)
         assertEquals(2, owned.size); assertTrue(owned.single { it.id == added.first().sourceId }.includedInCustomerReport); assertFalse(owned.single { it.id == added.last().sourceId }.includedInCustomerReport)
-        val finalPhoto = db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id).single { it.addedInCorrection }
-        assertEquals(added.first().sourceId, finalPhoto.sourceAttachmentId); assertTrue(db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).isEmpty())
+        val finalPhotos = db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id)
+        val finalPhoto = finalPhotos.single { it.sourceAttachmentId == added.first().sourceId }
+        assertTrue(finalPhoto.includedInCustomerReport)
+        assertFalse(finalPhotos.single { it.sourceAttachmentId == added.last().sourceId }.includedInCustomerReport)
+        assertTrue(db.serviceLoopDao().attachmentsForOwner("CORRECTION_DRAFT", draft.id).isEmpty())
         val password = "committed evidence backup".toCharArray(); val inspection = repo.inspectBackup(repo.createBackup(password).bytes, password)
         repo.erase(true, "ERASE"); repo.restoreBackup(inspection, "REPLACE", false)
-        assertEquals(2, db.serviceLoopDao().attachmentsForOwner("FINAL_REVISION", revisionId).size); assertEquals(finalPhoto.sourceAttachmentId, db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id).single { it.addedInCorrection }.sourceAttachmentId)
+        assertEquals(2, db.serviceLoopDao().attachmentsForOwner("FINAL_REVISION", revisionId).size)
+        assertEquals(2, db.serviceLoopDao().finalPhotos(db.serviceLoopDao().finalWorkItems(revisionId).single().id).count { it.addedInCorrection })
     }
 
     @Test fun backupInspectionRejectsAuthenticatedStructuralAndCurrentIdentityDamageWithoutMutatingLiveData() = runTest {

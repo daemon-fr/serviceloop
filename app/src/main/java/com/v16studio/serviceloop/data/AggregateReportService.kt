@@ -25,7 +25,21 @@ data class ReportableFinalSource(
     val serviceDate: String,
     val visitReference: String,
     val technicianName: String,
+    val workItemId: String? = null,
 )
+
+data class ReportableVisitSource(
+    val key: String,
+    val visitId: String,
+    val customerId: String,
+    val siteId: String,
+    val serviceDate: String,
+    val visitReference: String,
+    val technicians: List<String>,
+    val sources: List<ReportableFinalSource>,
+) {
+    val revisionId: String get() = sources.first().revisionId
+}
 
 data class AggregateReportResult(val reportId: String, val relativePath: String, val pageCount: Int)
 
@@ -36,7 +50,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
     private val writer: AggregateReportWriter = AggregateReportWriter { models, name, contact, id, target, root -> AggregateReportPdf.render(models, name, contact, id, target, root) }) {
     private val dao = database.serviceLoopDao()
 
-    suspend fun reportable(scope: ServiceLoopScopeFilter): List<ReportableFinalSource> {
+    suspend fun reportable(scope: ServiceLoopScopeFilter): List<ReportableVisitSource> {
         val local = dao.allFinalRecords().filterNot { it.voided }.mapNotNull { record ->
             val visit = dao.visit(record.visitId) ?: return@mapNotNull null
             val revision = dao.finalRevision(record.currentRevisionId) ?: return@mapNotNull null
@@ -46,33 +60,47 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
                 !(scope.equipmentId != null && work.any { it.equipmentId == scope.equipmentId } && scope.copy(equipmentId = null).matches(visit.customerId, visit.siteId, null, LocalDate.parse(revision.actualServiceDate)))) return@mapNotNull null
             ReportableFinalSource("LOCAL:${revision.id}", "LOCAL", revision.id, visit.id, visit.customerId, visit.siteId, equipmentId, revision.actualServiceDate, revision.visitReference, revision.technicianName)
         }
-        val remote = dao.reportableRemoteFinalResults().groupBy { it.resultId }.values.mapNotNull { values -> values.maxWithOrNull(compareBy<RemoteFinalResultEntity> { runCatching { java.time.Instant.parse(JSONObject(it.provenanceJson).optString("recordedAt")).toEpochMilli() }.getOrDefault(it.importedAtEpochMillis) }.thenBy { it.importedAtEpochMillis }) }.mapNotNull { result ->
+        val remote = effectiveRemoteResults(dao.reportableRemoteFinalResults()).mapNotNull { result ->
             val visit = result.localVisitId?.let { dao.visit(it) } ?: return@mapNotNull null
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!scope.matches(visit.customerId, visit.siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@mapNotNull null
-            ReportableFinalSource("REMOTE:${result.id}", "REMOTE", result.sourceFinalRevisionId, visit.id, visit.customerId, visit.siteId, equipmentId, result.serviceDate, visit.reference, result.technicianName)
+            ReportableFinalSource("REMOTE:${result.id}", "REMOTE", result.sourceFinalRevisionId, visit.id, visit.customerId, visit.siteId, equipmentId, result.serviceDate, visit.reference, result.technicianName, result.localWorkItemId)
         }
-        return (local + remote).sortedWith(compareBy<ReportableFinalSource> { it.serviceDate }.thenBy { it.visitReference }.thenBy { it.key })
+        return (local + remote).groupBy { it.visitId }.mapNotNull { (visitId, sources) ->
+            val visit = dao.visit(visitId) ?: return@mapNotNull null
+            if (visit.state != "COMPLETED") return@mapNotNull null
+            val workOrder = dao.visitWorkItems(visitId).mapIndexed { index, work -> work.id to index }.toMap()
+            val ordered = sources.distinctBy { it.key }.sortedWith(compareBy<ReportableFinalSource> { it.workItemId?.let { workOrder[it] } ?: -1 }.thenBy { it.kind }.thenBy { it.key })
+            ReportableVisitSource("VISIT:$visitId", visitId, visit.customerId, visit.siteId, visit.actualServiceDate,
+                visit.reference, ordered.map { it.technicianName }.distinct(), ordered)
+        }.sortedWith(compareBy<ReportableVisitSource> { it.serviceDate }.thenBy { it.visitReference }.thenBy { it.key })
     }
 
     suspend fun generate(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
         val customerId = requireNotNull(scope.customerId) { "Choose one Customer" }
-        require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 final results" }
+        require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 Visits" }
         val candidates = reportable(scope).associateBy { it.key }
-        val selected = selectedKeys.map { candidates[it] ?: error("A selected final result changed; review the selection") }
+        val selected = selectedKeys.map { candidates[it] ?: error("A selected Visit changed; review the selection") }
         require(selected.all { it.customerId == customerId }) { "Aggregate reports cannot mix Customers" }
         val customer = dao.customer(customerId) ?: error("Customer is missing")
         val business = dao.businessProfile() ?: error("Business identity is missing")
-        val models = selected.map { source -> when (source.kind) {
-            "LOCAL" -> {
-                val record = dao.finalRecordForVisit(source.visitId) ?: error("Final record is missing")
-                val model = repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
-                val equipmentReference = scope.equipmentId?.let { dao.equipment(it)?.reference }
-                model.copy(lines = if (equipmentReference == null) model.lines else model.lines.filter { it.equipmentReference == equipmentReference })
-            }
-            "REMOTE" -> remoteModel(source)
-            else -> error("Unknown final source")
-        } }
+        val models = selected.map { visitSource ->
+            val parts = visitSource.sources.map { source -> when (source.kind) {
+                "LOCAL" -> {
+                    val record = dao.finalRecordForVisit(source.visitId) ?: error("Final record is missing")
+                    repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
+                }
+                "REMOTE" -> remoteModel(source)
+                else -> error("Unknown final source")
+            } }
+            val equipmentReference = scope.equipmentId?.let { dao.equipment(it)?.reference }
+            val lines = parts.flatMap { model -> model.lines.map { it.copy(documentingTechnicianName = model.technicianName) } }
+                .filter { equipmentReference == null || it.equipmentReference == equipmentReference }
+                .distinctBy { it.dispatchItemId ?: "${it.position}:${it.serviceName}:${it.equipmentReference}" }
+                .mapIndexed { index, line -> line.copy(position = index + 1) }
+            parts.first().copy(recordId = visitSource.visitId, visitReference = visitSource.visitReference,
+                technicianName = visitSource.technicians.joinToString(", "), lines = lines)
+        }
         val businessContact = listOfNotNull(business.phone, business.email, business.postalAddress).filter { it.isNotBlank() }.joinToString(" · ")
         val frozen = models.map { it.copy(businessName = business.businessName, businessContact = businessContact) }
         frozen.flatMap { it.lines }.flatMap { it.photos }.forEach { photo ->
@@ -88,7 +116,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             dao.insertAggregateReport(AggregateReportEntity(reportId, customerId,
                 JSONObject().put("reference", customer.reference).put("name", customer.name).toString(), scope.siteId, scope.equipmentId,
                 scope.fromDate?.toString(), scope.toDate?.toString(), JSONObject().put("name", business.businessName).put("contact", businessContact).toString(), now, "ACTIVE"))
-            dao.insertAggregateSources(selected.mapIndexed { index, source -> AggregateReportSourceEntity(reportId, index + 1, source.revisionId, source.kind, source.visitId, source.key.substringAfter(':')) })
+            dao.insertAggregateSources(selected.flatMap { it.sources }.mapIndexed { index, source -> AggregateReportSourceEntity(reportId, index + 1, source.revisionId, source.kind, source.visitId, source.key.substringAfter(':')) })
             dao.insertAggregateRendition(generating)
         }
         val target = File(filesRoot, relative)

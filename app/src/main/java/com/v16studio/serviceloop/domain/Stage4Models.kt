@@ -35,7 +35,7 @@ data class ReportVersionSummary(val id: String, val revisionId: String, val vers
 
 data class CorrectionChecklistDraft(val sourceId: String, val position: Int, val label: String, val responseType: String, val unit: String?, val required: Boolean, val disposition: String, val textValue: String?, val numberValue: String?, val reason: String?)
 data class CorrectionPartDraft(val sourceId: String?, val description: String, val quantity: String, val unit: String)
-data class CorrectionPhotoDraft(val sourceId: String?, val storedRelativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?, val selected: Boolean, val addedInCorrection: Boolean = false, val addedAtEpochMillis: Long? = null)
+data class CorrectionPhotoDraft(val sourceId: String?, val storedRelativePath: String, val sha256: String, val byteSize: Long, val mimeType: String, val caption: String?, val selected: Boolean, val addedInCorrection: Boolean = false, val addedAtEpochMillis: Long? = null, val includedInCustomerReport: Boolean = true, val visibility: String = "PUBLIC")
 data class CorrectionFollowUpDraft(val id: String, val title: String, val state: String, val action: String = "KEEP", val cancellationReason: String = "")
 data class CorrectionNewFollowUpDraft(val title: String, val dueDate: String, val privatePlanningNote: String = "")
 

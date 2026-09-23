@@ -55,9 +55,11 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
             (if (selection.includePreviousRevisions) dao.finalRevisions(record.id) else listOfNotNull(dao.finalRevision(record.currentRevisionId))).map { record to it }
         }
         val finalWork = revisions.flatMap { (_, revision) -> dao.finalWorkItems(revision.id).filter { scope.equipmentId == null || it.equipmentId == scope.equipmentId }.map { revision to it } }
-        val remote = dao.reportableRemoteFinalResults().filter { result -> result.customerId in customerIds && result.localVisitId in visitIds &&
+        val remote = effectiveRemoteResults(dao.reportableRemoteFinalResults(), selection.includePreviousRevisions).filter { result -> result.customerId in customerIds && result.localVisitId in visitIds &&
             (scope.equipmentId == null || result.localWorkItemId?.let { dao.workItem(it)?.equipmentId } == scope.equipmentId) &&
             scope.matches(result.customerId ?: "", result.localVisitId?.let { dao.visit(it)?.siteId }, scope.equipmentId, LocalDate.parse(result.serviceDate)) }
+        val performedVisitIds = (finalRecords.filterNot { it.voided }.map { it.visitId } + remote.mapNotNull { it.localVisitId }).toSet()
+        val performedVisits = visits.filter { it.state == "COMPLETED" && it.id in performedVisitIds }
         val entries = linkedMapOf<String, ByteArray>()
         fun add(family: ExportFamily, name: String, headers: List<String>, rows: List<List<String>>) {
             if (family in selection.families) entries[name] = csv(headers, rows)
@@ -67,7 +69,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
         add(ExportFamily.SITES, "sites.csv", listOf("id","customer_id","reference","name","address","state","private_access_notes"), sites.map { listOf(it.id,it.customerId,it.reference,it.name,it.address.orEmpty(),it.state,if(selection.includePrivate) it.privateAccessNotes.orEmpty() else "") })
         add(ExportFamily.EQUIPMENT, "equipment.csv", listOf("id","site_id","reference","name","make","model","serial","state","private_notes"), equipment.map { listOf(it.id,it.siteId,it.reference,it.name,it.make.orEmpty(),it.model.orEmpty(),it.serialNumber.orEmpty(),it.state,if(selection.includePrivate) it.privateNotes.orEmpty() else "") })
         add(ExportFamily.PLANS, "service_plans.csv", listOf("id","equipment_id","reference","name","interval_count","interval_unit","current_due","state"), dao.allPlans().filter { it.equipmentId in equipmentIds && (selection.includeInactive || it.state == "ACTIVE") }.map { listOf(it.id,it.equipmentId,it.reference,it.name,it.intervalCount.toString(),it.intervalUnit,it.currentDueDate,it.state) })
-        add(ExportFamily.VISITS, "visits.csv", listOf("id","reference","customer_id","site_id","service_date","state"), visits.map { listOf(it.id,it.reference,it.customerId,it.siteId,it.actualServiceDate,it.state) })
+        add(ExportFamily.VISITS, "visits.csv", listOf("id","reference","customer_id","site_id","service_date","state"), performedVisits.map { listOf(it.id,it.reference,it.customerId,it.siteId,it.actualServiceDate,it.state) })
         add(ExportFamily.SERVICE_RECORDS, "service_records.csv", listOf("revision_id","visit_id","service_date","technician","service","outcome","public_work","next_due","private_note","source"),
             finalWork.map { (revision,work) -> listOf(revision.id,dao.finalRecord(revision.recordId)?.visitId.orEmpty(),revision.actualServiceDate,revision.technicianName,work.serviceName,work.outcome,work.publicWorkNote.orEmpty(),work.nextDueDate.orEmpty(),if(selection.includePrivate) work.privateInternalNote.orEmpty() else "","LOCAL") } +
                 remote.map { result -> listOf(result.sourceFinalRevisionId,result.localVisitId.orEmpty(),result.serviceDate,result.technicianName,org.json.JSONObject(result.provenanceJson).optString("serviceName"),result.outcome,result.workPerformed.orEmpty(),org.json.JSONObject(result.recurrenceJson).optString("nextDueDate"),if(selection.includePrivate) result.internalNotes.orEmpty() else "","IMPORTED") })
@@ -85,7 +87,12 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
         val imageRows = mutableListOf<List<String>>()
         if (ExportFamily.PHOTO_METADATA in selection.families || ExportFamily.IMAGE_FILES in selection.families) {
             val workToVisit = visits.flatMap { visit -> dao.visitWorkItems(visit.id).map { it.id to visit } }.toMap()
-            dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.ownerId in workToVisit }.forEach { photo ->
+            val frozenPhotos = revisions.flatMap { (record, revision) ->
+                val visit = visits.firstOrNull { it.id == record.visitId } ?: return@flatMap emptyList()
+                dao.finalWorkItems(revision.id).flatMap { finalWork -> dao.finalPhotos(finalWork.id).map { Triple(visit, finalWork, it) } }
+            }
+            val frozenAttachmentIds = frozenPhotos.map { it.third.sourceAttachmentId }.toSet()
+            dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.ownerId in workToVisit && it.id !in frozenAttachmentIds }.forEach { photo ->
                 val visit = workToVisit.getValue(photo.ownerId)
                 val retained = dao.retainedImage("ATTACHMENT", photo.id)
                 val original = File(filesRoot, photo.storedRelativePath)
@@ -96,7 +103,21 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
                 val expectedHash = if (useOriginal) photo.sha256 else requireNotNull(retained).derivativeSha256
                 require(sha256(bytes) == expectedHash) { "Photo ${photo.id} failed integrity check" }
                 if (ExportFamily.IMAGE_FILES in selection.families) entries["images/${photo.id}.${if (path.endsWith(".png", true)) "png" else "jpg"}"] = bytes
-                imageRows += listOf(photo.id,visit.customerId,visit.siteId,dao.workItem(photo.ownerId)?.equipmentId.orEmpty(),visit.id,photo.ownerId,visit.actualServiceDate,photo.caption.orEmpty(),if(photo.includedInCustomerReport) "PUBLIC" else "PRIVATE",photo.includedInCustomerReport.toString(),if(useOriginal) "ORIGINAL" else "DERIVATIVE",photo.sha256)
+                imageRows += listOf(photo.id,visit.customerId,visit.siteId,dao.workItem(photo.ownerId)?.equipmentId.orEmpty(),visit.id,photo.ownerId,visit.actualServiceDate,photo.caption.orEmpty(),photo.visibility,photo.includedInCustomerReport.toString(),if(useOriginal) "ORIGINAL" else "DERIVATIVE",photo.sha256)
+            }
+            frozenPhotos.forEach { (visit, work, photo) ->
+                val original = File(filesRoot, photo.storedRelativePath)
+                val useOriginal = original.isFile && original.length() == photo.byteSize && sha256(original.readBytes()) == photo.sha256
+                val retained = if (useOriginal) null else dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)
+                    ?: dao.retainedImage("FINAL_PHOTO", photo.id) ?: dao.retainedImageByOriginalPath(photo.storedRelativePath)
+                    ?: error("Final photo ${photo.id} has no retained copy")
+                val path = if (useOriginal) photo.storedRelativePath else retained!!.derivativeRelativePath
+                val bytes = ownedFile(path).readBytes()
+                require(sha256(bytes) == if (useOriginal) photo.sha256 else retained!!.derivativeSha256) { "Final photo ${photo.id} failed integrity check" }
+                if (ExportFamily.IMAGE_FILES in selection.families) entries["images/${photo.id}.${if (path.endsWith(".png", true)) "png" else "jpg"}"] = bytes
+                imageRows += listOf(photo.id, visit.customerId, visit.siteId, work.equipmentId.orEmpty(), visit.id, work.sourceWorkItemId,
+                    visit.actualServiceDate, photo.caption.orEmpty(), photo.visibility, photo.includedInCustomerReport.toString(),
+                    if (useOriginal) "ORIGINAL" else "DERIVATIVE", photo.sha256)
             }
             remote.forEach { result -> dao.remoteResultPhotos(result.id).forEach { photo ->
                 val file = ownedFile(photo.relativePath)

@@ -440,6 +440,7 @@ class RecoveryPackage(
     }
 
     private fun normalizeB049Tables(root: JSONObject) {
+        normalizeB049PhotoFlags(root)
         tableRows(root, "dispatch_outbox_visits").forEach { if (!it.has("localVisitId")) it.put("localVisitId", JSONObject.NULL) }
         tableRows(root, "dispatch_outbox_items").forEach { if (!it.has("localWorkItemId")) it.put("localWorkItemId", JSONObject.NULL) }
         tableRows(root, "dispatch_visit_bindings").forEach { if (!it.has("assignmentIssuerId")) it.put("assignmentIssuerId", JSONObject.NULL) }
@@ -459,6 +460,14 @@ class RecoveryPackage(
         }
         root.put("tables", normalized)
         root.put("schemaVersion", SCHEMA_VERSION)
+    }
+
+    internal fun normalizeB049PhotoFlags(root: JSONObject) {
+        tableRows(root, "attachments").forEach { if (!it.has("visibility")) it.put("visibility", "PUBLIC") }
+        tableRows(root, "final_photo_entries").forEach {
+            if (!it.has("includedInCustomerReport")) it.put("includedInCustomerReport", 1)
+            if (!it.has("visibility")) it.put("visibility", "PUBLIC")
+        }
     }
 
     private fun validateB026Rows(root: JSONObject, equipmentIds: Set<String>, planIds: Set<String>) {
