@@ -43,6 +43,7 @@ internal fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDra
             selected = line.outcome.orEmpty(),
             onSelected = { viewModel.chooseOutcome(workItemId, visitId, it) },
             enabled = editingEnabled,
+            selectedCheck = true,
             testTagPrefix = "outcome-$workItemId",
             modifier = Modifier.bringIntoViewRequester(outcomeRequester),
         )

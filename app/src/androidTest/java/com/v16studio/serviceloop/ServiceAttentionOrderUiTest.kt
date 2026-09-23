@@ -158,12 +158,9 @@ class ServiceAttentionOrderUiTest {
         }
         compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "work-1" } }
 
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-group-toggle-EQUIPMENT-equipment-1").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-1").assertIsDisplayed()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-row-work-1").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-row-work-1").assertIsDisplayed()
         capture("service-group-expanded.png")
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-1").performClick()
-        capture("service-group-collapsed.png")
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-1").performClick()
 
         viewModel.focusService("work-1")
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("work-performed-section").fetchSemanticsNodes().isNotEmpty() }

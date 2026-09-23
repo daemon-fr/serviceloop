@@ -163,7 +163,7 @@ object OperationalDashboardProjector {
                         equipmentId = visit.equipmentId,
                         displayReference = visit.reference,
                         displayTitle = visit.siteName,
-                        displayContext = listOf(visit.customerName, visit.actualServiceDate).filter(String::isNotBlank).joinToString(" · "),
+                        displayContext = visit.customerName,
                         dueDate = visit.actualServiceDate.toLocalDateOrNull(),
                         scheduledAtEpochMillis = visit.scheduledAtEpochMillis,
                         modifiedAtEpochMillis = visit.modifiedAtEpochMillis,

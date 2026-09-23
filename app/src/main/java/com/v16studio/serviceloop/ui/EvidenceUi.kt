@@ -27,6 +27,7 @@ import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopAdaptiveActionRow
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopButtonAdapter as Button
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopEntityRecord
@@ -168,19 +169,19 @@ internal fun ServiceEvidenceContent(workItemId: String, state: UiState, viewMode
             }
         }
         ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-photos")) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Photos", style = MaterialTheme.typography.titleLarge)
-                if (editingEnabled) OutlinedButton(onManagePhotos, Modifier.testTag("manage-service-photos")) { Text("Manage photos") }
-            }
+            Text("Photos", style = MaterialTheme.typography.titleLarge)
             state.photos.forEach { photo -> ServicePhotoCard(workItemId, photo, context, viewModel, editingEnabled, state) }
             if (editingEnabled) {
-                OutlinedButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth().testTag("choose-photo")) { Text("Choose photo") }
-                OutlinedButton({
-                    val directory = File(context.cacheDir, "camera-staging").apply { mkdirs() }
-                    val file = File(directory, "capture-${System.currentTimeMillis()}.jpg")
-                    cameraPath = file.absolutePath
-                    camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.reports", file))
-                }, Modifier.fillMaxWidth().testTag("take-photo")) { Text("Take photo") }
+                ServiceLoopAdaptiveActionRow(listOf(
+                    { OutlinedButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.testTag("choose-photo")) { Text("Choose photo") } },
+                    { OutlinedButton({
+                        val directory = File(context.cacheDir, "camera-staging").apply { mkdirs() }
+                        val file = File(directory, "capture-${System.currentTimeMillis()}.jpg")
+                        cameraPath = file.absolutePath
+                        camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.reports", file))
+                    }, Modifier.testTag("take-photo")) { Text("Take photo") } },
+                    { OutlinedButton(onManagePhotos, Modifier.testTag("manage-service-photos")) { Text("Manage photos") } },
+                ))
             }
         }
         ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-follow-up")) {

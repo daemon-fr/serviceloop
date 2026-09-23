@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -39,6 +38,7 @@ import com.v16studio.serviceloop.data.ServiceLoopPeerTrustStore
 import com.v16studio.serviceloop.data.TechnicianIdCodec
 import com.v16studio.serviceloop.data.TrustedServiceLoopIdEntity
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDenseNavigableRow
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopFieldAction
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopTextButtonAdapter as TextButton
@@ -94,7 +94,7 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
                 Text("Daily work exchange", style = MaterialTheme.typography.titleLarge)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (role.workspaceCapabilities.canReceiveAssignedWork) {
-                        ServiceLoopPrimaryButton("Import work package", { nav.navigate("import") }, Modifier.fillMaxWidth().testTag("team-import-work"))
+                        ServiceLoopPrimaryButton("Import work package", { nav.navigate("dispatch/import/pick") }, Modifier.fillMaxWidth().testTag("team-import-work"))
                         ServiceLoopSecondaryButton("Export work results", {}, Modifier.fillMaxWidth().testTag("team-export-results"), enabled = false)
                     }
                     if (role.workspaceCapabilities.canUseCoordinatorTools) {
@@ -107,7 +107,7 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
             item {
                 Text("Manage team", style = MaterialTheme.typography.titleLarge)
                 if (role != TeamRole.EMPLOYEE) ServiceLoopDenseNavigableRow("Business and report identity", leadingIcon = ServiceLoopIcons.Report) { nav.navigate("business-profile") }
-                ServiceLoopDenseNavigableRow("Your team role", context = TEAM_ROLE_OPTIONS.first { it.role == role }.title, leadingIcon = ServiceLoopIcons.TeamRole, modifier = Modifier.testTag("team-role-identity")) { nav.navigate("dispatch/settings") }
+                ServiceLoopDenseNavigableRow("Your team role", leadingIcon = ServiceLoopIcons.TeamRole, modifier = Modifier.testTag("team-role-identity")) { nav.navigate("dispatch/settings") }
                 if (role != TeamRole.SOLO) {
                     ServiceLoopDenseNavigableRow(role.idHeading(), leadingIcon = ServiceLoopIcons.Copy, modifier = Modifier.testTag("team-id-row")) { nav.navigate("team/id") }
                     ServiceLoopDenseNavigableRow("Trusted IDs", leadingIcon = ServiceLoopIcons.CheckCircle, modifier = Modifier.testTag("team-trusted-ids")) { nav.navigate("team/trusted-ids") }
@@ -121,10 +121,9 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
             }
         }
         if (content == TeamWorkspaceContent.ID) item {
-            Text(role.idHeading(), style = MaterialTheme.typography.titleLarge)
             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(localId?.let(TechnicianIdCodec::display).orEmpty(), modifier = Modifier.weight(1f).testTag("team-local-id"), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { localId?.let { id -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop ID", id)) } }, enabled = localId != null, modifier = Modifier.size(48.dp).testTag("team-copy-id")) { ServiceLoopIcon(ServiceLoopIcons.Copy, "Copy ID") }
+                ServiceLoopFieldAction(accessibleName = "Copy ID", onClick = { localId?.let { id -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop ID", id)) } }, enabled = localId != null, modifier = Modifier.testTag("team-copy-id"), content = { ServiceLoopIcon(ServiceLoopIcons.Copy, null) })
             }
             Text("This ID identifies this workspace for file exchange. It is not authentication.", style = MaterialTheme.typography.bodySmall)
             TechnicianIdentityContent(showId = false)

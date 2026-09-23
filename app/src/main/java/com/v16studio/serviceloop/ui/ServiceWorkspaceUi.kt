@@ -81,11 +81,7 @@ internal fun ServiceSaveState(
         )
         invalid != null -> ServiceLoopNotice("Needs attention", invalid.message, ServiceLoopNoticeKind.Warning)
         rawUnsettled || states.any { it is ServiceDraftFieldState.Pending || it is ServiceDraftFieldState.Saving } || saveStatus is SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The latest Service edit is being saved.", ServiceLoopNoticeKind.Working)
-        else -> {
-            val savedAt = states.filterIsInstance<ServiceDraftFieldState.Clean>().mapNotNull { it.savedAtEpochMillis }.maxOrNull()
-                ?: (saveStatus as? SaveStatus.Saved)?.atEpochMillis ?: draft.modifiedAtEpochMillis
-            Text(if (savedAt > 0) "Saved · ${formatTime(savedAt)}" else "Saved", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("service-save-state"))
-        }
+        else -> Unit
     }
 }
 

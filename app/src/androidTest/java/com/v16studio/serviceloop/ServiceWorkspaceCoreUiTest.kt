@@ -102,9 +102,8 @@ class ServiceWorkspaceCoreUiTest {
 
         compose.onNodeWithTag("service-list").assertIsDisplayed()
         compose.onNodeWithTag("service-identity").assertIsDisplayed()
-        compose.onNodeWithTag("service-save-state").assertIsDisplayed()
-        assertTrue(compose.onAllNodesWithText("Saved ·", substring = true).fetchSemanticsNodes().size == 1)
-        assertTrue(compose.onAllNodesWithText("Saved ", substring = true).fetchSemanticsNodes().size <= 1)
+        compose.onAllNodesWithTag("service-save-state").assertCountEquals(0)
+        assertTrue(compose.onAllNodesWithText("Saved ·", substring = true).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("visit-progress").assertIsDisplayed()
         compose.onNodeWithTag("work-performed-section").assertIsDisplayed()
         compose.onNodeWithTag("add-private-note").assertIsDisplayed()
@@ -213,18 +212,6 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithText("EQ-002 · Treadmill 02").assertIsDisplayed()
         compose.onNodeWithText("Site work").assertIsDisplayed()
         compose.onNodeWithTag("visit-progress-summary").assertHasNoClickAction()
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").assertIsDisplayed()
-        assertEquals(
-            "Expanded",
-            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one")
-                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
-        assertEquals(
-            "Expanded",
-            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
-                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
-        compose.onNodeWithText("Hide services (2)").assertIsDisplayed()
         compose.onNodeWithText("1. Electrical inspection").assertIsDisplayed()
         compose.onNodeWithText("2. Belt inspection").assertIsDisplayed()
         compose.onNodeWithText("3. Lubrication").assertIsDisplayed()
@@ -233,36 +220,9 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("visit-line-equipment-one-second").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
         compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
-
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one").performClick()
-        compose.onAllNodesWithTag("visit-line-equipment-one-service").assertCountEquals(0)
-        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
-        compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
-        compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
-        assertEquals(
-            "Collapsed",
-            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-one")
-                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two").performClick()
-        compose.onAllNodesWithTag("visit-line-equipment-two-service").assertCountEquals(0)
-        compose.onAllNodesWithTag("visit-line-equipment-one-service").assertCountEquals(0)
-        compose.onAllNodesWithTag("visit-line-equipment-one-second").assertCountEquals(0)
-        compose.onNodeWithTag("visit-line-site-work").assertIsDisplayed()
-        assertEquals(
-            "Collapsed",
-            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
-                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
+        compose.onAllNodesWithText("Show services", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Hide services", substring = true).assertCountEquals(0)
         assertTrue(selected.isEmpty())
-
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two").performClick()
-        compose.onNodeWithTag("visit-line-equipment-two-service").assertIsDisplayed()
-        assertEquals(
-            "Expanded",
-            compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-two")
-                .fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
         compose.onNodeWithTag("visit-line-equipment-two-service").performClick()
         assertTrue(selected.single() == "equipment-two-service")
     }
@@ -280,7 +240,7 @@ class ServiceWorkspaceCoreUiTest {
     }
 
     @Test
-    fun serviceWorkspaceExpandsCurrentEquipmentGroupAndLeavesOtherGroupsCollapsed() {
+    fun serviceWorkspaceShowsEveryEquipmentGroupImmediately() {
         val current = progressItem("work-1", 1, "Electrical inspection")
         val other = progressItem("work-2", 2, "Mechanical inspection").copy(
             equipmentId = "equipment-2",
@@ -290,8 +250,6 @@ class ServiceWorkspaceCoreUiTest {
         render(draft(), progress(draft(), listOf(current, other)))
 
         compose.onNodeWithTag("service-row-work-1").assertIsDisplayed()
-        compose.onAllNodesWithTag("service-row-work-2").assertCountEquals(0)
-        compose.onNodeWithTag("service-group-toggle-EQUIPMENT-equipment-2").performClick()
         compose.onNodeWithTag("service-row-work-2").assertIsDisplayed()
     }
 

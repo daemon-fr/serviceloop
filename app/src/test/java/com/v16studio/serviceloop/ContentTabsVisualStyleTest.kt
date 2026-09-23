@@ -24,7 +24,7 @@ class ContentTabsVisualStyleTest {
         val dailyOperations = productionKotlinSourceContaining("Column(Modifier.fillMaxWidth().background(colors.surface))")
 
         assertTrue(app.contains("CUSTOMERS(\"customers\", \"Register\")"))
-        assertTrue(root.contains("height(80.dp).background(colors.surface).padding(top = 8.dp)"))
+        assertTrue(root.contains("height(64.dp).background(colors.surface).padding(top = 8.dp)"))
         assertTrue(root.contains("ServiceLoopContentTabs(options, selected, onSelected"))
         assertTrue(app.contains("ServiceLoopRootSecondaryTabs(WorkTab.entries"))
         assertTrue(app.contains("ServiceLoopRootSecondaryTabs(listOf(\"CUSTOMERS\""))

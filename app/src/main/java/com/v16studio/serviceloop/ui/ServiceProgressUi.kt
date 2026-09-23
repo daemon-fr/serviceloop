@@ -58,22 +58,11 @@ internal fun ServiceProgressNavigator(
     onSelect: (ServiceProgressItem) -> Unit,
     rowTagPrefix: String = "service-row",
 ) {
-    val currentGroupKey = currentWorkItemId?.let { progress.groupFor(it)?.key }
-    val defaultExpandedKeys = if (currentWorkItemId == null) {
-        progress.groups.map { it.key }
-    } else {
-        listOfNotNull(currentGroupKey)
-    }
-    var expandedGroupKeys by rememberSaveable(progress.visitId, currentWorkItemId) {
-        mutableStateOf(defaultExpandedKeys)
-    }
-
     ServiceLoopSurfaceCard(modifier = Modifier.testTag("visit-progress")) {
         Text("Visit progress", style = MaterialTheme.typography.titleLarge)
         Text(progressSummary(progress), modifier = Modifier.testTag("visit-progress-summary"))
         progress.groups.forEachIndexed { groupIndex, group ->
             val groupTag = serviceProgressGroupTag(group.key)
-            val expanded = group.key in expandedGroupKeys
             Column(
                 Modifier.fillMaxWidth().testTag("service-group-$groupTag"),
                 verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
@@ -83,16 +72,7 @@ internal fun ServiceProgressNavigator(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = if (groupIndex == 0) ServiceLoopUiTokens.Space.sm else ServiceLoopUiTokens.Space.md),
                 )
-                ServiceProgressGroupToggle(
-                    group = group,
-                    expanded = expanded,
-                    onToggle = {
-                        expandedGroupKeys = if (expanded) expandedGroupKeys - group.key else expandedGroupKeys + group.key
-                    },
-                    modifier = Modifier.testTag("service-group-toggle-$groupTag"),
-                )
-                if (expanded) {
-                    group.items.forEachIndexed { index, item ->
+                group.items.forEachIndexed { index, item ->
                         val selected = item.workItemId == currentWorkItemId
                         ServiceLoopDenseNavigableRow(
                             title = "${item.position}. ${item.serviceName}",
@@ -106,7 +86,6 @@ internal fun ServiceProgressNavigator(
                             onClick = if (selected) null else ({ onSelect(item) }),
                             showDivider = index < group.items.lastIndex,
                         )
-                    }
                 }
             }
         }
@@ -116,51 +95,6 @@ internal fun ServiceProgressNavigator(
 @Composable
 internal fun VisitServiceProgressOverview(progress: VisitServiceProgress, onSelect: (ServiceProgressItem) -> Unit) {
     ServiceProgressNavigator(progress, null, onSelect, rowTagPrefix = "visit-line")
-}
-
-@Composable
-private fun ServiceProgressGroupToggle(
-    group: ServiceProgressGroup,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val c = LocalServiceLoopTokens.current
-    val attentionCount = group.items.count {
-        it.documentationMode in setOf(ServiceDocumentationMode.LOCAL, ServiceDocumentationMode.CHOICE_REQUIRED) && it.status == ServiceEntryStatus.NEEDS_ATTENTION
-    }
-    val actionWord = if (expanded) "Hide" else "Show"
-    val accessibleName = "$actionWord services (${group.items.size})${if (attentionCount > 0) " — $attentionCount ${if (attentionCount == 1) "needs" else "need"} attention" else ""} for ${group.label}"
-    val label = buildAnnotatedString {
-        append("$actionWord services (${group.items.size})")
-        if (attentionCount > 0) {
-            append(" — ")
-            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                append("$attentionCount ${if (attentionCount == 1) "needs" else "need"} attention")
-            }
-        }
-    }
-    Row(
-        modifier = modifier.fillMaxWidth()
-            .heightIn(min = ServiceLoopUiTokens.Size.touchMin)
-            .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
-            .clickable(role = Role.Button, onClick = onToggle)
-            .semantics {
-                contentDescription = accessibleName
-                stateDescription = if (expanded) "Expanded" else "Collapsed"
-            }
-            .padding(horizontal = ServiceLoopUiTokens.Space.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
-    ) {
-        ServiceLoopIcon(
-            if (expanded) ServiceLoopIcons.CaretDown else ServiceLoopIcons.CaretRight,
-            null,
-            Modifier.size(ServiceLoopUiTokens.Size.icon),
-            c.icon,
-        )
-        Text(label, style = ServiceLoopUiTokens.Type.label, color = c.textSecondary, modifier = Modifier.weight(1f))
-    }
 }
 
 internal fun progressSummary(progress: VisitServiceProgress): String {

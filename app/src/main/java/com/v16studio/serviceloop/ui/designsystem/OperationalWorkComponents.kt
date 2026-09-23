@@ -1,5 +1,7 @@
 package com.v16studio.serviceloop.ui.designsystem
 
+import androidx.compose.ui.text.font.FontWeight
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -228,7 +230,7 @@ fun OperationalWorkRow(
                 Text("${item.displayReference} · ${item.displayTitle}", style = ServiceLoopUiTokens.Type.itemTitle)
                 if (item.displayContext.isNotBlank()) Text(item.displayContext, style = ServiceLoopUiTokens.Type.supporting, color = tokens.textSecondary)
                 item.dueDate?.let { Text("Due $it", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted) }
-                if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) Text("Scheduled appointment", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted)
+                if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) Text("Booked visit", style = ServiceLoopUiTokens.Type.label, color = tokens.textPrimary, fontWeight = FontWeight.Bold)
             }
         }
     }

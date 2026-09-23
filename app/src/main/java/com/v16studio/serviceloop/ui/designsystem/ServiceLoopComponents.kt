@@ -125,7 +125,7 @@ fun <T> ServiceLoopRootSecondaryTabs(
 ) {
     val colors = LocalServiceLoopTokens.current
     Box(
-        Modifier.fillMaxWidth().height(80.dp).background(colors.surface).padding(top = 8.dp),
+        Modifier.fillMaxWidth().height(64.dp).background(colors.surface).padding(top = 8.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         ServiceLoopContentTabs(options, selected, onSelected, testTagPrefix = testTagPrefix)
@@ -324,6 +324,7 @@ fun <T> ServiceLoopChoiceGroup(
     modifier: Modifier = Modifier,
     testTagPrefix: String? = null,
     enabled: Boolean = true,
+    selectedCheck: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
         options.forEach { (value, label) ->
@@ -332,6 +333,7 @@ fun <T> ServiceLoopChoiceGroup(
                 onClick = { onSelected(value) },
                 label = label,
                 enabled = enabled,
+                selectedCheck = selectedCheck,
                 modifier = if (testTagPrefix == null) Modifier else Modifier.testTag("$testTagPrefix-$value"),
             )
         }
@@ -444,6 +446,7 @@ fun ServiceLoopSelectionOption(
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    selectedCheck: Boolean = false,
 ) {
     val c = LocalServiceLoopTokens.current
     Surface(
@@ -454,10 +457,15 @@ fun ServiceLoopSelectionOption(
         color = if (selected) c.selection else c.surface,
         border = BorderStroke(ServiceLoopUiTokens.Stroke.outline, if (selected) c.selectionOutline else c.outlineControl),
     ) {
-        Box(
+        Row(
             Modifier.fillMaxWidth().padding(horizontal = ServiceLoopUiTokens.Space.md, vertical = ServiceLoopUiTokens.Space.sm),
-            contentAlignment = Alignment.CenterStart,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (selectedCheck) {
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                    if (selected) ServiceLoopIcon(ServiceLoopIcons.CheckFat, null, Modifier.size(24.dp), c.action)
+                }
+            }
             Text(
                 label,
                 color = when {

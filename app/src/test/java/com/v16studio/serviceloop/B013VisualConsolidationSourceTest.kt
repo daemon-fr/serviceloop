@@ -46,16 +46,13 @@ class B013VisualConsolidationSourceTest {
         assertFalse(screen.contains("ServiceLoopSurfaceCard(Modifier.padding(top=ServiceLoopUiTokens.Space.section)"))
     }
 
-    @Test fun visitProgressUsesGroupExpansionAndCompleteServiceCounts() {
+    @Test fun visitProgressAlwaysShowsGroupedServicesAndCompleteCounts() {
         val screen = productionKotlinSource("com/v16studio/serviceloop/ui")
-        assertTrue(screen.contains("service-group-toggle-"))
+        assertFalse(screen.contains("service-group-toggle-"))
         assertTrue(screen.contains("serviceProgressGroupSummary"))
         assertTrue(screen.contains("serviceProgressStatusPhrase"))
         assertTrue(screen.contains("showDivider = index < group.items.lastIndex"))
-        assertTrue(screen.contains("val actionWord = if (expanded) \"Hide\" else \"Show\""))
-        assertTrue(screen.contains("append(\"\$actionWord services"))
-        assertTrue(screen.contains("ServiceLoopIcons.CaretRight"))
-        assertTrue(screen.contains("ServiceLoopIcons.CaretDown"))
+        assertTrue(screen.contains("group.items.forEachIndexed"))
     }
 
     @Test fun ordinarySelectionsUseOneFramedPrimitiveWithoutFilterChipCallSites() {

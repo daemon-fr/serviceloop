@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -39,6 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
@@ -232,13 +234,22 @@ internal fun ServiceScreen(
     padding: PaddingValues = PaddingValues(),
     backInterceptor: MutableState<(() -> Unit)?>? = null,
     listTag: String = "service-list",
+    scrollHandle: SavedStateHandle? = null,
 ) {
     val resolvedProgress = progress ?: fallbackProgress(draft)
     val fieldStates by viewModel.serviceDraftStates.collectAsState()
     val viewState by viewModel.state.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
-    val listState = rememberLazyListState()
+    val scrollIndexKey = "service.${draft.workItemId}.firstVisibleItemIndex"
+    val scrollOffsetKey = "service.${draft.workItemId}.firstVisibleItemScrollOffset"
+    val listState = if (scrollHandle == null) rememberLazyListState() else remember(draft.workItemId, scrollHandle) {
+        LazyListState(scrollHandle.get<Int>(scrollIndexKey) ?: 0, scrollHandle.get<Int>(scrollOffsetKey) ?: 0)
+    }
+    LaunchedEffect(listState, scrollHandle) {
+        if (scrollHandle != null) snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) -> scrollHandle[scrollIndexKey] = index; scrollHandle[scrollOffsetKey] = offset }
+    }
     var navigationMessage by rememberSaveable(draft.workItemId) { mutableStateOf<String?>(null) }
     var showLeaveDialog by rememberSaveable(draft.workItemId) { mutableStateOf(false) }
     var leaveFlushResult by remember { mutableStateOf<com.v16studio.serviceloop.ui.service.ServiceDraftFlushResult?>(null) }
