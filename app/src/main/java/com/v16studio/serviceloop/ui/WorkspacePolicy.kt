@@ -35,7 +35,8 @@ internal data class WorkspaceCapabilities(
     val canManageRegister: Boolean,
     val canReceiveAssignedWork: Boolean,
     val canPerformFieldWork: Boolean,
-    val canCreateLocalWork: Boolean,
+    val canCreateVisits: Boolean,
+    val canAssignWork: Boolean,
     val canUseCoordinatorTools: Boolean,
     val canConcludeDelegatedWork: Boolean,
     val canManageTemplates: Boolean,
@@ -44,11 +45,11 @@ internal data class WorkspaceCapabilities(
 
 internal val TeamRole.workspaceCapabilities: WorkspaceCapabilities
     get() = when (this) {
-        TeamRole.SOLO -> WorkspaceCapabilities(true, true, false, true, true, false, false, true, false)
-        TeamRole.SUBCONTRACTOR -> WorkspaceCapabilities(true, true, true, true, true, false, false, true, true)
-        TeamRole.EMPLOYEE -> WorkspaceCapabilities(false, false, true, true, false, false, false, false, false)
-        TeamRole.TEAM_LEADER -> WorkspaceCapabilities(true, true, true, true, true, true, true, true, true)
-        TeamRole.COORDINATOR -> WorkspaceCapabilities(true, true, false, false, false, true, true, true, true)
+        TeamRole.SOLO -> WorkspaceCapabilities(true, true, false, true, true, false, false, false, true, false)
+        TeamRole.SUBCONTRACTOR -> WorkspaceCapabilities(true, true, true, true, true, false, false, false, true, true)
+        TeamRole.EMPLOYEE -> WorkspaceCapabilities(false, false, true, true, false, false, false, false, false, false)
+        TeamRole.TEAM_LEADER -> WorkspaceCapabilities(true, true, true, true, true, true, true, true, true, true)
+        TeamRole.COORDINATOR -> WorkspaceCapabilities(true, true, false, false, true, true, true, true, true, true)
     }
 
 internal fun parseTeamRole(stored: String?, legacyCoordinatorEnabled: Boolean): TeamRole = when (stored) {

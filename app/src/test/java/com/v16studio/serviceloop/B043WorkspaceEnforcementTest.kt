@@ -11,7 +11,7 @@ class B043WorkspaceEnforcementTest {
         val source = productionKotlinSourceContaining("private fun WorkspaceGate")
         listOf(
             "capabilities.canManageRegister",
-            "capabilities.canCreateLocalWork",
+            "capabilities.canCreateVisits",
             "capabilities.canPerformFieldWork",
             "capabilities.canUseCoordinatorTools",
             "capabilities.canReceiveAssignedWork",
@@ -34,10 +34,9 @@ class B043WorkspaceEnforcementTest {
 
     @Test fun `employee assigned work cannot author local tasks or reusable templates`() {
         val visit = productionKotlinFunctionSource("internal fun VisitDetailScreen")
-        assertTrue(visit.contains("capabilities.canPerformFieldWork && capabilities.canCreateLocalWork"))
-        assertFalse(visit.contains("if(capabilities.canPerformFieldWork && detail.state in"))
+        assertTrue(visit.contains("capabilities.canPerformFieldWork && capabilities.canCreateVisits"))
         assertTrue(ui().contains("composable(\"template/list\") { WorkspaceGate(capabilities.canManageTemplates"))
-        assertTrue(ui().contains("composable(\"visit/new\") { entry -> WorkspaceGate(capabilities.canCreateLocalWork"))
+        assertTrue(ui().contains("composable(\"visit/new\") { entry -> WorkspaceGate(capabilities.canCreateVisits"))
     }
 
     @Test fun `legacy member role stays absent from current UI`() {

@@ -112,14 +112,14 @@ internal fun DueServicesScreen(
             } &&
             (query.isBlank() || listOf(due.planReference, due.planName, due.equipmentName, due.equipmentReference, due.customerName, due.siteName).any { it.contains(query, true) })
     } else filterDueServices(scopedValues, dateFilter, visitFilter, query)
-    val selectedRows = if (capabilities.canCreateLocalWork) {
+    val selectedRows = if (capabilities.canCreateVisits) {
         scopedValues.filter { it.planId in selected && it.claimedVisitId == null }
     } else {
         emptyList()
     }
     val selectionSite = selectedRows.firstOrNull()?.siteId
     val selectedIds = selectedRows.filter { it.siteId == selectionSite }.map { it.planId }
-    LaunchedEffect(scopedValues, selected, capabilities.canCreateLocalWork) {
+    LaunchedEffect(scopedValues, selected, capabilities.canCreateVisits) {
         if (selected != selectedIds) selected = selectedIds
     }
     val selectionEnabled = selectedIds.isNotEmpty() && !state.operationInProgress
@@ -146,7 +146,7 @@ internal fun DueServicesScreen(
             }
             if (filtered.isEmpty()) item { Text("No services match these filters.") }
             items(filtered, key = { it.planId }) { due ->
-                val selectable = capabilities.canCreateLocalWork && due.claimedVisitId == null &&
+                val selectable = capabilities.canCreateVisits && due.claimedVisitId == null &&
                     (selectionSite == null || selectionSite == due.siteId)
                 ServiceLoopEntityRecord(
                     title = "${due.planReference} · ${due.planName}",
@@ -160,18 +160,18 @@ internal fun DueServicesScreen(
                     operationalState = operationalStateFor(due),
                 )
             }
-            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateVisits) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
+        if (capabilities.canCreateVisits) WorkNewVisitFloatingAction(actionState, onNewVisit, WorkNewVisitDueBottomInset, respectNavigationBars = false)
         }
-        if (capabilities.canCreateLocalWork && selectedIds.isNotEmpty()) {
-            DueServiceSelectionActions(selectedIds, selectionEnabled, state, viewModel, nav) { selected = emptyList() }
+        if (capabilities.canCreateVisits && selectedIds.isNotEmpty()) {
+            DueServiceSelectionActions(selectedIds, selectionEnabled, capabilities.canPerformFieldWork, state, viewModel, nav) { selected = emptyList() }
         }
     }
 }
 
 @Composable
-private fun DueServiceSelectionActions(selected: List<String>, enabled: Boolean, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, onClear: () -> Unit) {
+private fun DueServiceSelectionActions(selected: List<String>, enabled: Boolean, canPerformFieldWork: Boolean, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController, onClear: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("due-service-selection-bar"),
@@ -181,7 +181,7 @@ private fun DueServiceSelectionActions(selected: List<String>, enabled: Boolean,
         ServiceLoopAdaptiveActionRow(
             actions = listOf(
                 { ServiceLoopSecondaryButton("Book selected", { nav.currentBackStackEntry?.savedStateHandle?.set("visit-setup-plan-ids", ArrayList(selected)); nav.navigate("visit/new") }, enabled = enabled, modifier = Modifier.testTag("book-selected-services")) },
-                { ServiceLoopPrimaryButton("Start selected", { viewModel.createVisit(selected, "WORKING", state.businessDate.toString(), null) { nav.navigate("visit/$it") } }, enabled = enabled, modifier = Modifier.testTag("start-selected-services")) },
+                { if (canPerformFieldWork) ServiceLoopPrimaryButton("Start selected", { viewModel.createVisit(selected, "WORKING", state.businessDate.toString(), null) { nav.navigate("visit/$it") } }, enabled = enabled, modifier = Modifier.testTag("start-selected-services")) },
                 { ServiceLoopSecondaryButton("Clear", onClear, modifier = Modifier.testTag("clear-selected-services")) },
             ),
             modifier = Modifier.testTag("due-service-selection-actions"),
@@ -339,7 +339,7 @@ internal fun VisitDetailScreen(detail: VisitDetail?, padding: PaddingValues, sta
              if (!capabilities.canPerformFieldWork && detail.state == "WORKING") item { ServiceLoopNotice("Field work is performed by technicians", "This role can inspect and coordinate this Visit, but cannot execute its Services.", ServiceLoopNoticeKind.Info) }
              items(detail.lines) { line -> ServiceLoopWorkItemRow(serviceLoopSubjectLabel(line.subjectType, line.equipmentName, line.equipmentReference, line.equipmentDescription),line.serviceName,"Due ${line.dueDate ?: "one-off"} · ${line.outcome?.lowercase()?.replace('_',' ') ?: detail.state.lowercase().replaceFirstChar(Char::uppercase)}",capabilities.canPerformFieldWork && detail.state=="WORKING",Modifier.testTag("visit-line-${line.workItemId}")){if(capabilities.canPerformFieldWork) nav.navigate("inspection/${line.workItemId}")} }
         }
-         if(capabilities.canPerformFieldWork && capabilities.canCreateLocalWork && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav, collapseByDefault = detail.id.isNotBlank()) }
+         if(capabilities.canPerformFieldWork && capabilities.canCreateVisits && detail.state in setOf("BOOKED","WORKING")&&state.site!=null) item { AdHocWorkEditor(state.site.equipment, state.templates, allowKnownEquipment = true, state.operationInProgress, onAdd = { input -> viewModel.addAdHocWork(detail.id, input) { viewModel.loadVisit(detail.id) } }, onCreateTemplate = { nav.navigate("template/new?returnTo=visit") }, nav = nav, collapseByDefault = detail.id.isNotBlank()) }
         if (detail.state == "BOOKED") item {
             var rescheduleSaved by rememberSaveable(detail.id) { mutableStateOf(false) }
             val rescheduleDateValid = runCatching { LocalDate.parse(newDate) }.isSuccess

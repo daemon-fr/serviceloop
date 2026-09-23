@@ -65,6 +65,8 @@ The following owner-approved contract is retained from the B049 continuation ass
 
 **Continuation checkpoint status:** The first correction slice changes Dashboard Visit date/label, shared root-tab height, Team role/ID copy presentation, direct assignment picker route, always-visible Visit progress, silent clean Service save state, peer photo actions, Outcome selected check, and route-scoped Service scroll checkpoint. This is source/compilation state only until the final unit, device, rendered, and system-handoff gates are reported. All other B049 target architecture and version changes remain outstanding.
 
+**Capability checkpoint status:** The Visit-creation and field-execution gates are now separate. Coordinator can access canonical Visit setup and Book due Services while Start remains omitted, and a focused canonical-AVD Compose case verifies the Due Services action bar. Canonical Dispatch links, assignment extension, result exchange, reporting, export, migrations, and retention remain outstanding. The prior Service scroll defect still needs a return-journey UI test and rendered confirmation.
+
 7. DASHBOARD — REMOVE DUPLICATED VISIT DATE
 ===========================================
 

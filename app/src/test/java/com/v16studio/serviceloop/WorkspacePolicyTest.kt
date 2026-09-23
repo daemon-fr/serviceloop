@@ -24,11 +24,11 @@ class WorkspacePolicyTest {
 
     @Test
     fun `capability matrix is exact`() {
-        assertEquals(listOf(true, true, false, true, true, false, false, true, false), TeamRole.SOLO.workspaceCapabilities.values())
-        assertEquals(listOf(true, true, true, true, true, false, false, true, true), TeamRole.SUBCONTRACTOR.workspaceCapabilities.values())
-        assertEquals(listOf(false, false, true, true, false, false, false, false, false), TeamRole.EMPLOYEE.workspaceCapabilities.values())
-        assertEquals(listOf(true, true, true, true, true, true, true, true, true), TeamRole.TEAM_LEADER.workspaceCapabilities.values())
-        assertEquals(listOf(true, true, false, false, false, true, true, true, true), TeamRole.COORDINATOR.workspaceCapabilities.values())
+        assertEquals(listOf(true, true, false, true, true, false, false, false, true, false), TeamRole.SOLO.workspaceCapabilities.values())
+        assertEquals(listOf(true, true, true, true, true, false, false, false, true, true), TeamRole.SUBCONTRACTOR.workspaceCapabilities.values())
+        assertEquals(listOf(false, false, true, true, false, false, false, false, false, false), TeamRole.EMPLOYEE.workspaceCapabilities.values())
+        assertEquals(listOf(true, true, true, true, true, true, true, true, true, true), TeamRole.TEAM_LEADER.workspaceCapabilities.values())
+        assertEquals(listOf(true, true, false, false, true, true, true, true, true, true), TeamRole.COORDINATOR.workspaceCapabilities.values())
     }
 
     @Test
@@ -46,7 +46,8 @@ class WorkspacePolicyTest {
         canManageRegister,
         canReceiveAssignedWork,
         canPerformFieldWork,
-        canCreateLocalWork,
+        canCreateVisits,
+        canAssignWork,
         canUseCoordinatorTools,
         canConcludeDelegatedWork,
         canManageTemplates,

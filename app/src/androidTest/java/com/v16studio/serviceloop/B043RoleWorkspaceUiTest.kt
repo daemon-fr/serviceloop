@@ -155,7 +155,7 @@ class B043RoleWorkspaceUiTest {
         if (receive) compose.onNodeWithTag("import-work-package").assertIsDisplayed() else compose.onNodeWithTag("import-work-package").assertDoesNotExist()
         if (coordinate) compose.onNodeWithTag("coordinator-home-actions").assertIsDisplayed() else compose.onNodeWithTag("coordinator-home-actions").assertDoesNotExist()
         compose.onNodeWithTag("root-nav-work").performClick()
-        if (role.workspaceCapabilities.canCreateLocalWork) {
+        if (role.workspaceCapabilities.canCreateVisits) {
             compose.waitUntil(5_000) {
                 compose.onAllNodesWithTag("new-visit-work-bottom").fetchSemanticsNodes().isNotEmpty() ||
                     compose.onAllNodesWithTag("new-visit-work-floating").fetchSemanticsNodes().isNotEmpty()

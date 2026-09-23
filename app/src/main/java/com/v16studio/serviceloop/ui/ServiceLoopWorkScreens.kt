@@ -217,7 +217,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 } ?: item {
                     Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
                 }
-                if (capabilities.canCreateLocalWork) item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
+                if (capabilities.canCreateVisits) item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
             }
         } else if (tab == "AGENDA") {
             HomeAgendaScreen(state, nav, Modifier.weight(1f))
@@ -479,9 +479,9 @@ internal fun VisitsWorkScreen(
                 if (visit.finalRecordId != null) nav.navigate("record/${visit.finalRecordId}") else nav.navigate("visit/${visit.id}")
             }
         }
-            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateVisits) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit)
+        if (capabilities.canCreateVisits) WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }
 
@@ -559,8 +559,8 @@ internal fun FollowUpsWorkScreen(
                 operationalState = operationalStateFor(follow),
             ) { nav.navigate("follow-up/${follow.id}") }
         }
-            if (capabilities.canCreateLocalWork) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
+            if (capabilities.canCreateVisits) item(key = WORK_NEW_VISIT_SLOT_KEY) { WorkNewVisitReservedSlot(onNewVisit) }
         }
-        if (capabilities.canCreateLocalWork) WorkNewVisitFloatingAction(actionState, onNewVisit)
+        if (capabilities.canCreateVisits) WorkNewVisitFloatingAction(actionState, onNewVisit)
     }
 }

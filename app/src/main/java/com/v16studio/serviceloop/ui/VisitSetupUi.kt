@@ -1062,6 +1062,7 @@ internal fun NewVisitScreen(
     nav: NavHostController,
     initialPlanIds: List<String> = emptyList(),
 ) {
+    val capabilities = LocalWorkspaceCapabilities.current
     val initialSite = dueServices.firstOrNull { it.planId in initialPlanIds }?.siteId
     val initialDate = state.businessDate.plusDays(1).toString()
     var draft by rememberSaveable(stateSaver = VisitSetupDraftSaver) {
@@ -1129,7 +1130,13 @@ internal fun NewVisitScreen(
                     if (primary == kind) ServiceLoopPrimaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("primary-visit-action-$kind"))
                     else ServiceLoopSecondaryButton(label, click, enabled = enabled, modifier = Modifier.fillMaxWidth())
                 }
-                ServiceLoopActionStack { action("BOOKED", "Book visit"); action("WORKING", "Start now"); action("HISTORICAL", "Record past visit") }
+                ServiceLoopActionStack {
+                    action("BOOKED", "Book visit")
+                    if (capabilities.canPerformFieldWork) {
+                        action("WORKING", "Start now")
+                        action("HISTORICAL", "Record past visit")
+                    }
+                }
             }
         },
     )

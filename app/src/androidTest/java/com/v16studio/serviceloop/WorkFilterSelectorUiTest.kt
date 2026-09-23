@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -171,7 +172,7 @@ class WorkFilterSelectorUiTest {
         assertTrue(compose.onAllNodesWithText("Due or overdue").fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun coordinatorDoesNotSeeDueServiceSelectionWithoutLocalWorkCapability() {
+    @Test fun coordinatorCanBookDueServiceButCannotStartFieldWork() {
         val values = listOf(due("coordinator-role", null))
         val state = UiState(
             loading = false,
@@ -190,8 +191,10 @@ class WorkFilterSelectorUiTest {
             }
         }
 
-        assertTrue(compose.onAllNodesWithTag("entity-record-selection").fetchSemanticsNodes().isEmpty())
-        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("entity-record-selection").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("due-service-selection-bar").assertIsDisplayed()
+        compose.onNodeWithTag("book-selected-services").assertIsDisplayed()
+        compose.onAllNodesWithTag("start-selected-services").assertCountEquals(0)
     }
 
     @Test fun darkAppearanceKeepsDarkSelectorMenuInteractionReadable() {
