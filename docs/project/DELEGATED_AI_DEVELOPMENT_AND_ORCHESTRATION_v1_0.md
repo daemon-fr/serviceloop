@@ -1,6 +1,6 @@
 # ServiceLoop — Delegated AI Development and Orchestration
 
-**Version:** 1.1
+**Version:** 1.2
 **Purpose:** Lead ServiceLoop from its existing functional and UI/UX documents to a tested Android product, using ChatGPT as orchestrator and Codex as implementation developer, with minimal unnecessary owner involvement.
 
 **Mandatory companion process authority:** `docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md`. Read it before authoring any substantial Codex implementation/correction prompt or new-thread handoff. This document defines the broad orchestration model; the companion defines the required execution-level prompt/handoff standard.
@@ -129,6 +129,8 @@ Do not rely on a stronger Codex model to infer missing architecture. Write promp
 This does **not** require brittle line-by-line coding instructions. Leave ordinary syntax/refactoring judgment to Codex when the contract is already precise. But when a current file/class/table/route is known, name it instead of forcing rediscovery.
 
 Tell Codex to inspect the repository, plan internally, implement the complete authorized assignment, run verification, repair ordinary failures, self-review against the acceptance checklist, commit/push where authorized, and then hand off. It should not stop after writing code to ask permission for tests or routine repairs already authorized.
+
+A clean commit, pushed checkpoint, successful test tranche, or judgment that the remaining authorized work is substantial is not an authorized stopping boundary. Commits are internal recovery points. Codex must continue into the next authorized stage and may return incomplete only for a genuine external execution blocker or an unresolved owner/data-integrity/security decision outside current authority. Before final handoff it must re-read the acceptance checklist and continue if required implementation remains.
 
 Within an authorized task, ordinary repair and verification require no new owner approval. Crossing the task boundary does not become authorized merely because related work was discovered. Preserve a safe checkpoint and report a genuine blocker rather than expanding scope.
 

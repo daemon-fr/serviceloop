@@ -14,7 +14,7 @@ When operating as the ServiceLoop orchestrator/reviewer, or when preparing a sub
 
     docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
 
-That standard is mandatory process authority for AI-to-AI delegation and continuity. Write execution assignments for the least expensive intended execution model (normally Luna High): inspect current source first, name known code/data hotspots, state exact implementation semantics and failure cases, prescribe concrete tests/runtime evidence, and end with an exhaustive acceptance checklist. Do not make a prompt less explicit merely because a stronger Codex model is selected.
+That standard is mandatory process authority for AI-to-AI delegation, execution, independent review, evidence classification, and continuity. Write execution assignments for the least expensive intended execution model (normally Luna High): inspect current source first, name known code/data hotspots, state exact implementation semantics and failure cases, prescribe concrete tests/runtime evidence, and end with an exhaustive acceptance checklist. Do not make a prompt less explicit merely because a stronger Codex model is selected.
 
 An implementation agent executing an already-finished task does not need the prompt-authoring standard unless it is also asked to author a subsequent prompt. It must still obey this file, the task contract, and the relevant product/milestone authority.
 
@@ -33,6 +33,8 @@ Own ordinary engineering decisions inside the authorized scope. Prefer simple de
 Task sizing: Codex is trusted with substantial coherent assignments. Do not fragment work merely because it is large. Split only at meaningful workflow, integrity, platform-risk, or review boundaries. Do not cross the explicitly authorized task boundary.
 
 Substantial authorized Codex tasks are intended to run unattended. Use reasonable engineering judgment and repair ordinary, low-risk scope-adjacent defects whose correct behavior is already established instead of pausing for routine approval.
+
+A clean commit, pushed checkpoint, passing verification stage, or the agent's judgment that remaining authorized work is large is **not** permission to stop. Commits are recovery points, not handoff points. Continue through the complete authorized assignment unless the execution environment itself prevents progress, repository state cannot be safely reconciled, or a genuine owner/data-integrity/security decision lies outside existing authority. Before a final response, re-read the task acceptance checklist; if required implementation remains and no such blocker exists, continue working.
 
 Ordinary build, test, adb, helper, selector, synchronization, and other execution failures are not reasons to stop when the task remains well-defined. Reproduce, diagnose, fix the correct layer, rerun the affected check, and continue. Escalate only for genuinely consequential ambiguity, unexpected repository state, destructive action, or an architectural/data-integrity problem outside the task's authority.
 

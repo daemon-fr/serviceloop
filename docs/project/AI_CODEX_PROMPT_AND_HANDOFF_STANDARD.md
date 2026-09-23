@@ -1,616 +1,1692 @@
-# ServiceLoop — AI Codex Prompt and Handoff Standard
+# ServiceLoop — AI Codex Prompt, Execution, Review, and Handoff Standard
 
-**Version:** 1.0
-**Status:** ACTIVE PROCESS AUTHORITY
-**Purpose:** Define how ServiceLoop AI orchestrators prepare implementation prompts, correction prompts, independent-review handoffs, and new-thread continuation handoffs so substantial work can be executed reliably by the least expensive intended Codex model without unnecessary owner involvement.
+**Version:** 2.0  
+**Status:** ACTIVE PROCESS AUTHORITY  
+**Project:** ServiceLoop  
+**Purpose:** Define how ServiceLoop AI orchestrators turn adopted product intent and current repository reality into execution-level Codex assignments, how Codex is expected to execute them, how evidence is classified, how completed work is independently reviewed, and how interrupted or fresh-thread work is handed off without owner reconstruction.
 
-This document governs **AI-to-AI work delegation and continuity**. It does not define product behavior and does not outrank product/source-of-truth authority.
+---
 
-## 1. Mandatory use
+## 1. Prime directive
 
-An orchestrator/reviewer must read and internalize this document:
+The central rule is:
 
-1. before writing any substantial Codex implementation prompt;
-2. before writing any substantial Codex correction/recovery prompt;
-3. when reconstructing a fresh ServiceLoop thread that will author Codex work;
-4. before producing a new-thread handoff/continuation prompt;
-5. whenever a prior prompt was too architectural, vague, fragmented, or dependent on a stronger model inferring missing implementation detail.
+> **Do architecture and product reasoning in Chat. Give Codex execution decisions, not architecture homework.**
 
-A stronger implementation model does **not** justify a less precise prompt.
+The prompt author is responsible for reducing avoidable ambiguity before delegation.
 
-The default authoring target is:
+A strong ServiceLoop Codex prompt should allow the least expensive approved execution model reasonably intended for the task — normally **Luna High** — to execute correctly without having to rediscover product architecture, infer business meaning, reconstruct accepted decisions, or ask the owner routine implementation questions.
 
-> Write the assignment so that the least expensive approved execution model reasonably intended for the task — normally Luna High — can execute it without reconstructing product architecture, making avoidable product decisions, or asking the owner routine implementation questions.
+A stronger execution model may be used, but stronger model capability is not permission to write a weaker prompt.
 
-Sol/Terra or another stronger model may execute the same prompt. Prompt quality must not depend on the stronger model supplying missing analysis.
+The standard pattern for every significant change is:
 
-Implementation Codex does not need to read this prompt-authoring document merely to execute a finished assignment unless the assignment explicitly tells it to author subsequent prompts. It must read and obey `AGENTS.md`, the finished task contract, and the relevant product/milestone authority named by that contract.
+> **CURRENT SOURCE STATE → REQUIRED CHANGE → EXACT IMPLEMENTATION SEMANTICS → CODE/DATA HOTSPOTS → COMPATIBILITY / FAILURE RULES → TESTS → RUNTIME ACCEPTANCE → GIT / HANDOFF**
 
-## 2. Core principle: front-load orchestration intelligence
+If a prompt merely says “fix these things,” “improve this screen,” “make export better,” “handle persistence,” or “add tests,” it is not execution-level enough.
 
-The orchestrator is responsible for converting product intent and repository reality into an execution contract.
+---
 
-Do not hand Codex a product brief and expect it to rediscover:
+## 2. Relationship to other ServiceLoop authority
 
-- which current class owns the behavior;
-- which capability is overloaded;
-- which table is authoritative;
-- which older milestone is superseded;
-- which UI primitive should be reused;
-- whether a migration is additive or replacement;
-- which business effect must be idempotent;
-- which runtime evidence distinguishes a real fix from source inspection.
+This document is **process authority**. It governs delegation, execution, review, evidence, and continuity.
 
-Before delegating, inspect enough current source/docs to answer those questions wherever reasonably possible.
+It does not define product behavior by itself and does not outrank product/source-of-truth authority.
 
-The required pattern for each significant change is:
+Use the repository authority order defined by ServiceLoop, normally:
 
-> **CURRENT SOURCE STATE → REQUIRED CHANGE → EXACT IMPLEMENTATION SEMANTICS → CODE/DATA HOTSPOTS → COMPATIBILITY/FAILURE RULES → TESTS → RUNTIME ACCEPTANCE**
+1. current repository + authoritative `/docs`;
+2. explicit owner decisions and accepted amendments;
+3. `AGENTS.md` and current task/milestone contracts;
+4. current-thread transient context;
+5. older conversations only for missing history.
 
-Do not substitute a high-level architectural paragraph for that chain.
+Important distinction:
 
-## 3. Verify state before authoring the prompt
+- **Repo/docs beat the prompt for factual repository state** if a prompt contains stale implementation facts.
+- **An explicit owner decision in the task defines new intended behavior** even if current code/docs still reflect the old behavior.
+- Current code/tests establish implementation state; they do not silently create new product requirements.
+- Historical docs explain rationale but do not revive superseded behavior.
 
-Before writing a substantial implementation prompt, establish the actual work base as far as available tools permit:
+Never silently reconcile conflicting sources by invention. If a real consequential conflict cannot be resolved from authority, escalate it with one recommended resolution.
 
-- repository and remote;
-- source branch;
-- exact source SHA;
-- protected baseline SHA;
-- upstream/divergence;
-- worktree cleanliness or known noise;
-- app version;
-- Room schema;
-- Recovery schema;
-- relevant transport/package versions;
-- current implemented/reviewed/unreviewed milestone state.
+---
 
-If local worktree state is inaccessible, say so and require Codex to verify it before editing. Never invent local cleanliness from remote state.
+## 3. Roles and responsibility split
 
-Use current repository/docs as durable truth. Distinguish:
+### 3.1 Orchestrator / reviewer
 
-- adopted;
-- implemented;
-- Codex-reported;
-- independently source-reviewed;
-- runtime/device-tested;
-- owner-reviewed;
-- proposed;
-- superseded/historical.
+The ChatGPT orchestration role owns:
 
-The prompt must not blur those states.
+- product interpretation inside adopted scope;
+- architecture decisions that can reasonably be settled from repo/docs;
+- UX decisions that do not require owner intervention;
+- source-state inspection before delegation;
+- identification of authoritative classes, tables, routes, primitives, and invariants;
+- task boundaries;
+- execution-level prompt authoring;
+- independent review after Codex handoff;
+- consolidated correction prompts;
+- acceptance recommendations;
+- continuity and new-thread handoffs.
 
-## 4. Required authority/read set
+The orchestrator should not routinely push ordinary decisions back to the owner.
 
-Every substantial prompt must name the exact authority files Codex must read.
+### 3.2 Codex implementation agent
 
-At minimum, normally include:
+Codex owns:
 
-- `AGENTS.md`;
-- `docs/project/SOURCE_OF_TRUTH.md`;
-- `docs/project/BASELINE_DECISIONS.md`;
-- `docs/project/IMPLEMENTATION_STATE.md`;
-- the current/relevant milestone authority;
-- earlier milestone docs only when their semantics remain active;
-- current source files/services/entities/tests that materially govern the task.
+- implementation inside the authorized task;
+- ordinary code structure and refactoring choices;
+- diagnosis of normal build/test/device failures;
+- safe transparent tooling fallbacks;
+- concrete tests;
+- runtime/device verification where required;
+- coherent commits and authorized pushes;
+- self-review against the acceptance checklist;
+- truthful final handoff.
 
-Do not make Codex reread every historical document when a focused set is sufficient.
+Codex must not treat a substantial assignment as a suggestion to implement only the first convenient tranche.
 
-Conversely, do not omit a relevant source file merely because a milestone document describes its old implementation.
+### 3.3 Owner
 
-## 5. Prompt detail standard
+The owner should be involved only for genuinely consequential decisions such as:
 
-A substantial execution prompt should contain the following sections when applicable.
+- destructive/data-loss semantics;
+- new product meaning;
+- changed recurrence/obligation meaning;
+- privacy/security promise changes;
+- authentication model;
+- backend/accounts/live sync;
+- new paid/licensed dependency;
+- material scope expansion;
+- publication/release authorization;
+- destructive real-data operations;
+- unresolved product conflicts not answerable from authority.
 
-### A. Role and execution mode
+Do **not** ask the owner to decide:
 
-State that Codex is the execution-level Android developer for the task.
+- ordinary Compose layout;
+- exact spacing;
+- helper location;
+- variable names;
+- migration SQL mechanics;
+- ordinary copy refinements;
+- test file placement;
+- routine refactors;
+- standard error handling.
 
-State whether it must:
+---
 
-- execute the complete milestone;
-- continue autonomously through internal stages;
-- repair ordinary failures;
-- commit/push;
-- stop only at a genuine owner/data/security boundary.
+## 4. Task sizing: substantial, coherent, unattended
 
-Do not leave autonomy implicit.
+Execution-level does **not** mean tiny.
 
-### B. Exact start state
+Prefer one substantial coherent assignment when the task has one product/architecture meaning and can be executed safely end-to-end.
 
-Provide verified:
-
-- repo path;
-- remote;
-- source branch;
-- required starting SHA;
-- target branch;
-- protected branch/SHA;
-- known workspace noise;
-- required initial Git commands.
-
-Require Codex to stop/escalate only if the required starting point materially differs and cannot be safely reconciled.
-
-### C. Product and semantic invariants
-
-List the business truths the task is most likely to damage.
-
-Examples:
-
-- booked != serviced;
-- performed != blindly fulfilled;
-- finalization != PDF generation;
-- dispatched != delivered;
-- exported != received;
-- imported remote execution != local execution;
-- immutable history/correction/void truth;
-- recurrence exactly once;
-- public/private evidence boundaries.
-
-Do not copy unrelated invariants merely to make a long prompt.
-
-### D. Current implementation diagnosis
-
-For each major change, tell Codex what exists now.
-
-When known from source inspection, name:
-
-- files;
-- classes;
-- composables;
-- routes;
-- data classes/entities;
-- DAO/service functions;
-- capability fields;
-- serializers/codecs;
-- tests;
-- design-system primitives.
-
-Explain the current defect or architectural mismatch.
-
-Example quality:
-
-Bad:
-> Split the Coordinator creation capability.
-
-Good:
-> `WorkspacePolicy.kt` currently gives `WorkspaceCapabilities` one `canCreateLocalWork` flag; Coordinator is false. `ServiceLoopNavigation.kt` gates `visit/new` with that flag, while field routes already use `canPerformFieldWork`. Due Services selection/action visibility also depends on the overloaded flag. Introduce `canCreateVisits` (or repository-consistent equivalent), route Visit creation/Book through it, retain Start/field execution under `canPerformFieldWork`, and update the role matrix/tests accordingly.
-
-The second form is the required standard.
-
-### E. Exact required behavior
-
-Specify:
-
-- labels/copy when adopted;
-- states and role differences;
-- navigation placement;
-- lifecycle consequences;
-- persistence meaning;
-- positive cases;
-- negative cases;
-- disabled/conflict/error behavior.
-
-For UI tasks, specify the rendered/interactive result, not only modifier-level intent.
-
-### F. Implementation guidance
-
-Where current inspection provides enough information, tell Codex:
-
-- what to extract/reuse;
-- what remains authoritative;
-- which duplicate implementation should disappear;
-- transaction boundaries;
-- idempotency keys/identity;
-- mapping rules;
-- expected schema fields;
-- migration defaults;
-- state ownership;
-- package/serializer boundaries;
-- which Android dependencies must stay out of domain code.
-
-Do not dictate fragile syntax line-by-line when current source may evolve, but do not force Codex to rediscover architecture already known to the orchestrator.
-
-Avoid vague phrases such as:
-
-- “as appropriate”;
-- “handle persistence”;
-- “make this robust”;
-- “use repository conventions”;
-- “add tests”;
-- “refactor if needed”;
-
-unless immediately followed by concrete required meaning.
-
-### G. Compatibility and migration
-
-For any schema/protocol/history change, specify:
-
-- old version;
-- new version;
-- additive/destructive rule;
-- legacy decode/read behavior;
-- fallback/default values;
-- how old rows are ordered/mapped;
-- what must remain byte/value compatible;
-- rollback/retry behavior;
-- Recovery implications;
-- whether old user-facing exports continue to be emitted or only decoded.
-
-Never leave migration policy for Codex to infer from a version bump.
-
-### H. Explicit non-goals
-
-State nearby things that must not be added.
-
-This is especially important around:
-
-- backend/API;
-- accounts/authentication;
-- live sync;
-- billing;
-- inventory;
-- generic frameworks;
-- new toolchain/dependencies;
-- speculative server DTOs;
-- unrelated UI redesign.
-
-### I. Exact tests
-
-Do not merely request “coverage.”
-
-List scenarios and expected facts.
-
-For domain/persistence work, specify:
-
-- setup;
-- action/retry/conflict;
-- exact persisted consequence;
-- exact absence of duplicate/forbidden effects.
-
-For UI work, specify an actual interaction sequence where runtime behavior matters.
-
-If a bug was observed in the rendered app, require a test that reproduces the interaction rather than a source-string assertion alone.
-
-### J. Runtime/device acceptance
-
-When appropriate, give the exact canonical AVD policy and interaction journey.
-
-State what evidence must be:
-
-- UI-INSTRUMENTED;
-- DOMAIN-INSTRUMENTED;
-- SYSTEM-HANDOFF;
-- HUMAN/RENDERED;
-- or may remain NOT RUN.
-
-For launch stability, do not accept `am start` as proof. Require a delay/process/logcat check where startup regressions are plausible.
-
-### K. Tooling fallbacks
-
-Carry forward recurring environment knowledge:
-
-- explicit canonical AVD targeting;
-- adb PATH workaround;
-- preserved-data install with `install -r`;
-- Compose semantic interaction over coordinate tapping;
-- lazy-list composition behavior;
-- IME/stylus fallback;
-- optional helper failure policy;
-- Phosphor generator fallback;
-- no encoded/obfuscated/security-bypass commands.
-
-Do not make every Codex session rediscover known environment behavior.
-
-### L. Git and handoff
-
-Specify:
-
-- allowed branch creation;
-- commit/push authority;
-- no protected-branch merge;
-- no force-push;
-- required final status/divergence/diff checks;
-- exact report contents.
-
-### M. Exhaustive acceptance checklist
-
-Every substantial prompt should end with a checklist covering **every authorized requirement** that could otherwise be forgotten.
-
-Use concrete checkboxes such as:
-
-    [ ] Coordinator can Book but cannot Start
-    [ ] legacy v2 register contacts import with deterministic order
-    [ ] duplicate WORK_RESULT import does not advance recurrence twice
-    [ ] old aggregate report keeps exact source revision IDs
-    [ ] canonical AVD startup remains alive after delayed smoke
-    [ ] protected master unchanged
-
-The checklist is not decorative. Codex must use it before declaring the task complete.
-
-## 6. Model-neutrality and lower-cost execution
-
-Prompt authors must assume that execution may be performed by Luna High unless a task explicitly requires a stronger architecture/reasoning model.
-
-Therefore:
-
-- do architecture/product reasoning in Chat/orchestration first;
-- give Codex stable decisions, not unresolved alternatives;
-- include known code hotspots;
-- include expected data transformations;
-- include exact tests and failure cases;
-- include runtime acceptance;
-- include the final checklist.
-
-A stronger Codex model may make additional sound implementation decisions within scope, but the prompt must not rely on that additional intelligence for correctness.
-
-Do not write a vague prompt for Sol and a detailed prompt for Luna. Maintain one high execution-level standard.
-
-## 7. Task sizing
-
-“Execution-level” does not mean “tiny.”
-
-Prefer substantial coherent assignments that a capable implementation model can execute unattended.
+Do not fragment work merely because it is large.
 
 Split only at meaningful boundaries such as:
 
 - data-integrity risk;
 - architecture transition;
 - protocol/migration boundary;
-- independent review gate;
-- environment/runtime validation boundary.
+- platform-risk boundary;
+- destructive-operation boundary;
+- independent-review gate;
+- owner decision gate.
 
-Do not fragment one coherent milestone into dozens of prompts merely to make each prompt shorter.
+The objective is fewer owner handoffs, not fewer internal implementation/test/repair iterations.
 
-For very large milestones, one prompt may contain internal stages. Require Codex to continue through them without owner handoff unless the prompt explicitly establishes a gate.
+### 4.1 One large prompt is better than prompt shuttling
 
-## 8. High-risk domain requirements
+A coherent task may contain stages:
 
-For recurrence, immutable history, migration, recovery, transport, result import, file ownership, or reports, prompts must explicitly describe:
+A. persistence  
+B. domain  
+C. UI  
+D. migration  
+E. protocol  
+F. tests  
+G. runtime  
+H. docs  
+I. Git
 
-- authoritative identity;
-- idempotency key;
-- transaction boundary;
-- retry behavior;
-- duplicate behavior;
-- stale/conflict behavior;
-- process-restart behavior where relevant;
-- rollback/failure state;
-- historical provenance;
-- public/private boundary;
-- test fixtures proving the invariant.
+But those are internal execution stages, not automatic handoff points.
 
-Do not accept “make it idempotent” without saying what must be idempotent and what exact effect must happen at most once.
+Do not make the owner repeatedly shuttle “continue” prompts merely because Codex reached a clean commit.
 
-## 9. UI/UX execution requirements
+---
 
-When an owner-observed visual or interaction defect exists, include:
+## 5. Non-negotiable run-to-completion rule
 
-1. the observed defect;
-2. the source diagnosis if known;
-3. plausible causes if diagnosis is incomplete;
-4. the exact required rendered behavior;
-5. the existing primitive/style that should be reused;
-6. what visual workaround is rejected;
-7. accessibility/touch-target requirements;
-8. an interaction/render test;
-9. HUMAN/RENDERED inspection when material.
+A substantial authorized task is expected to run to completion unless a genuine external blocker exists.
 
-Do not close a runtime UI defect solely because source code appears correct.
+The following are **not valid reasons to stop**:
 
-## 10. Correction prompts
+- “this is enough for one run”;
+- “the remaining work is large”;
+- “the next stage is architecture-heavy”;
+- “this is a good clean checkpoint”;
+- “the branch is pushed”;
+- “the tests are green so far”;
+- “I want to reduce risk”;
+- “I decided to continue in another run.”
 
-After independent review, correction prompts should be consolidated.
+A clean commit is a **recovery point**, not a handoff point.
 
-A correction prompt must include:
+After each coherent commit:
 
-- exact reviewed branch/SHA;
-- verified findings, ranked by severity;
-- affected source paths;
-- expected correction;
-- regression areas;
-- tests to add/rerun;
-- runtime evidence required;
-- unchanged scope;
-- Git expectations.
+> **Continue immediately to the next authorized stage.**
 
-Do not send one prompt per small defect when they can be repaired coherently.
+Before any final response, Codex must re-read the task acceptance checklist.
 
-Do not reopen accepted design while fixing implementation.
+If any required implementation item remains incomplete and there is no genuine external blocker:
 
-## 11. Independent review boundary
+> **Do not return a final handoff. Continue working.**
 
-Codex's final report is evidence of what Codex **reported**, not independent verification.
+Valid early-stop conditions are limited to:
 
-The orchestrator should, where tools permit:
+1. the execution environment itself prevents further progress;
+2. repository state materially differs in a way that cannot be safely reconciled;
+3. a destructive/data-integrity/security consequence requires owner authorization;
+4. an actual unresolved product/architecture decision lies outside existing authority.
 
-- verify branch/SHA;
-- inspect diff/current source;
-- check required files;
-- inspect tests;
-- compare implementation against the prompt;
-- distinguish reported test results from independently rerun results;
-- identify incomplete or misleading claims;
-- issue one consolidated correction prompt if needed.
+If an early stop is unavoidable, Codex must state:
 
-Do not bank architecture-sensitive work solely from a summary.
-
-Priority independent-review areas include:
-
-- recurrence/obligation effects;
-- immutable final history;
-- migration/recovery;
-- Dispatch generation/provenance;
-- WORK_RESULT/result ingestion;
-- aggregate report provenance;
-- photo/file ownership and deletion;
-- role capability enforcement.
-
-## 12. New-thread handoff standard
-
-A handoff is a lossless continuation contract, not a short summary.
-
-When the owner asks for a handoff/continuation prompt, include all applicable:
-
-### ROLE / AUTHORITY
-- successor role;
-- authority order;
-- mandatory process docs;
-- instruction not to restart discovery.
-
-### REPO + SHA STATE
-- repo;
-- active branch;
-- exact HEAD;
-- upstream/divergence;
-- protected branch;
-- worktree state if verified;
-- known noise if not clean.
-
-Never guess.
-
-### CURRENT STATE / TASK
-- current milestone;
-- adopted vs implemented vs reviewed status;
-- exact continuation point.
-
-### WHAT JUST HAPPENED
-- latest implementation/review;
-- commits;
-- corrections;
-- important findings.
-
-### UNFINISHED WORK
-- what is done;
+- the exact external blocker;
+- the exact last completed sub-step;
+- the exact partial state;
+- modified/generated files;
+- tests run and their results;
 - what remains;
-- why it remains;
-- exact next action.
+- the precise continuation point.
 
-### LATEST CODEX HANDOFF
-- objective;
-- constraints;
-- commits;
-- reported tests;
-- workarounds;
-- independent-review status.
+Do not retrospectively justify a voluntary stop as if it were platform-enforced.
 
-### FINDINGS / RISKS
-- bugs/root causes;
-- integrity risks;
-- fragile tests;
-- incomplete evidence.
+---
 
-### TEST / DEVICE EVIDENCE
-- unit/build/lint;
-- domain instrumentation;
-- UI instrumentation;
-- system handoff;
-- rendered evidence;
-- NOT RUN boundaries.
+## 6. Mandatory pre-prompt state verification
 
-### TOOLING / ENVIRONMENT
-- adb/AVD;
+Before authoring a substantial Codex prompt, inspect enough current state to avoid stale instructions.
+
+Establish, as far as available tools permit:
+
+- repository path;
+- remote;
+- active branch;
+- exact local/remote HEAD if available;
+- protected baseline branch/SHA;
+- divergence/upstream state;
+- worktree cleanliness or known noise;
+- app version/code;
+- Room schema version;
+- Recovery schema version;
+- relevant transport/package versions;
+- current milestone status;
+- implemented vs unimplemented portions;
+- latest Codex commits and review status.
+
+Never guess a SHA.
+
+If local worktree access is unavailable, say so and make Codex verify it before edits.
+
+### 6.1 Exact repo-state block
+
+Every significant prompt should normally contain:
+
+```text
+Repository:
+    D:\Repeater\ServiceLoop
+
+Remote:
+    daemon-fr/serviceloop
+
+Expected branch:
+    <exact>
+
+Expected starting SHA:
+    <exact>
+
+Protected master:
+    <exact>
+```
+
+and an initial verification sequence appropriate to the task.
+
+### 6.2 Preserve known IDE noise correctly
+
+Known Android Studio noise must be treated according to current repo instructions.
+
+Do not:
+
+- stage IDE/device-selection noise;
+- blindly discard materially different `.idea` changes;
+- enter repeated restore loops while Android Studio rewrites the same file.
+
+State known noise explicitly when it matters.
+
+---
+
+## 7. Mandatory authority/read set in every substantial prompt
+
+Every prompt must tell Codex exactly what to read.
+
+Normally include:
+
+- `AGENTS.md`;
+- `docs/project/SOURCE_OF_TRUTH.md`;
+- `docs/project/BASELINE_DECISIONS.md`;
+- `docs/project/IMPLEMENTATION_STATE.md`;
+- the current milestone/task authority;
+- earlier milestone docs only where semantics remain active;
+- current source files/classes/services/entities/routes/tests that materially govern the task.
+
+Do not make Codex reread all project history when a focused set is enough.
+
+Do not omit relevant source merely because an older milestone document described it.
+
+---
+
+## 8. Explain current truth before requested change
+
+Cheap models perform best when the prompt first explains **why the current code exists and what it currently does**.
+
+Use the pattern:
+
+### CURRENT
+
+State verified implementation facts.
+
+Example:
+
+```text
+CURRENT:
+- Coordinator canCreateVisits = true.
+- Coordinator canPerformFieldWork = false.
+- visit/new is gated by canCreateVisits.
+- inspection/{id} is gated by canPerformFieldWork.
+```
+
+### REQUIRED / OWNER DECISION
+
+State the adopted target.
+
+```text
+OWNER DECISION:
+- Coordinator may create and Book canonical Visits.
+- Coordinator must not Start or perform field Service execution.
+```
+
+### NON-GOAL
+
+State what must remain impossible.
+
+```text
+NON-GOAL:
+- Do not allow Coordinator technician execution.
+```
+
+This is far safer than telling Codex only:
+
+> “Fix Coordinator permissions.”
+
+---
+
+## 9. State product invariants repeatedly where they matter
+
+When a task touches Visits, service completion, Dispatch, reports, import/export, recurrence, history, photos, or recovery, repeat the relevant invariants directly in the task.
+
+Do not assume Codex will correctly reconstruct them from distant docs.
+
+Core examples:
+
+- booked != serviced;
+- performed != blindly fulfilled;
+- finalized != PDF generated;
+- dispatched != delivered;
+- exported != received;
+- locally saved != backed up;
+- remote imported work != local Coordinator execution;
+- immutable history must remain immutable;
+- corrections append rather than rewrite;
+- void preserves historical truth;
+- recurrence/business effects must occur exactly once;
+- assignment generation/provenance must remain truthful;
+- report provenance must remain frozen;
+- private/internal evidence must not leak to customer output.
+
+Repetition of critical business meaning is cheaper than repairing semantic corruption later.
+
+---
+
+## 10. Separate product layers explicitly
+
+For every nontrivial change, identify which layer(s) are affected:
+
+- visual only;
+- interaction/navigation;
+- domain behavior;
+- persistence/schema;
+- transport protocol;
+- reporting;
+- migration/recovery;
+- test harness;
+- Android/system handoff.
+
+Never allow a model to hide behavioral changes inside “UI cleanup.”
+
+### 10.1 If Room changes
+
+State:
+
+- old Room version;
+- target Room version;
+- exact new/changed fields/tables;
+- migration direction;
+- additive vs destructive rule;
+- defaults/backfill;
+- indexes/constraints;
+- Recovery consequences;
+- `.slsync` consequences;
+- generated schema implications;
+- preserved-device implications.
+
+### 10.2 If transport changes
+
+State:
+
+- outer envelope version;
+- purpose;
+- payload/family version;
+- legacy decode behavior;
+- new emission behavior;
+- trust boundary;
+- target/source identity;
+- integrity/hash behavior;
+- idempotency identity;
+- package limits;
+- failure behavior.
+
+### 10.3 If reporting changes
+
+State:
+
+- authoritative source revision;
+- local vs imported provenance;
+- customer/public filters;
+- source freezing;
+- correction behavior;
+- rendition/history behavior.
+
+---
+
+## 11. Use explicit role matrices
+
+When visibility or capability depends on role, provide a role matrix or explicit per-role list.
+
+Do not scatter role conditions across prose.
+
+A role table should distinguish at least:
+
+- visibility;
+- route access;
+- domain capability;
+- field execution;
+- assignment/coordination;
+- import/export;
+- report generation;
+- management actions.
+
+Hidden UI alone is never sufficient if a direct route/domain call would bypass the role rule.
+
+---
+
+## 12. Tell Codex exactly what must be reused
+
+When the product owner or current design requires reuse of an existing primitive, write it explicitly.
+
+Example:
+
+> Use the actual current Due Services selectable card primitive. Extract/refactor the shared primitive if necessary and make both screens instantiate it. Do not visually imitate it and do not copy its modifiers into a new bespoke card.
+
+This rule applies to:
+
+- design-system components;
+- selection rows;
+- card primitives;
+- status/urgency classifiers;
+- date/time controls;
+- import preview mechanisms;
+- report renderers;
+- persistence services;
+- codecs;
+- domain evaluators.
+
+Approximation drift is a defect when exact reuse is the requirement.
+
+---
+
+## 13. Include explicit “DO NOT” boundaries
+
+Negative boundaries materially improve execution reliability.
+
+Typical ServiceLoop examples:
+
+- no backend;
+- no accounts;
+- no live/cloud sync;
+- no speculative API abstraction;
+- no billing/accounting;
+- no inventory;
+- no customer portal;
+- no toolchain churn;
+- no opportunistic dependencies;
+- no destructive Room migration;
+- no fake local execution for imported work;
+- no recurrence on historical import;
+- no clearing canonical AVD data;
+- no physical-phone substitution;
+- no hidden production-code changes to compensate for a broken test harness;
+- no fake runtime claims;
+- no force-push;
+- no protected-master movement.
+
+Tailor the list to the task.
+
+---
+
+## 14. Give current source facts where they save rediscovery
+
+The orchestrator should inspect source enough to tell Codex what is already known.
+
+Useful prompt facts include:
+
+- exact class/service owning behavior;
+- current schema/version;
+- current route guard;
+- current raw Checkbox usage;
+- existing report renderer capabilities;
+- current evaluator/blocker kinds;
+- current package version;
+- current AVD name;
+- exact current defect;
+- relevant DAO/query;
+- known test that is stale.
+
+Do not dump giant source excerpts unnecessarily.
+
+Prefer:
+
+> “`WorkspacePolicy.kt` currently owns X; `ServiceLoopNavigation.kt` gates Y with Z.”
+
+over pasting hundreds of lines.
+
+---
+
+## 15. Define the UX, not merely labels
+
+For UI work, specify the actual rendered and interactive result.
+
+Include as relevant:
+
+- hierarchy;
+- visual prominence;
+- spacing intent;
+- card vs settings-row semantics;
+- button hierarchy;
+- touch targets;
+- full-width vs gutters;
+- wrapping behavior;
+- empty state;
+- loading state;
+- disabled state;
+- conflict/error state;
+- accessibility semantics;
+- font-scale adaptation;
+- light/dark behavior;
+- orientation/adaptive behavior;
+- stable test tags where needed.
+
+Example:
+
+> “Show the ID in a centered field-like container with larger teal text and an embedded trailing Copy action using the existing field-action primitive; remove the separate full-width Copy CTA.”
+
+is execution-level.
+
+> “Improve ID display.”
+
+is not.
+
+---
+
+## 16. Exact implementation semantics beat vague robustness language
+
+Avoid phrases such as:
+
+- “handle persistence”;
+- “make it robust”;
+- “support migration”;
+- “fix conflicts”;
+- “use repository conventions”;
+- “add proper tests”;
+- “refactor if needed.”
+
+If such a phrase appears, immediately define the required meaning.
+
+For data-integrity work, specify:
+
+- authoritative table/entity;
+- transaction boundary;
+- exact state transition;
+- idempotency key;
+- duplicate/retry behavior;
+- stale/conflict behavior;
+- rollback behavior;
+- immutable source identity;
+- error case;
+- negative side effects that must not happen.
+
+---
+
+## 17. Compatibility and migration must be explicit
+
+For schema/protocol/history changes, state all relevant compatibility facts:
+
+- old version;
+- new version;
+- migration direction;
+- whether old format remains readable;
+- whether old format remains emitted;
+- fallback/default values;
+- deterministic ordering/backfill;
+- unsupported-version behavior;
+- retry behavior;
+- Recovery behavior;
+- whether old files remain byte-compatible;
+- whether accepted history can be rewritten.
+
+Never leave migration policy for Codex to infer merely from a version bump.
+
+---
+
+## 18. Test the actual bug, not a proxy
+
+If the owner reports a runtime defect, the acceptance test should reproduce the interaction that failed.
+
+Example owner report:
+
+> “Selecting a Due Service does nothing.”
+
+Correct test:
+
+1. render actual populated Due Services screen;
+2. tap actual selection control;
+3. assert selected state;
+4. assert action surface is displayed;
+5. assert expected actions are displayed/enabled.
+
+Insufficient proxy:
+
+- asserting an action composable exists in source;
+- checking a state variable in isolation when the screen failed to render it.
+
+Source presence is not runtime proof.
+
+---
+
+## 19. Evidence taxonomy is mandatory
+
+Always distinguish evidence types.
+
+Use these labels consistently:
+
+### IMPLEMENTED
+Source changes exist.
+
+### SOURCE-REVIEWED
+A reviewer inspected relevant source/diff.
+
+### JVM-TESTED
+Host/local unit/domain tests actually ran.
+
+### MIGRATION-TESTED
+Actual Room migration test ran.
+
+### DOMAIN-INSTRUMENTED
+Android instrumentation exercised repository/domain behavior, but not necessarily real UI/system interaction.
+
+### UI-INSTRUMENTED
+Compose/UI instrumentation exercised actual UI semantics/interactions.
+
+### SYSTEM-HANDOFF
+Android system surface or another app was actually invoked where the handoff itself matters:
+- picker;
+- Sharesheet;
+- Maps;
+- Settings;
+- Calendar provider;
+- etc.
+
+### HUMAN/RENDERED
+A real rendered screenshot/screen/report was visually inspected.
+
+### OWNER-REVIEWED
+Owner actually reviewed the implementation/result.
+
+### OWNER-ACCEPTED
+Owner explicitly accepted it.
+
+### PILOT-VERIFIED
+External real-user pilot evidence exists.
+
+### NOT RUN
+The evidence was not executed.
+
+Do not imply one evidence class proves another.
+
+Examples:
+
+- PDF layout unit test != rendered PDF inspection.
+- Codec test != system picker handoff.
+- source inspection != emulator runtime.
+- screenshot != persistence correctness.
+- emulator behavior != physical-device behavior.
+- AI agreement != pilot evidence.
+
+If a required evidence type was not run, say so plainly.
+
+---
+
+## 20. Runtime acceptance must exercise touched surfaces
+
+A runtime smoke is not merely launching the app.
+
+For substantial changes, enumerate the screens/actions to exercise.
+
+Potential examples:
+
+- Home root tabs;
+- Work root tabs;
+- Register;
+- Team;
+- role picker;
+- ID copy;
+- Trusted IDs;
+- canonical New Visit;
+- Assignment section;
+- Dispatch package;
+- result export/import;
+- aggregate report;
+- customer contacts;
+- Equipment breadcrumb;
+- business timezone;
+- Export Center;
+- `.slsync` native transfer;
+- image cleanup;
+- Settings IA.
+
+Use the actual task subset, not every screen mechanically.
+
+### 20.1 Canonical AVD
+
+Canonical display name:
+
+> `Pixel 10a ServiceLoop`
+
+Resolve the adb serial dynamically every run.
+
+Never assume `emulator-5554`.
+
+Every device command must use:
+
+```text
+adb -s <resolved-serial> ...
+```
+
+Do not substitute:
+
+- another emulator;
+- physical phone.
+
+Do not reset/recreate/wipe the canonical AVD without explicit owner authorization.
+
+Build first, then install using:
+
+```text
+adb -s <serial> install -r <apk>
+```
+
+For launch stability:
+
+- launch;
+- wait long enough to catch delayed startup crashes;
+- verify process alive;
+- inspect relevant fatal log output.
+
+`am start` success alone is not proof.
+
+---
+
+## 21. Tool failure behavior is part of the task contract
+
+Codex must not stop because:
+
+- a helper script fails;
+- a branch helper fails;
+- sandbox path helper fails;
+- adb serial selection is awkward;
+- emulator test flakes;
+- optional icon generator fails;
+- a test selector is stale;
+- a lazy-list item is not yet composed;
+- IME/stylus interferes with coordinate text entry.
+
+Required behavior:
+
+1. diagnose;
+2. identify whether failure is product, test harness, or environment;
+3. use a safe transparent fallback;
+4. inspect the result;
+5. rerun affected verification;
+6. continue;
+7. report the workaround.
+
+Do not:
+
+- spend half the task repairing an optional helper when a safe fallback exists;
+- modify production behavior to satisfy a broken harness;
+- weaken correct product behavior to make a stale test pass;
+- abandon a well-defined task on first environmental error.
+
+---
+
+## 22. Known ServiceLoop tooling fallbacks
+
+Carry these into relevant prompts so every Codex run does not rediscover them.
+
+### 22.1 File/patch helper failure
+
+If a managed patch/filesystem helper fails with sandbox/access/path-helper trouble:
+
+- switch promptly to the functioning approved shell/edit path;
+- inspect `git diff`;
+- run `git diff --check`.
+
+Do not investigate sandbox internals unnecessarily.
+
+### 22.2 Interrupted processes
+
+If an interrupted run may have left processes:
+
+- inspect worktree/diff;
+- inspect relevant running processes;
+- terminate only clearly orphaned task-specific processes.
+
+Do not indiscriminately kill:
+
+- adb server;
+- Android Studio;
 - Gradle;
-- Compose/IME;
-- helper/script;
-- Git/Windows;
-- security constraints.
+- Git;
+- unrelated processes.
 
-### OWNER DECISIONS
-- chat-only decisions that are not yet durable;
-- preferences that affect execution;
-- superseded decisions.
+### 22.3 Git lock
 
-### REJECTED / SUPERSEDED DIRECTIONS
-- alternatives a fresh thread might otherwise revive.
+Never delete `.git/index.lock` blindly.
 
-### FILES / ASSETS
-- required files;
-- artifacts;
-- missing/re-upload status where relevant.
+Verify no Git operation is active first.
 
-### IMMEDIATE NEXT ACTIONS
-- exact first actions for successor.
+### 22.4 Compose automation
 
-### NEAR-TERM QUEUE
-- only real upcoming work.
+Prefer:
 
-### CONTINUATION INSTRUCTION
-End by telling the successor to:
+- `testTag`;
+- `contentDescription`;
+- visible-label semantics;
+- `performClick`;
+- `performTextInput`;
+- `performTextReplacement`;
+- `performTextClearance`;
+- `performScrollTo`;
+- `performScrollToNode`;
+- `performImeAction`.
 
-- reconstruct state from the handoff, Project Instructions, current memory/context, repo/docs;
-- verify repository state;
-- treat repo/docs as durable truth and the handoff as transient context;
-- read this prompt/handoff standard before writing new Codex work;
-- not restart discovery or ask the owner to repeat known context;
-- surface discrepancies;
-- continue from the stated next action.
+Avoid coordinate tapping when semantic interaction is available.
 
-If active work is interrupted, additionally record:
+### 22.5 Lazy containers
+
+Off-screen LazyColumn/LazyGrid children may not exist yet in the semantics tree.
+
+Scroll the owning lazy container with a stable matcher first.
+
+Do not wait forever for an uncomposed child.
+
+### 22.6 IME / stylus interference
+
+Switch to semantic Compose instrumentation.
+
+Do not reset or globally reconfigure the canonical AVD merely to type text.
+
+### 22.7 System surfaces
+
+When picker/Sharesheet/Settings/Maps/etc. matter, require actual SYSTEM-HANDOFF evidence.
+
+A domain substitute is not equivalent.
+
+---
+
+## 23. Full verification gate for substantial work
+
+For large ServiceLoop tasks, normally require:
+
+```text
+gradlew.bat :app:testDebugUnitTest --no-parallel --console=plain
+gradlew.bat :app:assembleDebug --no-parallel --console=plain
+gradlew.bat :app:assembleDebugAndroidTest --no-parallel --console=plain
+gradlew.bat :app:lintDebug --no-parallel --console=plain
+gradlew.bat :app:assembleRelease --no-parallel --console=plain
+git diff --check
+```
+
+Adapt only when a gate is genuinely irrelevant or unavailable.
+
+Also require focused:
+
+- migration tests;
+- instrumentation;
+- rendered inspection;
+- system handoffs;
+- domain journeys
+
+appropriate to the task.
+
+At the final acceptance gate, rerun affected checks **after the last production/test edit**.
+
+Do not cite a stale earlier green run as final evidence.
+
+---
+
+## 24. Git instructions must be explicit
+
+Every substantial prompt should state:
+
+- source branch;
+- exact start SHA;
+- protected branch/SHA;
+- whether commits are authorized;
+- whether push is authorized;
+- target remote branch;
+- prohibited destructive actions.
+
+If the owner has pre-approved ordinary Git operations, say so explicitly.
+
+A robust Git authorization block should distinguish:
+
+### Authorized when task says so
+
+- status;
+- branch/SHA inspection;
+- fetch;
+- fast-forward pull;
+- diff/log;
+- staging task files;
+- coherent commits;
+- push to designated milestone branch.
+
+### Still prohibited
+
+- force-push;
+- rebase published history;
+- destructive reset;
+- deleting accepted branches;
+- merging protected master without explicit authorization;
+- moving master;
+- discarding unknown owner work.
+
+Final Git gate should normally verify:
+
+- correct branch;
+- final local HEAD;
+- remote HEAD;
+- divergence `0 0`;
+- source/docs worktree clean except documented IDE noise;
+- `git diff --check`;
+- protected baseline unchanged.
+
+---
+
+## 25. Mandatory final handoff contents
+
+Codex final report should include, as applicable:
+
+### START
+- branch;
+- starting SHA;
+- protected baseline SHA.
+
+### COMMITS
+- SHA/message for each coherent commit.
+
+### VERSIONS
+- app/versionCode;
+- Room;
+- Recovery;
+- transport/package versions.
+
+### IMPLEMENTED
+- concise behavior list.
+
+### MIGRATIONS / DATA
+- schema changes;
+- migration behavior;
+- legacy compatibility;
+- preserved data semantics.
+
+### VERIFICATION
+- exact commands;
+- test counts;
+- migration tests;
+- instrumentation;
+- build/lint/release;
+- AVD runtime;
+- system handoffs;
+- rendered inspection.
+
+### WORKAROUNDS
+- actual environment/tool fallbacks.
+
+### NOT RUN
+- every important evidence item not executed.
+
+### RISKS / UNRESOLVED
+- only real remaining risks.
+
+### GIT
+- final HEAD;
+- remote parity;
+- worktree state;
+- protected branch unchanged.
+
+Avoid vague:
+
+> “Everything passed.”
+
+Enumerate evidence.
+
+---
+
+## 26. Acceptance checklist is mandatory
+
+Every substantial prompt should end with a concrete checkbox list covering every owner requirement and every high-risk technical invariant.
+
+Good:
+
+```text
+[ ] Coordinator can Book but cannot Start
+[ ] duplicate WORK_RESULT import does not advance recurrence twice
+[ ] legacy register v2 imports with deterministic contact order
+[ ] old aggregate report keeps exact source revision IDs
+[ ] system picker opens directly from Import work package
+[ ] canonical AVD survives delayed startup smoke
+[ ] protected master unchanged
+```
+
+Bad:
+
+```text
+[ ] implementation complete
+[ ] tests added
+[ ] UI looks good
+```
+
+Codex must use the checklist before declaring completion.
+
+---
+
+## 27. Correction-prompt rules
+
+After independent review, do not send findings one at a time unless a newly discovered blocker truly requires immediate isolation.
+
+Prefer one consolidated correction prompt.
+
+A correction prompt should include:
+
+1. exact reviewed start SHA;
+2. status of prior implementation;
+3. each defect with severity/semantic impact;
+4. current source root cause;
+5. exact corrected behavior;
+6. files/hotspots;
+7. migration/protocol consequence;
+8. regression test that would fail on old SHA;
+9. runtime acceptance;
+10. run-to-completion rule;
+11. Git authorization/state;
+12. final checklist.
+
+Do not reopen architecture that passed review.
+
+State explicitly:
+
+> Preserve all already-correct behavior; change only what is required to resolve these findings and their regressions.
+
+---
+
+## 28. Independent review protocol
+
+Codex’s final report is evidence to inspect, not proof.
+
+After every substantial Codex handoff:
+
+1. verify branch and SHA;
+2. compare against starting SHA;
+3. inspect changed-file scope;
+4. inspect high-risk domain/data files;
+5. inspect migration;
+6. inspect protocol/trust gates;
+7. inspect role capability changes;
+8. inspect finalization/recurrence/report logic;
+9. inspect tests for whether they prove the actual requirement;
+10. inspect route-level enforcement;
+11. inspect repo hygiene;
+12. distinguish Codex-reported tests from independently rerun evidence.
+
+Look specifically for:
+
+- omissions;
+- semantics that only look correct in UI;
+- UI hiding without route/domain gating;
+- stale tests;
+- current-state data incorrectly treated as history;
+- history incorrectly treated as current truth;
+- duplicate business effects;
+- privacy leakage;
+- backup/cleanup incompatibility;
+- misleading completion claims;
+- scope creep;
+- brittle test-only implementations.
+
+The review is not independent if it merely repeats Codex’s summary.
+
+---
+
+## 29. Review classification
+
+Use explicit state labels.
+
+Examples:
+
+### ADOPTED
+Product decision exists.
+
+### IMPLEMENTED
+Source exists.
+
+### CODEX-REPORTED TESTED
+Codex reports tests ran.
+
+### INDEPENDENTLY SOURCE-REVIEWED
+Reviewer inspected source.
+
+### INDEPENDENTLY RUNTIME-VERIFIED
+Reviewer/device evidence independently confirms runtime.
+
+### OWNER-REVIEWED
+Owner saw/reviewed result.
+
+### OWNER-ACCEPTED
+Owner explicitly accepted.
+
+### PARTIAL
+Only a defined subset is complete.
+
+### SUPERSEDED / HISTORICAL
+No longer current authority.
+
+Never collapse these into one word like “done.”
+
+---
+
+## 30. When to escalate to Felix
+
+Escalate only when a decision materially changes:
+
+- product meaning;
+- destructive/data-loss behavior;
+- recurrence/obligation meaning;
+- privacy/security promise;
+- authentication model;
+- scope;
+- external service/payment dependency;
+- protected history;
+- publication/release.
+
+When escalating:
+
+- state the decision;
+- give one recommended choice;
+- explain consequence;
+- explain what is blocked.
+
+Do not send a questionnaire of routine options.
+
+---
+
+## 31. New-thread handoff standard
+
+When the owner asks for:
+
+- “the handoff prompt”;
+- “new-thread handoff”;
+- “continuation prompt”;
+- equivalent wording;
+
+produce one READY-TO-PASTE prompt for a fresh thread.
+
+It must allow a competent successor to resume without Felix reconstructing the old conversation.
+
+### 31.1 Required sections
+
+Include all applicable:
+
+- role / authority;
+- repo + branch + exact SHA state;
+- worktree / remote parity / protected baseline;
+- current task;
+- what just happened;
+- accepted/reviewed/unreviewed/partial/superseded work;
+- unfinished work;
+- exact continuation point;
+- latest Codex objective;
+- latest commits;
+- Codex-reported tests;
+- independent-review status;
+- bugs/findings/causes;
+- fragile tests;
+- tooling hacks/workarounds;
+- AVD/device evidence;
+- owner decisions;
+- rejected directions worth preserving;
+- files/assets/artifacts;
+- documentation gaps;
+- immediate next actions;
+- near-term queue.
+
+Omit empty sections.
+
+### 31.2 Continuation instruction
+
+End with an instruction equivalent to:
+
+> Reconstruct current state from this handoff, Project Instructions, memory, and repo/docs; verify repository state first; treat repo/docs as durable truth and this handoff as transient context; do not restart discovery, relitigate accepted decisions, or ask Felix to repeat known context; surface discrepancies and continue from the stated next action.
+
+### 31.3 Active-work interruption
+
+If interrupted mid-task, include:
 
 - exact task;
 - last completed sub-step;
+- partial implementation/analysis;
 - commands/tools/results;
 - modified/generated files;
 - validated assumptions;
-- unresolved error;
-- precise continuation point.
+- unresolved errors;
+- precise next continuation point.
 
-## 13. Do not duplicate durable process rules into every handoff
+Never reduce an active interruption to:
 
-New-thread handoffs should point to this file rather than reproduce its complete content.
+> “Continue milestone X.”
 
-The handoff still needs task-specific transient context.
+---
 
-Likewise, implementation prompts should reference the relevant durable product docs but must include enough exact task semantics that Codex does not need to infer the intended change from dozens of files.
+## 32. Process documentation discipline
 
-Balance:
+The repository should retain one coherent process authority rather than accumulating competing prompt manuals.
 
-- durable process rules live here;
-- durable product truth lives in product/project authority docs;
-- transient thread/task truth lives in the handoff;
-- execution instructions live in the Codex prompt.
+Preferred durable structure:
 
-## 14. Prompt-author preflight quality gate
+- `AGENTS.md` — concise persistent implementation-agent rules;
+- `DELEGATED_AI_DEVELOPMENT_AND_ORCHESTRATION...` — broad orchestration model;
+- `AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md` — detailed prompt/execution/review/handoff authority.
 
-Before giving a substantial Codex prompt to the owner, the orchestrator must answer YES to all applicable items:
+Do not create new permanent process docs for every lesson if the current standard can absorb them.
 
-- [ ] I verified the source branch/SHA rather than assuming it.
-- [ ] I know which product/milestone docs govern this task.
-- [ ] I inspected the current source for every architecture-sensitive change.
-- [ ] The prompt distinguishes current behavior from desired behavior.
-- [ ] Known files/classes/functions/tables/routes are named where useful.
-- [ ] Persistence/transaction/idempotency meaning is explicit.
-- [ ] Migration/legacy behavior is explicit.
-- [ ] UI defects specify actual rendered/interactive acceptance.
-- [ ] Negative/failure cases are stated.
-- [ ] Non-goals prevent nearby scope creep.
-- [ ] Test cases specify expected facts, not “add coverage.”
-- [ ] Runtime/device evidence is distinguished from source/unit evidence.
-- [ ] Known environment workarounds are carried forward.
-- [ ] Git start/end state and protected-branch rules are explicit.
-- [ ] The prompt ends with an exhaustive acceptance checklist.
-- [ ] A Luna High-class execution model should not need to make an avoidable consequential product/architecture decision.
-- [ ] A stronger model would benefit from the same prompt rather than require a different one.
+When a new lesson is proven:
 
-If any applicable answer is NO, improve the prompt before handing it off.
+1. update the canonical standard;
+2. update `AGENTS.md` only if implementation-agent behavior must change;
+3. update delegation doc only if broad orchestration philosophy changed;
+4. avoid duplicate/conflicting instructions.
 
-## 15. Handoff-author preflight quality gate
+---
 
-Before producing a new-thread handoff, confirm it preserves:
+## 33. Prompt-authoring anti-patterns
 
-- [ ] exact branch/SHA;
-- [ ] unfinished work;
-- [ ] unreviewed Codex work;
-- [ ] reported vs independently verified tests;
-- [ ] recurring workarounds;
-- [ ] accepted/rejected choices;
-- [ ] device/emulator evidence;
-- [ ] security/isolation constraints;
-- [ ] missing files/assets;
-- [ ] exact next action;
-- [ ] instruction to read this standard before authoring further Codex prompts.
+### 33.1 Vague architecture handoff
 
-The standard is:
+Bad:
 
-> A fresh competent AI should be able to continue without the owner reconstructing the old thread, and a Luna High-class Codex model should receive enough implementation detail to execute the next task without rediscovering decisions the orchestrator could have resolved first.
+> “Implement native sharing cleanly.”
+
+Better:
+
+- current purposes;
+- exact new purpose/version;
+- family list;
+- merge semantics;
+- provenance identity;
+- migration consequence;
+- tests;
+- runtime.
+
+### 33.2 Product question disguised as implementation task
+
+Bad:
+
+> “Figure out the best architecture for aggregate reports.”
+
+Better: decide first in Chat:
+
+- one Customer;
+- Visit-level selection;
+- exact source revisions;
+- immutable aggregate sources;
+- derived PDF;
+- current business branding;
+- frozen technician attribution.
+
+Then tell Codex to implement.
+
+### 33.3 Visual imitation
+
+Bad:
+
+> “Make Outbox look like Due Services.”
+
+Better:
+
+> “Use/extract the actual shared Due Services selectable record primitive.”
+
+### 33.4 Proxy test
+
+Bad:
+
+> “Assert the action bar composable exists.”
+
+Better:
+
+> render actual screen, tap actual item, assert action surface displayed.
+
+### 33.5 Hidden route hole
+
+Bad:
+
+> hide a button for disallowed roles.
+
+Better:
+
+> hide button **and** gate route/domain capability.
+
+### 33.6 Clean-checkpoint stop
+
+Bad:
+
+> commit, push, report remaining work.
+
+Better:
+
+> commit/push as recovery point, then continue.
+
+### 33.7 Evidence inflation
+
+Bad:
+
+> “Verified on emulator” after only compiling an instrumentation APK.
+
+Better:
+
+> distinguish assembled, executed, rendered, handoff, and owner-reviewed evidence.
+
+---
+
+## 34. Canonical substantial-prompt skeleton
+
+Use this skeleton as the starting structure for future significant ServiceLoop Codex assignments.
+
+```text
+SERVICELOOP — <TASK NAME>
+=========================
+
+ROLE / EXECUTION MODE
+---------------------
+You are the execution-level Android developer for ServiceLoop.
+Complete the full authorized assignment.
+Do not restart product discovery.
+Do not ask the owner routine implementation questions.
+Repair ordinary failures and continue.
+
+RUN-TO-COMPLETION RULE
+----------------------
+A clean commit, pushed checkpoint, passing test stage, or large amount of
+remaining work is not permission to stop.
+Continue until all required acceptance items are complete or a genuine external
+blocker exists.
+
+GIT AUTHORIZATION
+-----------------
+<state exact authorized operations and prohibited destructive operations>
+
+VERIFIED START STATE
+--------------------
+Repository:
+Remote:
+Branch:
+Starting SHA:
+Protected master:
+App version:
+Room:
+Recovery:
+Relevant protocol versions:
+Known IDE noise:
+
+INITIAL COMMANDS
+----------------
+<exact repo/branch/SHA/parity/status verification>
+
+MANDATORY AUTHORITY
+-------------------
+<exact docs and source files>
+
+LOCKED PRODUCT INVARIANTS
+-------------------------
+<task-relevant invariants>
+
+CURRENT SOURCE STATE
+--------------------
+<verified current implementation facts>
+
+OWNER DECISION / REQUIRED CHANGE
+--------------------------------
+<exact adopted behavior>
+
+NON-GOALS
+---------
+<explicit exclusions>
+
+IMPLEMENTATION SEMANTICS
+------------------------
+<state transitions, persistence, identity, transaction, UI, role matrix>
+
+CODE / DATA HOTSPOTS
+--------------------
+<files/classes/entities/routes/tests>
+
+COMPATIBILITY / MIGRATION
+-------------------------
+<old/new version, defaults, legacy behavior, recovery>
+
+FAILURE / RETRY / CONFLICT RULES
+--------------------------------
+<negative paths and idempotency>
+
+UI / INTERACTION
+----------------
+<rendered hierarchy, controls, accessibility, adaptive behavior>
+
+TESTS
+-----
+<exact scenarios and expected persisted/rendered facts>
+
+RUNTIME / DEVICE ACCEPTANCE
+---------------------------
+<canonical AVD and exact interaction journey>
+
+TOOLING FALLBACKS
+-----------------
+<known relevant fallbacks>
+
+DOCUMENTATION
+-------------
+<files to update, implemented vs verified truth>
+
+GIT FINALIZATION
+----------------
+<commit/push/final parity/diff-check expectations>
+
+FINAL REPORT FORMAT
+-------------------
+<start/end/commits/versions/implementation/tests/not-run/workarounds/risks/git>
+
+FINAL ACCEPTANCE CHECKLIST
+--------------------------
+[ ] ...
+[ ] ...
+[ ] ...
+
+FINAL STOP RULE
+---------------
+If a required implementation item is incomplete and no genuine external blocker
+exists, do not return a final handoff. Continue working.
+```
+
+---
+
+## 35. Canonical correction-prompt skeleton
+
+```text
+SERVICELOOP — <MILESTONE> INDEPENDENT-REVIEW CORRECTION
+=======================================================
+
+START
+-----
+Reviewed SHA:
+Branch:
+Protected master:
+
+STATUS
+------
+<implemented / Codex-tested / independently source-reviewed / not accepted>
+
+PRESERVE
+--------
+List already-correct architecture that must not be reopened.
+
+FINDING 1 — <TITLE>
+-------------------
+Severity:
+Current source cause:
+Contract violated:
+Required correction:
+Hotspots:
+Migration/protocol impact:
+Regression test:
+Runtime acceptance:
+
+FINDING 2 — ...
+-----------------
+
+RUN-TO-COMPLETION
+-----------------
+All findings belong to this correction pass.
+A clean checkpoint is not permission to stop.
+
+FINAL GATES
+-----------
+<full unit/build/lint/instrumentation/runtime/git>
+
+CHECKLIST
+---------
+[ ] finding 1 fixed
+[ ] regression test would fail on old SHA
+[ ] finding 2 fixed
+...
+[ ] protected master unchanged
+```
+
+---
+
+## 36. Quality gate for prompt authors
+
+Before sending a substantial Codex prompt, the orchestrator must ask:
+
+### State
+- Did I verify branch/SHA rather than guess?
+- Did I distinguish remote truth from inaccessible local state?
+- Did I identify versions/schema/protocols?
+
+### Authority
+- Did I name the right docs?
+- Did I separate current factual repo state from the new owner decision?
+- Did I avoid reviving superseded requirements?
+
+### Architecture
+- Did I settle the product/architecture questions that Chat can settle?
+- Did I identify the authoritative code/data hotspots?
+- Did I define state transitions and idempotency?
+- Did I define migration/legacy semantics?
+
+### Scope
+- Did I state explicit non-goals?
+- Did I avoid hidden backend/sync/enterprise expansion?
+- Is the task coherent rather than arbitrarily fragmented?
+
+### UX
+- If UI is involved, did I define the actual interaction/result?
+- Did I require reuse of exact primitives where necessary?
+- Did I include accessibility/adaptation when relevant?
+
+### Tests
+- Do tests reproduce actual bugs rather than proxies?
+- Did I separate JVM/migration/domain/UI/system/rendered evidence?
+- Did I define negative/retry/conflict cases?
+
+### Runtime
+- Did I name the canonical AVD rule?
+- Did I require touched-surface interaction rather than mere launch?
+- Did I require system handoff where the handoff matters?
+
+### Execution
+- Did I include safe fallback behavior?
+- Did I explicitly prevent voluntary clean-checkpoint stopping?
+
+### Git
+- Did I state allowed/prohibited operations?
+- Did I define final parity/diff/master checks?
+
+### Handoff
+- Did I prescribe a concrete final report?
+- Is the acceptance checklist exhaustive?
+
+If several answers are “no,” the prompt is not ready.
+
+---
+
+## 37. Quality gate for independent reviewers
+
+Before accepting Codex work, the reviewer must ask:
+
+- Does remote HEAD match the handoff?
+- Did protected master stay unchanged?
+- Does changed-file scope match the task?
+- Are data migrations genuinely non-destructive?
+- Are trust/identity checks at mutation boundaries?
+- Can retry duplicate a business effect?
+- Are stale/conflicting inputs retained truthfully?
+- Did UI hiding leave an ungated route?
+- Is imported work falsely represented as local execution?
+- Are customer-facing and private/internal data structurally separated?
+- Can cleanup break recovery?
+- Can readable export contradict native/history semantics?
+- Are correction/void revisions immutable?
+- Do tests prove the actual requirement?
+- Were final gates rerun after last production edit?
+- Which claims are Codex-reported versus independently verified?
+- Is owner review still outstanding?
+
+Do not accept merely because the suite is green.
+
+---
+
+## 38. Stable ServiceLoop business safeguards for prompt reuse
+
+When relevant, copy these directly into implementation prompts.
+
+### Service truth
+- Booked is not serviced.
+- Performed is not automatically fulfilled unless adopted recurrence rules say so.
+- PARTLY_PERFORMED requires explicit fulfillment choice.
+- NOT_PERFORMED never fulfills and requires reason.
+
+### Visit lifecycle
+- A Visit may be booked without being started.
+- Remote result ingestion must not fake technician execution.
+- Coordinator planning must not imply Coordinator field work.
+
+### History
+- Final history is immutable.
+- Correction appends a revision.
+- Void retains historical truth.
+- Existing issued report provenance must remain frozen.
+
+### Recurrence
+- Apply at most once.
+- Retry cannot advance again.
+- Stale/conflicting remote truth must not silently advance due state.
+
+### Dispatch
+- Dispatch is assignment/transport truth, not proof of service.
+- Export is not delivery.
+- Imported assignment provenance must remain stable.
+- Generation/material identity must be monotonic and retry-safe.
+
+### Reports
+- Finalized does not mean PDF generated.
+- PDF failure must not undo business completion.
+- Aggregate reports freeze exact source revisions.
+- Customer output only uses explicitly customer-visible evidence.
+
+### Evidence
+- Privacy and report inclusion are distinct.
+- Private/internal evidence must not leak through reports or exports whose privacy option excludes it.
+- Image cleanup must not destroy historical usability.
+
+### Recovery
+- Local save is not backup.
+- Cleanup and retention must remain compatible with complete recovery.
+- No destructive migration fallback over real data.
+
+---
+
+## 39. Versioning this process standard
+
+When this document changes in the repository:
+
+- bump the process version;
+- record only meaningful process changes;
+- avoid duplicating the whole document in changelogs;
+- keep `AGENTS.md` concise and point to this file;
+- keep the delegation document broad and point to this file;
+- preserve old task/milestone evidence as history rather than rewriting it to match new process rules retroactively.
+
+---
+
+## 40. Closing rule
+
+ServiceLoop’s AI workflow succeeds when:
+
+- Chat resolves meaning;
+- prompts remove ambiguity;
+- Codex executes substantial work autonomously;
+- ordinary failures are repaired rather than escalated;
+- business invariants survive;
+- evidence is classified truthfully;
+- independent review catches omissions;
+- corrections are consolidated;
+- owner involvement is reserved for consequential decisions;
+- repo/docs preserve durable truth;
+- a fresh thread can continue without Felix rebuilding context.
+
+The practical standard is:
+
+> **Preserve the accepted product. Verify current state. Decide routine architecture before delegation. Write for Luna High. Name the real code and data boundaries. Test the actual bug. Require truthful runtime evidence. Treat commits as checkpoints, not stopping points. Independently review the result.**
