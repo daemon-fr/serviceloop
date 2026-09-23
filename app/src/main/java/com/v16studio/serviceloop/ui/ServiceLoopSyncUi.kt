@@ -38,6 +38,11 @@ import com.v16studio.serviceloop.data.DispatchPreview
 import com.v16studio.serviceloop.data.InspectionTemplateExchangeService
 import com.v16studio.serviceloop.data.InspectionTemplateImportClassification
 import com.v16studio.serviceloop.data.InspectionTemplateImportPreview
+import com.v16studio.serviceloop.data.DataTransferImportPreview
+import com.v16studio.serviceloop.data.DataTransferImportService
+import com.v16studio.serviceloop.data.DataTransferFamily
+import com.v16studio.serviceloop.data.DataTransferClassification
+import com.v16studio.serviceloop.data.DataTransferCodec
 import com.v16studio.serviceloop.data.SERVICE_LOOP_SYNC_MIME
 import com.v16studio.serviceloop.data.ServiceLoopSyncCodec
 import com.v16studio.serviceloop.data.ServiceLoopSyncEnvelope
@@ -67,10 +72,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
-private data class DecodedImport(val envelope: ServiceLoopSyncEnvelope, val trust: ServiceLoopTrustDecision, val fullWorkspace: ServiceLoopSyncPackage? = null, val workPreview: DispatchPreview? = null, val templatePreview: InspectionTemplateImportPreview? = null, val workResultPreview: WorkResultImportService.Preview? = null, val workResultBytes: ByteArray? = null)
+private data class DecodedImport(val envelope: ServiceLoopSyncEnvelope, val trust: ServiceLoopTrustDecision, val fullWorkspace: ServiceLoopSyncPackage? = null, val workPreview: DispatchPreview? = null, val templatePreview: InspectionTemplateImportPreview? = null, val workResultPreview: WorkResultImportService.Preview? = null, val workResultBytes: ByteArray? = null, val dataTransferPreview: DataTransferImportPreview? = null, val dataTransferBytes: ByteArray? = null)
 
 @Composable
 internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController, incomingUri: String?) {
@@ -82,6 +88,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
     val templates = remember { InspectionTemplateExchangeService(database) }
     val trustStore = remember { ServiceLoopPeerTrustStore(database) }
     val workResults = remember { WorkResultImportService(database, context.filesDir) }
+    val dataTransfers = remember { DataTransferImportService(database, context.filesDir) }
     var decoded by remember { mutableStateOf<DecodedImport?>(null) }
     var selectedFamilies by remember { mutableStateOf<Set<SyncContentFamily>>(emptySet()) }
     var workSelected by remember { mutableStateOf(true) }
@@ -104,9 +111,19 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     when (envelope.manifest.purpose) {
                         "FULL_WORKSPACE" -> DecodedImport(envelope, trust, fullWorkspace = ServiceLoopSyncCodec.decode(bytes))
                         "WORK_ASSIGNMENT" -> DecodedImport(envelope, trust, workPreview = dispatch.preview(ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(bytes)))
-                        "TEMPLATE_SHARE", "DATA_TRANSFER" -> {
+                        "TEMPLATE_SHARE" -> {
                             ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(bytes)
                             DecodedImport(envelope, trust, templatePreview = templates.preview(envelope.section("inspections")))
+                        }
+                        "DATA_TRANSFER" -> {
+                            val transferVersion = JSONObject(envelope.section("transfer").toString(Charsets.UTF_8)).optInt("version", 1)
+                            if (transferVersion == 1) {
+                                ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(bytes)
+                                DecodedImport(envelope, trust, templatePreview = templates.preview(envelope.section("inspections")))
+                            } else {
+                                val preview = dataTransfers.preview(bytes)
+                                DecodedImport(envelope, trust, dataTransferPreview = preview, dataTransferBytes = bytes)
+                            }
                         }
                         "WORK_RESULT" -> DecodedImport(envelope, trust, workResultPreview = workResults.preview(bytes), workResultBytes = bytes)
                         else -> error("Unsupported ServiceLoop file purpose")
@@ -121,7 +138,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
             busy = false
         }
     }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(::read) }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let(::read) }
     LaunchedEffect(incomingUri) { incomingUri?.let { read(Uri.parse(it)) } }
 
     LazyColumn(Modifier.padding(padding).testTag("service-loop-import"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -135,7 +152,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
             }
         }
         item {
-            ServiceLoopActionStack { OutlinedButton({ open.launch(arrayOf(SERVICE_LOOP_SYNC_MIME, "application/zip", "application/octet-stream", "*/*")) }, Modifier.fillMaxWidth().testTag("choose-serviceloop-file"), enabled = !busy && !state.restrictedRecoveryState) { ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown, null, Modifier.padding(end = 8.dp)); Text("Choose ServiceLoop file") } }
+            ServiceLoopActionStack { OutlinedButton({ open.launch("*/*") }, Modifier.fillMaxWidth().testTag("choose-serviceloop-file"), enabled = !busy && !state.restrictedRecoveryState) { ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown, null, Modifier.padding(end = 8.dp)); Text("Choose ServiceLoop file") } }
         }
         if (capabilities.canManageRegister) item {
             ServiceLoopDenseNavigableRow("Import customers/sites/equipment from CSV", context = "For directory data from spreadsheets or external systems.", leadingIcon = ServiceLoopIcons.ArrowCircleDown, modifier = Modifier.testTag("import-directory-csv"), onClick = { nav.navigate("csv/import") })
@@ -218,6 +235,45 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     if (!capabilities.canExchangeTemplates) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                 }
                 item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import templates", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { templates.import(preview, current.envelope.manifest.exporterId, createSeparate) } }.onSuccess { result -> message = "Imported ${result.importedReferences.size} inspection templates. Exact matches were left unchanged."; viewModel.loadTemplates(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-template-import-confirm"), enabled = current.trust.canImport && templateSelected && capabilities.canExchangeTemplates && preview.canImport(createSeparate) && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+            }
+            current.dataTransferPreview?.let { preview ->
+                val includesTemplates = preview.counts[DataTransferFamily.INSPECTION_TEMPLATES]?.let { it > 0 } == true
+                val roleAllowed = capabilities.canManageRegister && (!includesTemplates || capabilities.canExchangeTemplates)
+                item {
+                    Text("Selected data · additive merge", style = MaterialTheme.typography.titleMedium)
+                    Text("This copies the selected records into this workspace. Missing records in the file never delete local data. Historical work is read-only context; it does not create Visits, claims, technician execution, or recurrence changes.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Package source workspace · ${preview.payload.sourceWorkspaceId}")
+                    preview.counts.forEach { (family, count) ->
+                        val label = family.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+                        val statuses = preview.items.filter { it.family == family }.groupingBy { it.classification }.eachCount()
+                        Text("$label · $count${statuses.entries.joinToString(prefix = if (statuses.isEmpty()) "" else " · ") { "${it.value} ${it.key.name.lowercase().replace('_', ' ')}" }}")
+                    }
+                    preview.templatePreview?.entries?.filter { it.classification == InspectionTemplateImportClassification.CONFLICT }?.forEach { entry ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(entry.transfer.reference in createSeparate, { checked -> createSeparate = if (checked) createSeparate + entry.transfer.reference else createSeparate - entry.transfer.reference }, enabled = !busy)
+                            Text("Create separate template for ${entry.transfer.reference}")
+                        }
+                    }
+                    if (preview.conflicts.isNotEmpty() && preview.conflicts.any { it.family != DataTransferFamily.INSPECTION_TEMPLATES || it.sourceKey !in createSeparate }) {
+                        ServiceLoopNotice("Review conflicts", "Changed bound records and conflicting references must be resolved before any selected data is imported.", ServiceLoopNoticeKind.Error)
+                    }
+                    if (!roleAllowed) ServiceLoopNotice("Unavailable for this Team role", "A role with register access is required; template data also requires template exchange access.", ServiceLoopNoticeKind.Error)
+                }
+                item { ServiceLoopActionStack {
+                    ServiceLoopPrimaryButton("Import selected data", { scope.launch {
+                        busy = true; error = null
+                        runCatching { withContext(Dispatchers.IO) { dataTransfers.import(preview, createSeparate) } }
+                            .onSuccess { result ->
+                                message = "Imported selected data. ${result.items.count { it.classification == DataTransferClassification.NEW || it.classification == DataTransferClassification.NEW_HISTORY }} new record(s); current matches were left unchanged."
+                                decoded = null
+                                viewModel.refreshRootDataNonBlocking()
+                                viewModel.loadVisits(); viewModel.loadTemplates(); viewModel.loadFollowUps()
+                            }
+                            .onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message ?: "Could not import selected data" }
+                        busy = false
+                    } }, Modifier.fillMaxWidth().testTag("sync-data-transfer-import"), enabled = current.trust.canImport && roleAllowed && preview.canImport(createSeparate) && !busy && !state.restrictedRecoveryState, busy = busy)
+                    TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") }
+                } }
             }
             current.workResultPreview?.let { preview ->
                 item {

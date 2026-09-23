@@ -28,6 +28,8 @@ import com.v16studio.serviceloop.data.ExportCenterSelection
 import com.v16studio.serviceloop.data.ExportCenterService
 import com.v16studio.serviceloop.data.ExportFamily
 import com.v16studio.serviceloop.data.ExportPreset
+import com.v16studio.serviceloop.data.DataTransferExportService
+import com.v16studio.serviceloop.data.SERVICE_LOOP_SYNC_MIME
 import com.v16studio.serviceloop.data.SiteEntity
 import com.v16studio.serviceloop.domain.ServiceLoopScopeFilter
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNotice
@@ -46,11 +48,13 @@ internal fun ExportCenterScreen(padding: PaddingValues) {
     val context = LocalContext.current
     val database = remember { (context.applicationContext as ServiceLoopApplication).container.database }
     val service = remember { ExportCenterService(database, context.filesDir) }
+    val nativeService = remember { DataTransferExportService(database, context.filesDir) }
     val scope = rememberCoroutineScope()
     var customers by remember { mutableStateOf<List<CustomerEntity>>(emptyList()) }
     var sites by remember { mutableStateOf<List<SiteEntity>>(emptyList()) }
     var equipment by remember { mutableStateOf<List<EquipmentEntity>>(emptyList()) }
     var preset by remember { mutableStateOf(ExportPreset.CUSTOMER_DATA) }
+    var format by remember { mutableStateOf("NATIVE") }
     var families by remember { mutableStateOf(ExportPreset.CUSTOMER_DATA.families) }
     var filter by remember { mutableStateOf(ServiceLoopScopeFilter()) }
     var fromText by remember { mutableStateOf("") }
@@ -69,8 +73,9 @@ internal fun ExportCenterScreen(padding: PaddingValues) {
     LazyColumn(Modifier.padding(padding).testTag("export-center"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Export Center", style = MaterialTheme.typography.headlineSmall)
-            Text("Create readable CSV and image files for use outside ServiceLoop. Exports are unencrypted and are not recovery backups.")
+            Text("Share selected data with another ServiceLoop workspace or create a readable archive. Exports are unencrypted and are not recovery backups.")
             ServiceLoopFilterSelector("Preset", preset, ExportPreset.entries.map { it to it.title }, { next -> preset = next; if (next != ExportPreset.CUSTOM) families = next.families }, testTag = "export-preset")
+            ServiceLoopFilterSelector("Format", format, listOf("NATIVE" to "ServiceLoop file (.slsync)", "READABLE" to "Readable archive (.zip)"), { format = it }, testTag = "export-format")
         }
         item {
             Text("Scope", style = MaterialTheme.typography.titleMedium)
@@ -91,13 +96,19 @@ internal fun ExportCenterScreen(padding: PaddingValues) {
             Row { ServiceLoopSelectionOption(includePrivate, { includePrivate = !includePrivate }, "Include private/internal information", selectedCheck = true) }
             Row { ServiceLoopSelectionOption(includeInactive, { includeInactive = !includeInactive }, "Include inactive/archived/retired", selectedCheck = true) }
             Row { ServiceLoopSelectionOption(includePrevious, { includePrevious = !includePrevious }, "Include previous revisions", selectedCheck = true) }
-            ServiceLoopPrimaryButton("Create export ZIP", { scope.launch {
+            val native = format == "NATIVE"
+            ServiceLoopPrimaryButton(if (native) "Create ServiceLoop file" else "Create readable ZIP", { scope.launch {
                 busy = true; message = null
                 runCatching {
                     val requested = ExportCenterSelection(filter.copy(fromDate = from, toDate = to), families, includePrivate, includeInactive, includePrevious)
-                    val bytes = withContext(Dispatchers.IO) { service.export(requested) }
-                    shareFile(context, "export-center", "serviceloop-export-${System.currentTimeMillis()}.zip", "application/zip", bytes, "Share ServiceLoop export", "ServiceLoop readable export")
-                }.onSuccess { message = "Export ZIP ready to share." }.onFailure { if (it is CancellationException) throw it else message = it.message ?: "Could not create export" }
+                    if (native) {
+                        val bytes = withContext(Dispatchers.IO) { nativeService.export(requested) }
+                        shareFile(context, "export-center", "serviceloop-data-${System.currentTimeMillis()}.slsync", SERVICE_LOOP_SYNC_MIME, bytes, "Share ServiceLoop file", "ServiceLoop data transfer")
+                    } else {
+                        val bytes = withContext(Dispatchers.IO) { service.export(requested) }
+                        shareFile(context, "export-center", "serviceloop-export-${System.currentTimeMillis()}.zip", "application/zip", bytes, "Share ServiceLoop export", "ServiceLoop readable export")
+                    }
+                }.onSuccess { message = if (native) "ServiceLoop file ready to share." else "Readable ZIP ready to share." }.onFailure { if (it is CancellationException) throw it else message = it.message ?: "Could not create export" }
                 busy = false
             } }, Modifier.fillMaxWidth().testTag("export-center-create"), enabled = families.isNotEmpty() && datesValid && !busy, busy = busy)
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }

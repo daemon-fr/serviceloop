@@ -207,6 +207,19 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun workResultReceipt(resultId: String, revisionId: String): WorkResultReceiptEntity?
     @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND status='APPLIED' ORDER BY appliedAtEpochMillis DESC LIMIT 1") suspend fun appliedWorkResultLineage(resultId: String): WorkResultReceiptEntity?
     @Query("SELECT * FROM remote_final_results WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun remoteFinalResult(resultId: String, revisionId: String): RemoteFinalResultEntity?
+    @Query("SELECT * FROM data_transfer_bindings WHERE originWorkspaceId=:origin AND entityType=:type AND sourceEntityId=:sourceId") suspend fun dataTransferBinding(origin: String, type: String, sourceId: String): DataTransferBindingEntity?
+    @Query("SELECT * FROM data_transfer_bindings WHERE entityType=:type AND localEntityId=:localId ORDER BY importedAtEpochMillis") suspend fun dataTransferBindingsForLocal(type: String, localId: String): List<DataTransferBindingEntity>
+    @Query("SELECT * FROM data_transfer_bindings") suspend fun allDataTransferBindings(): List<DataTransferBindingEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertDataTransferBinding(value: DataTransferBindingEntity)
+    @Query("SELECT * FROM transferred_final_results WHERE originWorkspaceId=:origin AND sourceWorkItemId=:workItemId AND sourceFinalRevisionId=:revisionId") suspend fun transferredFinalResult(origin: String, workItemId: String, revisionId: String): TransferredFinalResultEntity?
+    @Query("SELECT * FROM transferred_final_results ORDER BY serviceDate, originWorkspaceId, sourceVisitId, sourceWorkItemId, sourceFinalRevisionId") suspend fun allTransferredFinalResults(): List<TransferredFinalResultEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredFinalResults(values: List<TransferredFinalResultEntity>)
+    @Query("SELECT * FROM transferred_evidence WHERE sourceIdentityKey=:sourceKey") suspend fun transferredEvidenceBySourceKey(sourceKey: String): TransferredEvidenceEntity?
+    @Query("SELECT * FROM transferred_evidence ORDER BY serviceDate, originWorkspaceId, sourceVisitId, sourceWorkItemId, sourcePhotoId") suspend fun allTransferredEvidence(): List<TransferredEvidenceEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredEvidence(values: List<TransferredEvidenceEntity>)
+    @Query("SELECT * FROM transferred_history_entries WHERE originWorkspaceId=:origin AND family=:family AND sourceEntityId=:sourceId AND sourceRevisionKey=:revisionKey") suspend fun transferredHistoryEntry(origin: String, family: String, sourceId: String, revisionKey: String): TransferredHistoryEntryEntity?
+    @Query("SELECT * FROM transferred_history_entries ORDER BY eventDateTime, originWorkspaceId, family, sourceEntityId, sourceRevisionKey") suspend fun allTransferredHistoryEntries(): List<TransferredHistoryEntryEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredHistoryEntries(values: List<TransferredHistoryEntryEntity>)
     @Query("SELECT * FROM work_result_receipts WHERE dispatchVisitId=:visitId AND status='APPLIED'") suspend fun appliedWorkResultReceipts(visitId: String): List<WorkResultReceiptEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertWorkResultReceipt(value: WorkResultReceiptEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRemoteFinalResult(value: RemoteFinalResultEntity)

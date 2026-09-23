@@ -28,6 +28,7 @@ import org.junit.runner.RunWith
 class B049RenderedEvidenceUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private var previousRole: String? = null
+    private lateinit var evidenceDirectory: File
 
     @After fun restoreRole() {
         compose.activity.getSharedPreferences(DISPATCH_PREFS, 0).edit().apply {
@@ -36,6 +37,10 @@ class B049RenderedEvidenceUiTest {
     }
 
     @Test fun captureRootTeamOutboxExportAndDarkCleanup() {
+        evidenceDirectory = File(
+            InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),
+            "b049-rendered-${System.nanoTime()}",
+        ).apply { check(exists() || mkdirs()) }
         previousRole = compose.activity.getSharedPreferences(DISPATCH_PREFS, 0).getString(TEAM_ROLE, null)
         compose.runOnUiThread {
             compose.activity.setTeamRole(TeamRole.COORDINATOR)
@@ -74,10 +79,10 @@ class B049RenderedEvidenceUiTest {
         Thread.sleep(400)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
-        val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "b049")
-        check(dir.exists() || dir.mkdirs())
+        val dir = evidenceDirectory
         val screenshot = instrumentation.uiAutomation.takeScreenshot()
         FileOutputStream(File(dir, name)).use { check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
         screenshot.recycle()
+        android.util.Log.i("B049_RENDERED", "Rendered evidence directory: ${dir.absolutePath}")
     }
 }

@@ -190,7 +190,8 @@ class RecoveryPackage(
         val remotePhotos = tableRows(root, "remote_result_photos").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "REMOTE_PHOTO") }
         val aggregateReports = tableRows(root, "aggregate_report_renditions").filter { it.getString("status") == "READY" }.map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "AGGREGATE_REPORT") }
         val derivatives = tableRows(root, "retained_images").map { RequiredFile(it.getString("derivativeRelativePath"), it.getLong("derivativeByteSize"), it.getString("derivativeSha256"), "IMAGE_DERIVATIVE") }
-        val all = attachments + reports + remotePhotos + aggregateReports + derivatives
+        val transferredPhotos = tableRows(root, "transferred_evidence").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "TRANSFERRED_EVIDENCE") }
+        val all = attachments + reports + remotePhotos + aggregateReports + derivatives + transferredPhotos
         require(all.map { it.path }.size == all.map { it.path }.toSet().size) { "Two database file references use the same path" }
         return all
     }
@@ -456,7 +457,7 @@ class RecoveryPackage(
         val tables = root.getJSONArray("tables")
         val present = (0 until tables.length()).map { tables.getJSONObject(it).getString("name") }.toSet()
         require(present.all { it in TABLE_ORDER }) { "Unexpected database table" }
-        val newTables = setOf("work_result_receipts", "remote_final_results", "remote_result_photos", "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images")
+        val newTables = setOf("work_result_receipts", "remote_final_results", "remote_result_photos", "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images", "data_transfer_bindings", "transferred_final_results", "transferred_evidence", "transferred_history_entries")
         require(TABLE_ORDER.filterNot { it in newTables }.all { it in present }) { "Backup is missing an established business table" }
         val normalized = JSONArray()
         TABLE_ORDER.forEach { name ->
@@ -695,6 +696,7 @@ class RecoveryPackage(
             "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items",
             "work_result_receipts", "remote_final_results", "remote_result_photos",
             "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images",
+            "data_transfer_bindings", "transferred_final_results", "transferred_evidence", "transferred_history_entries",
             "reminder_preferences", "recovery_metadata",
         )
 

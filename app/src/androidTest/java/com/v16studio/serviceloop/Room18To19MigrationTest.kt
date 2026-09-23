@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,9 +18,17 @@ class Room18To19MigrationTest {
         InstrumentationRegistry.getInstrumentation(), ServiceLoopDatabase::class.java,
         emptyList(), FrameworkSQLiteOpenHelperFactory(),
     )
+    private var createdDatabaseName: String? = null
+
+    @After fun removeOnlyThisMigrationFixture() {
+        createdDatabaseName?.let { name ->
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(name)
+        }
+    }
 
     @Test fun contactsKeepValuesAndReceiveStablePerCustomerOrder() {
         val name = "b049-room-18-19-${System.nanoTime()}.db"
+        createdDatabaseName = name
         helper.createDatabase(name, 18).apply {
             execSQL("INSERT INTO customers(id,reference,name,state,customerType) VALUES('c','CU-1','Customer','ACTIVE','STANDARD')")
             execSQL("INSERT INTO customer_contacts(id,customerId,channel,value,createdAtEpochMillis,modifiedAtEpochMillis) VALUES('late','c','PHONE','123',1,20)")
@@ -52,6 +61,9 @@ class Room18To19MigrationTest {
             migrated.query("SELECT caption,visibility FROM attachments WHERE id='a'").use { row -> check(row.moveToFirst()); assertEquals("Caption",row.getString(0)); assertEquals("PUBLIC",row.getString(1)) }
             migrated.query("SELECT displayName FROM technician_identity WHERE id='primary'").use { row -> check(row.moveToFirst()); assertEquals("Technician",row.getString(0)) }
             migrated.query("SELECT name FROM trusted_service_loop_ids WHERE peerId='TRUST-1'").use { row -> check(row.moveToFirst()); assertEquals("Office",row.getString(0)) }
+            listOf("data_transfer_bindings", "transferred_final_results", "transferred_evidence", "transferred_history_entries").forEach { table ->
+                migrated.query("SELECT COUNT(*) FROM `$table`").use { row -> check(row.moveToFirst()); assertEquals(0, row.getInt(0)) }
+            }
         }
     }
 }

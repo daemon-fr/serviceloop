@@ -17,6 +17,8 @@ data class InspectionTemplateTransferEntry(
     val revision: Int,
     val items: List<DispatchInspectionItem>,
     val fingerprint: String = "",
+    val originWorkspaceId: String? = null,
+    val sourceEntityId: String? = null,
 )
 
 enum class InspectionTemplateImportClassification { NEW, EXACT_EXISTING, CONFLICT }
@@ -53,7 +55,10 @@ object InspectionTemplateCodec {
         require(normalized.map { it.reference }.distinct().size == normalized.size) { "Duplicate inspection template reference" }
         val root = JSONObject().put("format", FORMAT).put("formatVersion", CURRENT_VERSION).put("generatedAt", value.generatedAt).put("generatedWith", "ServiceLoop")
         root.put("templates", JSONArray(normalized.map { template ->
-            JSONObject().put("reference", template.reference).put("name", template.name).put("revision", template.revision).put("fingerprint", fingerprint(template)).put("items", JSONArray(template.items.map { item ->
+            JSONObject().put("reference", template.reference).put("name", template.name).put("revision", template.revision)
+                .put("originWorkspaceId", template.originWorkspaceId ?: JSONObject.NULL)
+                .put("sourceEntityId", template.sourceEntityId ?: JSONObject.NULL)
+                .put("fingerprint", fingerprint(template)).put("items", JSONArray(template.items.map { item ->
                 JSONObject().put("position", item.position).put("label", item.label).put("responseType", item.responseType).put("unit", item.unit ?: JSONObject.NULL).put("required", item.required).put("privateGuidance", item.privateGuidance ?: JSONObject.NULL)
             }))
         }))
@@ -77,7 +82,12 @@ object InspectionTemplateCodec {
                 val item = items.getJSONObject(itemIndex)
                 DispatchInspectionItem(item.getInt("position"), item.text("label"), item.text("responseType", 20), item.nullable("unit", 100), item.getBoolean("required"), item.nullable("privateGuidance", 2_000))
             }
-            val entry = InspectionTemplateTransferEntry(template.text("reference", 200), template.text("name", 200), template.getInt("revision"), parsedItems)
+            val origin = template.nullable("originWorkspaceId", 100)
+            val sourceId = template.nullable("sourceEntityId", 200)
+            require((origin == null) == (sourceId == null)) { "Inspection template origin is incomplete" }
+            require(origin == null || TechnicianIdCodec.normalize(origin) == origin) { "Invalid template origin workspace" }
+            val entry = InspectionTemplateTransferEntry(template.text("reference", 200), template.text("name", 200), template.getInt("revision"), parsedItems,
+                originWorkspaceId = origin, sourceEntityId = sourceId)
             require(entry.revision > 0 && entry.items.map { it.position } == (1..entry.items.size).toList()) { "Inspection items must be ordered" }
             require(entry.items.all { it.responseType in setOf("STATUS", "TEXT", "NUMBER") }) { "Unsupported inspection response type" }
             val declared = template.optString("fingerprint").takeIf { it.isNotBlank() }
@@ -113,11 +123,16 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
 
     suspend fun export(templateIds: Set<String>): InspectionTemplateTransfer {
         require(templateIds.isNotEmpty()) { "Select at least one inspection template" }
+        val localWorkspaceId = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
         val templates = templateIds.toList().sorted().map { id ->
             val template = dao.reusableTemplate(id) ?: error("Inspection template no longer exists")
             require(template.state != "DELETED") { "Deleted inspection templates cannot be exported" }
             val revision = dao.reusableTemplateRevision(template.currentRevisionId) ?: error("Inspection template revision is missing")
-            InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) })
+            val binding = dao.dataTransferBindingsForLocal("INSPECTION_TEMPLATE", template.id).firstOrNull()
+            InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber,
+                dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) },
+                originWorkspaceId = binding?.originWorkspaceId ?: localWorkspaceId,
+                sourceEntityId = binding?.sourceEntityId ?: template.id)
         }
         return InspectionTemplateTransfer(Instant.now().toString(), templates)
     }

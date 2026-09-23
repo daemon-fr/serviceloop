@@ -334,7 +334,7 @@ class B045SlsyncTest {
         assertEquals("old-dataset", dao.recoveryMetadata()?.datasetId)
     }
 
-    @Test fun universalEnvelopeWrapsWorkAndTemplatePayloadsWithoutChangingThem() {
+    @Test fun universalEnvelopePreservesWorkAndAddsTemplateOriginMetadataForV2() {
         val work = dispatchPackage()
         val decodedWork = ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(work, exporterId))
         assertEquals(work, decodedWork)
@@ -343,19 +343,28 @@ class B045SlsyncTest {
         assertEquals("DATA_TRANSFER", ServiceLoopSyncEnvelopeCodec.decode(transferBytes).manifest.purpose)
         val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(transferBytes)
         assertEquals(transfer.generatedAt, decodedTemplates.generatedAt)
-        assertEquals(transfer.templates.single().copy(fingerprint = InspectionTemplateCodec.fingerprint(transfer.templates.single())), decodedTemplates.templates.single())
+        val originalTemplate = transfer.templates.single()
+        assertEquals(
+            originalTemplate.copy(
+                fingerprint = InspectionTemplateCodec.fingerprint(originalTemplate),
+                originWorkspaceId = exporterId,
+                sourceEntityId = originalTemplate.reference,
+            ),
+            decodedTemplates.templates.single(),
+        )
         val legacyBytes = ServiceLoopSyncEnvelopeCodec.encode(
             ServiceLoopSyncManifest("legacy-template-share", "Legacy templates", "TEMPLATE_SHARE", transfer.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
             mapOf("inspections" to InspectionTemplateCodec.encode(transfer)),
         )
-        assertEquals(decodedTemplates, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(legacyBytes))
+        val legacyExpected = transfer.copy(templates = listOf(originalTemplate.copy(fingerprint = InspectionTemplateCodec.fingerprint(originalTemplate))))
+        assertEquals(legacyExpected, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(legacyBytes))
         val oldTransfer = ServiceLoopSyncEnvelopeCodec.encode(
             ServiceLoopSyncManifest("old-data-transfer", "Old templates", "DATA_TRANSFER", transfer.generatedAt,
                 sections = listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), ServiceLoopSyncSectionDeclaration("inspections", 1, "inspections.json")), exporterId = exporterId),
             mapOf("transfer" to org.json.JSONObject().put("contentFamily", "INSPECTION_TEMPLATES").put("version", 1).toString().toByteArray(),
                 "inspections" to InspectionTemplateCodec.encode(transfer)),
         )
-        assertEquals(decodedTemplates, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(oldTransfer))
+        assertEquals(legacyExpected, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(oldTransfer))
     }
 
     @Test fun purposeRoutingRejectsUnknownAndFamilyFilteringKeepsReferencesValid() {

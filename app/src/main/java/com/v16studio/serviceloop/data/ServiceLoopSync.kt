@@ -445,10 +445,18 @@ object ServiceLoopSyncEnvelopeCodec {
         return DispatchPackageCodec.decode(envelope.section("working"))
     }
 
-    fun wrapTemplateShare(value: InspectionTemplateTransfer, exporterId: String): ByteArray = DataTransferCodec.encode(
-        exporterId, value.generatedAt,
-        mapOf(DataTransferFamily.INSPECTION_TEMPLATES to InspectionTemplateCodec.encode(value)),
-    )
+    fun wrapTemplateShare(value: InspectionTemplateTransfer, exporterId: String, sourceWorkspaceId: String = exporterId): ByteArray {
+        val identified = value.copy(templates = value.templates.map { template -> template.copy(
+            originWorkspaceId = template.originWorkspaceId ?: sourceWorkspaceId,
+            sourceEntityId = template.sourceEntityId ?: template.reference,
+        ) })
+        return DataTransferCodec.encode(
+            exporterId = exporterId,
+            generatedAt = value.generatedAt,
+            families = mapOf(DataTransferFamily.INSPECTION_TEMPLATES to InspectionTemplateCodec.encode(identified)),
+            sourceWorkspaceId = sourceWorkspaceId,
+        )
+    }
 
     fun unwrapTemplateShare(bytes: ByteArray): InspectionTemplateTransfer {
         val envelope = decode(bytes)

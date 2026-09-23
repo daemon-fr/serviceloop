@@ -26,6 +26,7 @@ data class ReportableFinalSource(
     val visitReference: String,
     val technicianName: String,
     val workItemId: String? = null,
+    val sourcePosition: Int? = null,
 )
 
 data class ReportableVisitSource(
@@ -66,13 +67,27 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             if (!scope.matches(visit.customerId, visit.siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@mapNotNull null
             ReportableFinalSource("REMOTE:${result.id}", "REMOTE", result.sourceFinalRevisionId, visit.id, visit.customerId, visit.siteId, equipmentId, result.serviceDate, visit.reference, result.technicianName, result.localWorkItemId)
         }
-        return (local + remote).groupBy { it.visitId }.mapNotNull { (visitId, sources) ->
-            val visit = dao.visit(visitId) ?: return@mapNotNull null
-            if (visit.state != "COMPLETED") return@mapNotNull null
-            val workOrder = dao.visitWorkItems(visitId).mapIndexed { index, work -> work.id to index }.toMap()
-            val ordered = sources.distinctBy { it.key }.sortedWith(compareBy<ReportableFinalSource> { it.workItemId?.let { workOrder[it] } ?: -1 }.thenBy { it.kind }.thenBy { it.key })
-            ReportableVisitSource("VISIT:$visitId", visitId, visit.customerId, visit.siteId, visit.actualServiceDate,
-                visit.reference, ordered.map { it.technicianName }.distinct(), ordered)
+        val transferred = effectiveImportedFinalResults(dao.reportableRemoteFinalResults(), dao.allTransferredFinalResults())
+            .filter { it.kind == ImportedFinalKind.DATA_TRANSFER }
+            .mapNotNull { effective ->
+                val row = effective.transferred ?: return@mapNotNull null
+                val customer = row.localCustomerId ?: return@mapNotNull null
+                val site = row.localSiteId ?: return@mapNotNull null
+                if (!scope.matches(customer, site, row.localEquipmentId, LocalDate.parse(row.serviceDate))) return@mapNotNull null
+                val visitKey = "TRANSFERRED:${row.originWorkspaceId}:${row.sourceVisitId}"
+                ReportableFinalSource("TRANSFERRED:${row.id}", "TRANSFERRED", row.sourceFinalRevisionId, visitKey, customer, site,
+                    row.localEquipmentId, row.serviceDate, row.visitReference, row.technicianName, row.sourceWorkItemId,
+                    JSONObject(row.provenanceJson).optInt("sourceWorkItemPosition").takeIf { it > 0 })
+            }
+        return (local + remote + transferred).groupBy { it.visitId }.mapNotNull { (visitId, sources) ->
+            val visit = dao.visit(visitId)
+            if (visit != null && visit.state != "COMPLETED") return@mapNotNull null
+            val first = sources.firstOrNull() ?: return@mapNotNull null
+            val workOrder = if (visit != null) dao.visitWorkItems(visitId).mapIndexed { index, work -> work.id to index }.toMap() else emptyMap()
+            val ordered = sources.distinctBy { it.key }.sortedWith(compareBy<ReportableFinalSource> { it.sourcePosition ?: it.workItemId?.let { workOrder[it] } ?: Int.MAX_VALUE }.thenBy { it.kind }.thenBy { it.key })
+            ReportableVisitSource(if (visit != null) "VISIT:$visitId" else visitId, visitId, first.customerId, first.siteId,
+                visit?.actualServiceDate ?: first.serviceDate, visit?.reference ?: first.visitReference,
+                ordered.map { it.technicianName }.distinct(), ordered)
         }.sortedWith(compareBy<ReportableVisitSource> { it.serviceDate }.thenBy { it.visitReference }.thenBy { it.key })
     }
 
@@ -91,6 +106,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
                     repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
                 }
                 "REMOTE" -> remoteModel(source)
+                "TRANSFERRED" -> transferredModel(source)
                 else -> error("Unknown final source")
             } }
             val equipmentReference = scope.equipmentId?.let { dao.equipment(it)?.reference }
@@ -152,6 +168,28 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             parts = (0 until parts.length()).map { index -> val part = parts.getJSONObject(index); PublicPart(part.optString("description"),part.optString("quantity"),part.optString("unit")) },
             photos = photos, subjectType = WorkSubjectType.fromCode(subject.optString("type", "EQUIPMENT")), equipmentDescription = subject.optString("equipmentDescription").takeIf { it.isNotBlank() })
         return PublicReportModel(result.id, result.sourceFinalRevisionId, 1, source.visitReference, result.serviceDate, result.importedAtEpochMillis,
+            "", result.technicianName, "", customer.optString("name"), site.optString("name"), site.optString("address").takeIf { it.isNotBlank() }, listOf(line),
+            customerReference = customer.optString("reference").takeIf { it.isNotBlank() }, siteReference = site.optString("reference").takeIf { it.isNotBlank() }, technicianDesignation = result.technicianDesignation)
+    }
+
+    private suspend fun transferredModel(source: ReportableFinalSource): PublicReportModel {
+        val result = dao.allTransferredFinalResults().firstOrNull { "TRANSFERRED:${it.id}" == source.key } ?: error("Transferred result changed")
+        val customer = JSONObject(result.customerSnapshotJson)
+        val site = JSONObject(result.siteSnapshotJson)
+        val subject = JSONObject(result.subjectSnapshotJson)
+        val recurrence = JSONObject(result.recurrenceJson)
+        val checklist = org.json.JSONArray(result.checklistJson)
+        val parts = org.json.JSONArray(result.partsJson)
+        val photos = dao.allTransferredEvidence().filter { it.transferredFinalResultId == result.id && it.includedInCustomerReport && it.visibility == "PUBLIC" }
+            .map { PublicPhoto(it.relativePath, it.sha256, it.byteSize, it.mimeType, it.caption) }
+        val line = PublicWorkLine(1, subject.optString("equipmentName").takeIf { it.isNotBlank() }, subject.optString("equipmentReference").takeIf { it.isNotBlank() },
+            subject.optString("equipmentIdentifier").takeIf { it.isNotBlank() }, result.serviceName, result.outcome, result.workPerformed, result.notPerformedReason,
+            recurrence.optBoolean("fulfilledObligation"), recurrence.optString("oldDueDate").takeIf { it.isNotBlank() }, recurrence.optString("nextDueDate").takeIf { it.isNotBlank() },
+            (0 until checklist.length()).map { index -> val item = checklist.getJSONObject(index); PublicChecklistItem(item.optInt("position", index + 1), item.optString("label"), item.optString("responseType"), item.optString("unit").takeIf { it.isNotBlank() }, item.optBoolean("required"), item.optString("disposition"), item.optString("textValue").ifBlank { item.optString("numberValue") }.takeIf { it.isNotBlank() }, item.optString("reason").takeIf { it.isNotBlank() }) },
+            parts = (0 until parts.length()).map { index -> val part = parts.getJSONObject(index); PublicPart(part.optString("description"), part.optString("quantity"), part.optString("unit")) },
+            photos = photos, subjectType = WorkSubjectType.fromCode(subject.optString("type", "EQUIPMENT")), equipmentDescription = subject.optString("equipmentDescription").takeIf { it.isNotBlank() })
+        val provenance = JSONObject(result.provenanceJson)
+        return PublicReportModel(result.id, result.sourceFinalRevisionId, 1, result.visitReference, result.serviceDate, runCatching { java.time.Instant.parse(provenance.optString("recordedAt")).toEpochMilli() }.getOrDefault(result.importedAtEpochMillis),
             "", result.technicianName, "", customer.optString("name"), site.optString("name"), site.optString("address").takeIf { it.isNotBlank() }, listOf(line),
             customerReference = customer.optString("reference").takeIf { it.isNotBlank() }, siteReference = site.optString("reference").takeIf { it.isNotBlank() }, technicianDesignation = result.technicianDesignation)
     }
