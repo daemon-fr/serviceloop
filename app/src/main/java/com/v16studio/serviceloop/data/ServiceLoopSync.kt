@@ -388,7 +388,7 @@ object ServiceLoopSyncEnvelopeCodec {
     private const val SMALL_EXPANDED_BYTES = 32L * 1024 * 1024
     private const val SMALL_ENTRIES = 16
 
-    private fun limitsFor(purpose: String): Triple<Int, Long, Int> = if (purpose == "WORK_RESULT")
+    private fun limitsFor(purpose: String): Triple<Int, Long, Int> = if (purpose == "WORK_RESULT" || purpose == "DATA_TRANSFER")
         Triple(MAX_PACKAGE_BYTES, MAX_EXPANDED_BYTES, MAX_ENTRIES)
     else Triple(SMALL_PACKAGE_BYTES, SMALL_EXPANDED_BYTES, SMALL_ENTRIES)
 
@@ -445,9 +445,9 @@ object ServiceLoopSyncEnvelopeCodec {
         return DispatchPackageCodec.decode(envelope.section("working"))
     }
 
-    fun wrapTemplateShare(value: InspectionTemplateTransfer, exporterId: String): ByteArray = encode(
-        ServiceLoopSyncManifest(UUID.randomUUID().toString(), "ServiceLoop inspection templates", "DATA_TRANSFER", value.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
-        mapOf("transfer" to JSONObject().put("contentFamily", "INSPECTION_TEMPLATES").put("version", 1).toString().toByteArray(Charsets.UTF_8), "inspections" to InspectionTemplateCodec.encode(value)),
+    fun wrapTemplateShare(value: InspectionTemplateTransfer, exporterId: String): ByteArray = DataTransferCodec.encode(
+        exporterId, value.generatedAt,
+        mapOf(DataTransferFamily.INSPECTION_TEMPLATES to InspectionTemplateCodec.encode(value)),
     )
 
     fun unwrapTemplateShare(bytes: ByteArray): InspectionTemplateTransfer {
@@ -456,9 +456,12 @@ object ServiceLoopSyncEnvelopeCodec {
         when (envelope.manifest.purpose) {
             "TEMPLATE_SHARE" -> require(envelope.manifest.sections == listOf(inspectionSection)) { "Invalid legacy template-share sections" }
             "DATA_TRANSFER" -> {
-                require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), inspectionSection)) { "Invalid data-transfer sections" }
                 val metadata = JSONObject(envelope.section("transfer").toString(Charsets.UTF_8))
-                require(metadata.length() == 2 && metadata.getString("contentFamily") == "INSPECTION_TEMPLATES" && metadata.getInt("version") == 1) { "Unsupported data-transfer content" }
+                when (metadata.getInt("version")) {
+                    1 -> require(envelope.manifest.sections == listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), inspectionSection) && metadata.length() == 2 && metadata.getString("contentFamily") == "INSPECTION_TEMPLATES") { "Unsupported data-transfer content" }
+                    2 -> require(DataTransferCodec.decode(bytes).families.keys == setOf(DataTransferFamily.INSPECTION_TEMPLATES)) { "This transfer contains other data" }
+                    else -> error("Unsupported data-transfer version")
+                }
             }
             else -> error("This ServiceLoop file does not contain inspection templates")
         }

@@ -349,6 +349,13 @@ class B045SlsyncTest {
             mapOf("inspections" to InspectionTemplateCodec.encode(transfer)),
         )
         assertEquals(decodedTemplates, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(legacyBytes))
+        val oldTransfer = ServiceLoopSyncEnvelopeCodec.encode(
+            ServiceLoopSyncManifest("old-data-transfer", "Old templates", "DATA_TRANSFER", transfer.generatedAt,
+                sections = listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), ServiceLoopSyncSectionDeclaration("inspections", 1, "inspections.json")), exporterId = exporterId),
+            mapOf("transfer" to org.json.JSONObject().put("contentFamily", "INSPECTION_TEMPLATES").put("version", 1).toString().toByteArray(),
+                "inspections" to InspectionTemplateCodec.encode(transfer)),
+        )
+        assertEquals(decodedTemplates, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(oldTransfer))
     }
 
     @Test fun purposeRoutingRejectsUnknownAndFamilyFilteringKeepsReferencesValid() {
