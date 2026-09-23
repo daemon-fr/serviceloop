@@ -8,6 +8,16 @@ Read `docs/project/SOURCE_OF_TRUTH.md` first. Explicit owner amendments in `docs
 
 Do not silently combine the adopted Conceptual App Map with conflicting policies from the reference Complete Functional App Map.
 
+## AI prompt and handoff process
+
+When operating as the ServiceLoop orchestrator/reviewer, or when preparing a substantial Codex implementation prompt, correction prompt, or new-thread handoff, read and apply:
+
+    docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
+
+That standard is mandatory process authority for AI-to-AI delegation and continuity. Write execution assignments for the least expensive intended execution model (normally Luna High): inspect current source first, name known code/data hotspots, state exact implementation semantics and failure cases, prescribe concrete tests/runtime evidence, and end with an exhaustive acceptance checklist. Do not make a prompt less explicit merely because a stronger Codex model is selected.
+
+An implementation agent executing an already-finished task does not need the prompt-authoring standard unless it is also asked to author a subsequent prompt. It must still obey this file, the task contract, and the relevant product/milestone authority.
+
 ## Product boundary
 
 ServiceLoop is a local-first service book for solo technicians and small service companies. It includes the explicitly adopted local/file-based Dispatch and role workflows. Preserve the loop:

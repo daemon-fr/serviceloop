@@ -15,6 +15,22 @@ Do not silently merge competing policies from the conceptual and complete functi
 
 Matching HTML editions are reading formats and are intentionally not retained in the repository as independent requirements.
 
+## AI development process authority
+
+Product authority and AI-development process authority are intentionally separate.
+
+For orchestration, Codex delegation, correction prompts, independent-review continuity, and new-thread handoffs, use:
+
+1. `AGENTS.md` — persistent repository execution rules and environment/Git/verification constraints.
+2. `docs/project/DELEGATED_AI_DEVELOPMENT_AND_ORCHESTRATION_v1_0.md` — owner/orchestrator/Codex responsibility model.
+3. `docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md` — mandatory execution-level prompt and handoff authoring standard.
+
+Before writing any substantial Codex prompt or continuation handoff, the orchestrator must read the prompt/handoff standard. It is process authority only; it does not override product requirements or later owner decisions.
+
+A stronger implementation model is not a reason to reduce prompt detail. Prompts should be executable by the least expensive intended model, normally Luna High, without forcing that model to reconstruct avoidable architecture/product decisions.
+
+For the current branch/SHA/version/milestone pointer, read `IMPLEMENTATION_STATE.md` and verify Git state directly. Do not infer current implementation state from an older milestone paragraph in this file.
+
 ## Accepted baseline and active implementation line
 
 SL-4 and Dispatch were deliberately reconciled/banked; SL-5A added time-aware work state and local reminders; SL-5B added the adopted one-way Android Calendar projection; SL-5C completed the final broad functional hardening pass.
@@ -25,7 +41,7 @@ Accepted/banked baseline:
 - SL-5C functional-freeze production checkpoint: `bf55b0bd027fa25c48fc2dfd930d257688088ecb`
 - Room schema at that historical SL-5C checkpoint: v11
 
-`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. The B044 implementation line is `codex/b044-visit-setup-harmonization`, created from `acc193bb53befe2803b9a050c35cf2eb4df0536a`; its implementation commit is `7dd23d0`, with Room v16 and no `.slwork`, `.slinsp`, or backup-format change. The preceding `codex/b043-five-role-workspace` line remains historical branch context for the preserved five-role behavior. See `IMPLEMENTATION_STATE.md` for the current pointer. The historical SL-5C figures below describe that checkpoint, not this branch's current test results.
+`master` remains the protected owner baseline, currently `1fd51131b040ab62af3874c1106615b75f3008fe`. B043/B044 and the later milestone descriptions below are historical implementation evidence; they are not the current-HEAD pointer. At the B048 checkpoint from which the AI-process documentation update was created, the latest implemented review branch was `codex/b048-team-trust-ux-hardening` at `cadc0668fe2ba5172d17a86a157323303a71d83f`, with app `1.2.0` / code `4`, Room v18, Recovery schema v17 and `.slsync` envelope v2. B049 work is a later separately authorized milestone and must be verified from current Git/docs rather than assumed from this snapshot. See `IMPLEMENTATION_STATE.md` for the maintained current pointer. The historical SL-5C figures below describe that checkpoint only.
 
 B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the optional one-way Android Calendar projection semantics. B-017 explicitly defers localization until after B-013; UI corrections may continue during implementation and review. `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md` remains the detailed implementation/verification reference for adopted Dispatch semantics despite its historical filename.
 

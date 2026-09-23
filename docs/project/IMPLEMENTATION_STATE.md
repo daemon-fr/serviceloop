@@ -4,6 +4,30 @@
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
+## Current working-state pointer
+
+This file is the maintained first-stop implementation pointer. A fresh AI should read this section before historical milestone detail, then verify Git directly.
+
+At the process-documentation checkpoint created from B048:
+
+- latest verified product implementation branch: `codex/b048-team-trust-ux-hardening`
+- B048 HEAD: `cadc0668fe2ba5172d17a86a157323303a71d83f`
+- protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
+- app: `1.2.0` / versionCode `4`
+- Room: v18
+- Recovery: schema v17
+- `.slsync` outer envelope: v2
+- B048 FULL_WORKSPACE sections: business v1, register v2, inspections v1, plans v1, team v2, visits v1, followups v1
+- WORK_ASSIGNMENT payload: DispatchPackageCodec v5
+
+B049 is the next owner-approved implementation milestone and may be in progress on a separate branch after this process-doc checkpoint. Do not infer its implementation state from this docs branch: verify current branches/SHA and the latest B049 milestone/handoff before making consequential claims.
+
+For every new substantial Codex prompt or fresh-thread handoff, first apply:
+
+    docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
+
+The process-doc branch itself is not a new product implementation baseline.
+
 ## Accepted baseline and active implementation line
 
 Protected accepted baseline:
