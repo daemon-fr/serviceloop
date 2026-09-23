@@ -111,7 +111,7 @@ data class VisitLine(
 )
 
 data class PartEntry(val id: String, val description: String, val quantity: String, val unit: String)
-data class PhotoEntry(val id: String, val relativePath: String, val mimeType: String, val byteSize: Long, val includedInReport: Boolean, val caption: String?)
+data class PhotoEntry(val id: String, val relativePath: String, val mimeType: String, val byteSize: Long, val includedInReport: Boolean, val caption: String?, val visibility: String = "PUBLIC")
 
 data class FollowUpDetail(
     val id: String, val reference: String, val type: String, val title: String, val dueDate: String,

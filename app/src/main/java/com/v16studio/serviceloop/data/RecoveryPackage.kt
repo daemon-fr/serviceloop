@@ -180,7 +180,12 @@ class RecoveryPackage(
 
     private data class RequiredFile(val path: String, val size: Long, val hash: String, val kind: String)
     private fun requiredFiles(root: JSONObject): List<RequiredFile> {
-        val attachments = tableRows(root, "attachments").map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "ATTACHMENT") }
+        val deletedOriginals = tableRows(root, "retained_images")
+            .filter { !it.isNull("originalDeletedAtEpochMillis") }
+            .map { it.getString("sourceKind") to it.getString("sourceId") }.toSet()
+        val attachments = tableRows(root, "attachments")
+            .filterNot { ("ATTACHMENT" to it.getString("id")) in deletedOriginals }
+            .map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "ATTACHMENT") }
         val reports = tableRows(root, "report_renditions").filter { it.getString("status") in setOf("READY", "MISSING") && !it.isNull("sha256") }.map { RequiredFile(it.getString("relativePath"), it.optLong("byteSize"), it.getString("sha256"), "REPORT") }
         val remotePhotos = tableRows(root, "remote_result_photos").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "REMOTE_PHOTO") }
         val aggregateReports = tableRows(root, "aggregate_report_renditions").filter { it.getString("status") == "READY" }.map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "AGGREGATE_REPORT") }

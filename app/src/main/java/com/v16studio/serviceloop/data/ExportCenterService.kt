@@ -50,7 +50,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
         val visits = dao.allVisits().filter { visit -> visit.siteId in siteIds && (scope.equipmentId == null || dao.visitWorkItems(visit.id).any { it.equipmentId == scope.equipmentId }) &&
             scope.matches(visit.customerId, visit.siteId, scope.equipmentId, LocalDate.parse(visit.actualServiceDate)) }
         val visitIds = visits.map { it.id }.toSet()
-        val finalRecords = dao.allFinalRecords().filter { it.visitId in visitIds && (selection.includeInactive || !it.voided) }
+        val finalRecords = dao.allFinalRecords().filter { it.visitId in visitIds && !it.voided }
         val revisions = finalRecords.flatMap { record ->
             (if (selection.includePreviousRevisions) dao.finalRevisions(record.id) else listOfNotNull(dao.finalRevision(record.currentRevisionId))).map { record to it }
         }
@@ -86,13 +86,14 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
 
         val imageRows = mutableListOf<List<String>>()
         if (ExportFamily.PHOTO_METADATA in selection.families || ExportFamily.IMAGE_FILES in selection.families) {
-            val workToVisit = visits.flatMap { visit -> dao.visitWorkItems(visit.id).map { it.id to visit } }.toMap()
+            val workToVisit = visits.filter { it.state != "COMPLETED" || it.id in performedVisitIds }
+                .flatMap { visit -> dao.visitWorkItems(visit.id).map { it.id to visit } }.toMap()
             val frozenPhotos = revisions.flatMap { (record, revision) ->
                 val visit = visits.firstOrNull { it.id == record.visitId } ?: return@flatMap emptyList()
                 dao.finalWorkItems(revision.id).flatMap { finalWork -> dao.finalPhotos(finalWork.id).map { Triple(visit, finalWork, it) } }
             }
             val frozenAttachmentIds = frozenPhotos.map { it.third.sourceAttachmentId }.toSet()
-            dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.ownerId in workToVisit && it.id !in frozenAttachmentIds }.forEach { photo ->
+            dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.ownerId in workToVisit && it.id !in frozenAttachmentIds && (selection.includePrivate || it.visibility == "PUBLIC") }.forEach { photo ->
                 val visit = workToVisit.getValue(photo.ownerId)
                 val retained = dao.retainedImage("ATTACHMENT", photo.id)
                 val original = File(filesRoot, photo.storedRelativePath)
@@ -105,7 +106,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
                 if (ExportFamily.IMAGE_FILES in selection.families) entries["images/${photo.id}.${if (path.endsWith(".png", true)) "png" else "jpg"}"] = bytes
                 imageRows += listOf(photo.id,visit.customerId,visit.siteId,dao.workItem(photo.ownerId)?.equipmentId.orEmpty(),visit.id,photo.ownerId,visit.actualServiceDate,photo.caption.orEmpty(),photo.visibility,photo.includedInCustomerReport.toString(),if(useOriginal) "ORIGINAL" else "DERIVATIVE",photo.sha256)
             }
-            frozenPhotos.forEach { (visit, work, photo) ->
+            frozenPhotos.filter { selection.includePrivate || it.third.visibility == "PUBLIC" }.forEach { (visit, work, photo) ->
                 val original = File(filesRoot, photo.storedRelativePath)
                 val useOriginal = original.isFile && original.length() == photo.byteSize && sha256(original.readBytes()) == photo.sha256
                 val retained = if (useOriginal) null else dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)
@@ -119,7 +120,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
                     visit.actualServiceDate, photo.caption.orEmpty(), photo.visibility, photo.includedInCustomerReport.toString(),
                     if (useOriginal) "ORIGINAL" else "DERIVATIVE", photo.sha256)
             }
-            remote.forEach { result -> dao.remoteResultPhotos(result.id).forEach { photo ->
+            remote.forEach { result -> dao.remoteResultPhotos(result.id).filter { selection.includePrivate || it.visibility == "PUBLIC" }.forEach { photo ->
                 val file = ownedFile(photo.relativePath)
                 val bytes = file.readBytes()
                 require(sha256(bytes) == photo.sha256 && bytes.size.toLong() == photo.byteSize)

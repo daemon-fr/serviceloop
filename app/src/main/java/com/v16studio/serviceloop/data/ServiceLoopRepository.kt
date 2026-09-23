@@ -193,6 +193,7 @@ interface ServiceLoopRepository {
     suspend fun savePhotoCaption(workItemId: String, photoId: String, caption: String): Long = error("Photo caption unavailable")
     suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long = error("Photo report choice unavailable")
     suspend fun setPhotoReportInclusions(workItemId: String, photoIds: List<String>, includeInReport: Boolean): Long = error("Photo report choice unavailable")
+    suspend fun setPhotoPrivacy(workItemId: String, photoIds: List<String>, visibility: String, includeInReport: Boolean): Long = error("Photo privacy unavailable")
     suspend fun removePhoto(workItemId: String, photoId: String): Long = error("Photo removal unavailable")
     suspend fun removePhotos(workItemId: String, photoIds: List<String>): Long = error("Photo removal unavailable")
     suspend fun createContactNote(input: ContactNoteInput): String = error("Contact note unavailable")
@@ -489,7 +490,7 @@ class RoomServiceLoopRepository(
     override suspend fun followUps() = dao.followUps().map { followUpDetail(it) }
     override suspend fun followUp(id: String) = dao.followUp(id)?.let { followUpDetail(it) }
     override suspend fun parts(workItemId: String) = dao.parts(workItemId).map { PartEntry(it.id, it.description, it.quantity, it.unit) }
-    override suspend fun photos(workItemId: String) = dao.workItemAttachments(workItemId).map { PhotoEntry(it.id, it.storedRelativePath, it.mimeType, it.byteSize, it.includedInCustomerReport, it.caption) }
+    override suspend fun photos(workItemId: String) = dao.workItemAttachments(workItemId).map { PhotoEntry(it.id, it.storedRelativePath, it.mimeType, it.byteSize, it.includedInCustomerReport, it.caption, it.visibility) }
     override suspend fun search(query: String): List<SearchTarget> {
         val normalized = query.trim()
         if (normalized.isEmpty()) return emptyList()
@@ -1195,7 +1196,24 @@ class RoomServiceLoopRepository(
                     photoIds.forEach { photoId ->
                         check(dao.attachment(photoId)?.let { it.ownerType == "WORK_ITEM" && it.ownerId == workItemId } == true) { "Photo no longer belongs to this Service" }
                     }
-                    photoIds.forEach { photoId -> check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" } }
+                    photoIds.forEach { photoId -> check(dao.updateWorkPhotoPrivacy(photoId, workItemId, if (includeInReport) "PUBLIC" else dao.attachment(photoId)!!.visibility, includeInReport) == 1) { "Photo no longer belongs to this Service" } }
+                    dao.touchVisit(item.visitId, now)
+                }
+                now
+            }
+        }
+
+    override suspend fun setPhotoPrivacy(workItemId: String, photoIds: List<String>, visibility: String, includeInReport: Boolean): Long =
+        BusinessFileCoordinator.photoReportMetadataMutex.withLock {
+            BusinessFileCoordinator.mutex.withLock {
+                require(visibility in setOf("PUBLIC", "PRIVATE", "INTERNAL"))
+                require(visibility == "PUBLIC" || !includeInReport)
+                require(photoIds.isNotEmpty() && photoIds.size == photoIds.toSet().size)
+                writeGate.beforeWrite()
+                val now = businessTime.instant().toEpochMilli()
+                database.withTransaction {
+                    val item = workingItem(workItemId)
+                    photoIds.forEach { id -> check(dao.updateWorkPhotoPrivacy(id, workItemId, visibility, includeInReport) == 1) { "Photo no longer belongs to this Service" } }
                     dao.touchVisit(item.visitId, now)
                 }
                 now

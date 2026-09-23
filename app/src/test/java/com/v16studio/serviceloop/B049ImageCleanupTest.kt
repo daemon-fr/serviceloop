@@ -109,6 +109,87 @@ class B049ImageCleanupTest {
         derivative.delete()
     }
 
+    @Test fun cleanupDerivativeSurvivesCompleteRecoveryRoundTrip() = runTest {
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        assertEquals(2, cleanup.runNow(now).originalsRemoved)
+        val passphrase = "retained history backup".toCharArray()
+        val backup = RecoveryPackage(database, context.filesDir).create(passphrase, false)
+        assertTrue(backup.complete)
+        val restoredRoot = File(context.filesDir, "b049-restored-${System.nanoTime()}").apply { mkdirs() }
+        val restoredDb = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val recovery = RecoveryPackage(restoredDb, restoredRoot)
+            recovery.restore(recovery.inspect(backup.bytes, passphrase))
+            val retained = restoredDb.serviceLoopDao().retainedImage("ATTACHMENT", "final-photo")!!
+            assertTrue(File(restoredRoot, retained.derivativeRelativePath).isFile)
+            assertFalse(File(restoredRoot, relative(File(directory, "final.jpg"))).exists())
+            assertEquals(retained.derivativeRelativePath,
+                RoomServiceLoopRepository(restoredDb, object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }, attachmentRoot = restoredRoot)
+                    .finalRecordRevision("record", "revision")!!.public.lines.single().photos.single().relativePath)
+            val archive = ExportCenterService(restoredDb, restoredRoot).export(ExportCenterSelection(ServiceLoopScopeFilter(customerId = "c"), ExportPreset.IMAGE_ARCHIVE.families))
+            assertTrue(archive.isNotEmpty())
+        } finally {
+            restoredDb.close()
+            restoredRoot.deleteRecursively()
+        }
+    }
+
+    @Test fun imageArchiveSeparatesVisibilityFromReportChoice() = runTest {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("UPDATE attachments SET visibility='PRIVATE', includedInCustomerReport=0 WHERE id='excluded-photo'")
+        db.execSQL("UPDATE final_photo_entries SET visibility='PRIVATE', includedInCustomerReport=0 WHERE id='excluded-photo-entry'")
+        val service = ExportCenterService(database, context.filesDir)
+        suspend fun exportedIds(includePrivate: Boolean): String {
+            val archive = service.export(ExportCenterSelection(ServiceLoopScopeFilter(customerId = "c"), ExportPreset.IMAGE_ARCHIVE.families, includePrivate = includePrivate))
+            ZipInputStream(archive.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.name == "photos.csv") return zip.readBytes().toString(Charsets.UTF_8)
+                }
+            }
+            error("Missing photo metadata")
+        }
+        assertFalse(exportedIds(false).contains("excluded-photo-entry"))
+        assertTrue(exportedIds(false).contains("final-photo-entry"))
+        assertTrue(exportedIds(true).contains("excluded-photo-entry"))
+    }
+
+    @Test fun photoActionsPersistIndependentVisibilityAndReportFlags() = runTest {
+        val repository = RoomServiceLoopRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        repository.setPhotoReportInclusion("working-work", "working-photo", false)
+        assertEquals("PUBLIC", database.serviceLoopDao().attachment("working-photo")!!.visibility)
+        assertFalse(database.serviceLoopDao().attachment("working-photo")!!.includedInCustomerReport)
+        repository.setPhotoPrivacy("working-work", listOf("working-photo"), "PRIVATE", false)
+        assertEquals("PRIVATE", database.serviceLoopDao().attachment("working-photo")!!.visibility)
+        assertFalse(database.serviceLoopDao().attachment("working-photo")!!.includedInCustomerReport)
+        repository.setPhotoReportInclusion("working-work", "working-photo", true)
+        assertEquals("PUBLIC", database.serviceLoopDao().attachment("working-photo")!!.visibility)
+        assertTrue(database.serviceLoopDao().attachment("working-photo")!!.includedInCustomerReport)
+    }
+
+    @Test fun inactiveOptionDoesNotResurrectVoidedPerformedWork() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.insertVisits(listOf(WorkingVisitEntity("void-visit","V-VOID","c","s","2025-01-01","Customer","Site",null,"COMPLETED",old)))
+        dao.insertWorkItems(listOf(WorkItemEntity("void-work","void-visit",null,null,null,null,null,null,"Voided service",null,null,null,null,false,null,null,subjectType="SITE")))
+        dao.insertFinalRecord(FinalRecordEntity("void-record","void-visit","void-revision",old,voided=true))
+        dao.insertFinalRevision(FinalRecordRevisionEntity("void-revision","void-record",1,"V-VOID","2025-01-01",old,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("void-final","void-revision",1,"void-work",null,null,null,null,null,null,null,"Voided service",null,null,"DONE",null,null,false,null,null,null,null,null,null)))
+        for (inactive in listOf(false, true)) {
+            val archive = ExportCenterService(database, context.filesDir).export(ExportCenterSelection(ServiceLoopScopeFilter(customerId = "c"), ExportPreset.WORK_PERFORMED.families, includeInactive = inactive))
+            ZipInputStream(archive.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.name in setOf("visits.csv", "service_records.csv", "checklist.csv", "parts.csv")) {
+                        assertFalse("${entry.name} resurrected voided work", zip.readBytes().toString(Charsets.UTF_8).contains("void-revision"))
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun aggregateFreezesExactSourceAndCreatesNewPdfFromRetainedTruth() = runTest {
         cleanup.savePreference(ImageRetention.ONE_MONTH)
         cleanup.runNow(now)

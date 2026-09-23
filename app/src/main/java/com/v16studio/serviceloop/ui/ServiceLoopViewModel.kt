@@ -800,6 +800,20 @@ class ServiceLoopViewModel(
             }
         }
     }
+    fun setPhotosPrivate(workItemId: String, photoIds: List<String>, onComplete: (String?) -> Unit = {}) {
+        val ids = photoIds.distinct()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                photoMetadataMutex.withLock {
+                    withContext(Dispatchers.IO) { repository.setPhotoPrivacy(workItemId, ids, "PRIVATE", false) }
+                    loadFieldEvidence(workItemId)
+                }
+                onComplete(null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { onComplete(failure.message ?: "Photo privacy was not saved") }
+        }
+    }
     fun removePhoto(workItemId: String, photoId: String) {
         photoMetadataVersions[photoId] = (photoMetadataVersions[photoId] ?: 0L) + 1L
         runOperation({

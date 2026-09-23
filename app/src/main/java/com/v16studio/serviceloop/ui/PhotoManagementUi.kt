@@ -71,7 +71,8 @@ internal fun ServicePhotoManagementScreen(workItemId: String, state: UiState, pa
                 }
                 ServiceLoopActionStack {
                     OutlinedButton(onClick = { viewModel.setPhotoReportInclusions(workItemId, selected.toList(), true) { failure -> batchBusy = false; message = failure ?: "Included selected photos in the customer report." } ; batchBusy = true }, enabled = !batchBusy, modifier = Modifier.fillMaxWidth().testTag("include-selected-photos")) { Text("Include in customer report") }
-                    OutlinedButton(onClick = { viewModel.setPhotoReportInclusions(workItemId, selected.toList(), false) { failure -> batchBusy = false; message = failure ?: "Kept selected photos private." } ; batchBusy = true }, enabled = !batchBusy, modifier = Modifier.fillMaxWidth().testTag("keep-selected-photos-private")) { Text("Keep private") }
+                    OutlinedButton(onClick = { viewModel.setPhotoReportInclusions(workItemId, selected.toList(), false) { failure -> batchBusy = false; message = failure ?: "Excluded selected photos from the customer report." } ; batchBusy = true }, enabled = !batchBusy, modifier = Modifier.fillMaxWidth().testTag("exclude-selected-photos")) { Text("Exclude from customer report") }
+                    OutlinedButton(onClick = { viewModel.setPhotosPrivate(workItemId, selected.toList()) { failure -> batchBusy = false; message = failure ?: "Kept selected photos private." } ; batchBusy = true }, enabled = !batchBusy, modifier = Modifier.fillMaxWidth().testTag("keep-selected-photos-private")) { Text("Keep private") }
                     OutlinedButton(onClick = { message = null; confirmDelete = true }, enabled = !batchBusy, modifier = Modifier.fillMaxWidth().testTag("delete-selected-photos")) { Text("Delete selected") }
                 }
             } else {
@@ -112,7 +113,7 @@ internal fun ServicePhotoManagementScreen(workItemId: String, state: UiState, pa
                         contentDescription = "Select ${photo.caption?.takeIf(String::isNotBlank) ?: "photo"}",
                     )
                     Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(MaterialTheme.colorScheme.surface.copy(alpha = .90f)).padding(horizontal = 8.dp, vertical = 6.dp)) {
-                        Text(if (photo.includedInReport) "Customer report" else "Private", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Text(when (photo.visibility) { "PRIVATE" -> "Private evidence"; "INTERNAL" -> "Internal evidence"; else -> if (photo.includedInReport) "Included in customer report" else "Service evidence" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
                         photo.caption?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
                     }
                 }

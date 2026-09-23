@@ -167,6 +167,8 @@ interface ServiceLoopDao {
     suspend fun updateWorkPhotoCaption(id: String, workItemId: String, caption: String?): Int
     @Query("UPDATE attachments SET includedInCustomerReport=:included WHERE id=:id AND ownerType='WORK_ITEM' AND ownerId=:workItemId")
     suspend fun updateWorkPhotoInclusion(id: String, workItemId: String, included: Boolean): Int
+    @Query("UPDATE attachments SET visibility=:visibility, includedInCustomerReport=:included WHERE id=:id AND ownerType='WORK_ITEM' AND ownerId=:workItemId")
+    suspend fun updateWorkPhotoPrivacy(id: String, workItemId: String, visibility: String, included: Boolean): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertVisitClaim(value: VisitClaimEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalParts(values: List<FinalPartEntryEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalPhotos(values: List<FinalPhotoEntryEntity>)
