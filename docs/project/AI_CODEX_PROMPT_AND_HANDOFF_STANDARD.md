@@ -1,7 +1,7 @@
 # ServiceLoop — AI Codex Prompt and Handoff Standard
 
-**Version:** 1.0  
-**Status:** ACTIVE PROCESS AUTHORITY  
+**Version:** 1.0
+**Status:** ACTIVE PROCESS AUTHORITY
 **Purpose:** Define how ServiceLoop AI orchestrators prepare implementation prompts, correction prompts, independent-review handoffs, and new-thread continuation handoffs so substantial work can be executed reliably by the least expensive intended Codex model without unnecessary owner involvement.
 
 This document governs **AI-to-AI work delegation and continuity**. It does not define product behavior and does not outrank product/source-of-truth authority.
