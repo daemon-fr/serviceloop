@@ -138,7 +138,12 @@ class B049WorkResultImportTest {
             WorkingVisitEntity("booked", "V-B", "c", "s", "2026-09-23", "Customer", "Site", null, "BOOKED", 1),
             WorkingVisitEntity("working", "V-W", "c", "s", "2026-09-23", "Customer", "Site", null, "WORKING", 1),
             WorkingVisitEntity("canceled", "V-C", "c", "s", "2026-09-23", "Customer", "Site", null, "CANCELED", 1),
+            WorkingVisitEntity("local", "V-L", "c", "s", "2026-09-23", "Customer", "Site", null, "COMPLETED", 1),
         ))
+        dao.insertWorkItems(listOf(WorkItemEntity("local-work", "local", null, null, null, null, null, null, "Local inspection", null, null, null, null, false, null, null, subjectType = "SITE")))
+        dao.insertFinalRecord(FinalRecordEntity("local-record", "local", "local-revision", 2))
+        dao.insertFinalRevision(FinalRecordRevisionEntity("local-revision", "local-record", 1, "V-L", "2026-09-23", 2, "Customer", "Site", null, "Business", "Local technician", null, null, null, "UTC", null))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("local-final-work", "local-revision", 1, "local-work", null, null, null, null, null, null, null, "Local inspection", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE")))
         val importer = WorkResultImportService(database, root)
         importer.import(packageBytes("first", result(1)))
         importer.import(packageBytes("second", result(2)))
@@ -158,10 +163,12 @@ class B049WorkResultImportTest {
         }
         val visits = csv(false, "visits.csv")
         assertEquals(true, visits.contains("\"v\",\"V-1\""))
+        assertEquals(true, visits.contains("\"local\",\"V-L\""))
         assertEquals(false, visits.contains("\"booked\""))
         assertEquals(false, visits.contains("\"working\""))
         assertEquals(false, visits.contains("\"canceled\""))
         val current = csv(false, "service_records.csv")
+        assertEquals(true, current.contains("\"local-revision\""))
         assertEquals(false, current.contains("\"revision-1\""))
         assertEquals(true, current.contains("\"revision-1-corrected\""))
         val history = csv(true, "service_records.csv")
