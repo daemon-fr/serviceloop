@@ -67,6 +67,15 @@ class B037OwnerReviewCorrectionsTest {
     }
 
     @Test
+    fun ownerReviewRemovedPermanentLocalStorageCopy() {
+        val production = productionKotlinSource("com/v16studio/serviceloop/ui")
+        assertFalse(production.contains("Saved on this device"))
+        assertFalse(production.contains("Stored on this device"))
+        assertFalse(production.contains("This also controls the Home and default Due services horizon"))
+        assertFalse(production.contains("Calls, messages, and email are recorded here only when you save an outcome"))
+    }
+
+    @Test
     fun createVisitCustomerTabsShareOneUpperSurfaceBand() {
         val screen = productionKotlinSource("com/v16studio/serviceloop/ui")
         assertTrue(screen.contains("internal fun VisitSetupForm"))
@@ -89,7 +98,7 @@ class B037OwnerReviewCorrectionsTest {
         assertTrue(contact.contains("compact = true"))
         assertTrue(contact.contains("Outcome · Required"))
         assertTrue(contact.contains("Private note · Optional"))
-        assertTrue(contact.contains("Calls, messages and email are recorded here only when you save an outcome."))
+        assertFalse(contact.contains("Calls, messages and email are recorded here only when you save an outcome."))
         assertFalse(contact.contains("Record actual contact outcome"))
         assertFalse(contact.contains("Opening an external app does not create this note."))
 

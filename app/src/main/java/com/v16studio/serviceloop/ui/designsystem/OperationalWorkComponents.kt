@@ -46,6 +46,8 @@ import com.v16studio.serviceloop.domain.OperationalWorkState
 import com.v16studio.serviceloop.domain.WorkScope
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
+import com.v16studio.serviceloop.ui.icons.ServiceLoopEntityIcons
+import com.v16studio.serviceloop.ui.icons.ServiceLoopEntityType
 
 data class OperationalStatePalette(val accent: Color, val container: Color)
 
@@ -157,7 +159,7 @@ private fun OperationalDashboardSectionCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
         ) {
-            ServiceLoopIcon(iconForKind(section.kind), null, Modifier.size(ServiceLoopUiTokens.Size.icon), colors.accent)
+        ServiceLoopIcon(iconForKind(section.kind), null, Modifier.size(ServiceLoopUiTokens.Size.icon), colors.accent)
             Text("${section.title} • ${section.itemCount}", style = ServiceLoopUiTokens.Type.itemTitle, color = colors.accent, modifier = Modifier.weight(1f).semantics { heading() })
             ServiceLoopIcon(
                 if (expanded) ServiceLoopIcons.CaretDown else ServiceLoopIcons.CaretRight,
@@ -220,11 +222,14 @@ fun OperationalWorkRow(
             .padding(ServiceLoopUiTokens.Space.md),
         verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs),
     ) {
-        Text("${item.displayReference} · ${item.displayTitle}", style = ServiceLoopUiTokens.Type.itemTitle)
-        if (item.displayContext.isNotBlank()) Text(item.displayContext, style = ServiceLoopUiTokens.Type.supporting, color = tokens.textSecondary)
-        item.dueDate?.let { Text("Due $it", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted) }
-        if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) {
-            Text("Scheduled appointment", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md), verticalAlignment = Alignment.Top) {
+            ServiceLoopIcon(iconForKind(item.kind), null, Modifier.size(ServiceLoopUiTokens.Size.icon), palette.accent)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+                Text("${item.displayReference} · ${item.displayTitle}", style = ServiceLoopUiTokens.Type.itemTitle)
+                if (item.displayContext.isNotBlank()) Text(item.displayContext, style = ServiceLoopUiTokens.Type.supporting, color = tokens.textSecondary)
+                item.dueDate?.let { Text("Due $it", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted) }
+                if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) Text("Scheduled appointment", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted)
+            }
         }
     }
 }
@@ -263,9 +268,9 @@ fun OperationalWorkGateway(
 }
 
 private fun iconForKind(kind: OperationalWorkKind): Int = when (kind) {
-    OperationalWorkKind.VISIT -> ServiceLoopIcons.Calendar
-    OperationalWorkKind.SERVICE -> ServiceLoopIcons.InspectionTemplates
-    OperationalWorkKind.FOLLOW_UP -> ServiceLoopIcons.Work
+    OperationalWorkKind.VISIT -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.VISIT)!!
+    OperationalWorkKind.SERVICE -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.SERVICE)!!
+    OperationalWorkKind.FOLLOW_UP -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.FOLLOW_UP)!!
 }
 
 private fun iconForState(state: OperationalWorkState): Int = when (state) {
@@ -282,7 +287,7 @@ private fun scopeKey(scope: WorkScope) = when (scope) {
 }
 
 private fun sectionSupportingLine(section: OperationalDashboardSection): String? = when (section.kind to section.state) {
-    OperationalWorkKind.VISIT to OperationalWorkState.IN_PROGRESS -> "Resume active work saved on this device"
+    OperationalWorkKind.VISIT to OperationalWorkState.IN_PROGRESS -> "Resume active work"
     OperationalWorkKind.VISIT to OperationalWorkState.OVERDUE -> "Booked visits that should already have started"
     OperationalWorkKind.SERVICE to OperationalWorkState.OVERDUE -> "Service obligations still outstanding"
     OperationalWorkKind.VISIT to OperationalWorkState.DUE_SOON -> "Booked visits approaching their service date"

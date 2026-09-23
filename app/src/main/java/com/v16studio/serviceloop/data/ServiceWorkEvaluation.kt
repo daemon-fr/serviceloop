@@ -57,6 +57,10 @@ data class ServiceWorkEvaluation(
 
 /** Pure Service-work evaluation shared by read projections and command validation. */
 object ServiceWorkEvaluator {
+    fun requiresOutcome(outcome: String?): Boolean = outcome.isNullOrBlank()
+
+    fun requiresPublicWork(outcome: String?): Boolean = outcome == "PERFORMED" || outcome == "PARTLY_PERFORMED"
+
     fun evaluate(input: ServiceWorkEvaluationInput): ServiceWorkEvaluation {
         val eligibility = fulfillmentEligibility(input)
         val projectedFulfills = when {
@@ -82,8 +86,8 @@ object ServiceWorkEvaluator {
         }
 
         val blockers = buildList {
-            if (input.outcome == null) add(CompletionBlocker(CompletionBlockerKind.OUTCOME, "Choose an outcome"))
-            if (input.outcome == "PERFORMED" || input.outcome == "PARTLY_PERFORMED") {
+            if (requiresOutcome(input.outcome)) add(CompletionBlocker(CompletionBlockerKind.OUTCOME, "Choose an outcome"))
+            if (requiresPublicWork(input.outcome)) {
                 if (input.publicWork.isBlank()) add(CompletionBlocker(CompletionBlockerKind.WORK_PERFORMED, "Work performed is required"))
             }
             if (input.outcome == "NOT_PERFORMED" && input.notPerformedReason.isNullOrBlank()) {

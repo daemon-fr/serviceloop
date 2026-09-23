@@ -3,8 +3,10 @@ package com.v16studio.serviceloop
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -30,9 +32,12 @@ import com.v16studio.serviceloop.domain.VisitSummary
 import com.v16studio.serviceloop.ui.DueServicesProjection
 import com.v16studio.serviceloop.ui.DueServicesScreen
 import com.v16studio.serviceloop.ui.FollowUpsWorkScreen
+import com.v16studio.serviceloop.ui.LocalWorkspaceCapabilities
 import com.v16studio.serviceloop.ui.ServiceLoopViewModel
+import com.v16studio.serviceloop.ui.TeamRole
 import com.v16studio.serviceloop.ui.UiState
 import com.v16studio.serviceloop.ui.VisitsWorkScreen
+import com.v16studio.serviceloop.ui.workspaceCapabilities
 import com.v16studio.serviceloop.ui.theme.ServiceLoopTheme
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -117,14 +122,17 @@ class WorkFilterSelectorUiTest {
             }
         }
 
-        compose.onNodeWithTag("book-selected-services").assertIsDisplayed().assertIsNotEnabled()
-        compose.onNodeWithTag("start-selected-services").assertIsDisplayed().assertIsNotEnabled()
-        compose.onNodeWithTag("entity-record-selection").performClick()
-        compose.onNodeWithTag("book-selected-services").assertIsEnabled()
-        compose.onNodeWithTag("start-selected-services").assertIsEnabled()
-        compose.onNodeWithTag("entity-record-selection").performClick()
-        compose.onNodeWithTag("book-selected-services").assertIsNotEnabled()
-        compose.onNodeWithTag("start-selected-services").assertIsNotEnabled()
+        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("entity-record-selection").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("entity-record-selection").assertIsDisplayed().assertIsOn()
+        compose.onNodeWithTag("due-service-selection-bar").assertIsDisplayed()
+        compose.onNodeWithTag("due-service-selected-count").assertIsDisplayed()
+        compose.onNodeWithText("1 selected").assertIsDisplayed()
+        compose.onNodeWithTag("book-selected-services").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("start-selected-services").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("clear-selected-services").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("clear-selected-services").performClick()
+        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun visitsAndFollowUpsExposeAdoptedDefaultsAndNoSupersededFilterCopy() {
@@ -161,6 +169,29 @@ class WorkFilterSelectorUiTest {
         compose.onNodeWithContentDescription("Status, Open").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("All open").fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Due or overdue").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun coordinatorDoesNotSeeDueServiceSelectionWithoutLocalWorkCapability() {
+        val values = listOf(due("coordinator-role", null))
+        val state = UiState(
+            loading = false,
+            dueServicesProjection = DueServicesProjection.Available(values),
+            businessDate = LocalDate.of(2026, 9, 11),
+            businessZoneId = "Europe/Bucharest",
+        )
+        val viewModel = ServiceLoopViewModel(EmptyRepository()) {}
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                CompositionLocalProvider(LocalWorkspaceCapabilities provides TeamRole.COORDINATOR.workspaceCapabilities) {
+                    ServiceLoopTheme {
+                        DueServicesScreen(values, PaddingValues(), state, viewModel, rememberNavController())
+                    }
+                }
+            }
+        }
+
+        assertTrue(compose.onAllNodesWithTag("entity-record-selection").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithTag("due-service-selection-bar").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun darkAppearanceKeepsDarkSelectorMenuInteractionReadable() {

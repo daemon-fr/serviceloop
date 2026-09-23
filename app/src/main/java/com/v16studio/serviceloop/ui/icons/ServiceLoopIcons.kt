@@ -45,6 +45,10 @@ object ServiceLoopIcons {
     @DrawableRes val EyeSlash = R.drawable.ic_sl_eye_slash
     @DrawableRes val History = R.drawable.ic_sl_history
     @DrawableRes val Home = R.drawable.ic_sl_home
+    @DrawableRes val HomeVisit = R.drawable.ic_sl_home_visit
+    @DrawableRes val HomeService = R.drawable.ic_sl_home_service
+    @DrawableRes val HomeFollowUp = R.drawable.ic_sl_home_follow_up
+    @DrawableRes val ContactOtherCamera = R.drawable.ic_sl_contact_other_camera
     @DrawableRes val Info = R.drawable.ic_sl_info
     @DrawableRes val InspectionTemplates = R.drawable.ic_sl_inspection_templates
     @DrawableRes val LocalSaved = R.drawable.ic_sl_local_saved
@@ -73,7 +77,6 @@ object ServiceLoopIcons {
     @DrawableRes val X = R.drawable.ic_sl_x
     @DrawableRes val XCircle = R.drawable.ic_sl_x_circle
 }
-
 @Composable
 fun serviceLoopIconPainter(@DrawableRes icon: Int): Painter = painterResource(icon)
 

@@ -45,7 +45,7 @@ internal fun contactChannelIcon(channel: String): Int = when (channel) {
     "SMS" -> ServiceLoopIcons.Sms
     "EMAIL" -> ServiceLoopIcons.Mail
     "IN_PERSON" -> ServiceLoopIcons.Person
-    else -> ServiceLoopIcons.PencilSimple
+    else -> ServiceLoopIcons.ContactOtherCamera
 }
 
 @Composable
@@ -97,11 +97,6 @@ internal fun ContactNoteEditorScreen(customerId: String, padding: PaddingValues,
         item {
             Text("Channel", style = ServiceLoopUiTokens.Type.label)
             ContactChannelChoices(channel) { channel = it }
-            Text(
-                "Calls, messages and email are recorded here only when you save an outcome.",
-                style = ServiceLoopUiTokens.Type.supporting,
-                color = LocalServiceLoopTokens.current.textSecondary,
-            )
             LongTextEditor(outcome, { outcome = it }, "Outcome · Required", false, compact = true)
             LongTextEditor(note, { note = it }, "Private note · Optional", true, compact = true)
             Button(

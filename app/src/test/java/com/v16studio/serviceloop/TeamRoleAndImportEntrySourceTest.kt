@@ -27,7 +27,10 @@ class TeamRoleAndImportEntrySourceTest {
         assertTrue(app.contains("ServiceLoopDenseNavigableRow(\"History\""))
         assertFalse(workspace.contains("canReceiveAssignedWork"))
         assertTrue(workspace.contains("canUseCoordinatorTools"))
-        assertTrue(workspace.contains("home-import"))
+        val team = productionKotlinSourceContaining("internal fun TeamWorkspaceScreen")
+        assertTrue(team.contains("Import shared data"))
+        assertTrue(team.contains("role.workspaceCapabilities.canUseCoordinatorTools"))
+        assertTrue(productionKotlinSourceContaining("composable(\"import\")").contains("ServiceLoopSyncScreen"))
     }
 
     @Test fun externalPackageEntryReviewsInsteadOfAutoImporting() {

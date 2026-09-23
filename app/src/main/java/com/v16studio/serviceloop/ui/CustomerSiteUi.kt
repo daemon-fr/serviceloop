@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.v16studio.serviceloop.domain.*
@@ -62,42 +64,32 @@ internal fun CustomerDetailScreen(
     var tab by rememberSaveable(detail.id) { mutableStateOf("SITES") }
     val colors = LocalServiceLoopTokens.current
     val viewState by viewModel.state.collectAsState()
-    if (showContactForm) {
-        AlertDialog(
-            onDismissRequest = { showContactForm = false },
-            title = { Text(if (editingContactId == null) "Add customer contact" else "Edit customer contact") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
-                    DailyField(contactPerson, { contactPerson = it }, "Person or label (optional)")
-                    Text("Channel", style = MaterialTheme.typography.labelLarge)
-                    ServiceLoopChoiceGroup(
-                        options = listOf("PHONE" to "Phone", "SMS" to "SMS", "WHATSAPP" to "WhatsApp", "EMAIL" to "Email", "OTHER" to "Other"),
-                        selected = contactChannel,
-                        onSelected = { contactChannel = it },
-                        testTagPrefix = "customer-contact-channel",
-                    )
-                    DailyField(contactValue, { contactValue = it }, "Contact value · Required")
-                }
-            },
-            dismissButton = { TextButton({ showContactForm = false }) { Text("Cancel") } },
-            confirmButton = {
-                Button({
-                    val input = CustomerContactInput(detail.id, contactPerson, contactChannel, contactValue)
-                    val contactId = editingContactId
-                    if (contactId == null) viewModel.createCustomerContact(input) {
-                        contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
-                    } else viewModel.updateCustomerContact(contactId, input) {
-                        editingContactId = null; contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
-                    }
-                }, enabled = contactValue.isNotBlank() && !viewState.operationInProgress) { Text(if (editingContactId == null) "Save contact" else "Save changes") }
-            },
-        )
-    }
+    if (showContactForm) CustomerContactFormDialog(
+        editingContactId = editingContactId,
+        person = contactPerson,
+        onPersonChange = { contactPerson = it },
+        channel = contactChannel,
+        onChannelChange = { contactChannel = it },
+        value = contactValue,
+        onValueChange = { contactValue = it },
+        busy = viewState.operationInProgress,
+        testTagPrefix = "customer-contact",
+        onDismiss = { showContactForm = false },
+        onSave = { person, channel, value ->
+            val input = CustomerContactInput(detail.id, person, channel, value)
+            val contactId = editingContactId
+            if (contactId == null) viewModel.createCustomerContact(input) {
+                contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+            } else viewModel.updateCustomerContact(contactId, input) {
+                editingContactId = null; contactPerson = ""; contactValue = ""; contactChannel = "PHONE"; showContactForm = false; viewModel.loadCustomer(detail.id)
+            }
+        },
+    )
     deletingContactId?.let { contactId ->
         AlertDialog(
             onDismissRequest = { deletingContactId = null },
             title = { Text("Remove customer contact?") },
-            text = { Text("This additional contact will be removed from the customer. The primary contact fields remain unchanged.") },
+            text = { Text("This contact will be removed from the customer. The primary contact fields remain unchanged.") },
             dismissButton = { TextButton({ deletingContactId = null }) { Text("Cancel") } },
             confirmButton = { Button({ viewModel.deleteCustomerContact(detail.id, contactId) { deletingContactId = null; viewModel.loadCustomer(detail.id) } }) { Text("Remove") } },
         )
@@ -175,6 +167,12 @@ internal fun CustomerDetailScreen(
 internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingValues, state: UiState, viewModel: ServiceLoopViewModel, nav: NavHostController) {
     var creationDraft by rememberSaveable(existing?.id, stateSaver = CustomerCreationDraftSaver) { mutableStateOf(CustomerCreationDraft()) }
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var contact by rememberSaveable(existing?.id) { mutableStateOf(existing?.contactName.orEmpty()) }; var phone by rememberSaveable(existing?.id) { mutableStateOf(existing?.phone.orEmpty()) }; var email by rememberSaveable(existing?.id) { mutableStateOf(existing?.email.orEmpty()) }; var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.privateNote.orEmpty()) }
+    var showAdditionalContact by rememberSaveable(existing?.id) { mutableStateOf(false) }
+    var editingAdditionalContact by remember { mutableStateOf<CustomerContactDetail?>(null) }
+    var removingAdditionalContact by remember { mutableStateOf<CustomerContactDetail?>(null) }
+    var additionalContactPerson by rememberSaveable(existing?.id) { mutableStateOf("") }
+    var additionalContactValue by rememberSaveable(existing?.id) { mutableStateOf("") }
+    var additionalContactChannel by rememberSaveable(existing?.id) { mutableStateOf("PHONE") }
     var oneTimeCustomer by rememberSaveable(existing?.id) { mutableStateOf(existing?.customerType == CustomerType.ONE_TIME) }
     val oneTimeBlocked = existing != null && existing.customerType == CustomerType.STANDARD && !existing.canMarkOneTime
     val changed = if (existing == null) creationDraft.hasMeaningfulInput() else name!=existing.name||contact!=existing.contactName||phone!=existing.phone||email!=existing.email||note!=existing.privateNote||oneTimeCustomer != (existing.customerType == CustomerType.ONE_TIME)
@@ -185,16 +183,35 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
             item { CustomerCreationForm(creationDraft, { creationDraft = it }) }
         } else {
             item { DailyField(name, { name = it }, "Customer name · Required"); DailyField(contact, { contact = it }, "Main contact"); DailyField(phone, { phone = it }, "Phone"); DailyField(email, { email = it }, "Email") }
+            item {
+                Column(Modifier.fillMaxWidth().testTag("customer-editor-additional-contacts"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Contacts", style = MaterialTheme.typography.titleMedium)
+                        ServiceLoopSecondaryButton("Add contact", { editingAdditionalContact = null; additionalContactPerson = ""; additionalContactValue = ""; additionalContactChannel = "PHONE"; showAdditionalContact = true }, Modifier.testTag("customer-editor-add-contact"))
+                    }
+                    if (existing.repeatableContacts.isEmpty()) Text("No additional contacts saved.", style = MaterialTheme.typography.bodySmall)
+                    existing.repeatableContacts.forEach { saved ->
+                        Column(Modifier.fillMaxWidth().testTag("customer-editor-contact-${saved.id}")) {
+                            Text(listOf(saved.personName, saved.value).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                            Text(saved.channel.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                                TextButton({ editingAdditionalContact = saved; additionalContactPerson = saved.personName; additionalContactValue = saved.value; additionalContactChannel = saved.channel; showAdditionalContact = true }, Modifier.testTag("customer-editor-edit-contact-${saved.id}")) { Text("Edit") }
+                                TextButton({ removingAdditionalContact = saved }, Modifier.testTag("customer-editor-remove-contact-${saved.id}")) { Text("Remove") }
+                            }
+                        }
+                    }
+                }
+            }
             item { LongTextEditor(note, { note = it }, "Private customer note", true) }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control")) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("customer-type-control").semantics { if (oneTimeBlocked) disabled() }) {
                     com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox(
                         checked = oneTimeCustomer,
                         onCheckedChange = { checked -> if (!oneTimeBlocked || !checked) oneTimeCustomer = checked },
                         enabled = !oneTimeBlocked,
                         modifier = Modifier.testTag("customer-one-time-checkbox"),
                     )
-                    Text("One-time customer (no contract)")
+                    Text("One-time customer (no contract)", color = if (oneTimeBlocked) LocalServiceLoopTokens.current.disabledText else MaterialTheme.colorScheme.onSurface)
                 }
                 if (oneTimeBlocked) Text(existing.oneTimeBlockReason ?: "This customer has recurring service plans and cannot be marked one-time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("customer-one-time-block-reason"))
             }
@@ -210,6 +227,71 @@ internal fun CustomerEditorScreen(existing: CustomerDetail?, padding: PaddingVal
             }, enabled = (existing == null && creationDraft.isValidForCreate() || existing != null && name.isNotBlank()) && !state.operationInProgress, modifier = Modifier.fillMaxWidth().testTag("save-customer")) { Text("Save customer${if (existing == null) " and first site" else ""}") }
         }
     }
+    if (showAdditionalContact && existing != null) CustomerContactFormDialog(
+        editingContactId = editingAdditionalContact?.id,
+        person = additionalContactPerson,
+        onPersonChange = { additionalContactPerson = it },
+        channel = additionalContactChannel,
+        onChannelChange = { additionalContactChannel = it },
+        value = additionalContactValue,
+        onValueChange = { additionalContactValue = it },
+        busy = state.operationInProgress,
+        testTagPrefix = "customer-editor-contact",
+        onDismiss = { showAdditionalContact = false },
+        onSave = { person, channel, value ->
+            val input = CustomerContactInput(existing.id, person, channel, value)
+            val editing = editingAdditionalContact
+            if (editing == null) viewModel.createCustomerContact(input) { showAdditionalContact = false; viewModel.loadCustomer(existing.id) }
+            else viewModel.updateCustomerContact(editing.id, input) { showAdditionalContact = false; editingAdditionalContact = null; viewModel.loadCustomer(existing.id) }
+        },
+    )
+    removingAdditionalContact?.let { removing -> AlertDialog(
+        onDismissRequest = { removingAdditionalContact = null }, title = { Text("Remove customer contact?") },
+        text = { Text("This additional contact will be removed from the customer. The primary contact fields remain unchanged.") },
+        dismissButton = { TextButton({ removingAdditionalContact = null }) { Text("Cancel") } },
+        confirmButton = { Button({ viewModel.deleteCustomerContact(existing!!.id, removing.id) { removingAdditionalContact = null; viewModel.loadCustomer(existing.id) } }, enabled = !state.operationInProgress, modifier = Modifier.testTag("customer-editor-confirm-remove-contact")) { Text("Remove") } },
+    ) }
+}
+
+@Composable
+private fun CustomerContactFormDialog(
+    editingContactId: String?,
+    person: String,
+    onPersonChange: (String) -> Unit,
+    channel: String,
+    onChannelChange: (String) -> Unit,
+    value: String,
+    onValueChange: (String) -> Unit,
+    busy: Boolean,
+    testTagPrefix: String,
+    onDismiss: () -> Unit,
+    onSave: (person: String, channel: String, value: String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (editingContactId == null) "Add customer contact" else "Edit customer contact") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                DailyField(person, onPersonChange, "Person or label (optional)")
+                Text("Channel", style = MaterialTheme.typography.labelLarge)
+                ServiceLoopChoiceGroup(
+                    listOf("PHONE" to "Phone", "SMS" to "SMS", "WHATSAPP" to "WhatsApp", "EMAIL" to "Email", "OTHER" to "Other"),
+                    channel,
+                    onChannelChange,
+                    testTagPrefix = "$testTagPrefix-channel",
+                )
+                DailyField(value, onValueChange, "Contact value · Required")
+            }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+        confirmButton = {
+            Button(
+                { onSave(person, channel, value) },
+                enabled = value.isNotBlank() && !busy,
+                modifier = Modifier.testTag("$testTagPrefix-save-contact"),
+            ) { Text(if (editingContactId == null) "Save contact" else "Save changes") }
+        },
+    )
 }
 
 @Composable

@@ -112,10 +112,14 @@ internal fun DueServicesScreen(
             } &&
             (query.isBlank() || listOf(due.planReference, due.planName, due.equipmentName, due.equipmentReference, due.customerName, due.siteName).any { it.contains(query, true) })
     } else filterDueServices(scopedValues, dateFilter, visitFilter, query)
-    val selectedRows = scopedValues.filter { it.planId in selected && it.claimedVisitId == null }
+    val selectedRows = if (capabilities.canCreateLocalWork) {
+        scopedValues.filter { it.planId in selected && it.claimedVisitId == null }
+    } else {
+        emptyList()
+    }
     val selectionSite = selectedRows.firstOrNull()?.siteId
     val selectedIds = selectedRows.filter { it.siteId == selectionSite }.map { it.planId }
-    LaunchedEffect(scopedValues, selected) {
+    LaunchedEffect(scopedValues, selected, capabilities.canCreateLocalWork) {
         if (selected != selectedIds) selected = selectedIds
     }
     val selectionEnabled = selectedIds.isNotEmpty() && !state.operationInProgress
@@ -142,7 +146,8 @@ internal fun DueServicesScreen(
             }
             if (filtered.isEmpty()) item { Text("No services match these filters.") }
             items(filtered, key = { it.planId }) { due ->
-                val selectable = due.claimedVisitId == null && (selectionSite == null || selectionSite == due.siteId)
+                val selectable = capabilities.canCreateLocalWork && due.claimedVisitId == null &&
+                    (selectionSite == null || selectionSite == due.siteId)
                 ServiceLoopEntityRecord(
                     title = "${due.planReference} · ${due.planName}",
                     context = "${due.equipmentReference} · ${due.equipmentName}\n${due.customerName} · ${due.siteName}",

@@ -145,7 +145,8 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
         return InspectionTemplateImportPreview(transfer, entries)
     }
 
-    suspend fun import(preview: InspectionTemplateImportPreview, createSeparate: Set<String> = emptySet()): InspectionTemplateImportResult = database.withTransaction {
+    suspend fun import(preview: InspectionTemplateImportPreview, exporterId: String?, createSeparate: Set<String> = emptySet()): InspectionTemplateImportResult = database.withTransaction {
+        ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(exporterId)
         require(preview.canImport(createSeparate)) { "Resolve inspection template conflicts before importing" }
         val existing = dao.reusableTemplates().associateBy { it.reference }.toMutableMap()
         val imported = mutableListOf<String>(); val exact = mutableListOf<String>(); val separate = mutableListOf<String>()

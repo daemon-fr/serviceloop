@@ -178,7 +178,7 @@ fun serviceLoopStateStyle(code: String, colors: ServiceLoopColorRoles): ServiceL
         "COMPLETED" -> "Completed" to ServiceLoopVisualState.Success
         "ARCHIVED" -> "Archived" to ServiceLoopVisualState.History
         "RETIRED" -> "Retired" to ServiceLoopVisualState.History
-        "SAVED" -> "Saved on this device" to ServiceLoopVisualState.Success
+        "SAVED" -> "Saved" to ServiceLoopVisualState.Success
         "FAILED" -> "Not saved — action needed" to ServiceLoopVisualState.Error
         "ISSUE_FOUND" -> "Issue found" to ServiceLoopVisualState.Warning
         "NOT_APPLICABLE" -> "Not applicable" to ServiceLoopVisualState.Neutral

@@ -28,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VisitScheduleEventEntity::class,
         CorrectionDraftEntity::class, CorrectionWorkItemEntity::class,
         ChangeEntryEntity::class, EquipmentMoveEntity::class, RecoveryMetadataEntity::class,
-        TechnicianIdentityEntity::class, DispatchTechnicianEntity::class,
+        TechnicianIdentityEntity::class, TrustedServiceLoopIdEntity::class, DispatchTechnicianEntity::class,
         DispatchTeamEntity::class, DispatchTeamMemberEntity::class,
         DispatchOutboxVisitEntity::class, DispatchOutboxVisitTeamEntity::class,
         DispatchOutboxItemEntity::class, DispatchOutboxItemAssigneeEntity::class,
@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinalDispatchVisitEntity::class, FinalDispatchItemEntity::class,
         ReminderPreferencesEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -48,7 +48,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -383,6 +383,12 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE dispatch_technicians ADD COLUMN notes TEXT")
                 db.execSQL("ALTER TABLE final_record_revisions ADD COLUMN technicianDesignation TEXT")
                 configureStage4Tracking(db)
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS trusted_service_loop_ids (peerId TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, createdAtEpochMillis INTEGER NOT NULL, modifiedAtEpochMillis INTEGER NOT NULL)")
             }
         }
 

@@ -639,7 +639,7 @@ class ServiceLoopViewModel(
                         template = refreshed,
                         templatePlanReferenceCount = usage,
                         operationInProgress = false,
-                        operationMessage = "Saved on this device",
+                        operationMessage = "Saved",
                     )
                 }
                 refreshRootDataNonBlocking()
@@ -671,7 +671,7 @@ class ServiceLoopViewModel(
                 val site = visit?.let { repository.site(it.siteId) }
                 val progress = runCatching { repository.serviceVisitProgress(id) }.getOrNull()
                 try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
-                if (isCurrent(request)) _state.update { current -> current.copy(visit = visit, site = site, serviceContext = ServiceContext(progress = progress, activeVisitId = progress?.visitId ?: current.activeServiceVisitId, activeWorkItemId = progress?.preferredResumeItem()?.workItemId ?: current.activeServiceWorkItemId), operationInProgress = false, operationMessage = "Saved on this device") }
+                if (isCurrent(request)) _state.update { current -> current.copy(visit = visit, site = site, serviceContext = ServiceContext(progress = progress, activeVisitId = progress?.visitId ?: current.activeServiceVisitId, activeWorkItemId = progress?.preferredResumeItem()?.workItemId ?: current.activeServiceWorkItemId), operationInProgress = false, operationMessage = "Saved") }
                 refreshRootDataNonBlocking()
                 onSuccess(id)
             } catch (cancelled: CancellationException) {
@@ -690,7 +690,7 @@ class ServiceLoopViewModel(
                 repository.rescheduleVisit(id, date, scheduledAt, reason)
                 val refreshed = repository.visit(id) ?: error("Visit was saved, but its details could not be refreshed")
                 val site = repository.site(refreshed.siteId)
-                if (isCurrent(request)) _state.update { it.copy(visit = refreshed, site = site, operationInProgress = false, operationMessage = "Saved on this device") }
+                if (isCurrent(request)) _state.update { it.copy(visit = refreshed, site = site, operationInProgress = false, operationMessage = "Saved") }
                 refreshRootDataNonBlocking(); onSuccess(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if(isCurrent(request)) _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Not saved") } }
@@ -773,6 +773,31 @@ class ServiceLoopViewModel(
             }
         }
     }
+    fun setPhotoReportInclusions(workItemId: String, photoIds: List<String>, include: Boolean, onComplete: (String?) -> Unit = {}) {
+        val ids = photoIds.distinct()
+        if (ids.isEmpty()) return
+        ids.forEach { photoMetadataVersions[it] = (photoMetadataVersions[it] ?: 0L) + 1L }
+        _state.update { current -> current.copy(photoMetadataPendingIds = current.photoMetadataPendingIds + ids, photoMetadataPendingId = ids.last(), photoMetadataErrorId = null, photoMetadataErrorMessages = current.photoMetadataErrorMessages - ids.toSet()) }
+        viewModelScope.launch {
+            try {
+                photoMetadataMutex.withLock {
+                    withContext(Dispatchers.IO) { repository.setPhotoReportInclusions(workItemId, ids, include) }
+                    loadFieldEvidence(workItemId)
+                }
+                _state.update { current -> val pending = current.photoMetadataPendingIds - ids.toSet(); current.copy(photoMetadataPendingIds = pending, photoMetadataPendingId = pending.lastOrNull()) }
+                onComplete(null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val message = failure.message ?: "Photo choices were not saved. Change them to retry."
+                _state.update { current ->
+                    val pending = current.photoMetadataPendingIds - ids.toSet()
+                    val errors = current.photoMetadataErrorMessages + ids.associateWith { message }
+                    current.copy(photoMetadataPendingIds = pending, photoMetadataPendingId = pending.lastOrNull(), photoMetadataErrorId = ids.last(), photoMetadataErrorMessages = errors)
+                }
+                onComplete(message)
+            }
+        }
+    }
     fun removePhoto(workItemId: String, photoId: String) {
         photoMetadataVersions[photoId] = (photoMetadataVersions[photoId] ?: 0L) + 1L
         runOperation({
@@ -780,6 +805,28 @@ class ServiceLoopViewModel(
             repository.clearWorkingInputBuffer(workItemId, ServiceDraftFieldKeys.photoCaption(photoId))
             withContext(Dispatchers.IO) { repository.removePhoto(workItemId, photoId) }
         }) { refreshEvidence(workItemId) }
+    }
+    fun removePhotos(workItemId: String, photoIds: List<String>, onComplete: (String?) -> Unit = {}) {
+        val ids = photoIds.distinct()
+        if (ids.isEmpty()) {
+            onComplete("Choose one or more photos to delete.")
+            return
+        }
+        ids.forEach { photoMetadataVersions[it] = (photoMetadataVersions[it] ?: 0L) + 1L }
+        runOperationWithFailure({
+            ids.forEach { photoId ->
+                serviceDraftAutosaveCoordinator.cancelAndJoin(ServiceDraftFieldId(workItemId, ServiceDraftFieldKeys.photoCaption(photoId)))
+                repository.clearWorkingInputBuffer(workItemId, ServiceDraftFieldKeys.photoCaption(photoId))
+            }
+            withContext(Dispatchers.IO) { repository.removePhotos(workItemId, ids) }
+        }, onComplete) {
+            _state.update { current ->
+                val pending = current.photoMetadataPendingIds - ids.toSet()
+                current.copy(photoMetadataPendingIds = pending, photoMetadataPendingId = pending.lastOrNull(), photoMetadataErrorMessages = current.photoMetadataErrorMessages - ids.toSet())
+            }
+            refreshEvidence(workItemId)
+            onComplete(null)
+        }
     }
 
     fun schedulePhotoCaption(workItemId: String, photoId: String, rawValue: String) = serviceDraftAutosaveCoordinator.scheduleText(
@@ -1269,13 +1316,26 @@ class ServiceLoopViewModel(
         }
     }
 
-    private fun <T> runOperation(block: suspend () -> T, onSuccess: (T) -> Unit = {}) {
-        if (_state.value.operationInProgress) return
+    private fun <T> runOperation(block: suspend () -> T, onSuccess: (T) -> Unit = {}) =
+        runOperationInternal(block, {}, onSuccess)
+
+    private fun <T> runOperationWithFailure(block: suspend () -> T, onFailure: (String) -> Unit, onSuccess: (T) -> Unit = {}) =
+        runOperationInternal(block, onFailure, onSuccess)
+
+    private fun <T> runOperationInternal(block: suspend () -> T, onFailure: (String) -> Unit, onSuccess: (T) -> Unit) {
+        if (_state.value.operationInProgress) {
+            onFailure("Another ServiceLoop operation is already in progress.")
+            return
+        }
         _state.update { it.copy(operationInProgress = true, operationMessage = null, error = null) }
         viewModelScope.launch {
-            try { val id = block(); try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* Calendar is an independent projection; business writes stay committed. */ }; _state.update { it.copy(operationInProgress = false, operationMessage = "Saved on this device") }; refreshRootDataNonBlocking(); onSuccess(id) }
+            try { val id = block(); try { calendarCoordinator?.reconcile() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* Calendar is an independent projection; business writes stay committed. */ }; _state.update { it.copy(operationInProgress = false, operationMessage = "Saved") }; refreshRootDataNonBlocking(); onSuccess(id) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(operationInProgress = false, error = failure.message ?: "Not saved") } }
+            catch (failure: Exception) {
+                val message = failure.message ?: "Not saved"
+                _state.update { it.copy(operationInProgress = false, error = message) }
+                onFailure(message)
+            }
         }
     }
 

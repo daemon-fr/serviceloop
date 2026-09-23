@@ -64,6 +64,10 @@
     "WarningCircle": "warning-circle",
     "Work": "clipboard-text",
     "X": "x",
-    "XCircle": "x-circle"
+    "XCircle": "x-circle",
+    "HomeVisit": "list-checks",
+    "HomeService": "wrench",
+    "HomeFollowUp": "flag",
+    "ContactOtherCamera": "camera"
   }
 }

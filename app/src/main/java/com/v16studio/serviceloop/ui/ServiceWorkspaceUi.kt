@@ -80,7 +80,7 @@ internal fun ServiceSaveState(
             action = { ServiceLoopTextAction("Retry", { viewModel.retryFailedServiceEdits(draft.workItemId) }, Modifier.testTag("retry-service-edits")) },
         )
         invalid != null -> ServiceLoopNotice("Needs attention", invalid.message, ServiceLoopNoticeKind.Warning)
-        rawUnsettled || states.any { it is ServiceDraftFieldState.Pending || it is ServiceDraftFieldState.Saving } || saveStatus is SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The latest Service edit is being saved on this device.", ServiceLoopNoticeKind.Working)
+        rawUnsettled || states.any { it is ServiceDraftFieldState.Pending || it is ServiceDraftFieldState.Saving } || saveStatus is SaveStatus.Saving -> ServiceLoopNotice("Saving…", "The latest Service edit is being saved.", ServiceLoopNoticeKind.Working)
         else -> {
             val savedAt = states.filterIsInstance<ServiceDraftFieldState.Clean>().mapNotNull { it.savedAtEpochMillis }.maxOrNull()
                 ?: (saveStatus as? SaveStatus.Saved)?.atEpochMillis ?: draft.modifiedAtEpochMillis

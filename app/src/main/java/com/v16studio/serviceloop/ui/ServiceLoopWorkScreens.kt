@@ -179,6 +179,8 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCardAdapter as Card
 import com.v16studio.serviceloop.ui.designsystem.serviceLoopAdaptiveScaffoldPadding
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcon
 import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
+import com.v16studio.serviceloop.ui.icons.ServiceLoopEntityIcons
+import com.v16studio.serviceloop.ui.icons.ServiceLoopEntityType
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -195,7 +197,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
     Column(Modifier.fillMaxSize().background(LocalServiceLoopTokens.current.canvas)) {
         Box(Modifier.fillMaxWidth().background(LocalServiceLoopTokens.current.surface).padding(top = ServiceLoopUiTokens.Space.xs)) {
             ServiceLoopContentTabs(
-                listOf("DASHBOARD" to "Dashboard", "AGENDA" to "Agenda"),
+                listOf("DASHBOARD" to "Dashboard", "AGENDA" to "Agenda", "TEAM" to "Team"),
                 tab,
                 { tab = it },
                 testTagPrefix = "home-tab",
@@ -203,7 +205,6 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
         }
         if (tab == "DASHBOARD") {
             LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                item { WorkspaceHomeActions(nav) }
                 state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
                     item {
                         OperationalDashboard(
@@ -219,8 +220,10 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 }
                 if (capabilities.canCreateLocalWork) item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
             }
-        } else {
+        } else if (tab == "AGENDA") {
             HomeAgendaScreen(state, nav, Modifier.weight(1f))
+        } else {
+            TeamWorkspaceScreen(nav, Modifier.weight(1f))
         }
     }
 }
@@ -236,7 +239,7 @@ internal fun HomeAgendaScreen(state: UiState, nav: NavHostController, modifier: 
     )
     LazyColumn(
         modifier = modifier.fillMaxWidth().testTag("home-agenda"),
-        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
+        contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 96.dp),
     ) {
         agendaSection("Unresolved", projection.unresolved, state.businessZoneId, nav)
         agendaSection("Upcoming", projection.upcoming, state.businessZoneId, nav)
@@ -250,10 +253,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
     nav: NavHostController,
 ) {
     item(key = "agenda-heading-$title") {
-        Text(title + " (" + items.size + ")", style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("agenda-section-${title.lowercase()}"))
+        Text(title + " (" + items.size + ")", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp).semantics { heading() }.testTag("agenda-section-${title.lowercase()}"), textAlign = TextAlign.Center)
     }
     if (items.isEmpty()) {
-        item(key = "agenda-empty-$title") { Text("Nothing here.", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textMuted) }
+        item(key = "agenda-empty-$title") { Text("Nothing here.", Modifier.fillMaxWidth().padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textMuted) }
     } else {
         items(items, key = { "agenda-${it.kind.name}-${it.recordId}" }) { agendaItem ->
             val zone = runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault())
@@ -276,16 +279,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.agendaSection(
                     }
                     .semantics { contentDescription = inline }
                     .drawBehind { drawLine(tokens.outlineDecorative, Offset(0f, size.height), Offset(size.width, size.height), ServiceLoopUiTokens.Stroke.divider.toPx()) }
-                    .padding(vertical = ServiceLoopUiTokens.Space.sm)
+                    .padding(horizontal = 16.dp, vertical = ServiceLoopUiTokens.Space.sm)
                     .testTag("agenda-item-${agendaItem.recordId}"),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm),
             ) {
                 ServiceLoopIcon(
                     when (agendaItem.kind) {
-                        OperationalWorkKind.VISIT -> ServiceLoopIcons.Work
-                        OperationalWorkKind.SERVICE -> ServiceLoopIcons.Calendar
-                        OperationalWorkKind.FOLLOW_UP -> ServiceLoopIcons.PencilSimple
+                        OperationalWorkKind.VISIT -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.VISIT)!!
+                        OperationalWorkKind.SERVICE -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.SERVICE)!!
+                        OperationalWorkKind.FOLLOW_UP -> ServiceLoopEntityIcons.forType(ServiceLoopEntityType.FOLLOW_UP)!!
                     },
                     agendaItem.kind.title,
                     Modifier.size(ServiceLoopUiTokens.Size.icon),

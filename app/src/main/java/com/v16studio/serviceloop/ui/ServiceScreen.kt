@@ -394,30 +394,32 @@ internal fun ServiceScreen(
         LazyColumn(
             Modifier.weight(1f).imePadding().testTag(listTag),
             state = listState,
-            contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
+            contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section),
         ) {
             item {
-                ServiceIdentityBlock(draft, currentPosition, resolvedProgress.items.size, current, fieldStates, saveStatus, viewModel, nav)
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceIdentityBlock(draft, currentPosition, resolvedProgress.items.size, current, fieldStates, saveStatus, viewModel, nav) }
             }
-            navigationMessage?.let { message -> item { ServiceLoopNotice("Resolve unsaved service edits before continuing.", message, ServiceLoopNoticeKind.Error) } }
+            navigationMessage?.let { message -> item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceLoopNotice("Resolve unsaved service edits before continuing.", message, ServiceLoopNoticeKind.Error) } } }
             item {
-                ServiceProgressNavigator(
-                    progress = resolvedProgress,
-                    currentWorkItemId = draft.workItemId,
-                    onSelect = { target ->
-                        if (target.workItemId == draft.workItemId) viewModel.focusService(draft.workItemId)
-                        else flushAndThen { replaceServiceDestination(nav, target.workItemId) }
-                    },
-                )
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    ServiceProgressNavigator(
+                        progress = resolvedProgress,
+                        currentWorkItemId = draft.workItemId,
+                        onSelect = { target ->
+                            if (target.workItemId == draft.workItemId) viewModel.focusService(draft.workItemId)
+                            else flushAndThen { replaceServiceDestination(nav, target.workItemId) }
+                        },
+                    )
+                }
             }
             if (current?.documentationMode != ServiceDocumentationMode.LOCAL) {
-                item { DocumentationModeNotice(current?.documentationMode ?: ServiceDocumentationMode.DEFERRED) { openVisitOverview(nav, draft.visitId) } }
+                item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { DocumentationModeNotice(current?.documentationMode ?: ServiceDocumentationMode.DEFERRED) { openVisitOverview(nav, draft.visitId) } } }
             }
-            if (contextRows.isNotEmpty()) item { PrivateWorkContext(contextRows) }
+            if (contextRows.isNotEmpty()) item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { PrivateWorkContext(contextRows) } }
             item {
-                ServiceLoopSurfaceCard(modifier = Modifier.testTag("work-performed-section")) {
-                    Text("Work performed", style = MaterialTheme.typography.titleLarge)
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceLoopSurfaceCard(modifier = Modifier.testTag("work-performed-section")) {
+                    Text(if (editingEnabled && com.v16studio.serviceloop.data.ServiceWorkEvaluator.requiresPublicWork(completion?.outcome)) "Work performed · Required" else "Work performed", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("work-performed-heading"))
                      Text("Included in customer report", style = MaterialTheme.typography.bodySmall, color = LocalServiceLoopTokens.current.textSecondary)
                     val initialWork = draft.rawInputs[ServiceDraftFieldKeys.WORK] ?: draft.workPerformed
                     var work by rememberSaveable(draft.workItemId, initialWork) { mutableStateOf(initialWork) }
@@ -430,16 +432,16 @@ internal fun ServiceScreen(
                         fieldTestTag = "long-text-public-work-performed",
                         onFocusLost = { viewModel.flushServiceDraftAsync(draft.workItemId) },
                     )
-                }
+                } }
             }
             item {
                 val initialPrivate = draft.rawInputs[ServiceDraftFieldKeys.PRIVATE] ?: draft.privateInternalNote
                  var privateExpanded by remember(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate.isNotBlank()) }
                  var privateNote by remember(draft.workItemId, initialPrivate) { mutableStateOf(initialPrivate) }
                 if (!privateExpanded) {
-                    ServiceLoopTextAction("+ Private note", { privateExpanded = true }, Modifier.testTag("add-private-note"), enabled = editingEnabled)
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceLoopTextAction("+ Private note", { privateExpanded = true }, Modifier.testTag("add-private-note"), enabled = editingEnabled) }
                 } else {
-                    ServiceLoopSurfaceCard(modifier = Modifier.testTag("private-work-note")) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceLoopSurfaceCard(modifier = Modifier.testTag("private-work-note")) {
                         ServiceLoopPrivateLabel("Private note", style = MaterialTheme.typography.titleMedium)
                         ServiceLoopLongTextEditor(
                             value = privateNote,
@@ -450,27 +452,27 @@ internal fun ServiceScreen(
                             onFocusLost = { viewModel.flushServiceDraftAsync(draft.workItemId) },
                             fieldTestTag = "long-text-private-note",
                         )
-                    }
+                    } }
                 }
             }
             item {
                 ChecklistSectionHeader(draft)
             }
             if (draft.questions.isEmpty()) {
-                item { Text("No checklist for this service.", modifier = Modifier.testTag("no-checklist")) }
+                item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text("No checklist for this service.", modifier = Modifier.testTag("no-checklist")) } }
             } else {
                 items(draft.questions, key = { it.snapshotItemId }) { question ->
-                    ServiceQuestionBlock(draft.workItemId, draft.rawInputs, question, editingEnabled, viewModel)
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceQuestionBlock(draft.workItemId, draft.rawInputs, question, editingEnabled, viewModel) }
                 }
             }
             item { ServiceCompletionLandmark() }
-            item { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) }
-            if (completion != null) item { ServiceCompletionSection(completion, draft, viewModel, editingEnabled, outcomeRequester, reasonRequester, fulfillmentRequester, nextDueRequester) }
+            item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceEvidenceContent(draft.workItemId, if (viewState.fieldEvidenceWorkItemId == draft.workItemId) viewState else viewState.copy(parts = emptyList(), photos = emptyList(), serviceFollowUps = emptyList()), viewModel, editingEnabled) { nav.navigate("service-photos/${draft.workItemId}") } } }
+            if (completion != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { ServiceCompletionSection(completion, draft, viewModel, editingEnabled, outcomeRequester, reasonRequester, fulfillmentRequester, nextDueRequester) } }
             if (viewState.contentRefreshError != null) item {
-                Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error)
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(viewState.contentRefreshError!!, color = MaterialTheme.colorScheme.error) }
             }
-            if (viewState.error != null) item { Text(viewState.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("service-operation-error")) }
-            if (movePrimaryActionIntoList) item { PrimaryServiceAction(Modifier.fillMaxWidth()) }
+            if (viewState.error != null) item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(viewState.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("service-operation-error")) } }
+            if (movePrimaryActionIntoList) item { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { PrimaryServiceAction(Modifier.fillMaxWidth()) } }
         }
         if (!movePrimaryActionIntoList) {
             ServiceLoopPinnedBar { PrimaryServiceAction(Modifier.fillMaxWidth()) }

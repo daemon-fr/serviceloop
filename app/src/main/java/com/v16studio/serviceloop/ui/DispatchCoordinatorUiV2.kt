@@ -185,11 +185,13 @@ private fun dispatchPackageSubjectLabel(item:DispatchWork,equipment:DispatchEqui
 @Composable internal fun WorkspaceHomeActions(nav:NavHostController){
     val capabilities=LocalWorkspaceCapabilities.current
     Column(Modifier.fillMaxWidth().testTag("workspace-home-actions"),verticalArrangement=Arrangement.spacedBy(8.dp)){
-        ServiceLoopSecondaryButton("Import shared data",{nav.navigate("import")},Modifier.fillMaxWidth().testTag("home-import"),leadingIcon={ServiceLoopIcon(ServiceLoopIcons.ArrowCircleDown,null,Modifier.size(ServiceLoopUiTokens.Size.icon))})
-        if(capabilities.canUseCoordinatorTools){ServiceLoopAdaptiveActionRow(listOf(
+        if(capabilities.canUseCoordinatorTools){
+            Text("Coordinator tools", style = MaterialTheme.typography.titleLarge)
+            ServiceLoopAdaptiveActionRow(listOf(
             { ServiceLoopSecondaryButton("Technicians",{nav.navigate("dispatch/technicians")},Modifier.fillMaxWidth()) },
             { ServiceLoopSecondaryButton("Teams",{nav.navigate("dispatch/teams")},Modifier.fillMaxWidth()) },
             { ServiceLoopSecondaryButton("Outbox",{nav.navigate("dispatch/create")},Modifier.fillMaxWidth()) },
-        ),Modifier.testTag("coordinator-home-actions"))}
+        ),Modifier.testTag("coordinator-home-actions"))
+        }
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -36,9 +37,16 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.RoomServiceLoopRepository
+import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.domain.BusinessTime
+import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.CompletionBlockerKind
+import com.v16studio.serviceloop.domain.FulfillmentEligibility
+import com.v16studio.serviceloop.domain.CustomerSummary
+import com.v16studio.serviceloop.domain.DueService
+import com.v16studio.serviceloop.domain.EquipmentSummary
+import com.v16studio.serviceloop.domain.HomeSummary
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.InspectionQuestion
 import com.v16studio.serviceloop.domain.ResponseDisposition
@@ -63,6 +71,9 @@ import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 import org.junit.Assert.assertTrue
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @RunWith(AndroidJUnit4::class)
 class ServiceWorkspaceCoreUiTest {
@@ -108,6 +119,63 @@ class ServiceWorkspaceCoreUiTest {
         compose.onNodeWithTag("response-q-status-NOT_CHECKED").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("Save work performed", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Save response", substring = true).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun sectionBandsAreFullWidthAndRequiredLabelsFollowOutcomeRules() {
+        val line = AtomicReference(
+            CompletionLine(
+                workItemId = "work-1",
+                equipmentName = "Machine",
+                equipmentReference = "EQ-001",
+                serviceName = "Service",
+                outcome = null,
+                fulfillmentEligibility = FulfillmentEligibility.ELIGIBLE,
+                fulfillsCurrentObligation = null,
+                dueDate = "2026-09-14",
+                proposedNextDueDate = null,
+                workPerformed = "",
+                checklistComplete = true,
+            ),
+        )
+        val repository = object : ServiceLoopRepository {
+            override suspend fun home() = HomeSummary(null, null, null, null, null, null, null, 0, null, null, 0, 0)
+            override suspend fun equipment(id: String) = null
+            override suspend fun equipmentList(): List<EquipmentSummary> = emptyList()
+            override suspend fun customerList(): List<CustomerSummary> = emptyList()
+            override suspend fun inspection(workItemId: String): InspectionDraft? = null
+            override suspend fun completionLines(visitId: String): List<CompletionLine> = listOf(line.get())
+            override suspend fun saveResponse(workItemId: String, questionId: String, disposition: ResponseDisposition, value: String?, reason: String?) = 0L
+            override fun observeDueServices(): Flow<List<DueService>> = emptyFlow()
+        }
+        val viewModel = ServiceLoopViewModel(repository) {}
+        compose.runOnUiThread { viewModel.loadCompletion("visit-1") }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        compose.setContent {
+            ServiceLoopTheme {
+                ServiceScreen(draft(), null, SaveStatus.Saved(1L), null, viewModel, rememberNavController())
+            }
+        }
+
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-checklist-stripe"))
+        compose.onNodeWithTag("service-checklist-stripe").assertIsDisplayed()
+        assertBandContainerSpansServiceViewport("checklist-section")
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-completion-landmark"))
+        compose.onNodeWithTag("service-completion-landmark").assertIsDisplayed()
+        assertBandContainerSpansServiceViewport("service-completion-landmark")
+
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("work-performed-heading"))
+        compose.onNodeWithTag("work-performed-heading").assertTextEquals("Work performed")
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome-heading"))
+        compose.onNodeWithTag("service-outcome-heading").assertTextEquals("Outcome · Required")
+
+        line.set(line.get().copy(outcome = "PERFORMED", fulfillsCurrentObligation = true))
+        compose.runOnUiThread { viewModel.loadCompletion("visit-1") }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("work-performed-heading"))
+        compose.onNodeWithTag("work-performed-heading").assertTextEquals("Work performed · Required")
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome-heading"))
+        compose.onNodeWithTag("service-outcome-heading").assertTextEquals("Outcome")
     }
 
     @Test
@@ -379,6 +447,14 @@ class ServiceWorkspaceCoreUiTest {
                 ServiceScreen(draft, progress, SaveStatus.Saved(draft.modifiedAtEpochMillis), focus, viewModel, rememberNavController())
             }
         }
+    }
+
+    private fun assertBandContainerSpansServiceViewport(tag: String) {
+        val viewport = compose.onNodeWithTag("service-list").fetchSemanticsNode().boundsInRoot
+        val stripe = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        val tolerance = 1f
+        assertTrue("$tag should touch the service viewport's left edge: $stripe vs $viewport", kotlin.math.abs(stripe.left - viewport.left) <= tolerance)
+        assertTrue("$tag should touch the service viewport's right edge: $stripe vs $viewport", kotlin.math.abs(stripe.right - viewport.right) <= tolerance)
     }
 
     private fun assertReadOnlyParts(mode: ServiceDocumentationMode, localRole: String?, disposition: String?) {

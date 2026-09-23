@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.liveRegion
@@ -261,7 +262,7 @@ fun ServiceLoopAdaptiveActionRow(
     }
 }
 
-/** The single ServiceLoop checkbox treatment. The whole 48dp surface is the control. */
+/** The Due Services selection glyph with an invisible 48dp checkbox target. */
 @Composable
 fun ServiceLoopCheckbox(
     checked: Boolean,
@@ -269,23 +270,32 @@ fun ServiceLoopCheckbox(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     contentDescription: String? = null,
+    glyphTestTag: String? = null,
 ) {
     val colors = LocalServiceLoopTokens.current
+    val glyphTint = when {
+        !enabled -> colors.disabledText
+        checked -> colors.action
+        else -> colors.recordBorder.copy(alpha = .55f)
+    }
     Box(
         modifier = modifier.size(ServiceLoopUiTokens.Size.touchMin)
             .then(if (onCheckedChange == null) Modifier else Modifier.toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange))
-            .semantics { contentDescription?.let { this.contentDescription = it } },
+            .semantics {
+                role = Role.Checkbox
+                stateDescription = if (checked) "Selected" else "Not selected"
+                if (!enabled) disabled()
+                contentDescription?.let { this.contentDescription = it }
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.size(28.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .background(if (checked) colors.action else colors.selection)
-                .border(ServiceLoopUiTokens.Stroke.outline, if (checked) colors.action else colors.selectionOutline, RoundedCornerShape(7.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (checked) ServiceLoopIcon(ServiceLoopIcons.SelectionChecked, null, Modifier.size(24.dp), colors.onAction)
-        }
+        ServiceLoopIcon(
+            if (checked) ServiceLoopIcons.SelectionChecked else ServiceLoopIcons.SelectionEmpty,
+            null,
+            Modifier.size(ServiceLoopUiTokens.Size.checkboxGlyph)
+                .then(if (glyphTestTag == null) Modifier else Modifier.testTag(glyphTestTag)),
+            glyphTint,
+        )
     }
 }
 
@@ -611,7 +621,7 @@ fun ServiceLoopSavedStatus(atEpochMillis: Long, modifier: Modifier = Modifier, i
     val c = LocalServiceLoopTokens.current
     Row(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
         ServiceLoopIcon(ServiceLoopIcons.LocalSaved, null, Modifier.size(iconSize), c.successInk)
-        Text("Saved on this device · $time", color = c.successInk, style = ServiceLoopUiTokens.Type.supporting)
+        Text("Saved · $time", color = c.successInk, style = ServiceLoopUiTokens.Type.supporting)
     }
 }
 
@@ -674,26 +684,16 @@ fun ServiceLoopEntityRecord(
             metadata?.takeIf(String::isNotBlank)?.let { Text(it, style = ServiceLoopUiTokens.Type.meta, color = c.textMuted, modifier = Modifier.fillMaxWidth()) }
         }
         if (selectable) {
-            Box(
-                Modifier.align(Alignment.TopStart).size(ServiceLoopUiTokens.Size.touchMin)
+            ServiceLoopCheckbox(
+                checked = selectionChecked!!,
+                onCheckedChange = onSelectionChange,
+                modifier = Modifier.align(Alignment.TopStart)
                     .testTag("entity-record-selection")
-                    .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field)
-                    .toggleable(
-                        value = selectionChecked!!,
-                        onValueChange = onSelectionChange,
-                        role = Role.Checkbox,
-                    )
-                    .semantics { contentDescription = "Select $title" },
-                contentAlignment = Alignment.TopStart,
-            ) {
-                ServiceLoopIcon(
-                    if (selectionChecked) ServiceLoopIcons.SelectionChecked else ServiceLoopIcons.SelectionEmpty,
-                    null,
-                    Modifier.padding(start=ServiceLoopUiTokens.Space.sm, top=ServiceLoopUiTokens.Space.sm)
-                        .size(ServiceLoopUiTokens.Size.checkboxGlyph).testTag("entity-record-selection-icon"),
-                    if (selectionChecked) c.action else c.recordBorder.copy(alpha=.55f),
-                )
-            }
+                    .serviceLoopFocusRing(ServiceLoopUiTokens.Radius.field),
+                enabled = enabled,
+                contentDescription = "Select $title",
+                glyphTestTag = "entity-record-selection-icon",
+            )
         }
     }
 }

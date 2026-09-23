@@ -1,6 +1,6 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-22
+**Updated:** 2026-09-23
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
@@ -288,7 +288,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 - Kotlin 2.2.10
 - Compose BOM 2026.02.01
 - Room 2.8.4
-- Room schema v16 on the active B044 branch (v15 on the preceding B-013/B043 line; v11 at SL-5C)
+- Room schema v18 on the B048 branch (v17 on B047; earlier historical milestones retain their recorded schema versions)
 - canonical AVD display name: `Pixel 10a ServiceLoop`; resolve adb serial dynamically every run
 
 ## Verification / acceptance boundaries
@@ -304,3 +304,7 @@ Execution-environment recovery evidence: one exact-match managed patch helper fa
 # B047 post-pilot hardening
 
 The B047 UI/UX and narrow persistence hardening is implemented on `codex/b047-post-pilot-ui-hardening`. See [B047_POST_PILOT_UI_HARDENING.md](B047_POST_PILOT_UI_HARDENING.md) for the scoped changes and transport boundary.
+
+## B048 — Team, Trusted Exchange, and post-B047 UX hardening
+
+Implemented on `codex/b048-team-trust-ux-hardening` from B047 SHA `527fa83f7c5f56cd33b08a10200c5cb20d0418b9`. App version target is 1.2.0 (code 4), Room v18, and Recovery schema v17. Home adds Dashboard / Agenda / Team. The existing durable `technician_identity` row remains the one stable local ServiceLoop ID; its Team label is Coordinator ID or Technician ID by role. Trusted IDs are device-local, included in Recovery, preserved by FULL_WORKSPACE replacement, and required at each `.slsync` mutation boundary. New envelope v2 files require `exporterId`; v1 files remain readable for verification and are verify-only. `register` section v2 carries repeatable customer contacts and `team` section v2 carries technician notes; Dispatch v5 and template payload semantics remain unchanged. The 477-test unit suite, debug APK, instrumentation APK, lint, and focused canonical AVD cases passed; detailed scope, evidence limits, and runtime evidence are in [B048_TEAM_TRUST_AND_UX_HARDENING.md](B048_TEAM_TRUST_AND_UX_HARDENING.md).

@@ -266,6 +266,7 @@ interface ServiceLoopDao {
     @Query("UPDATE working_visits SET appointmentReminderLeadMinutes=:minutes WHERE id=:id AND state='BOOKED'") suspend fun updateAppointmentReminderLead(id: String, minutes: Int?): Int
     @Query("SELECT * FROM customers ORDER BY reference") suspend fun allCustomers(): List<CustomerEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomerContact(value: CustomerContactEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomerContacts(values: List<CustomerContactEntity>)
     @Query("UPDATE customer_contacts SET personName=:personName, channel=:channel, value=:value, modifiedAtEpochMillis=:modifiedAt WHERE id=:id AND customerId=:customerId") suspend fun updateCustomerContact(id: String, customerId: String, personName: String?, channel: String, value: String, modifiedAt: Long): Int
     @Query("DELETE FROM customer_contacts WHERE id=:id AND customerId=:customerId") suspend fun deleteCustomerContact(id: String, customerId: String): Int
     @Query("SELECT * FROM customer_contacts WHERE customerId=:customerId ORDER BY modifiedAtEpochMillis DESC, id") suspend fun customerContacts(customerId: String): List<CustomerContactEntity>

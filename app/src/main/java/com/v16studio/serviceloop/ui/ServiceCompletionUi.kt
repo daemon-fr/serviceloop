@@ -22,6 +22,7 @@ import com.v16studio.serviceloop.domain.CompletionLine
 import com.v16studio.serviceloop.domain.FulfillmentEligibility
 import com.v16studio.serviceloop.domain.InspectionDraft
 import com.v16studio.serviceloop.domain.ServiceDraftFieldKeys
+import com.v16studio.serviceloop.data.ServiceWorkEvaluator
 import com.v16studio.serviceloop.ui.designsystem.LocalServiceLoopTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopChoiceGroup
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
@@ -36,7 +37,7 @@ internal fun ServiceCompletionSection(line: CompletionLine, draft: InspectionDra
     val visitId = draft.visitId
     val workItemId = draft.workItemId
     ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-outcome")) {
-        Text("Outcome", style = MaterialTheme.typography.titleLarge)
+        Text(if (editingEnabled && ServiceWorkEvaluator.requiresOutcome(line.outcome)) "Outcome · Required" else "Outcome", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("service-outcome-heading"))
         ServiceLoopChoiceGroup(
             options = listOf("PERFORMED" to "Performed", "PARTLY_PERFORMED" to "Partly performed", "NOT_PERFORMED" to "Not performed"),
             selected = line.outcome.orEmpty(),

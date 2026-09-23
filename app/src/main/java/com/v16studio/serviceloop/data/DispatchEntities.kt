@@ -14,6 +14,14 @@ data class TechnicianIdentityEntity(
     val designation: String? = null,
 )
 
+@Entity(tableName = "trusted_service_loop_ids")
+data class TrustedServiceLoopIdEntity(
+    @androidx.room.PrimaryKey val peerId: String,
+    val name: String,
+    val createdAtEpochMillis: Long,
+    val modifiedAtEpochMillis: Long,
+)
+
 @Entity(tableName = "dispatch_technicians")
 data class DispatchTechnicianEntity(
     @androidx.room.PrimaryKey val technicianId: String,

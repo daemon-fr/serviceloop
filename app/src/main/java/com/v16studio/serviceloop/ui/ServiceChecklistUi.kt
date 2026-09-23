@@ -42,7 +42,7 @@ import com.v16studio.serviceloop.ui.icons.ServiceLoopIcons
 @Composable
 internal fun ChecklistSectionHeader(draft: InspectionDraft) {
     val colors = LocalServiceLoopTokens.current
-    Column(Modifier.testTag("checklist-section"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.fillMaxWidth().testTag("checklist-section"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ServiceSectionStripe("Checklist", testTag = "service-checklist-stripe")
         if (draft.questions.isNotEmpty()) {
             Text("Required complete ${draft.requiredComplete} of ${draft.requiredTotal}", color = if (draft.checklistComplete) colors.successInk else colors.errorInk, modifier = Modifier.padding(horizontal = ServiceLoopUiTokens.Space.xs).testTag("checklist-completeness"))

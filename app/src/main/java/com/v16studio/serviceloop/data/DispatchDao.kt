@@ -12,6 +12,12 @@ interface DispatchDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTechnicianIdentity(value: TechnicianIdentityEntity)
     @Update suspend fun updateTechnicianIdentity(value: TechnicianIdentityEntity)
 
+    @Query("SELECT * FROM trusted_service_loop_ids ORDER BY name COLLATE NOCASE, peerId") suspend fun trustedServiceLoopIds(): List<TrustedServiceLoopIdEntity>
+    @Query("SELECT * FROM trusted_service_loop_ids WHERE peerId=:peerId") suspend fun trustedServiceLoopId(peerId: String): TrustedServiceLoopIdEntity?
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTrustedServiceLoopId(value: TrustedServiceLoopIdEntity)
+    @Update suspend fun updateTrustedServiceLoopId(value: TrustedServiceLoopIdEntity)
+    @Query("DELETE FROM trusted_service_loop_ids WHERE peerId=:peerId") suspend fun deleteTrustedServiceLoopId(peerId: String): Int
+
     @Query("SELECT * FROM dispatch_technicians ORDER BY displayName COLLATE NOCASE, technicianId") suspend fun technicians(): List<DispatchTechnicianEntity>
     @Query("SELECT * FROM dispatch_technicians WHERE technicianId=:id") suspend fun technician(id: String): DispatchTechnicianEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTechnician(value: DispatchTechnicianEntity)

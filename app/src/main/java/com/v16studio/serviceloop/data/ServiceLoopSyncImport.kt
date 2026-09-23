@@ -25,9 +25,10 @@ internal class ServiceLoopSyncImporter(
         writeGate.beforeWrite()
         val importedAt = businessTime.instant().toEpochMilli()
         database.withTransaction {
+            ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(value.manifest.exporterId)
             clearPortableBusinessState()
             insertBusiness(value, importedAt)
-            insertRegister(value.register)
+            insertRegister(value.register, importedAt)
             insertTemplates(value.inspections, importedAt)
             insertPlans(value.plans, importedAt)
             insertTeam(value.team, importedAt)
@@ -115,7 +116,7 @@ internal class ServiceLoopSyncImporter(
     }
 
     private fun clearPortableBusinessState() {
-        val preserved = setOf("technician_identity", "reminder_preferences", "recovery_metadata")
+        val preserved = setOf("technician_identity", "trusted_service_loop_ids", "reminder_preferences", "recovery_metadata")
         RecoveryPackage.TABLE_ORDER.asReversed().filterNot { it in preserved }.forEach { table -> database.openHelper.writableDatabase.execSQL("DELETE FROM `$table`") }
     }
 
@@ -123,8 +124,9 @@ internal class ServiceLoopSyncImporter(
         dao.upsertBusinessProfile(BusinessProfileEntity("primary", value.business.businessName, value.business.technicianName, value.business.phone, value.business.email, value.business.postalAddress, value.business.zoneId, importedAt))
     }
 
-    private suspend fun insertRegister(register: SyncRegister) {
+    private suspend fun insertRegister(register: SyncRegister, importedAt: Long) {
         dao.insertCustomers(register.customers.map { CustomerEntity(it.id, it.reference, it.name, it.contactName, it.phone, it.email, it.privateNote, it.state, it.customerType) })
+        if (register.customerContacts.isNotEmpty()) dao.insertCustomerContacts(register.customerContacts.map { CustomerContactEntity(it.id, it.customerId, it.personName, it.channel, it.value, importedAt, importedAt) })
         dao.insertSites(register.sites.map { SiteEntity(it.id, it.customerId, it.reference, it.name, it.address, it.privateAccessNote, it.contactName, it.phone, it.email, it.isDefault, it.state) })
         dao.insertEquipment(register.equipment.map { EquipmentEntity(it.id, it.siteId, it.reference, it.technicianIdentifier, it.name, it.make, it.model, it.serialNumber, it.privateNote, it.state) })
     }
@@ -147,7 +149,7 @@ internal class ServiceLoopSyncImporter(
     }
 
     private suspend fun insertTeam(section: SyncTeamDirectory, importedAt: Long) {
-        section.technicians.forEach { technician -> dispatch.insertTechnician(DispatchTechnicianEntity(technician.technicianId, technician.displayName, importedAt, importedAt, technician.designation)) }
+        section.technicians.forEach { technician -> dispatch.insertTechnician(DispatchTechnicianEntity(technician.technicianId, technician.displayName, importedAt, importedAt, technician.designation, technician.notes)) }
         section.teams.forEach { team -> dispatch.insertTeam(DispatchTeamEntity(team.id, team.name, importedAt, importedAt)) }
         section.teams.flatMap { team -> team.memberIds.map { member -> DispatchTeamMemberEntity(team.id, member, member in team.leaderIds) } }.forEach { dispatch.insertTeamMember(it) }
     }

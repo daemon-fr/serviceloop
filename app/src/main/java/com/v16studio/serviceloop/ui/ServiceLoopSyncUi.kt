@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopCheckbox as Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +43,9 @@ import com.v16studio.serviceloop.data.ServiceLoopSyncCodec
 import com.v16studio.serviceloop.data.ServiceLoopSyncEnvelope
 import com.v16studio.serviceloop.data.ServiceLoopSyncEnvelopeCodec
 import com.v16studio.serviceloop.data.ServiceLoopSyncPackage
+import com.v16studio.serviceloop.data.ServiceLoopPeerTrustStore
+import com.v16studio.serviceloop.data.ServiceLoopTrustDecision
+import com.v16studio.serviceloop.data.ServiceLoopSourceTrust
 import com.v16studio.serviceloop.data.SyncContentFamily
 import com.v16studio.serviceloop.data.count
 import com.v16studio.serviceloop.data.filterFullWorkspacePackage
@@ -64,15 +69,17 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
-private data class DecodedImport(val envelope: ServiceLoopSyncEnvelope, val fullWorkspace: ServiceLoopSyncPackage? = null, val workPreview: DispatchPreview? = null, val templatePreview: InspectionTemplateImportPreview? = null)
+private data class DecodedImport(val envelope: ServiceLoopSyncEnvelope, val trust: ServiceLoopTrustDecision, val fullWorkspace: ServiceLoopSyncPackage? = null, val workPreview: DispatchPreview? = null, val templatePreview: InspectionTemplateImportPreview? = null)
 
 @Composable
 internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController, incomingUri: String?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val capabilities = LocalWorkspaceCapabilities.current
-    val dispatch = remember { DispatchPackageService((context.applicationContext as ServiceLoopApplication).container.database) }
-    val templates = remember { InspectionTemplateExchangeService((context.applicationContext as ServiceLoopApplication).container.database) }
+    val database = remember { (context.applicationContext as ServiceLoopApplication).container.database }
+    val dispatch = remember { DispatchPackageService(database) }
+    val templates = remember { InspectionTemplateExchangeService(database) }
+    val trustStore = remember { ServiceLoopPeerTrustStore(database) }
     var decoded by remember { mutableStateOf<DecodedImport?>(null) }
     var selectedFamilies by remember { mutableStateOf<Set<SyncContentFamily>>(emptySet()) }
     var workSelected by remember { mutableStateOf(true) }
@@ -81,23 +88,27 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var trustedName by remember { mutableStateOf("") }
+    var confirmTrust by remember { mutableStateOf(false) }
 
     fun read(uri: Uri) {
         scope.launch {
             busy = true; error = null; message = null
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBounded(ServiceLoopSyncEnvelopeCodec.MAX_PACKAGE_BYTES) } ?: error("Unable to read the selected ServiceLoop file")
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readSyncPackageBounded(ServiceLoopSyncEnvelopeCodec.MAX_PACKAGE_BYTES) } ?: error("Unable to read the selected ServiceLoop file")
                     val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes)
+                    val trust = trustStore.assess(envelope.manifest.exporterId)
                     when (envelope.manifest.purpose) {
-                        "FULL_WORKSPACE" -> DecodedImport(envelope, fullWorkspace = ServiceLoopSyncCodec.decode(bytes))
-                        "WORK_ASSIGNMENT" -> DecodedImport(envelope, workPreview = dispatch.preview(ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(bytes)))
-                        "TEMPLATE_SHARE" -> DecodedImport(envelope, templatePreview = templates.preview(envelope.section("inspections")))
+                        "FULL_WORKSPACE" -> DecodedImport(envelope, trust, fullWorkspace = ServiceLoopSyncCodec.decode(bytes))
+                        "WORK_ASSIGNMENT" -> DecodedImport(envelope, trust, workPreview = dispatch.preview(ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(bytes)))
+                        "TEMPLATE_SHARE" -> DecodedImport(envelope, trust, templatePreview = templates.preview(envelope.section("inspections")))
                         else -> error("Unsupported ServiceLoop file purpose")
                     }
                 }
             }.onSuccess { result ->
                 decoded = result
+                trustedName = result.trust.friendlyName.orEmpty()
                 result.fullWorkspace?.let { value -> selectedFamilies = SyncContentFamily.entries.filter { it.count(value) > 0 }.toSet() }
                 workSelected = true; templateSelected = true; createSeparate = emptySet()
             }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message ?: "Could not read this ServiceLoop file" }
@@ -125,6 +136,47 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
         }
         decoded?.let { current ->
             item { Text(current.envelope.manifest.title, style = MaterialTheme.typography.titleLarge); Text("${current.envelope.manifest.purpose.replace('_', ' ')} · generated ${current.envelope.manifest.generatedAt}") }
+            item {
+                Text("Source", style = MaterialTheme.typography.titleMedium)
+                when (current.trust.trust) {
+                    ServiceLoopSourceTrust.OLDER_FILE -> {
+                        Text("Source ID unavailable")
+                        Text("Older ServiceLoop file")
+                        Text("This file has no source ID. Re-export it from a newer ServiceLoop version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    ServiceLoopSourceTrust.TRUSTED -> {
+                        Text(current.trust.friendlyName ?: current.trust.sourceId.orEmpty())
+                        Text(current.trust.sourceId.orEmpty())
+                        Text("Trusted", color = MaterialTheme.colorScheme.primary)
+                    }
+                    ServiceLoopSourceTrust.NOT_TRUSTED -> {
+                        Text(current.trust.sourceId.orEmpty())
+                        Text("Not trusted", color = MaterialTheme.colorScheme.error)
+                        OutlinedTextField(trustedName, { trustedName = it }, label = { Text("Friendly name") }, modifier = Modifier.fillMaxWidth().testTag("sync-trusted-source-name"), singleLine = true)
+                        OutlinedButton({ confirmTrust = true }, Modifier.fillMaxWidth().testTag("sync-add-trusted-source"), enabled = trustedName.trim().isNotEmpty() && !busy) { Text("Add to trusted IDs") }
+                    }
+                }
+            }
+            if (confirmTrust) item {
+                AlertDialog(
+                    onDismissRequest = { confirmTrust = false },
+                    title = { Text("Trust this ServiceLoop ID?") },
+                    text = { Text("${trustedName.trim()} will be able to send files that can be imported on this device. This identifies the source within ServiceLoop; it does not verify who possesses the ID.") },
+                    confirmButton = {
+                        TextButton({
+                            scope.launch {
+                                runCatching { trustStore.add(current.trust.sourceId.orEmpty(), trustedName) }
+                                    .onSuccess { trust ->
+                                        decoded = current.copy(trust = ServiceLoopTrustDecision(trust.peerId, trust.name, ServiceLoopSourceTrust.TRUSTED))
+                                        confirmTrust = false
+                                    }
+                                    .onFailure { failure -> error = failure.message }
+                            }
+                        }, Modifier.testTag("sync-confirm-trust-source")) { Text("Trust ID") }
+                    },
+                    dismissButton = { TextButton({ confirmTrust = false }) { Text("Cancel") } },
+                )
+            }
             current.fullWorkspace?.let { value ->
                 item {
                     Text("Contents", style = MaterialTheme.typography.titleMedium)
@@ -136,7 +188,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     if (!capabilities.canManageRegister) ServiceLoopNotice("Unavailable for this Team role", "This full workspace file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                     Spacer(Modifier.height(8.dp)); ServiceLoopNotice("Full workspace", "This full workspace import replaces current ServiceLoop business data. Unchecked content from this file will not be imported.", ServiceLoopNoticeKind.Warning)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Replace workspace", { viewModel.importServiceLoopSync(filterFullWorkspacePackage(value, selectedFamilies)) { nav.navigateToRoot(RootDestination.HOME) } }, Modifier.fillMaxWidth().testTag("sync-full-workspace-replace"), enabled = capabilities.canManageRegister && !busy && !state.restrictedRecoveryState, busy = state.operationInProgress); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Replace workspace", { viewModel.importServiceLoopSync(filterFullWorkspacePackage(value, selectedFamilies)) { nav.navigateToRoot(RootDestination.HOME) } }, Modifier.fillMaxWidth().testTag("sync-full-workspace-replace"), enabled = current.trust.canImport && capabilities.canManageRegister && !busy && !state.restrictedRecoveryState, busy = state.operationInProgress); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
             current.workPreview?.let { preview ->
                 item {
@@ -150,7 +202,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     if (!capabilities.canReceiveAssignedWork) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                     if (!preview.canImport) ServiceLoopNotice("Import needs review", if (preview.visits.isNotEmpty() && preview.visits.all { it.classification == DispatchVisitClassification.ALREADY_CURRENT }) "This work assignment is already current." else "This work assignment needs review before it can be imported.", ServiceLoopNoticeKind.Warning)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = workSelected && capabilities.canReceiveAssignedWork && preview.canImport && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview, current.envelope.manifest.exporterId) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = current.trust.canImport && workSelected && capabilities.canReceiveAssignedWork && preview.canImport && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
             current.templatePreview?.let { preview ->
                 item {
@@ -159,7 +211,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     preview.entries.forEach { entry -> Text("${entry.transfer.reference} · ${entry.transfer.name} · ${entry.classification.name.replace('_', ' ').lowercase()}"); if (entry.classification == InspectionTemplateImportClassification.CONFLICT) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(entry.transfer.reference in createSeparate, { checked -> createSeparate = if (checked) createSeparate + entry.transfer.reference else createSeparate - entry.transfer.reference }); Text("Create separate") } }
                     if (!capabilities.canExchangeTemplates) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import templates", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { templates.import(preview, createSeparate) } }.onSuccess { result -> message = "Imported ${result.importedReferences.size} inspection templates. Exact matches were left unchanged."; viewModel.loadTemplates(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-template-import-confirm"), enabled = templateSelected && capabilities.canExchangeTemplates && preview.canImport(createSeparate) && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import templates", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { templates.import(preview, current.envelope.manifest.exporterId, createSeparate) } }.onSuccess { result -> message = "Imported ${result.importedReferences.size} inspection templates. Exact matches were left unchanged."; viewModel.loadTemplates(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-template-import-confirm"), enabled = current.trust.canImport && templateSelected && capabilities.canExchangeTemplates && preview.canImport(createSeparate) && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
         }
     }
@@ -176,15 +228,15 @@ internal fun DataExportScreen(state: UiState, padding: PaddingValues, nav: NavHo
 
 @Composable
 internal fun TemplateExportScreen(values: List<TemplateSummary>, padding: PaddingValues, nav: NavHostController) {
-    val context = LocalContext.current; val scope = rememberCoroutineScope(); val exchange = remember { InspectionTemplateExchangeService((context.applicationContext as ServiceLoopApplication).container.database) }; var selected by remember { mutableStateOf<Set<String>>(emptySet()) }; var message by remember { mutableStateOf<String?>(null) }
-    LazyColumn(Modifier.padding(padding).testTag("export-inspection-templates"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Text("Export inspection templates", style = MaterialTheme.typography.headlineSmall); Text("Select reusable templates to share as a ServiceLoop file.") }; items(values.filter { it.state != "DELETED" }, key = { it.id }) { template -> ServiceLoopSelectionOption(template.id in selected, { selected = if (template.id in selected) selected - template.id else selected + template.id }, "${template.reference} · ${template.name} (v${template.revisionNumber}) · ${template.itemCount} items", Modifier.testTag("export-template-${template.id}")) }; item { ServiceLoopPrimaryButton("Share inspection templates", { scope.launch { runCatching { val transfer = withContext(Dispatchers.IO) { exchange.export(selected) }; val bytes = withContext(Dispatchers.IO) { ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slsync", SERVICE_LOOP_SYNC_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onSuccess { message = "ServiceLoop file ready to share." }.onFailure { message = it.message } } }, Modifier.fillMaxWidth(), enabled = selected.isNotEmpty()); message?.let { Text(it, color = MaterialTheme.colorScheme.primary) } } }
+    val context = LocalContext.current; val scope = rememberCoroutineScope(); val database = remember { (context.applicationContext as ServiceLoopApplication).container.database }; val exchange = remember(database) { InspectionTemplateExchangeService(database) }; val trustStore = remember(database) { ServiceLoopPeerTrustStore(database) }; var selected by remember { mutableStateOf<Set<String>>(emptySet()) }; var message by remember { mutableStateOf<String?>(null) }
+    LazyColumn(Modifier.padding(padding).testTag("export-inspection-templates"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Text("Export inspection templates", style = MaterialTheme.typography.headlineSmall); Text("Select reusable templates to share as a ServiceLoop file.") }; items(values.filter { it.state != "DELETED" }, key = { it.id }) { template -> ServiceLoopSelectionOption(template.id in selected, { selected = if (template.id in selected) selected - template.id else selected + template.id }, "${template.reference} · ${template.name} (v${template.revisionNumber}) · ${template.itemCount} items", Modifier.testTag("export-template-${template.id}")) }; item { ServiceLoopPrimaryButton("Share inspection templates", { scope.launch { runCatching { val transfer = withContext(Dispatchers.IO) { exchange.export(selected) }; val exporterId = withContext(Dispatchers.IO) { trustStore.localIdentity().technicianId }; val bytes = withContext(Dispatchers.IO) { ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer, exporterId) }; shareFile(context, "inspection-templates", "serviceloop-inspection-templates-${System.currentTimeMillis()}.slsync", SERVICE_LOOP_SYNC_MIME, bytes, "Share inspection templates", "ServiceLoop inspection templates", "ServiceLoop inspection templates\nGenerated with ServiceLoop") }.onSuccess { message = "ServiceLoop file ready to share." }.onFailure { message = it.message } } }, Modifier.fillMaxWidth(), enabled = selected.isNotEmpty()); message?.let { Text(it, color = MaterialTheme.colorScheme.primary) } } }
 }
 
 @Composable
 internal fun ServiceLoopFileVerifyScreen(padding: PaddingValues) {
-    val context = LocalContext.current; val scope = rememberCoroutineScope(); var result by remember { mutableStateOf<String?>(null) }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { scope.launch { result = runCatching { withContext(Dispatchers.IO) { val bytes = context.contentResolver.openInputStream(it)?.use { input -> input.readBounded(ServiceLoopSyncEnvelopeCodec.MAX_PACKAGE_BYTES) } ?: error("Could not read this ServiceLoop file"); val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes); when (envelope.manifest.purpose) { "FULL_WORKSPACE" -> ServiceLoopSyncCodec.decode(bytes); "WORK_ASSIGNMENT" -> ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(bytes); "TEMPLATE_SHARE" -> ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(bytes); else -> error("Unsupported purpose") }; "ServiceLoop file is readable and supported.\n${envelope.manifest.title}\n${envelope.manifest.purpose}\n${envelope.manifest.generatedAt}" } }.getOrElse { "Could not verify this ServiceLoop file. ${it.message.orEmpty()}" } } } }
+    val context = LocalContext.current; val scope = rememberCoroutineScope(); val database = remember { (context.applicationContext as ServiceLoopApplication).container.database }; val trustStore = remember(database) { ServiceLoopPeerTrustStore(database) }; var result by remember { mutableStateOf<String?>(null) }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { scope.launch { result = runCatching { withContext(Dispatchers.IO) { val bytes = context.contentResolver.openInputStream(it)?.use { input -> input.readSyncPackageBounded(ServiceLoopSyncEnvelopeCodec.MAX_PACKAGE_BYTES) } ?: error("Could not read this ServiceLoop file"); val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes); when (envelope.manifest.purpose) { "FULL_WORKSPACE" -> ServiceLoopSyncCodec.decode(bytes); "WORK_ASSIGNMENT" -> ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(bytes); "TEMPLATE_SHARE" -> ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(bytes); else -> error("Unsupported purpose") }; val trust = trustStore.assess(envelope.manifest.exporterId); val source = when (trust.trust) { ServiceLoopSourceTrust.TRUSTED -> "Trusted · ${trust.friendlyName} · ${trust.sourceId}"; ServiceLoopSourceTrust.NOT_TRUSTED -> "Not trusted · ${trust.sourceId}"; ServiceLoopSourceTrust.OLDER_FILE -> "Older ServiceLoop file · source ID unavailable" }; "Structurally valid ServiceLoop file\n${envelope.manifest.purpose.replace('_', ' ')}\n$source" } }.getOrElse { "Could not verify this ServiceLoop file. ${it.message.orEmpty()}" } } } }
     LazyColumn(Modifier.padding(padding).testTag("data-transfer-verify"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Verify ServiceLoop file", style = MaterialTheme.typography.headlineSmall); Text("This checks readability and support without writing business data."); OutlinedButton({ open.launch(arrayOf(SERVICE_LOOP_SYNC_MIME, "application/zip", "application/octet-stream", "*/*")) }, Modifier.fillMaxWidth()) { ServiceLoopIcon(ServiceLoopIcons.CheckCircle, null, Modifier.padding(end = 8.dp)); Text("Choose ServiceLoop file") }; result?.let { Text(it, color = if (it.startsWith("ServiceLoop file")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) } } }
 }
 
-private suspend fun InputStream.readBounded(limit: Int): ByteArray { val output = ByteArrayOutputStream(); val buffer = ByteArray(8192); while (true) { val count = read(buffer); if (count < 0) break; require(output.size() + count <= limit) { "Selected ServiceLoop file is too large" }; output.write(buffer, 0, count) }; return output.toByteArray() }
+private suspend fun InputStream.readSyncPackageBounded(limit: Int): ByteArray { val output = ByteArrayOutputStream(); val buffer = ByteArray(8192); while (true) { val count = read(buffer); if (count < 0) break; require(output.size() + count <= limit) { "Selected ServiceLoop file is too large" }; output.write(buffer, 0, count) }; return output.toByteArray() }

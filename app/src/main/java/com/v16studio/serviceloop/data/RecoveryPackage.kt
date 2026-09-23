@@ -216,6 +216,7 @@ class RecoveryPackage(
         normalizeWorkingInputBuffers(root)
         normalizeB026State(root)
         normalizeCustomerContacts(root)
+        normalizeTrustedServiceLoopIds(root)
         require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
@@ -264,6 +265,13 @@ class RecoveryPackage(
         }
         val identity = tableRows(root, "technician_identity")
         require(identity.size == 1 && identity.single().getString("id") == "primary" && identity.single().getString("technicianId").isNotBlank()) { "Technician identity singleton is invalid" }
+        val ownId = TechnicianIdCodec.normalize(identity.single().getString("technicianId")) ?: identity.single().getString("technicianId")
+        val trustedRows = tableRows(root, "trusted_service_loop_ids")
+        val trustedIds = trustedRows.map { it.getString("peerId") }
+        require(trustedIds.size == trustedIds.toSet().size && trustedRows.all { row ->
+            val peerId = row.getString("peerId")
+            TechnicianIdCodec.normalize(peerId) == peerId && peerId != ownId && row.getString("name").trim().let { it.isNotEmpty() && it.length <= 80 } && row.getLong("createdAtEpochMillis") >= 0 && row.getLong("modifiedAtEpochMillis") >= row.getLong("createdAtEpochMillis")
+        }) { "Trusted ServiceLoop IDs are invalid" }
         val visitIds = ids("working_visits")
         require(tableRows(root, "dispatch_visit_bindings").all { it.getString("localVisitId") in visitIds }) { "Dispatch binding points to a missing Visit" }
         validateAgainstRoomSchema(root)
@@ -388,15 +396,26 @@ class RecoveryPackage(
 
     private fun normalizeCustomerContacts(root: JSONObject) {
         val tables = root.getJSONArray("tables")
-        if ((root.optInt("schemaVersion", SCHEMA_VERSION) < 16) && (0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "customer_contacts" }) {
+        if ((0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "customer_contacts" }) {
             val contacts = JSONArray()
             val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "customers" }?.plus(1) ?: 0
             tables.put(JSONObject().put("name", "customer_contacts").put("rows", contacts))
             for (index in tables.length() - 1 downTo insertAt + 1) tables.put(index, tables.get(index - 1))
             tables.put(insertAt, JSONObject().put("name", "customer_contacts").put("rows", contacts))
             tables.remove(tables.length() - 1)
-            root.put("schemaVersion", SCHEMA_VERSION)
+            root.put("schemaVersion", maxOf(root.optInt("schemaVersion", SCHEMA_VERSION), 16))
         }
+    }
+
+    /** Recovery schema v17 adds device-local peer trust without inventing entries in old backups. */
+    internal fun normalizeTrustedServiceLoopIds(root: JSONObject) {
+        val tables = root.getJSONArray("tables")
+        if ((0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "trusted_service_loop_ids" }) {
+            val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "technician_identity" }?.plus(1) ?: tables.length()
+            for (index in tables.length() downTo insertAt + 1) tables.put(index, tables.get(index - 1))
+            tables.put(insertAt, JSONObject().put("name", "trusted_service_loop_ids").put("rows", JSONArray()))
+        }
+        root.put("schemaVersion", SCHEMA_VERSION)
     }
 
     private fun validateB026Rows(root: JSONObject, equipmentIds: Set<String>, planIds: Set<String>) {
@@ -477,7 +496,8 @@ class RecoveryPackage(
             writeJournal(journal, JSONObject(journal.readText()).put("phase", "DB_COMMITTING"))
             database.withTransaction {
                 val db = database.openHelper.writableDatabase
-                TABLE_ORDER.asReversed().filterNot { it == "recovery_metadata" }.forEach { db.execSQL("DELETE FROM `$it`") }
+                val preserved = setOf("recovery_metadata", "technician_identity", "trusted_service_loop_ids")
+                TABLE_ORDER.asReversed().filterNot { it in preserved }.forEach { db.execSQL("DELETE FROM `$it`") }
                 database.serviceLoopDao().upsertRecoveryMetadata(
                     RecoveryMetadataEntity(
                         datasetId = newDatasetId,
@@ -594,8 +614,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 16
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, SCHEMA_VERSION)
+        internal const val SCHEMA_VERSION = 17
+        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, 16, SCHEMA_VERSION)
         private val BUSINESS_ROOTS = listOf("attachments", "reports")
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
@@ -613,7 +633,7 @@ class RecoveryPackage(
             "reusable_template_items", "contact_notes", "follow_up_events", "part_entries", "visit_claims",
             "final_part_entries", "final_photo_entries", "plan_schedule_changes", "visit_schedule_events",
             "correction_drafts", "correction_work_items", "change_entries", "equipment_moves",
-            "technician_identity", "dispatch_technicians", "dispatch_teams", "dispatch_team_members",
+            "technician_identity", "trusted_service_loop_ids", "dispatch_technicians", "dispatch_teams", "dispatch_team_members",
             "dispatch_outbox_visits", "dispatch_outbox_visit_teams", "dispatch_outbox_items", "dispatch_outbox_item_assignees",
             "dispatch_visit_bindings", "dispatch_item_bindings", "final_dispatch_visits", "final_dispatch_items",
             "reminder_preferences", "recovery_metadata",

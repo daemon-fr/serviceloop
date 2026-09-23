@@ -581,6 +581,27 @@ class DailyOperationsIntegrityTest {
         assertTrue(File(root, path).isFile)
     }
 
+    @Test fun batchPhotoVisibilityUsesCanonicalPathAndDeleteRollsBackAllFilesOnDatabaseFailure() = runTest {
+        val ids = foundation()
+        val visit = repo.createVisit(listOf(ids.plan), "WORKING", "2026-09-05")
+        val work = db.serviceLoopDao().firstWorkItemId(visit)!!
+        val first = repo.savePhoto(work, testImageBytes(Color.RED), "first.png", "image/png", false, "First")
+        val second = repo.savePhoto(work, testImageBytes(Color.BLUE), "second.png", "image/png", false, "Second")
+        val files = listOf(first, second).map { id -> File(root, db.serviceLoopDao().attachment(id)!!.storedRelativePath) }
+        repo.setPhotoReportInclusions(work, listOf(first, second), true)
+        assertTrue(repo.photos(work).all { it.includedInReport })
+
+        db.openHelper.writableDatabase.execSQL("CREATE TRIGGER reject_second_batch_photo BEFORE DELETE ON attachments WHEN OLD.id='$second' BEGIN SELECT RAISE(ABORT, 'test rejection'); END")
+        assertTrue(runCatching { repo.removePhotos(work, listOf(first, second)) }.isFailure)
+        assertEquals(setOf(first, second), repo.photos(work).map { it.id }.toSet())
+        assertTrue(files.all(File::isFile))
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER reject_second_batch_photo")
+        repo.removePhotos(work, listOf(first, second))
+        assertTrue(repo.photos(work).isEmpty())
+        assertTrue(files.none(File::exists))
+    }
+
     @Test fun missingSelectedPhotoBlocksFinalizationWithoutChangingVisitOrObligation() = runTest {
         val ids=foundation(); repo.saveBusinessProfile(BusinessProfile("Service Co","Alex",zoneId="Europe/Bucharest")); val visit=repo.createVisit(listOf(ids.plan),"WORKING","2026-09-05"); val work=db.serviceLoopDao().firstWorkItemId(visit)!!; repo.savePublicWork(work,"Completed checks"); repo.saveCompletionDraft(work,"PERFORMED",false,null,null,null,null); val photoId=repo.savePhoto(work,testImageBytes(Color.YELLOW),"selected.png","image/png",true,"Required evidence"); File(root,db.serviceLoopDao().attachment(photoId)!!.storedRelativePath).delete()
         assertTrue(repo.finalizeVisit(visit) is FinalizeResult.Blocked); assertEquals("WORKING",repo.visit(visit)!!.state); assertNull(db.serviceLoopDao().obligation(db.serviceLoopDao().plan(ids.plan)!!.currentObligationId!!)!!.consumedAtEpochMillis)
@@ -841,10 +862,10 @@ class DailyOperationsIntegrityTest {
         dispatch.addOutboxItem(outbox,ids.equipment,"Inspect guard",null,null,listOf(identity.technicianId));dispatch.createExportFile(listOf(outbox),"Service office",root)
         val technician=DispatchTechnicianSnapshot(identity.technicianId,identity.name);val team=DispatchTeamSnapshot("REMOTE-TEAM","Remote team",listOf(identity.technicianId),emptyList())
         val packageValue=DispatchPackage("INTEGRATED-PACKAGE",Instant.parse("2026-09-05T12:00:00Z").toString(),"Service office",listOf(DispatchCustomer("CU-REMOTE","Remote customer")),listOf(DispatchSite("ST-REMOTE","CU-REMOTE","Remote site",null)),listOf(DispatchEquipment("EQ-REMOTE","ST-REMOTE","Remote pump",null,null,null,null)),listOf(DispatchVisit("DV-INTEGRATED",1,"REMOTE-JOB","2026-09-11",null,"Europe/Bucharest","ST-REMOTE","Remote instructions",listOf(team),listOf(technician),emptyList(),listOf(DispatchWork("ITEM-INTEGRATED","EQ-REMOTE","Inspect",assignedTechnicians=listOf(technician))))))
-        val importedVisit=dispatch.import(dispatch.preview(packageValue)).createdVisitIds.single()
+        val importedVisit=dispatch.import(dispatch.preview(packageValue), identity.technicianId).createdVisitIds.single()
 
         val password="integrated recovery state".toCharArray();val inspection=repo.inspectBackup(repo.createBackup(password).bytes,password)
-        repo.erase(true,"ERASE");assertNull(db.serviceLoopDao().finalRecord(recordId));assertNull(db.dispatchDao().visitBinding("DV-INTEGRATED"));assertNull(db.dispatchDao().technicianIdentity());assertTrue(db.dispatchDao().teams().isEmpty());assertTrue(db.dispatchDao().outboxVisits().isEmpty())
+        repo.erase(true,"ERASE");assertNull(db.serviceLoopDao().finalRecord(recordId));assertNull(db.dispatchDao().visitBinding("DV-INTEGRATED"));assertEquals(identity.technicianId,db.dispatchDao().technicianIdentity()!!.technicianId);assertTrue(db.dispatchDao().teams().isEmpty());assertTrue(db.dispatchDao().outboxVisits().isEmpty())
         repo.restoreBackup(inspection,"REPLACE",false)
 
         assertEquals(correction.id,db.serviceLoopDao().correctionDraftForRecord(recordId)!!.id);assertEquals(recordId,repo.finalRecord(recordId)!!.public.recordId)

@@ -113,7 +113,7 @@ internal fun FieldEvidenceScreen(workItemId: String, state: UiState, padding: Pa
 }
 
 @Composable
-internal fun ServiceEvidenceContent(workItemId: String, state: UiState, viewModel: ServiceLoopViewModel, editingEnabled: Boolean) {
+internal fun ServiceEvidenceContent(workItemId: String, state: UiState, viewModel: ServiceLoopViewModel, editingEnabled: Boolean, onManagePhotos: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var addingPart by rememberSaveable(workItemId) { mutableStateOf(false) }
@@ -168,7 +168,10 @@ internal fun ServiceEvidenceContent(workItemId: String, state: UiState, viewMode
             }
         }
         ServiceLoopSurfaceCard(modifier = Modifier.fillMaxWidth().testTag("service-photos")) {
-            Text("Photos", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Photos", style = MaterialTheme.typography.titleLarge)
+                if (editingEnabled) OutlinedButton(onManagePhotos, Modifier.testTag("manage-service-photos")) { Text("Manage photos") }
+            }
             state.photos.forEach { photo -> ServicePhotoCard(workItemId, photo, context, viewModel, editingEnabled, state) }
             if (editingEnabled) {
                 OutlinedButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth().testTag("choose-photo")) { Text("Choose photo") }
@@ -234,7 +237,6 @@ private fun PhotoEvidenceCard(photo: PhotoEntry, context: Context, onOpen: (() -
                 if (photo.includedInReport) Text("Included in customer report", fontWeight = FontWeight.SemiBold)
                 else ServiceLoopPrivateLabel("Private evidence", style = MaterialTheme.typography.titleSmall)
                 Text(photo.caption?.takeIf(String::isNotBlank) ?: "No caption", style = MaterialTheme.typography.bodyMedium)
-                Text("${photo.byteSize} bytes · Stored on this device", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

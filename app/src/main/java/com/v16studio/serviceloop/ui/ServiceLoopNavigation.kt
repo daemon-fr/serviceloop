@@ -208,6 +208,11 @@ internal fun ServiceLoopNavGraph(
                 } }
             }
         } }
+        composable("service-photos/{workItemId}") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) {
+            val workItemId = entry.arguments?.getString("workItemId").orEmpty()
+            LaunchedEffect(workItemId) { viewModel.loadFieldEvidence(workItemId) }
+            DetailScaffold("Service photos", nav) { padding -> ServicePhotoManagementScreen(workItemId, state, padding, viewModel) }
+        } }
         composable("review/{visitId}") { entry -> WorkspaceGate(capabilities.canPerformFieldWork, "Technician field work", nav) {
             val visitId = entry.arguments?.getString("visitId").orEmpty()
             LaunchedEffect(visitId) { viewModel.loadCompletion(visitId) }

@@ -190,7 +190,9 @@ interface ServiceLoopRepository {
     suspend fun updatePhoto(workItemId: String, photoId: String, caption: String?, includeInReport: Boolean): Long = error("Photo update unavailable")
     suspend fun savePhotoCaption(workItemId: String, photoId: String, caption: String): Long = error("Photo caption unavailable")
     suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long = error("Photo report choice unavailable")
+    suspend fun setPhotoReportInclusions(workItemId: String, photoIds: List<String>, includeInReport: Boolean): Long = error("Photo report choice unavailable")
     suspend fun removePhoto(workItemId: String, photoId: String): Long = error("Photo removal unavailable")
+    suspend fun removePhotos(workItemId: String, photoIds: List<String>): Long = error("Photo removal unavailable")
     suspend fun createContactNote(input: ContactNoteInput): String = error("Contact note unavailable")
     suspend fun contactNote(id: String): ContactNoteDetail? = null
     suspend fun markContactNoteEnteredInError(id: String, reason: String): Long = error("Contact note unavailable")
@@ -1104,46 +1106,73 @@ class RoomServiceLoopRepository(
     }
 
     override suspend fun setPhotoReportInclusion(workItemId: String, photoId: String, includeInReport: Boolean): Long =
+        setPhotoReportInclusions(workItemId, listOf(photoId), includeInReport)
+
+    override suspend fun setPhotoReportInclusions(workItemId: String, photoIds: List<String>, includeInReport: Boolean): Long =
         BusinessFileCoordinator.photoReportMetadataMutex.withLock {
             BusinessFileCoordinator.mutex.withLock {
+                require(photoIds.isNotEmpty() && photoIds.size == photoIds.toSet().size) { "Choose one or more distinct photos" }
                 writeGate.beforeWrite()
                 val now = businessTime.instant().toEpochMilli()
                 database.withTransaction {
                     val item = workingItem(workItemId)
-                    check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" }
+                    photoIds.forEach { photoId ->
+                        check(dao.attachment(photoId)?.let { it.ownerType == "WORK_ITEM" && it.ownerId == workItemId } == true) { "Photo no longer belongs to this Service" }
+                    }
+                    photoIds.forEach { photoId -> check(dao.updateWorkPhotoInclusion(photoId, workItemId, includeInReport) == 1) { "Photo no longer belongs to this Service" } }
                     dao.touchVisit(item.visitId, now)
                 }
                 now
             }
         }
 
-    override suspend fun removePhoto(workItemId: String, photoId: String): Long = BusinessFileCoordinator.mutex.withLock {
-        val root = attachmentRoot ?: error("Attachment storage unavailable")
-        val photo = dao.attachment(photoId)?.takeIf { it.ownerType == "WORK_ITEM" && it.ownerId == workItemId }
-            ?: error("Photo no longer belongs to this Service")
-        val file = File(root, photo.storedRelativePath)
-        val bytes = file.takeIf { it.isFile }?.readBytes() ?: error("Saved photo file is missing")
-        val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        require(bytes.size.toLong() == photo.byteSize && hash == photo.sha256) { "Saved photo failed integrity check" }
-        writeGate.beforeWrite()
-        val now = businessTime.instant().toEpochMilli()
-        try {
-            check(file.delete()) { "Stored photo could not be deleted" }
-            database.withTransaction {
-                val item = workingItem(workItemId)
-                check(dao.deleteAttachment(photoId) == 1)
-                dao.touchVisit(item.visitId, now)
+    override suspend fun removePhoto(workItemId: String, photoId: String): Long = removePhotos(workItemId, listOf(photoId))
+
+    override suspend fun removePhotos(workItemId: String, photoIds: List<String>): Long =
+        BusinessFileCoordinator.photoReportMetadataMutex.withLock {
+            BusinessFileCoordinator.mutex.withLock {
+                require(photoIds.isNotEmpty() && photoIds.size == photoIds.toSet().size) { "Choose one or more distinct photos" }
+                val root = attachmentRoot ?: error("Attachment storage unavailable")
+                val owned = photoIds.map { photoId ->
+                    val photo = dao.attachment(photoId)?.takeIf { it.ownerType == "WORK_ITEM" && it.ownerId == workItemId }
+                        ?: error("Photo no longer belongs to this Service")
+                    val file = File(root, photo.storedRelativePath)
+                    val bytes = file.takeIf { it.isFile }?.readBytes() ?: error("Saved photo file is missing")
+                    val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+                    require(bytes.size.toLong() == photo.byteSize && hash == photo.sha256) { "Saved photo failed integrity check" }
+                    Triple(photo, file, bytes)
+                }
+                writeGate.beforeWrite()
+                val now = businessTime.instant().toEpochMilli()
+                val deletedFiles = mutableListOf<Triple<AttachmentEntity, File, ByteArray>>()
+                try {
+                    owned.forEach { saved ->
+                        check(saved.second.delete()) { "Stored photo could not be deleted" }
+                        deletedFiles += saved
+                    }
+                    database.withTransaction {
+                        val item = workingItem(workItemId)
+                        owned.forEach { (photo, _, _) -> check(dao.deleteAttachment(photo.id) == 1) { "Photo no longer belongs to this Service" } }
+                        dao.touchVisit(item.visitId, now)
+                    }
+                } catch (failure: Throwable) {
+                    deletedFiles.forEach { (photo, file, bytes) ->
+                        if (!file.isFile) {
+                            file.parentFile?.mkdirs()
+                            runCatching {
+                                val temporary = File(file.parentFile, "restore-${photo.id}.tmp")
+                                temporary.writeBytes(bytes)
+                                check(temporary.renameTo(file) || runCatching { temporary.copyTo(file, overwrite = false); temporary.delete(); true }.getOrDefault(false))
+                                check(file.isFile && file.length().toLong() == photo.byteSize)
+                            }.onFailure { failure.addSuppressed(it) }
+                        }
+                    }
+                    throw failure
+                }
+                owned.forEach { (_, file, _) -> file.parentFile?.takeIf { it.listFiles().isNullOrEmpty() }?.delete() }
+                now
             }
-            file.parentFile?.takeIf { it.listFiles().isNullOrEmpty() }?.delete()
-            now
-        } catch (failure: Throwable) {
-            if (!file.isFile) {
-                file.parentFile?.mkdirs()
-                runCatching { file.writeBytes(bytes) }.onFailure { failure.addSuppressed(it) }
-            }
-            throw failure
         }
-    }
 
     override suspend fun savePhoto(workItemId: String, bytes: ByteArray, displayName: String?, mimeType: String, includeInReport: Boolean, caption: String?): String = BusinessFileCoordinator.mutex.withLock { savePhotoUnlocked(workItemId, bytes, displayName, mimeType, includeInReport, caption) }
 

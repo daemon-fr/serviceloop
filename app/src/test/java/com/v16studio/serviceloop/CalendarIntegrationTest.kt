@@ -133,20 +133,20 @@ class CalendarDispatchObservationTest {
     @After fun close(){scope.cancel();db.close();store.resetForDatasetReplacement()}
 
     @Test fun dispatchCreateGenerationUpdateAndWithdrawalProjectAutomatically()=runBlocking{
-        val first=pkg();val local=dispatch.import(dispatch.preview(first)).createdVisitIds.single();await{gateway.inserts==1};val eventId=gateway.events.keys.single()
-        val newer=pkg(2,"2026-09-14","10:30");dispatch.import(dispatch.preview(newer));await{gateway.updates==1};assertEquals(eventId,gateway.events.keys.single());assertEquals(1,gateway.inserts)
-        dispatch.import(dispatch.preview(withdrawn(newer,3)));await{gateway.events.isEmpty()&&store.read("dispatch-calendar").links.isEmpty()};assertEquals("CANCELED",db.serviceLoopDao().visit(local)!!.state)
+        val first=pkg();val local=dispatch.import(dispatch.preview(first),dispatch.identity().technicianId).createdVisitIds.single();await{gateway.inserts==1};val eventId=gateway.events.keys.single()
+        val newer=pkg(2,"2026-09-14","10:30");dispatch.import(dispatch.preview(newer),dispatch.identity().technicianId);await{gateway.updates==1};assertEquals(eventId,gateway.events.keys.single());assertEquals(1,gateway.inserts)
+        dispatch.import(dispatch.preview(withdrawn(newer,3)),dispatch.identity().technicianId);await{gateway.events.isEmpty()&&store.read("dispatch-calendar").links.isEmpty()};assertEquals("CANCELED",db.serviceLoopDao().visit(local)!!.state)
     }
 
     @Test fun withdrawalDeleteFailureKeepsBusinessStateAndRetriesOnLaterInvalidation()=runBlocking{
-        val first=pkg();val local=dispatch.import(dispatch.preview(first)).createdVisitIds.single();await{gateway.inserts==1};gateway.failDeletes=true
-        dispatch.import(dispatch.preview(withdrawn(first,2)));await{store.read("dispatch-calendar").links[local]?.state==CalendarLinkState.DELETE_PENDING}
+        val first=pkg();val local=dispatch.import(dispatch.preview(first),dispatch.identity().technicianId).createdVisitIds.single();await{gateway.inserts==1};gateway.failDeletes=true
+        dispatch.import(dispatch.preview(withdrawn(first,2)),dispatch.identity().technicianId);await{store.read("dispatch-calendar").links[local]?.state==CalendarLinkState.DELETE_PENDING}
         assertEquals("CANCELED",db.serviceLoopDao().visit(local)!!.state);assertEquals(1,gateway.events.size)
         gateway.failDeletes=false;val visit=db.serviceLoopDao().visit(local)!!;db.serviceLoopDao().updateVisit(visit.copy(modifiedAtEpochMillis=visit.modifiedAtEpochMillis+1));await{gateway.events.isEmpty()&&local !in store.read("dispatch-calendar").links}
     }
 
     @Test fun redundantObservedExplicitAndResumeTriggersDoNotDuplicate()=runBlocking{
-        dispatch.import(dispatch.preview(pkg()));coordinator.reconcileAsync();coordinator.reconcileAsync();coordinator.start();await{gateway.inserts==1};delay(100);assertEquals(1,gateway.events.size);assertEquals(1,gateway.inserts)
+        dispatch.import(dispatch.preview(pkg()),dispatch.identity().technicianId);coordinator.reconcileAsync();coordinator.reconcileAsync();coordinator.start();await{gateway.inserts==1};delay(100);assertEquals(1,gateway.events.size);assertEquals(1,gateway.inserts)
     }
 
     private suspend fun pkg(generation:Int=1,date:String="2026-09-12",time:String="09:30"):DispatchPackage{val self=dispatch.identity();val tech=DispatchTechnicianSnapshot(self.technicianId,self.name);val team=DispatchTeamSnapshot("TEAM-1","Field",listOf(self.technicianId),emptyList());return DispatchPackage("PKG-$generation",java.time.Instant.parse("2026-09-08T10:00:00Z").toString(),"Central",listOf(DispatchCustomer("CU-D","Customer")),listOf(DispatchSite("ST-D","CU-D","Site","1 Road")),listOf(DispatchEquipment("EQ-D","ST-D","Pump",null,null,null,null)),listOf(DispatchVisit("DV-1",generation,"JOB-1",date,time,"Europe/Bucharest","ST-D",null,listOf(team),listOf(tech),emptyList(),listOf(DispatchWork("ITEM-1","EQ-D","Service",assignedTechnicians=listOf(tech))))))}
