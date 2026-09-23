@@ -1,7 +1,9 @@
 # ServiceLoop — Delegated AI Development and Orchestration
 
-**Version:** 1.0
+**Version:** 1.1
 **Purpose:** Lead ServiceLoop from its existing functional and UI/UX documents to a tested Android product, using ChatGPT as orchestrator and Codex as implementation developer, with minimal unnecessary owner involvement.
+
+**Mandatory companion process authority:** `docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md`. Read it before authoring any substantial Codex implementation/correction prompt or new-thread handoff. This document defines the broad orchestration model; the companion defines the required execution-level prompt/handoff standard.
 
 ## 1. Your role and my intended involvement
 
@@ -42,7 +44,7 @@ Preserve the central service loop:
 
 The proposed product is a local-first service book for an independent technician servicing customers' equipment. It is not a generic task manager, an owner-only equipment log, or a full field-service management suite.
 
-Follow the adopted CORE/LATER/OUT boundary. Do not introduce a backend, accounts, team synchronization, dispatch, invoicing, accounting, inventory management, customer portals, or other excluded systems without a separate scope decision. Do not silently add deferred features because they seem convenient.
+Follow the adopted CORE/LATER/OUT boundary and later owner amendments. Local/file-based Dispatch, role workflows, and their explicitly adopted exchange semantics are now product scope; preserve them. Do not introduce a backend, accounts, live/cloud synchronization, billing/accounting, inventory management, customer portals, or other excluded/deferred systems without a separate scope decision. Do not silently add deferred features because they seem convenient.
 
 Build the agreed product incrementally. A narrow first implementation is a delivery sequence, not permission to permanently omit the rest of CORE. Track remaining requirements against later milestones.
 
@@ -92,30 +94,43 @@ Expose the highest-risk business rules early through focused tests or narrow imp
 
 Use fictional development data until the necessary integrity and recovery gates have passed. Test fixtures are not permission to add sample customers to the production app's first-launch experience.
 
-## 6. Use bounded Codex assignments
+## 6. Use substantial execution-level Codex assignments
+
+Use `AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md` as the mandatory detailed contract for prompt authoring.
 
 Start with one implementation agent. Do not introduce a multi-agent management system merely to automate a few handoffs.
 
-A stage may contain several bounded Codex tasks. Choose task size so that implementation, verification, and review are manageable in the available environment. Split at meaningful workflow or risk boundaries—not at every file, and not after an oversized task has already exhausted its execution budget.
+A stage may contain several bounded Codex tasks, but “execution-level” does not mean “small.” Prefer substantial coherent assignments and split only at meaningful workflow, integrity, protocol, platform-risk, or independent-review boundaries.
 
-Give Codex a task contract containing:
+The prompt author must do the architecture/product interpretation that can reasonably be resolved from repo/docs/current source before delegation. The implementation prompt should therefore include, where known:
 
-| Part | Required content |
-|---|---|
-| Identity and starting point | Task/milestone ID; correct repository, branch, and relevant baseline revision when known. |
-| Outcome | The demonstrable behavior to deliver. |
-| Sources | Relevant functional/UI/rule identifiers and existing code; no unnecessary repetition of the entire specification. |
-| Scope | Included work, explicit exclusions, constraints, and dependencies. |
-| Acceptance | Observable success and failure scenarios established before implementation. |
-| Verification | Exact established commands, applicable tests, and real visual/output evidence where required. |
-| Authority and stop point | Permitted operations, escalation triggers, and the boundary after which independent review is required. |
-| Handoff | Actual changes, revision/diff reference, verification results, limitations, and next review target. |
+- exact repository/branch/SHA and protected baseline;
+- authority/read set;
+- current implementation diagnosis;
+- named files/classes/functions/entities/routes/components;
+- exact desired behavior and negative cases;
+- persistence/transaction/idempotency meaning;
+- migration/legacy behavior;
+- explicit non-goals;
+- concrete tests and expected facts;
+- canonical AVD/runtime interaction sequence when relevant;
+- tooling fallbacks already learned by the project;
+- Git expectations;
+- exhaustive final acceptance checklist.
 
-Tell Codex to inspect the repository, plan internally, implement, run available verification, repair ordinary failures, and self-review before declaring the task ready. It should not stop after writing code to ask permission for tests already authorized by the task.
+Use the pattern:
 
-Do not script every class or edit when acceptance criteria and constraints are sufficient. Allow engineering judgment without authorizing product redesign.
+**CURRENT SOURCE STATE → REQUIRED CHANGE → EXACT IMPLEMENTATION SEMANTICS → CODE/DATA HOTSPOTS → COMPATIBILITY/FAILURE RULES → TESTS → RUNTIME ACCEPTANCE**
 
-Within an authorized task, ordinary repair and verification require no new owner approval. Crossing the task boundary does not become authorized merely because related work was discovered. Preserve a safe checkpoint and report a genuine blocker instead of running an unbounded repair loop.
+Do not hand Codex unresolved alternatives that the orchestrator can settle from authority/source inspection.
+
+Do not rely on a stronger Codex model to infer missing architecture. Write prompts so that the least expensive intended execution model — normally Luna High — can carry the task reliably. Sol/Terra or another stronger model may run the same prompt; their additional capability is not a reason to reduce prompt detail.
+
+This does **not** require brittle line-by-line coding instructions. Leave ordinary syntax/refactoring judgment to Codex when the contract is already precise. But when a current file/class/table/route is known, name it instead of forcing rediscovery.
+
+Tell Codex to inspect the repository, plan internally, implement the complete authorized assignment, run verification, repair ordinary failures, self-review against the acceptance checklist, commit/push where authorized, and then hand off. It should not stop after writing code to ask permission for tests or routine repairs already authorized.
+
+Within an authorized task, ordinary repair and verification require no new owner approval. Crossing the task boundary does not become authorized merely because related work was discovered. Preserve a safe checkpoint and report a genuine blocker rather than expanding scope.
 
 ## 7. Own verification and demand truthful evidence
 
@@ -172,6 +187,8 @@ Maintain requirement-to-task coverage using source identifiers. Update it as par
 
 An interrupted task should leave an exact checkpoint: current revision/worktree state, completed work, checks run, outstanding items, and the next safe action. A fresh session should resume from the repository without making me reconstruct the conversation.
 
+Every new-thread handoff must follow the mandatory structure and quality gate in `AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md`. The handoff must explicitly tell the successor to read that standard before authoring any further Codex prompt. Do not duplicate the whole standard into each handoff; preserve transient task context and point to durable process authority.
+
 ## 10. Respect environment and operational boundaries
 
 Keep ServiceLoop separate from Routine Repeater. Reuse proven development practices and an appropriate existing toolchain, not RR's application logic, visual identity, permissions, or reliability assumptions. Do not modify the RR project as part of ServiceLoop work.
@@ -196,7 +213,13 @@ Use short progress updates about outcomes and real blockers. At handoff, report 
 
 Plan a small real-technician pilot once the first complete loop is demonstrable. Do not mistake agreement between AI models for evidence that the workflow suits actual users. No invented interviews or automatic outreach.
 
-## 12. Your first assignment in this thread
+## 12. Historical bootstrap assignment — not an active continuation instruction
+
+The section below records the original project-start bootstrap assignment. It is retained for historical context only.
+
+**Do not execute it merely because a new AI/thread reads this file.** On an established project, reconstruct the current state from `IMPLEMENTATION_STATE.md`, current repo/docs, the thread handoff, and the current milestone authority. Then continue from the stated next action. New Codex prompts and new-thread handoffs must follow `AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md`.
+
+### Original bootstrap assignment
 
 Perform **one implementation-readiness pass**, using the documents and repository actually available. Do not start application implementation in this first response unless it was already explicitly authorized in this thread.
 

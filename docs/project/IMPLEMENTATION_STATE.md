@@ -4,6 +4,27 @@
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
+## Current working-state pointer
+
+This file is the maintained first-stop implementation pointer. A fresh AI should read this section before historical milestone detail, then verify Git directly.
+
+Current B049 implementation line:
+
+- active branch: `codex/b049-work-exchange-reporting-export-center`
+- current remote checkpoint before this process-doc integration: `ac6c0d64d34c7f371f3c257225ea5252756c121e`
+- B049 source/base: B048 `cadc0668fe2ba5172d17a86a157323303a71d83f`
+- protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
+- current executable at the partial B049 checkpoint: `1.2.0` / versionCode `4`
+- current Room: v18
+- current Recovery: schema v17
+- B049 remains in progress; see the B049 milestone authority/checkpoint record for implemented vs remaining stages.
+
+For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
+
+    docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
+
+After this process-doc integration, verify the branch HEAD directly rather than treating the pre-integration checkpoint SHA above as the current tip.
+
 ## Accepted baseline and active implementation line
 
 Protected accepted baseline:
