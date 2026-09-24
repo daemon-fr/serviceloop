@@ -2620,3 +2620,25 @@ Comparison against generated final `19.json` showed all 59 common Room tables al
 The stopped-app post-test snapshot used for WAL-inclusive verification had main DB SHA-256 `9cca03cd03d0081c709fd1c688ec5686784441b5d75363ce12f35d139b1d2428`, WAL SHA-256 `f94fc4f2915808b097a2c4a25aecb379d458f7bce64549ca1f78fcf04d63d73b`, and SHM SHA-256 `2dde63569e1356ef9525935b5cbea829050fc423b1dbd2415b04e63a99a951cf`. Its schema, version, identity, FK/integrity results, table row counts, and all row fingerprints matched the repaired checkpoint except `recovery_metadata.lastBusinessWriteAtEpochMillis`. The audit restored that field to the pre-test value and verified the live AVD database returned to the repaired checkpoint’s complete data fingerprint. The snapshots remain under ignored `app/build/b049-avd-repair-backup`; temporary audit/repair tooling was removed. The ordinary final APK was reinstalled with `install -r`.
 
 B-008 external pilot, owner acceptance, release, and merge into protected `master` remain outstanding. No recipient delivery beyond opening the system sharesheet was claimed.
+
+### Native-sharing final correctness correction — 2026-09-24
+
+The four post-native-sharing independent-review findings were corrected in implementation commit `171523fe79b6ab4a326f4b7eccedb1c982649d72` on the designated B049 branch, starting from `f9a3b52b1c900c8891c39d64d5f3f5dffeb8d46f`:
+
+- Privacy-off native directory data now carries ordinary Customer, Site, Equipment, and Contact fields while omitting their private notes and template guidance. Import matching compares the transferred ordinary values; readable Site export still carries address without access notes.
+- Exported contacts use positive contiguous source order. New contacts append after the receiver's maximum local position; matches keep their local position; retries do not duplicate contacts; position zero is rejected.
+- DATA_TRANSFER selects scoped logical records before resolving their Customer/Site/Equipment/template dependencies. Required inactive directory rows and disabled plan templates are included with their lifecycle state, while unrelated inactive branches remain outside the package. Performed work, evidence, and context retain scope and import without creating local Visits or recurrence effects.
+- Evidence retries compare both binary SHA/size and a canonical immutable metadata fingerprint, including visit/work/revision context, service date/reference/name, caption/privacy/report flags, source directory identities, MIME type, and dimensions. Receiver-local convenience IDs and `binaryName` are excluded. Changed bytes or metadata conflict without mutating the imported row/file.
+
+Final correction evidence:
+
+- **TESTED — JVM:** `:app:testDebugUnitTest`: 513 tests PASS, 0 failures/errors/skips.
+- **TESTED — build/lint:** `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease`: PASS after the final production and test edits.
+- **DOMAIN-INSTRUMENTED:** `B049DataTransferEndToEndInstrumentedTest`, 1 PASS, including operational directory round trip, disabled template and inactive dependency closure, evidence retry/conflict, relay origin, and no local execution.
+- **UI-INSTRUMENTED:** `B049ExportCenterUiTest`, 5 PASS.
+- **MIGRATION-TESTED:** `Room18To19MigrationTest`, 1 PASS.
+- **SYSTEM-HANDOFF:** `B049SystemHandoffUiTest`, 2 PASS; the Android system sharing surface was exercised after the package-generation change.
+- **Startup smoke:** the debug APK was installed with `adb -s <dynamically resolved canonical serial> install -r`; the app stayed alive after 9 seconds on the `Pixel 10a ServiceLoop` AVD, with no sampled fatal `AndroidRuntime` entry.
+- **Git:** `git diff --check` PASS. The exact evidence/documentation commit and final branch parity are given in the task handoff. A pre-existing Android Studio JDK metadata edit in `.idea/misc.xml` was preserved outside the correction commits.
+
+The correction is independently source-reviewed and ready for owner UI defect review. No broad UI pass or rendered-screen review was performed in this correction. Owner acceptance, B-008 external pilot, release, and protected-master integration remain outstanding.

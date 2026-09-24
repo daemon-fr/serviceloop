@@ -376,3 +376,13 @@ Preserved AVD v19 repair: the original stopped `serviceloop.db` backup SHA-256 i
 A stopped-app post-test snapshot including WAL/SHM (`serviceloop.db.after-tests`, `serviceloop.db.after-tests-wal`, `serviceloop.db.after-tests-shm`) also passed integrity/FK, version, identity, schema, and row-count checks. Its only data difference was `recovery_metadata.lastBusinessWriteAtEpochMillis`, changed by the device test run. A guarded Android SQLite audit restored only that timestamp to the backed-up pre-test value and verified the live database fingerprint exactly matched the repaired checkpoint. Original and audit snapshots remain in ignored `app/build/b049-avd-repair-backup`; temporary audit/repair source and device screenshots were removed. The ordinary final APK was reinstalled with `adb -s <dynamically resolved canonical serial> install -r`; no data clear or AVD reset occurred.
 
 B-008 real-technician pilot, owner acceptance, protected-master integration, and release are not claimed. B049 remains a reviewable milestone branch; this record does not imply owner acceptance or merge.
+
+## B049 native-sharing final correctness correction — 2026-09-24
+
+The native-sharing implementation was independently source-reviewed after the final four correctness fixes and is ready for owner UI defect review. Implementation commit: `171523fe79b6ab4a326f4b7eccedb1c982649d72` on `codex/b049-work-exchange-reporting-export-center`, from `f9a3b52b1c900c8891c39d64d5f3f5dffeb8d46f`.
+
+Privacy-off DATA_TRANSFER preserves ordinary directory values with private fields omitted; contact positions normalize and append safely; selected logical records carry only their required inactive directory/template dependencies; and evidence retries compare immutable metadata and bytes while excluding receiver-local IDs and binary names. No app/version, Room/Recovery, envelope, or family version changed.
+
+Final correction verification: 513 JVM tests PASS; debug, Android-test, lint, and release gates PASS; focused canonical AVD tests PASS (Data Transfer 1, Export Center UI 5, Room 18→19 migration 1, system handoff 2); delayed startup smoke PASS. Details and limitations are in the B049 milestone correction record. Owner UI review remains; this is not owner accepted or merged, and B-008 remains outstanding.
+
+The starting worktree also contained an unstaged `.idea/misc.xml` IDE metadata edit that adds `default="true"` to the JDK 20 project-root setting. It was preserved outside the implementation and evidence commits.
