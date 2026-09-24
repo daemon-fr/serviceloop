@@ -199,6 +199,12 @@ class B049WorkResultExportTest {
             val selection = ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false)
             val direct = DataTransferExportService(database, root).export(selection)
             val relay = DataTransferExportService(coordinator, coordinatorRoot).export(selection)
+            val coordinatorNative = DataTransferImportService(coordinator, coordinatorRoot)
+            coordinatorNative.import(coordinatorNative.preview(direct))
+            val combined = effectiveImportedFinalResults(b.reportableRemoteFinalResults(), b.allTransferredFinalResults())
+            assertEquals(combined.map { listOf(it.kind, it.logicalResultId, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId) }.toString(), 1, combined.size)
+            assertEquals(1, effectiveImportedFinalResults(
+                b.reportableRemoteFinalResults(), b.allTransferredFinalResults(), includePreviousRevisions = true).size)
             fun firstSource(bytes: ByteArray): JSONObject = JSONObject(DataTransferCodec.decode(bytes).families
                 .getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8))
                 .getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)

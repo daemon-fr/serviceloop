@@ -141,6 +141,39 @@ class B049WorkResultImportTest {
         assertEquals(1, database.serviceLoopDao().obligationCount("plan"))
     }
 
+    @Test fun independentAuthorsWithSameResultTokensBothRemainEffective() = runTest {
+        val secondAuthor = TechnicianIdCodec.generate()
+        val dispatch = database.dispatchDao()
+        dispatch.insertTrustedServiceLoopId(TrustedServiceLoopIdEntity(secondAuthor, "Second technician", 1, 1))
+        dispatch.insertTechnician(DispatchTechnicianEntity(secondAuthor, "Second technician", 1, 1))
+        dispatch.insertOutboxItemAssignees(listOf(DispatchOutboxItemAssigneeEntity("dispatch-2", secondAuthor)))
+        val first = result(2)
+        val second = result(2).let { item -> item.copy(value = JSONObject(item.value.toString())
+            .put("technicianId", secondAuthor).put("technicianName", "Second technician")) }
+        val service = WorkResultImportService(database, root)
+        service.import(packageBytes("author-one", first))
+        service.import(WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(
+            "author-two", secondAuthor, issuer, "2026-09-23T10:00:00Z", listOf(second))))
+        val effective = effectiveRemoteResults(database.serviceLoopDao().reportableRemoteFinalResults())
+        assertEquals(setOf(exporter, secondAuthor), effective.map { it.technicianId }.toSet())
+        assertEquals(2, effective.size)
+    }
+
+    @Test fun voidedLatestRemoteRevisionDoesNotResurrectAnOlderCurrentResult() = runTest {
+        val service = WorkResultImportService(database, root)
+        service.import(packageBytes("first", result(2)))
+        val correction = result(2).let { item -> item.copy(value = JSONObject(item.value.toString())
+            .put("sourceFinalRevisionId", "revision-2-corrected").put("recordedAt", "2026-09-24T10:00:00Z")) }
+        service.import(packageBytes("correction", correction))
+        val dao = database.serviceLoopDao()
+        val latest = dao.remoteFinalResult(exporter, "result-2", "revision-2-corrected")!!
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE remote_final_results SET voidedAtEpochMillis=? WHERE id=?", arrayOf<Any>(10L, latest.id))
+        assertEquals(1, dao.reportableRemoteFinalResults().size)
+        assertEquals(0, effectiveRemoteResults(dao.appliedRemoteFinalResultsIncludingVoids()).size)
+        assertEquals(0, effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), emptyList()).size)
+    }
+
     @Test fun correctionChangingAppliedRecurrenceReportsItsCommittedConflict() = runTest {
         val service = WorkResultImportService(database, root)
         service.import(packageBytes("original", result(1)))
@@ -283,6 +316,31 @@ class B049WorkResultImportTest {
         assertEquals(true, customers.contains("\"'+1\""))
         assertEquals(true, customers.contains("\"quoted \"\"value\"\", line\nΔ\""))
         assertEquals(true, entries.getValue("service_plans.csv").contains("\"1\",\"YEARS\""))
+    }
+
+    @Test fun readableContactNoteDateBoundsUseInclusiveBusinessZoneDays() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.upsertBusinessProfile(BusinessProfileEntity("primary", "Service business", "Technician", null, null, null, "Europe/Bucharest", 1))
+        fun note(id: String, instant: String) = ContactNoteEntity(id, id, "c", "s", null, "PHONE",
+            Instant.parse(instant).toEpochMilli(), "Spoke", null, 1)
+        dao.insertContactNote(note("before-midnight", "2026-09-23T20:59:59Z"))
+        dao.insertContactNote(note("at-midnight", "2026-09-23T21:00:00Z"))
+        dao.insertContactNote(note("end-of-day", "2026-09-24T20:59:59Z"))
+        dao.insertContactNote(note("after-day", "2026-09-24T21:00:00Z"))
+        val bytes = ExportCenterService(database, root).export(ExportCenterSelection(
+            scope = ServiceLoopScopeFilter(fromDate = java.time.LocalDate.parse("2026-09-24"), toDate = java.time.LocalDate.parse("2026-09-24")),
+            families = setOf(ExportFamily.CONTACT_NOTES)))
+        val notes = ZipInputStream(bytes.inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (entry.name == "contact_notes.csv") return@use zip.readBytes().toString(Charsets.UTF_8)
+            }
+            error("Contact notes CSV is missing")
+        }
+        assertEquals(false, notes.contains("before-midnight"))
+        assertEquals(true, notes.contains("at-midnight"))
+        assertEquals(true, notes.contains("end-of-day"))
+        assertEquals(false, notes.contains("after-day"))
     }
 
     @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {

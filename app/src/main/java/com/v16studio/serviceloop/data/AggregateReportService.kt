@@ -61,13 +61,13 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
                 !(scope.equipmentId != null && work.any { it.equipmentId == scope.equipmentId } && scope.copy(equipmentId = null).matches(visit.customerId, visit.siteId, null, LocalDate.parse(revision.actualServiceDate)))) return@mapNotNull null
             ReportableFinalSource("LOCAL:${revision.id}", "LOCAL", revision.id, visit.id, visit.customerId, visit.siteId, equipmentId, revision.actualServiceDate, revision.visitReference, revision.technicianName)
         }
-        val remote = effectiveRemoteResults(dao.reportableRemoteFinalResults()).mapNotNull { result ->
+        val remote = effectiveRemoteResults(dao.appliedRemoteFinalResultsIncludingVoids()).mapNotNull { result ->
             val visit = result.localVisitId?.let { dao.visit(it) } ?: return@mapNotNull null
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!scope.matches(visit.customerId, visit.siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@mapNotNull null
             ReportableFinalSource("REMOTE:${result.id}", "REMOTE", result.sourceFinalRevisionId, visit.id, visit.customerId, visit.siteId, equipmentId, result.serviceDate, visit.reference, result.technicianName, result.localWorkItemId)
         }
-        val transferred = effectiveImportedFinalResults(dao.reportableRemoteFinalResults(), dao.allTransferredFinalResults())
+        val transferred = effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), dao.allTransferredFinalResults())
             .filter { it.kind == ImportedFinalKind.DATA_TRANSFER }
             .mapNotNull { effective ->
                 val row = effective.transferred ?: return@mapNotNull null
@@ -112,7 +112,6 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             val equipmentReference = scope.equipmentId?.let { dao.equipment(it)?.reference }
             val lines = parts.flatMap { model -> model.lines.map { it.copy(documentingTechnicianName = model.technicianName) } }
                 .filter { equipmentReference == null || it.equipmentReference == equipmentReference }
-                .distinctBy { it.dispatchItemId ?: "${it.position}:${it.serviceName}:${it.equipmentReference}" }
                 .mapIndexed { index, line -> line.copy(position = index + 1) }
             parts.first().copy(recordId = visitSource.visitId, visitReference = visitSource.visitReference,
                 technicianName = visitSource.technicians.joinToString(", "), lines = lines)

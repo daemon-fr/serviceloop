@@ -141,13 +141,13 @@ class B049DataTransferRoundTripTest {
         dao.insertVisits(listOf(WorkingVisitEntity("visit", "V-2", "c", "s", "2026-09-24", "Customer Two", "Site Two", null, "COMPLETED", 1)))
         dao.insertWorkItems(listOf(
             WorkItemEntity("work-1", "visit", "e", null, null, null, "Boiler", "EQ-2", "Inspection", null, null, null, null, false, null, null),
-            WorkItemEntity("work-2", "visit", "e", null, null, null, "Boiler", "EQ-2", "Cleaning", null, null, null, null, false, null, null),
+            WorkItemEntity("work-2", "visit", "e", null, null, null, "Boiler", "EQ-2", "Inspection", null, null, null, null, false, null, null),
         ))
         dao.insertFinalRecord(FinalRecordEntity("record", "visit", "revision", 2))
         dao.insertFinalRevision(FinalRecordRevisionEntity("revision", "record", 1, "V-2", "2026-09-24", 2, "Customer Two", "Site Two", null, "Business", "Technician A", null, null, null, "UTC", null, customerReference = "CU-2", siteReference = "ST-2"))
         dao.insertFinalWorkItems(listOf(
             FinalWorkItemEntity("final-1", "revision", 1, "work-1", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Inspected", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "secret one"),
-            FinalWorkItemEntity("final-2", "revision", 2, "work-2", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Cleaning", null, null, "PERFORMED", "Cleaned", null, false, null, null, null, null, null, "secret two"),
+            FinalWorkItemEntity("final-2", "revision", 2, "work-2", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Cleaned", null, false, null, null, null, null, null, "secret two"),
         ))
         dao.insertFinalChecklistItems(listOf(FinalChecklistItemEntity("check", "final-1", 1, null, null, "Pressure", "NUMBER", "bar", true, "PASS", "2.0", null, null)))
         dao.insertFinalParts(listOf(FinalPartEntryEntity("part", "final-2", 1, "Filter", "1", "each")))
@@ -201,6 +201,8 @@ class B049DataTransferRoundTripTest {
             AggregateReportWriter { models, _, _, _, target, _ -> rendered = models; target.writeBytes(byteArrayOf(1, 2, 3)); 1 })
         reports.generate(ServiceLoopScopeFilter(customerId = dao.allCustomers().single().id), listOf(reportable.single().key))
         assertEquals(2, rendered.single().lines.size)
+        assertEquals(listOf("Inspection", "Inspection"), rendered.single().lines.map { it.serviceName })
+        assertEquals(setOf("Inspected", "Cleaned"), rendered.single().lines.map { it.publicWorkNote }.toSet())
         assertEquals(1, rendered.single().lines.sumOf { it.photos.size })
 
         val readable = ExportCenterService(b, rootB).export(ExportCenterSelection(families = workSelection.families))

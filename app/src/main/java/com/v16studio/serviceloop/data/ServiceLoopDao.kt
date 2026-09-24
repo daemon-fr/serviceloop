@@ -318,6 +318,7 @@ interface ServiceLoopDao {
     @Query("SELECT COUNT(*) FROM remote_result_photos WHERE relativePath=:path") suspend fun remotePhotoReferenceCount(path: String): Int
     @Query("SELECT COUNT(*) FROM transferred_evidence WHERE relativePath=:path") suspend fun transferredEvidenceReferenceCount(path: String): Int
     @Query("SELECT r.* FROM remote_final_results r JOIN work_result_receipts w ON w.exporterId=r.technicianId AND w.resultId=r.resultId AND w.sourceFinalRevisionId=r.sourceFinalRevisionId WHERE w.status='APPLIED' AND r.voidedAtEpochMillis IS NULL ORDER BY r.serviceDate, r.id") suspend fun reportableRemoteFinalResults(): List<RemoteFinalResultEntity>
+    @Query("SELECT r.* FROM remote_final_results r JOIN work_result_receipts w ON w.exporterId=r.technicianId AND w.resultId=r.resultId AND w.sourceFinalRevisionId=r.sourceFinalRevisionId WHERE w.status='APPLIED' ORDER BY r.serviceDate, r.id") suspend fun appliedRemoteFinalResultsIncludingVoids(): List<RemoteFinalResultEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateReport(value: AggregateReportEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateSources(values: List<AggregateReportSourceEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateRendition(value: AggregateReportRenditionEntity)

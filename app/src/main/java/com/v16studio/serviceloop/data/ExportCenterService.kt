@@ -5,6 +5,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.time.LocalDate
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import org.json.JSONObject
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -37,6 +41,19 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
     suspend fun export(selection: ExportCenterSelection): ByteArray {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val scope = selection.scope
+        val businessZone = dao.businessProfile()?.zoneId?.let(ZoneId::of) ?: ZoneId.systemDefault()
+        fun includesDate(date: LocalDate?) =
+            (scope.fromDate == null || date != null && !date.isBefore(scope.fromDate)) &&
+                (scope.toDate == null || date != null && !date.isAfter(scope.toDate))
+        fun sourceDate(value: String?): LocalDate? {
+            if (scope.fromDate == null && scope.toDate == null) return null
+            return value?.takeIf(String::isNotBlank)?.let { text ->
+                runCatching { LocalDate.parse(text) }.getOrElse {
+                    runCatching { Instant.parse(text) }.getOrElse { OffsetDateTime.parse(text).toInstant() }
+                        .atZone(businessZone).toLocalDate()
+                }
+            }
+        }
         val allCustomers = dao.allCustomers()
         val customers = allCustomers.filter { (scope.customerId == null || it.id == scope.customerId) && (selection.includeInactive || it.state == "ACTIVE") }
         require(scope.customerId == null || customers.size == 1) { "Selected customer is unavailable" }
@@ -55,7 +72,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
             (if (selection.includePreviousRevisions) dao.finalRevisions(record.id) else listOfNotNull(dao.finalRevision(record.currentRevisionId))).map { record to it }
         }
         val finalWork = revisions.flatMap { (_, revision) -> dao.finalWorkItems(revision.id).filter { scope.equipmentId == null || it.equipmentId == scope.equipmentId }.map { revision to it } }
-        val effectiveImports = effectiveImportedFinalResults(dao.reportableRemoteFinalResults(), dao.allTransferredFinalResults(), selection.includePreviousRevisions)
+        val effectiveImports = effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), dao.allTransferredFinalResults(), selection.includePreviousRevisions)
         val remote = effectiveImports.filter { it.kind == ImportedFinalKind.WORK_RESULT }.mapNotNull { it.remote }.filter { result -> result.customerId in customerIds && result.localVisitId in visitIds &&
             (scope.equipmentId == null || result.localWorkItemId?.let { dao.workItem(it)?.equipmentId } == scope.equipmentId) &&
             scope.matches(result.customerId ?: "", result.localVisitId?.let { dao.visit(it)?.siteId }, result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }, LocalDate.parse(result.serviceDate)) }
@@ -87,21 +104,21 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
             finalWork.flatMap { (revision,work) -> dao.finalParts(work.id).map { listOf(revision.id,work.id,it.description,it.quantity,it.unit,"LOCAL") } } +
                 remote.flatMap { result -> val values = org.json.JSONArray(result.partsJson); (0 until values.length()).map { index -> val part = values.getJSONObject(index); listOf(result.sourceFinalRevisionId,result.dispatchItemId,part.optString("description"),part.optString("quantity"),part.optString("unit"),"WORK_RESULT") } } +
                 transferred.flatMap { result -> val values = org.json.JSONArray(result.partsJson); (0 until values.length()).map { index -> val part = values.getJSONObject(index); listOf(result.sourceFinalRevisionId,result.sourceWorkItemId,part.optString("description"),part.optString("quantity"),part.optString("unit"),"DATA_TRANSFER") } })
-        val receivedFollowUps = dao.allTransferredHistoryEntries().filter { it.family == "FOLLOW_UPS" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) }.map { row ->
+        val receivedFollowUps = dao.allTransferredHistoryEntries().filter { it.family == "FOLLOW_UPS" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) && includesDate(sourceDate(JSONObject(it.payloadJson).optString("dueDate"))) }.map { row ->
             val value = org.json.JSONObject(row.payloadJson)
             listOf("${row.originWorkspaceId}:${row.sourceEntityId}", row.localCustomerId.orEmpty(), row.localSiteId.orEmpty(), row.localEquipmentId.orEmpty(), value.optString("title"), value.optString("dueDate"), value.optString("state"), if (selection.includePrivate) value.optString("privatePlanningNote") else "")
         }
-        add(ExportFamily.FOLLOW_UPS, "followups.csv", listOf("id","customer_id","site_id","equipment_id","title","due_date","state","private_note"), dao.allFollowUps().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) }.map { listOf(it.id,it.customerId,it.siteId.orEmpty(),it.equipmentId.orEmpty(),it.title,it.dueDate,it.state,if(selection.includePrivate) it.privatePlanningNote.orEmpty() else "") } + receivedFollowUps)
-        val receivedContactNotes = dao.allTransferredHistoryEntries().filter { it.family == "CONTACT_NOTES" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) }.map { row ->
+        add(ExportFamily.FOLLOW_UPS, "followups.csv", listOf("id","customer_id","site_id","equipment_id","title","due_date","state","private_note"), dao.allFollowUps().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) && includesDate(sourceDate(it.dueDate)) }.map { listOf(it.id,it.customerId,it.siteId.orEmpty(),it.equipmentId.orEmpty(),it.title,it.dueDate,it.state,if(selection.includePrivate) it.privatePlanningNote.orEmpty() else "") } + receivedFollowUps)
+        val receivedContactNotes = dao.allTransferredHistoryEntries().filter { it.family == "CONTACT_NOTES" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) && includesDate(sourceDate(it.eventDateTime)) }.map { row ->
             val value = org.json.JSONObject(row.payloadJson)
             listOf("${row.originWorkspaceId}:${row.sourceEntityId}", row.localCustomerId.orEmpty(), row.localSiteId.orEmpty(), row.localEquipmentId.orEmpty(), row.eventDateTime.orEmpty(), value.optString("outcome"), if (selection.includePrivate) value.optString("privateNote") else "")
         }
-        add(ExportFamily.CONTACT_NOTES, "contact_notes.csv", listOf("id","customer_id","site_id","equipment_id","date","outcome","private_note"), dao.allContactNotes().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) }.map { listOf(it.id,it.customerId,it.siteId.orEmpty(),it.equipmentId.orEmpty(),java.time.Instant.ofEpochMilli(it.occurredAtEpochMillis).toString(),it.outcome,if(selection.includePrivate) it.privateNote.orEmpty() else "") } + receivedContactNotes)
-        val receivedChanges = dao.allTransferredHistoryEntries().filter { it.family == "CHANGE_HISTORY" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) }.map { row ->
+        add(ExportFamily.CONTACT_NOTES, "contact_notes.csv", listOf("id","customer_id","site_id","equipment_id","date","outcome","private_note"), dao.allContactNotes().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) && includesDate(Instant.ofEpochMilli(it.occurredAtEpochMillis).atZone(businessZone).toLocalDate()) }.map { listOf(it.id,it.customerId,it.siteId.orEmpty(),it.equipmentId.orEmpty(),Instant.ofEpochMilli(it.occurredAtEpochMillis).toString(),it.outcome,if(selection.includePrivate) it.privateNote.orEmpty() else "") } + receivedContactNotes)
+        val receivedChanges = dao.allTransferredHistoryEntries().filter { it.family == "CHANGE_HISTORY" && it.localCustomerId in customerIds && (scope.siteId == null || it.localSiteId == scope.siteId) && (scope.equipmentId == null || it.localEquipmentId == scope.equipmentId) && includesDate(sourceDate(it.eventDateTime)) }.map { row ->
             val value = org.json.JSONObject(row.payloadJson)
             listOf("${row.originWorkspaceId}:${row.sourceEntityId}", row.localCustomerId.orEmpty(), row.localSiteId.orEmpty(), row.localEquipmentId.orEmpty(), row.eventDateTime.orEmpty(), value.optString("changeType"), value.optString("reason"), if(selection.includePrivate) value.optString("oldValue") else "", if(selection.includePrivate) value.optString("newValue") else "")
         }
-        add(ExportFamily.HISTORY, "changes.csv", listOf("id","customer_id","site_id","equipment_id","date","type","reason","old","new"), dao.allChangeEntries().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) }.map { listOf(it.id,it.customerId.orEmpty(),it.siteId.orEmpty(),it.equipmentId.orEmpty(),it.eventDate,it.changeType,it.reason,if(selection.includePrivate) it.oldValue.orEmpty() else "",if(selection.includePrivate) it.newValue.orEmpty() else "") } + receivedChanges)
+        add(ExportFamily.HISTORY, "changes.csv", listOf("id","customer_id","site_id","equipment_id","date","type","reason","old","new"), dao.allChangeEntries().filter { it.customerId in customerIds && (scope.siteId == null || it.siteId == scope.siteId) && (scope.equipmentId == null || it.equipmentId == scope.equipmentId) && includesDate(sourceDate(it.eventDate)) }.map { listOf(it.id,it.customerId.orEmpty(),it.siteId.orEmpty(),it.equipmentId.orEmpty(),it.eventDate,it.changeType,it.reason,if(selection.includePrivate) it.oldValue.orEmpty() else "",if(selection.includePrivate) it.newValue.orEmpty() else "") } + receivedChanges)
         add(ExportFamily.TEMPLATES, "inspection_templates.csv", listOf("id","reference","name","state"), dao.reusableTemplates().filter { selection.includeInactive || it.state == "ACTIVE" }.map { listOf(it.id,it.reference,it.name,it.state) })
 
         val imageRows = mutableListOf<List<String>>()

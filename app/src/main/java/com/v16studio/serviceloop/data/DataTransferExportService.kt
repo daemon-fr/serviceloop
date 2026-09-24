@@ -292,7 +292,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 }
             }
         }
-        effectiveImportedFinalResults(dao.reportableRemoteFinalResults(), dao.allTransferredFinalResults(), selection.includePreviousRevisions).forEach { imported ->
+        effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), dao.allTransferredFinalResults(), selection.includePreviousRevisions).forEach { imported ->
             val result = imported.transferred ?: imported.remote ?: return@forEach
             val service = when (imported.kind) {
                 ImportedFinalKind.WORK_RESULT -> encodeRemoteResult(result as RemoteFinalResultEntity, selection.includePrivate, origin)
