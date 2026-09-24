@@ -64,7 +64,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         explicitlySelectedEquipment.forEach { addDirectoryDependencies(dependencies, equipmentId = it) }
 
         val contactCustomerIds = if (ExportFamily.CONTACTS in requested) {
-            scopedCustomers.filter { dao.customerContacts(it.id).isNotEmpty() }.map { it.id }.toSet()
+            scopedCustomers
+                .filter { selection.includeInactive || it.state == "ACTIVE" }
+                .filter { dao.customerContacts(it.id).isNotEmpty() }
+                .map { it.id }
+                .toSet()
         } else emptySet()
         contactCustomerIds.forEach { addDirectoryDependencies(dependencies, customerId = it) }
 

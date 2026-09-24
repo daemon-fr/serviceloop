@@ -400,6 +400,53 @@ class B049DataTransferRoundTripTest {
         assertEquals(4, dao.customerContacts("local-c").size)
     }
 
+    @Test fun customerDataContactsRespectCustomerLifecycleAndScope() = runBlocking {
+        val dao = a.serviceLoopDao()
+        dao.insertCustomers(listOf(
+            CustomerEntity("customer-a", "CU-A", "Active Customer"),
+            CustomerEntity("customer-b", "CU-B", "Archived Customer", state = "ARCHIVED"),
+        ))
+        dao.insertCustomerContacts(listOf(
+            CustomerContactEntity("contact-a", "customer-a", "Office A", "PHONE", "+401", 1, 1, position = 1),
+            CustomerContactEntity("contact-b", "customer-b", "Office B", "PHONE", "+402", 1, 1, position = 1),
+        ))
+
+        fun rows(bytes: ByteArray) = JSONObject(
+            DataTransferCodec.decode(bytes).families.getValue(DataTransferFamily.REGISTER).toString(Charsets.UTF_8),
+        )
+
+        fun references(register: JSONObject, key: String) = register.getJSONArray(key).let { values ->
+            (0 until values.length()).map { values.getJSONObject(it).getString("reference") }.toSet()
+        }
+
+        fun contactValues(register: JSONObject) = register.getJSONArray("contacts").let { values ->
+            (0 until values.length()).map { values.getJSONObject(it).getString("value") }.toSet()
+        }
+
+        val exporter = DataTransferExportService(a, rootA)
+        val excluded = rows(exporter.export(ExportCenterSelection(
+            families = ExportPreset.CUSTOMER_DATA.families,
+            includeInactive = false,
+        )))
+        assertEquals(setOf("CU-A"), references(excluded, "customers"))
+        assertEquals(setOf("+401"), contactValues(excluded))
+
+        val included = rows(exporter.export(ExportCenterSelection(
+            families = ExportPreset.CUSTOMER_DATA.families,
+            includeInactive = true,
+        )))
+        assertEquals(setOf("CU-A", "CU-B"), references(included, "customers"))
+        assertEquals(setOf("+401", "+402"), contactValues(included))
+
+        val scoped = rows(exporter.export(ExportCenterSelection(
+            scope = ServiceLoopScopeFilter(customerId = "customer-a"),
+            families = ExportPreset.CUSTOMER_DATA.families,
+            includeInactive = true,
+        )))
+        assertEquals(setOf("CU-A"), references(scoped, "customers"))
+        assertEquals(setOf("+401"), contactValues(scoped))
+    }
+
     @Test fun inactiveHistoryEvidenceAndDisabledTemplateDependenciesCloseWithoutUnrelatedInactiveRows() = runBlocking {
         seedCompletedWorkWithEvidence()
         val dao = a.serviceLoopDao()
@@ -433,6 +480,7 @@ class B049DataTransferRoundTripTest {
         val siteRows = register.getJSONArray("sites")
         val equipmentRows = register.getJSONArray("equipment")
         assertEquals(setOf("CU-2", "CU-PLAN"), (0 until customerRows.length()).map { customerRows.getJSONObject(it).getString("reference") }.toSet())
+        assertEquals("ARCHIVED", (0 until customerRows.length()).map { customerRows.getJSONObject(it) }.single { it.getString("reference") == "CU-2" }.getString("state"))
         assertEquals(setOf("ST-2", "ST-PLAN"), (0 until siteRows.length()).map { siteRows.getJSONObject(it).getString("reference") }.toSet())
         assertEquals(setOf("EQ-2", "EQ-PLAN"), (0 until equipmentRows.length()).map { equipmentRows.getJSONObject(it).getString("reference") }.toSet())
         assertFalse((0 until customerRows.length()).any { customerRows.getJSONObject(it).getString("reference") == "CU-UNRELATED" })
