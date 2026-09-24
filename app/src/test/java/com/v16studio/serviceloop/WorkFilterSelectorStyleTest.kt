@@ -15,6 +15,8 @@ class WorkFilterSelectorStyleTest {
 
         assertTrue(components.contains("ServiceLoopIcons.SelectionEmpty"))
         assertTrue(components.contains("ServiceLoopIcons.SelectionChecked"))
+        assertTrue(components.contains("ServiceLoopIcons.CheckFat"))
+        assertTrue(components.contains("if (selected) c.action else c.textMuted"))
         assertFalse(components.contains("Checkbox(selectionChecked"))
         assertTrue(history.contains("ServiceLoopFilterSelectorRow"))
         assertTrue(history.contains("ServiceLoopFilterSelector(\"Rows\""))

@@ -22,6 +22,7 @@ import com.v16studio.serviceloop.data.ImageCleanupService
 import com.v16studio.serviceloop.data.ImageRetention
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSelectionOption
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopActionStack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,20 +41,22 @@ internal fun ImageCleanupScreen(padding: PaddingValues) {
         item { Text("Image cleanup", style = MaterialTheme.typography.headlineSmall); Text("Keep full-resolution photos for ${choice.title.lowercase()}."); Text("ServiceLoop keeps a report-quality copy for finalized work. Working photos are never automatically removed.") }
         ImageRetention.entries.forEach { option -> item { ServiceLoopSelectionOption(choice == option, { choice = option }, option.title, Modifier.testTag("image-retention-${option.name.lowercase()}")) } }
         item {
-            ServiceLoopPrimaryButton("Save image cleanup setting", { scope.launch {
-                busy = true; message = null
-                runCatching { withContext(Dispatchers.IO) { cleanup.savePreference(choice) } }
-                    .onSuccess { message = "Image cleanup setting saved." }
-                    .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Setting could not be saved" }
-                busy = false
-            } }, Modifier.fillMaxWidth().testTag("save-image-cleanup"), enabled = !busy, busy = busy)
-            ServiceLoopPrimaryButton("Run cleanup now", { scope.launch {
-                busy = true; message = null
-                runCatching { withContext(Dispatchers.IO) { cleanup.savePreference(choice); cleanup.runNow() } }
-                    .onSuccess { result -> message = "Checked ${result.inspected} finalized photos; kept ${result.derivativesCreated} report-quality copies; removed ${result.originalsRemoved} eligible originals. ${result.retainedBecauseOfError} originals stayed because a copy could not be verified." }
-                    .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Cleanup could not complete" }
-                busy = false
-            } }, Modifier.fillMaxWidth().testTag("run-image-cleanup"), enabled = !busy && choice != ImageRetention.NEVER, busy = busy)
+            ServiceLoopActionStack {
+                ServiceLoopPrimaryButton("Save image cleanup setting", { scope.launch {
+                    busy = true; message = null
+                    runCatching { withContext(Dispatchers.IO) { cleanup.savePreference(choice) } }
+                        .onSuccess { message = "Image cleanup setting saved." }
+                        .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Setting could not be saved" }
+                    busy = false
+                } }, Modifier.fillMaxWidth().testTag("save-image-cleanup"), enabled = !busy, busy = busy)
+                ServiceLoopPrimaryButton("Run cleanup now", { scope.launch {
+                    busy = true; message = null
+                    runCatching { withContext(Dispatchers.IO) { cleanup.savePreference(choice); cleanup.runNow() } }
+                        .onSuccess { result -> message = "Checked ${result.inspected} finalized photos; kept ${result.derivativesCreated} report-quality copies; removed ${result.originalsRemoved} eligible originals. ${result.retainedBecauseOfError} originals stayed because a copy could not be verified." }
+                        .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Cleanup could not complete" }
+                    busy = false
+                } }, Modifier.fillMaxWidth().testTag("run-image-cleanup"), enabled = !busy && choice != ImageRetention.NEVER, busy = busy)
+            }
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
     }

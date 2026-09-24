@@ -3,7 +3,6 @@ package com.v16studio.serviceloop.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -91,16 +90,18 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
     ) {
         if (content == TeamWorkspaceContent.ROOT) {
             if (role != TeamRole.SOLO) item {
-                Text("Daily work exchange", style = MaterialTheme.typography.titleLarge)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (role.workspaceCapabilities.canReceiveAssignedWork) {
-                        ServiceLoopPrimaryButton("Import work package", { nav.navigate("dispatch/import/pick") }, Modifier.fillMaxWidth().testTag("team-import-work"))
-                        ServiceLoopSecondaryButton("Export work results", { nav.navigate("work-results/export") }, Modifier.fillMaxWidth().testTag("team-export-results"))
-                    }
-                    if (role.workspaceCapabilities.canUseCoordinatorTools) {
-                        ServiceLoopPrimaryButton("Dispatch work package", { nav.navigate("dispatch/create") }, Modifier.fillMaxWidth().testTag("team-dispatch"))
-                        ServiceLoopSecondaryButton("Import work results", { nav.navigate("import") }, Modifier.fillMaxWidth().testTag("team-import-results"))
-                        ServiceLoopSecondaryButton("Generate report", { nav.navigate("aggregate-report/new") }, Modifier.fillMaxWidth().testTag("team-generate-report"))
+                    Text("Daily work exchange", style = MaterialTheme.typography.titleLarge)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (role.workspaceCapabilities.canReceiveAssignedWork) {
+                            ServiceLoopPrimaryButton("Import work package", { nav.navigate("dispatch/import/pick") }, Modifier.fillMaxWidth().testTag("team-import-work"))
+                            ServiceLoopSecondaryButton("Export work results", { nav.navigate("work-results/export") }, Modifier.fillMaxWidth().testTag("team-export-results"))
+                        }
+                        if (role.workspaceCapabilities.canUseCoordinatorTools) {
+                            ServiceLoopPrimaryButton("Dispatch work package", { nav.navigate("dispatch/create") }, Modifier.fillMaxWidth().testTag("team-dispatch"))
+                            ServiceLoopSecondaryButton("Import work results", { nav.navigate("import") }, Modifier.fillMaxWidth().testTag("team-import-results"))
+                            ServiceLoopSecondaryButton("Generate report", { nav.navigate("aggregate-report/new") }, Modifier.fillMaxWidth().testTag("team-generate-report"))
+                        }
                     }
                 }
             }
@@ -121,7 +122,7 @@ internal fun TeamWorkspaceScreen(nav: NavHostController, modifier: Modifier = Mo
             }
         }
         if (content == TeamWorkspaceContent.ID) item {
-            Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(localId?.let(TechnicianIdCodec::display).orEmpty(), modifier = Modifier.weight(1f).testTag("team-local-id"), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 ServiceLoopFieldAction(accessibleName = "Copy ID", onClick = { localId?.let { id -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ServiceLoop ID", id)) } }, enabled = localId != null, modifier = Modifier.testTag("team-copy-id"), content = { ServiceLoopIcon(ServiceLoopIcons.Copy, null) })
             }

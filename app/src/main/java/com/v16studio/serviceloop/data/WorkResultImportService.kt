@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -15,7 +16,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
 
     data class ItemPreview(val resultId: String, val sourceFinalRevisionId: String, val dispatchVisitId: String, val dispatchItemId: String, val status: String, val reason: String?)
     data class Preview(val packageId: String, val exporterId: String, val targetIssuerId: String, val items: List<ItemPreview>)
-    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String)
+    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String)
 
     suspend fun preview(bytes: ByteArray): Preview = preflight(bytes).first
 
@@ -66,7 +67,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         listOfNotNull(json.optString("privateInternalNote").takeIf { it.isNotBlank() }, work.optString("privateInternalNote").takeIf { it.isNotBlank() }).joinToString("\n").takeIf { it.isNotBlank() }, json.getJSONArray("followUps").toString(),
                         json.getJSONObject("recurrence").toString(), JSONObject().put("packageId", preview.packageId).put("exporterId", preview.exporterId)
                             .put("serviceName", work.optString("serviceName"))
-                            .put("recordedAt", json.optString("recordedAt"))
+                            .put("recordedAt", item.sourceRecordedAt)
                             .put("assignmentGeneration", json.getInt("assignmentGeneration")).put("assignmentMaterialHash", json.getString("assignmentMaterialHash"))
                             .put("assignmentIssuerId", preview.targetIssuerId).toString(), now,
                     ))
@@ -166,6 +167,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             require(dispatch.outboxItemAssignees(itemId).any { it.technicianId == packageValue.exporterId }) { "Result author is not assigned to this work item" }
             val resultId = json.getString("resultId")
             val revisionId = json.getString("sourceFinalRevisionId")
+            val sourceRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
+                ?: packageValue.generatedAt
             val content = canonicalJson(JSONObject(json.toString()).apply { remove("photos") }).toByteArray(Charsets.UTF_8) +
                 result.photos.map { "${it.sourcePhotoId}:${WorkResultPackageCodec.sha256(it.bytes)}" }.sorted().joinToString("|").toByteArray(Charsets.UTF_8)
             val payloadHash = WorkResultPackageCodec.sha256(content)
@@ -178,7 +181,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 else -> "APPLIED"
             }
             val reason = when (status) { "STALE" -> "Assignment content changed after this result was prepared"; "CONFLICT" -> "Assignment generation is newer than the issuing workspace"; else -> null }
-            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash)
+            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash, sourceRecordedAt)
         }
         return Preview(packageValue.packageId, packageValue.exporterId, packageValue.targetIssuerId, prepared.map { it.preview }) to prepared
     }

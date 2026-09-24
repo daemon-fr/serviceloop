@@ -150,6 +150,7 @@ import com.v16studio.serviceloop.ui.designsystem.ServiceLoopNoticeKind
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSurfaceCard
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopUiTokens
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopSecondaryButton
+import com.v16studio.serviceloop.ui.designsystem.ServiceLoopPrimaryButton
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopBrandStrip
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopDetailToolbar
 import com.v16studio.serviceloop.ui.designsystem.ServiceLoopContentTabs
@@ -203,7 +204,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 testTagPrefix = "home-tab",
             )
         if (tab == "DASHBOARD") {
-            LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyColumn(Modifier.testTag("home-dashboard-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 state.operationalDashboard?.takeIf { it.scope == WorkScope.Global }?.let { projection ->
                     item {
                         OperationalDashboard(
@@ -217,7 +218,7 @@ internal fun HomeScreen(state: UiState, nav: NavHostController, viewModel: Servi
                 } ?: item {
                     Text(state.operationalDashboardError ?: "Reading current work", modifier = Modifier.testTag("home-operational-dashboard-loading"))
                 }
-                if (capabilities.canCreateVisits) item { Button(onClick = { nav.navigate("visit/new") }, modifier = Modifier.fillMaxWidth().testTag("new-visit-home")) { Text("New visit") } }
+                if (capabilities.canCreateVisits) item { ServiceLoopPrimaryButton("New visit", { nav.navigate("visit/new") }, Modifier.fillMaxWidth().testTag("new-visit-home"), leadingIcon = { ServiceLoopIcon(ServiceLoopIcons.Add, null, Modifier.size(ServiceLoopUiTokens.Size.icon).testTag("new-visit-home-icon")) }) }
             }
         } else if (tab == "AGENDA") {
             HomeAgendaScreen(state, nav, Modifier.weight(1f))

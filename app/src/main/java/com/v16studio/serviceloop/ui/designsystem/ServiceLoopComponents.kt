@@ -464,8 +464,14 @@ fun ServiceLoopSelectionOption(
         ) {
             if (selectedCheck) {
                 Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                    if (selected) ServiceLoopIcon(ServiceLoopIcons.CheckFat, null, Modifier.size(24.dp), c.action)
+                    ServiceLoopIcon(
+                        ServiceLoopIcons.CheckFat,
+                        null,
+                        Modifier.size(24.dp),
+                        if (selected) c.action else c.textMuted,
+                    )
                 }
+                Spacer(Modifier.width(ServiceLoopUiTokens.Space.sm))
             }
             Text(
                 label,

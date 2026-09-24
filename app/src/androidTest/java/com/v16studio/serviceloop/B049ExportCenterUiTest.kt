@@ -77,11 +77,14 @@ class B049ExportCenterUiTest {
         compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-center-create"))
         compose.onNodeWithTag("export-center-create").assertIsDisplayed()
         compose.onNodeWithText("Create ServiceLoop file").assertIsDisplayed()
-        compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-format"))
-        compose.onNodeWithTag("export-format").performClick()
-        compose.onNodeWithTag("export-format-option-readablearchivezip").performClick()
+        compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-format-readable"))
+        compose.onNodeWithTag("export-format-native").assertIsDisplayed()
+        compose.onNodeWithTag("export-format-readable").assertIsDisplayed()
+        compose.onNodeWithTag("export-format-readable").performClick()
         compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-center-create"))
         compose.onNodeWithText("Create readable ZIP").assertIsDisplayed()
+        compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-from-date-picker"))
+        compose.onNodeWithTag("export-from-date-picker").assertIsDisplayed()
         open("data-transfer/export", TeamRole.EMPLOYEE)
         compose.onNodeWithTag("workspace-unavailable").assertIsDisplayed()
         compose.onNodeWithTag("export-center").assertDoesNotExist()
@@ -92,12 +95,39 @@ class B049ExportCenterUiTest {
         compose.onNodeWithTag("aggregate-report-new").assertIsDisplayed()
         compose.onNodeWithTag("aggregate-generate").assertIsNotEnabled()
         compose.onNodeWithText("Choose a Customer").assertIsDisplayed()
+        compose.onNodeWithTag("aggregate-report-new").performScrollToNode(hasTestTag("aggregate-from-date-picker"))
+        compose.onNodeWithTag("aggregate-from-date-picker").assertIsDisplayed()
         open("image-cleanup", TeamRole.COORDINATOR)
         compose.onNodeWithTag("image-cleanup").assertIsDisplayed()
         compose.onNodeWithTag("image-cleanup").performScrollToNode(hasTestTag("image-retention-one_month"))
         compose.onNodeWithTag("image-retention-one_month").assertIsDisplayed()
         compose.onNodeWithTag("image-cleanup").performScrollToNode(hasTestTag("save-image-cleanup"))
         compose.onNodeWithTag("save-image-cleanup").assertIsDisplayed()
+        compose.onNodeWithTag("run-image-cleanup").assertIsDisplayed()
+        val saveBottom = compose.onNodeWithTag("save-image-cleanup").fetchSemanticsNode().boundsInRoot.bottom
+        val runTop = compose.onNodeWithTag("run-image-cleanup").fetchSemanticsNode().boundsInRoot.top
+        assert(runTop > saveBottom)
+    }
+
+    @Test fun roleSettingsUseBothSelectionIconsAndCoordinatorNote() {
+        open("dispatch/settings", TeamRole.COORDINATOR)
+        compose.onNodeWithTag("team-role-settings").assertIsDisplayed()
+        compose.onNodeWithTag("team-role-COORDINATOR-selection-icon", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("team-role-SOLO-selection-icon", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Coordinator tools are available from Home > Team page.").assertIsDisplayed()
+        open("settings", TeamRole.COORDINATOR)
+        compose.onNodeWithTag("settings-section-app").assertIsDisplayed()
+        compose.onNodeWithTag("settings-section-data").assertIsDisplayed()
+        compose.onNodeWithTag("settings-appearance").assertIsDisplayed()
+        compose.onNodeWithTag("settings-about-version").assertIsDisplayed()
+    }
+
+    @Test fun backupRecoveryOffersNinetyDaysAndEraseUsesDestructiveControl() {
+        open("data-recovery", TeamRole.COORDINATOR)
+        compose.onNodeWithTag("data-recovery").assertIsDisplayed()
+        compose.onNodeWithTag("backup-reminder-presets-90").assertIsDisplayed()
+        compose.onNodeWithTag("data-recovery").performScrollToNode(hasTestTag("erase-device-data"))
+        compose.onNodeWithTag("erase-device-data").assertIsDisplayed()
     }
 
     @Test fun workResultExportRouteEnforcesReceiverRolesAndTransferHasNoDuplicateVerify() {

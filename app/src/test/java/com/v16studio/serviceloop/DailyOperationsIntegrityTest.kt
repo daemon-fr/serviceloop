@@ -856,6 +856,19 @@ class DailyOperationsIntegrityTest {
         val second=repo.createBackup(password); repo.recordVerifiedBackup(second,"test destination"); assertFalse(repo.datasetSummary().changedSinceBackup)
     }
 
+    @Test fun ninetyDayBackupReminderIsPersistedAsRecoveryPreference() = runTest {
+        foundation()
+        val password = "ninety day reminder".toCharArray()
+        val backup = repo.createBackup(password)
+        repo.recordVerifiedBackup(backup, "test destination")
+        assertFalse(repo.datasetSummary().changedSinceBackup)
+
+        repo.setBackupReminder(90)
+
+        assertEquals(90, repo.datasetSummary().backupReminderDays)
+        assertFalse(repo.datasetSummary().changedSinceBackup)
+    }
+
     @Test fun completeBackupRoundTripsCombinedSl4DispatchAndWorkingResponseDraftState() = runTest {
         val ids=foundation();val recordId=finalizedRecord(ids);val correction=repo.openCorrection(recordId)
         val template=repo.createTemplate("Integrated inspection",listOf(TemplateItemDraft("Guard condition","STATUS",required=true)))

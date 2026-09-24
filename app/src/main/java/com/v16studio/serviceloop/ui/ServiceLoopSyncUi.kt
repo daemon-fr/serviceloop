@@ -96,7 +96,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
     var createSeparate by remember { mutableStateOf<Set<String>>(emptySet()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<ImportErrorPresentation?>(null) }
     var trustedName by remember { mutableStateOf("") }
     var confirmTrust by remember { mutableStateOf(false) }
 
@@ -134,7 +134,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                 trustedName = result.trust.friendlyName.orEmpty()
                 result.fullWorkspace?.let { value -> selectedFamilies = SyncContentFamily.entries.filter { it.count(value) > 0 }.toSet() }
                 workSelected = true; templateSelected = true; createSeparate = emptySet()
-            }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message ?: "Could not read this ServiceLoop file" }
+            }.onFailure { failure -> if (failure is CancellationException) throw failure else error = importErrorPresentation(failure, ImportRouteKind.SHARED_DATA) }
             busy = false
         }
     }
@@ -147,7 +147,6 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                 Text("Import shared data", style = MaterialTheme.typography.headlineSmall)
                 Text("Import ServiceLoop data shared from another workspace.")
                 if (state.restrictedRecoveryState) ServiceLoopNotice("Recovery is restricted", "Resolve recovery before importing ordinary data.", ServiceLoopNoticeKind.Error)
-                error?.let { ServiceLoopNotice("Could not read this ServiceLoop file", it.take(240), ServiceLoopNoticeKind.Error) }
                 message?.let { ServiceLoopNotice("Import complete", it, ServiceLoopNoticeKind.Success) }
             }
         }
@@ -193,7 +192,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                                         decoded = current.copy(trust = ServiceLoopTrustDecision(trust.peerId, trust.name, ServiceLoopSourceTrust.TRUSTED))
                                         confirmTrust = false
                                     }
-                                    .onFailure { failure -> error = failure.message }
+                                    .onFailure { failure -> error = ImportErrorPresentation("Could not add trusted ID", failure.message ?: "Check the ID and try again.") }
                             }
                         }, Modifier.testTag("sync-confirm-trust-source")) { Text("Trust ID") }
                     },
@@ -225,7 +224,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     if (!capabilities.canReceiveAssignedWork) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                     if (!preview.canImport) ServiceLoopNotice("Import needs review", if (preview.visits.isNotEmpty() && preview.visits.all { it.classification == DispatchVisitClassification.ALREADY_CURRENT }) "This work assignment is already current." else "This work assignment needs review before it can be imported.", ServiceLoopNoticeKind.Warning)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview, current.envelope.manifest.exporterId) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = current.trust.canImport && workSelected && capabilities.canReceiveAssignedWork && preview.canImport && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import work", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { dispatch.import(preview, current.envelope.manifest.exporterId) } }.onSuccess { result -> message = "Applied ${result.createdVisitIds.size + result.updatedVisitIds.size} Visits without replacing the workspace."; viewModel.loadVisits(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing this work assignment. Try again.") }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-import"), enabled = current.trust.canImport && workSelected && capabilities.canReceiveAssignedWork && preview.canImport && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
             current.templatePreview?.let { preview ->
                 item {
@@ -234,7 +233,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     preview.entries.forEach { entry -> Text("${entry.transfer.reference} · ${entry.transfer.name} · ${entry.classification.name.replace('_', ' ').lowercase()}"); if (entry.classification == InspectionTemplateImportClassification.CONFLICT) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(entry.transfer.reference in createSeparate, { checked -> createSeparate = if (checked) createSeparate + entry.transfer.reference else createSeparate - entry.transfer.reference }); Text("Create separate") } }
                     if (!capabilities.canExchangeTemplates) ServiceLoopNotice("Unavailable for this Team role", "This ServiceLoop file cannot be imported for the current Team role.", ServiceLoopNoticeKind.Error)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import templates", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { templates.import(preview, current.envelope.manifest.exporterId, createSeparate) } }.onSuccess { result -> message = "Imported ${result.importedReferences.size} inspection templates. Exact matches were left unchanged."; viewModel.loadTemplates(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-template-import-confirm"), enabled = current.trust.canImport && templateSelected && capabilities.canExchangeTemplates && preview.canImport(createSeparate) && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import templates", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { templates.import(preview, current.envelope.manifest.exporterId, createSeparate) } }.onSuccess { result -> message = "Imported ${result.importedReferences.size} inspection templates. Exact matches were left unchanged."; viewModel.loadTemplates(); decoded = null }.onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing these templates. Try again.") }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-template-import-confirm"), enabled = current.trust.canImport && templateSelected && capabilities.canExchangeTemplates && preview.canImport(createSeparate) && !busy, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
             current.dataTransferPreview?.let { preview ->
                 val includesTemplates = preview.counts[DataTransferFamily.INSPECTION_TEMPLATES]?.let { it > 0 } == true
@@ -269,7 +268,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                                 viewModel.refreshRootDataNonBlocking()
                                 viewModel.loadVisits(); viewModel.loadTemplates(); viewModel.loadFollowUps()
                             }
-                            .onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message ?: "Could not import selected data" }
+                            .onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing the selected data. Try again.") }
                         busy = false
                     } }, Modifier.fillMaxWidth().testTag("sync-data-transfer-import"), enabled = current.trust.canImport && roleAllowed && preview.canImport(createSeparate) && !busy && !state.restrictedRecoveryState, busy = busy)
                     TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") }
@@ -283,10 +282,11 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     Text("Received results retain the documenting technician and assignment provenance. Stale or conflicting work is kept for review without advancing the service plan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!capabilities.canAssignWork) ServiceLoopNotice("Unavailable for this Team role", "Only a coordinator can receive work results.", ServiceLoopNoticeKind.Error)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import final results", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { workResults.import(requireNotNull(current.workResultBytes)) } }.onSuccess { result -> message = "Received ${result.items.count { it.status != "ALREADY_RECEIVED" }} final results."; decoded = null; viewModel.loadVisits() }.onFailure { failure -> if (failure is CancellationException) throw failure else error = failure.message }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-result-import"), enabled = current.trust.canImport && capabilities.canAssignWork && !busy && !state.restrictedRecoveryState, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import final results", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { workResults.import(requireNotNull(current.workResultBytes)) } }.onSuccess { result -> message = "Received ${result.items.count { it.status != "ALREADY_RECEIVED" }} final results."; decoded = null; viewModel.loadVisits() }.onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing these results. Try again.") }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-result-import"), enabled = current.trust.canImport && capabilities.canAssignWork && !busy && !state.restrictedRecoveryState, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
         }
     }
+    error?.let { presentation -> ImportErrorDialog(presentation, onDismiss = { error = null }) }
 }
 
 @Composable

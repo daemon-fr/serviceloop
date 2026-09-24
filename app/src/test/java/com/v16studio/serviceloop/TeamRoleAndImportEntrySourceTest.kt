@@ -87,7 +87,9 @@ class TeamRoleAndImportEntrySourceTest {
         assertFalse(identity.contains("Actual report name"))
         assertFalse(identity.contains("technician-report-name"))
         assertFalse(identity.contains("Business and report identity"))
-        assertTrue(dispatch.contains("roleExplanation"))
+        assertTrue(dispatch.contains("ServiceLoopIcons.CheckFat,"))
+        assertTrue(dispatch.contains("tint = if (selected) colors.action else colors.textMuted"))
+        assertTrue(dispatch.contains("Coordinator tools are available from Home > Team page."))
         assertTrue(dispatch.contains("ServiceLoopUiTokens.Layout.bodyGap"))
         assertTrue(dispatch.contains("team-role-helper"))
     }

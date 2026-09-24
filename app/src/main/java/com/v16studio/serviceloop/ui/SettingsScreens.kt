@@ -184,10 +184,11 @@ import kotlinx.coroutines.withContext
 internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHostController, appearancePreferences: AppearancePreferences) {
     val appearanceMode by appearancePreferences.mode.collectAsState()
     val context = LocalContext.current
-    LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.section)) {
-        item { SectionTitle("ServiceLoop app"); ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance) { nav.navigate("appearance") } }
+    LazyColumn(Modifier.padding(padding).testTag("settings-screen"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.lg)) {
         item {
-            Column(Modifier.testTag("settings-about"), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
+            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                SettingsSectionTitle("ServiceLoop app", Modifier.testTag("settings-section-app"))
+                ServiceLoopDenseNavigableRow("Appearance", context = appearanceMode.label, leadingIcon = ServiceLoopIcons.Appearance, modifier = Modifier.testTag("settings-appearance")) { nav.navigate("appearance") }
                 ServiceLoopDenseNavigableRow("Version ${BuildConfig.VERSION_NAME}", context = "Build ${BuildConfig.VERSION_CODE}", leadingIcon = ServiceLoopIcons.Info, modifier = Modifier.testTag("settings-about-version")) {}
                 ServiceLoopDenseNavigableRow("Report a bug", leadingIcon = ServiceLoopIcons.Bug, modifier = Modifier.testTag("settings-report-bug")) {
                     val body = "ServiceLoop version: ${BuildConfig.VERSION_NAME}\nVersion code: ${BuildConfig.VERSION_CODE}\nAndroid: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
@@ -200,8 +201,27 @@ internal fun SettingsScreen(state: UiState, padding: PaddingValues, nav: NavHost
                 }
             }
         }
-        item { SectionTitle("Data & automation"); ServiceLoopDenseNavigableRow("Reminders",context=state.reminderRuntimeState.label,leadingIcon=ServiceLoopIcons.Time,modifier=Modifier.testTag("settings-reminders")){nav.navigate("reminders")}; ServiceLoopDenseNavigableRow("Calendar integration",context=state.calendarRuntimeState.label,leadingIcon=ServiceLoopIcons.Calendar,modifier=Modifier.testTag("settings-calendar")){nav.navigate("calendar")}; ServiceLoopDenseNavigableRow("Image cleanup",context="Keep report-quality copies of finalized photos",leadingIcon=ServiceLoopIcons.Photo,modifier=Modifier.testTag("settings-image-cleanup")){nav.navigate("image-cleanup")}; ServiceLoopDenseNavigableRow("History",leadingIcon=ServiceLoopIcons.History){nav.navigate("history/global")}; ServiceLoopDenseNavigableRow("Backup and recovery",leadingIcon=ServiceLoopIcons.Backup){nav.navigate("data-recovery")} }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.sm)) {
+                SettingsSectionTitle("Data & automation", Modifier.testTag("settings-section-data"))
+                ServiceLoopDenseNavigableRow("Reminders", context = state.reminderRuntimeState.label, leadingIcon = ServiceLoopIcons.Time, modifier = Modifier.testTag("settings-reminders")) { nav.navigate("reminders") }
+                ServiceLoopDenseNavigableRow("Calendar integration", context = state.calendarRuntimeState.label, leadingIcon = ServiceLoopIcons.Calendar, modifier = Modifier.testTag("settings-calendar")) { nav.navigate("calendar") }
+                ServiceLoopDenseNavigableRow("Image cleanup", context = "Keep report-quality copies of finalized photos", leadingIcon = ServiceLoopIcons.Photo, modifier = Modifier.testTag("settings-image-cleanup")) { nav.navigate("image-cleanup") }
+                ServiceLoopDenseNavigableRow("History", leadingIcon = ServiceLoopIcons.History, modifier = Modifier.testTag("settings-history")) { nav.navigate("history/global") }
+                ServiceLoopDenseNavigableRow("Backup and recovery", leadingIcon = ServiceLoopIcons.Backup, modifier = Modifier.testTag("settings-backup-recovery")) { nav.navigate("data-recovery") }
+            }
+        }
     }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        color = LocalServiceLoopTokens.current.action,
+        modifier = modifier.semantics { heading() },
+    )
 }
 
 @Composable

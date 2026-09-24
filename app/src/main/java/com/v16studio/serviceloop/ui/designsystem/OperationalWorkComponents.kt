@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -229,8 +230,15 @@ fun OperationalWorkRow(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.xs)) {
                 Text("${item.displayReference} · ${item.displayTitle}", style = ServiceLoopUiTokens.Type.itemTitle)
                 if (item.displayContext.isNotBlank()) Text(item.displayContext, style = ServiceLoopUiTokens.Type.supporting, color = tokens.textSecondary)
-                item.dueDate?.let { Text("Due $it", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted) }
-                if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) Text("Booked visit", style = ServiceLoopUiTokens.Type.label, color = tokens.textPrimary, fontWeight = FontWeight.Bold)
+                if (item.dueDate != null || item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) {
+                    if (item.displayContext.isNotBlank()) Spacer(Modifier.height(ServiceLoopUiTokens.Space.sm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(ServiceLoopUiTokens.Space.md), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("operational-work-meta-${item.recordId}")) {
+                        item.dueDate?.let { Text("Due $it", style = ServiceLoopUiTokens.Type.meta, color = tokens.textMuted) }
+                        if (item.kind == OperationalWorkKind.VISIT && item.scheduledAtEpochMillis != null) {
+                            Text("Booked visit", style = ServiceLoopUiTokens.Type.label, color = tokens.textSecondary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
