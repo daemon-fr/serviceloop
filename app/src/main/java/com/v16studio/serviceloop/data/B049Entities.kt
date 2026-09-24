@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 /** Each exact source revision is acknowledged once; a logical result may have later revisions. */
 @Entity(tableName = "work_result_receipts", indices = [
     Index("packageId"),
-    Index(value = ["resultId", "sourceFinalRevisionId"], unique = true),
+    Index(value = ["exporterId", "resultId", "sourceFinalRevisionId"], unique = true),
     Index("dispatchVisitId"), Index("dispatchItemId"),
 ])
 data class WorkResultReceiptEntity(
@@ -31,7 +31,7 @@ data class WorkResultReceiptEntity(
 
 /** Frozen technician-authored truth; never represented as Coordinator Working drafts. */
 @Entity(tableName = "remote_final_results", indices = [
-    Index(value = ["resultId", "sourceFinalRevisionId"], unique = true),
+    Index(value = ["technicianId", "resultId", "sourceFinalRevisionId"], unique = true),
     Index("dispatchVisitId"), Index("dispatchItemId"), Index("customerId"),
 ])
 data class RemoteFinalResultEntity(
@@ -62,6 +62,7 @@ data class RemoteFinalResultEntity(
     val provenanceJson: String,
     val importedAtEpochMillis: Long,
     val voidedAtEpochMillis: Long? = null,
+    val sourcePayloadJson: String? = null,
 )
 
 @Entity(tableName = "remote_result_photos", indices = [Index(value = ["remoteFinalResultId", "sourcePhotoId"], unique = true)])
@@ -133,4 +134,5 @@ data class RetainedImageEntity(
     val derivativeHeight: Int,
     val derivativeMimeType: String,
     val createdAtEpochMillis: Long,
+    val originalDeletionRequestedAtEpochMillis: Long? = null,
 )

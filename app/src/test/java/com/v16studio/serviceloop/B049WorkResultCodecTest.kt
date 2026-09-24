@@ -32,11 +32,11 @@ class B049WorkResultCodecTest {
         .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1)
         .put("assignmentMaterialHash", "a".repeat(64))
         .put("technicianId", exporter).put("technicianName", "Field technician")
-        .put("serviceDate", "2026-09-23").put("outcome", "DONE")
+        .put("serviceDate", "2026-09-23").put("outcome", "PERFORMED")
         .put("customerSnapshot", JSONObject().put("name", "Customer"))
         .put("siteSnapshot", JSONObject().put("name", "Site"))
         .put("subjectSnapshot", JSONObject().put("equipmentName", "Machine"))
-        .put("workSnapshot", JSONObject().put("serviceName", "Service"))
+        .put("workSnapshot", JSONObject().put("serviceName", "Service").put("publicWork", "Serviced"))
         .put("checklist", JSONArray()).put("findings", JSONArray()).put("parts", JSONArray()).put("followUps", JSONArray())
         .put("recurrence", JSONObject())
 
@@ -75,6 +75,24 @@ class B049WorkResultCodecTest {
             }
         } }
         assertThrows(IllegalArgumentException::class.java) { WorkResultPackageCodec.decode(tampered.toByteArray()) }
+    }
+
+    @Test fun rejectsUnknownOutcomeAndContradictoryFulfillment() {
+        fun encode(json: JSONObject) = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(
+            "negative", exporter, issuer, "2026-09-23T10:00:00Z", listOf(WorkResultPackageCodec.Result(json, emptyList())),
+        ))
+        assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "DONE")) }
+        assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "NOT_PERFORMED")
+            .put("workSnapshot", JSONObject().put("notPerformedReason", "Unavailable").put("fulfilledObligation", true))) }
+        assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "PARTLY_PERFORMED")) }
+    }
+
+    @Test fun retainedSourcePhotoMayAppearInTwoDistinctFinalRevisions() {
+        val first = WorkResultPackageCodec.Result(result(), listOf(WorkResultPackageCodec.Photo("photo-1", photo(), "Kept", true, "PUBLIC", "item-1", 16, 12)))
+        val second = WorkResultPackageCodec.Result(JSONObject(result().toString()).put("sourceFinalRevisionId", "revision-2"), first.photos)
+        val bytes = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("corrections", exporter, issuer,
+            "2026-09-23T10:00:00Z", listOf(first, second)))
+        assertEquals(2, WorkResultPackageCodec.decode(bytes).results.size)
     }
 
     @Test fun photoDerivativeIsJpegWithinReportQualityBoundsAndSourceRemainsUnchanged() {

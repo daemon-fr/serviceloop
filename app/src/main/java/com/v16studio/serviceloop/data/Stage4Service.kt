@@ -244,6 +244,10 @@ class Stage4Service(
             dao.insertFollowUp(FollowUpEntity(followUpId, "FU-${dao.followUpCount() + 1}", "CORRECTIVE", requested.title.trim(), requested.dueDate, "OPEN", visit.customerId, visit.siteId, firstWork?.equipmentId, requested.privatePlanningNote.trim().ifBlank { null }, visit.id, firstWork?.sourceWorkItemId, now))
             dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(), followUpId, "CREATED_BY_CORRECTION", now, draft.reason, requested.dueDate))
         }
+        dao.finalWorkItems(revisionId).forEach { item ->
+            val snapshot = FinalFollowUpSnapshot.capture(now, dao.followUpsForSourceWorkItem(item.sourceWorkItemId))
+            check(dao.setFinalFollowUpSnapshot(item.id, snapshot) == 1)
+        }
         val selectedEvidenceIds = proposedItems.flatMap { decodePhotos(it.photosJson) }.filter { it.selected && it.addedInCorrection }.mapNotNull { it.sourceId }.toSet()
         dao.attachmentsForOwner("CORRECTION_DRAFT", draft.id).forEach { attachment ->
             check(dao.reparentAttachment(attachment.id, "CORRECTION_DRAFT", draft.id, "FINAL_REVISION", revisionId, attachment.id in selectedEvidenceIds) == 1) { "Correction evidence ownership could not be committed" }

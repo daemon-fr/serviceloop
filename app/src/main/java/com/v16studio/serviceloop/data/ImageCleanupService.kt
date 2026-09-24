@@ -5,6 +5,7 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
+import kotlinx.coroutines.sync.withLock
 
 enum class ImageRetention(val months: Int, val title: String) {
     NEVER(0, "Never"), ONE_MONTH(1, "1 month"), THREE_MONTHS(3, "3 months"), SIX_MONTHS(6, "6 months"), ONE_YEAR(12, "1 year");
@@ -19,10 +20,24 @@ class ImageCleanupService(private val context: Context, private val database: Se
     private val dao = database.serviceLoopDao()
     private val root = context.filesDir
 
-    fun preference(): ImageRetention = ImageRetention.fromMonths(prefs.getInt("months", 0))
+    private fun binding(): String? = database.openHelper.readableDatabase
+        .query("SELECT datasetId,adoptionToken FROM recovery_metadata WHERE id='primary'").use { cursor ->
+            if (!cursor.moveToFirst()) null else {
+                val dataset = cursor.getString(0)
+                val generation = if (cursor.isNull(1)) "initial" else cursor.getString(1)
+                "${dataset.length}:$dataset${generation.length}:$generation"
+            }
+        }
+
+    fun requiresReconfirmation(): Boolean = prefs.getInt("months", 0) != 0 && prefs.getString("binding", null) != binding()
+
+    fun preference(): ImageRetention = if (prefs.getString("binding", null) == binding()) {
+        ImageRetention.fromMonths(prefs.getInt("months", 0))
+    } else ImageRetention.NEVER
 
     fun savePreference(value: ImageRetention) {
-        check(prefs.edit().putInt("months", value.months).commit()) { "Image cleanup preference was not saved" }
+        val current = binding() ?: error("Dataset identity is unavailable")
+        check(prefs.edit().putInt("months", value.months).putString("binding", current).remove("lastRun").commit()) { "Image cleanup preference was not saved" }
     }
 
     suspend fun runIfDue(now: Long = System.currentTimeMillis()): ImageCleanupResult? {
@@ -31,7 +46,11 @@ class ImageCleanupService(private val context: Context, private val database: Se
         return runNow(now).also { check(prefs.edit().putLong("lastRun", now).commit()) }
     }
 
-    suspend fun runNow(now: Long = System.currentTimeMillis()): ImageCleanupResult {
+    suspend fun runNow(now: Long = System.currentTimeMillis()): ImageCleanupResult = BusinessFileCoordinator.mutex.withLock {
+        runNowLocked(now)
+    }
+
+    private suspend fun runNowLocked(now: Long): ImageCleanupResult {
         val choice = preference()
         if (choice == ImageRetention.NEVER) return ImageCleanupResult(0, 0, 0, 0)
         val cutoff = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).minusMonths(choice.months.toLong()).toInstant().toEpochMilli()
@@ -67,7 +86,16 @@ class ImageCleanupService(private val context: Context, private val database: Se
     private suspend fun process(kind: String, id: String, path: String, hash: String, size: Long, eligibleAt: Long, cutoff: Long, now: Long): Pair<Boolean, Boolean> {
         if (eligibleAt > cutoff) return false to false
         val original = ownedFile(path)
-        if (!original.isFile) return false to false
+        if (!original.isFile) {
+            val pending = dao.retainedImage(kind, id)
+            if (pending?.originalDeletionRequestedAtEpochMillis != null && pending.originalDeletedAtEpochMillis == null) {
+                val derivativeFile = ownedFile(pending.derivativeRelativePath)
+                require(derivativeFile.isFile && derivativeFile.length() == pending.derivativeByteSize &&
+                    WorkResultPackageCodec.sha256(derivativeFile.readBytes()) == pending.derivativeSha256) { "Retained photo is unreadable" }
+                dao.updateRetainedImage(pending.copy(originalDeletedAtEpochMillis = now))
+            }
+            return false to false
+        }
         require(original.length() == size && WorkResultPackageCodec.sha256(original.readBytes()) == hash) { "Original photo failed integrity check" }
         var retained = dao.retainedImage(kind, id)
         var created = false
@@ -84,7 +112,11 @@ class ImageCleanupService(private val context: Context, private val database: Se
         }
         val derivativeFile = ownedFile(retained.derivativeRelativePath)
         require(derivativeFile.isFile && derivativeFile.length() == retained.derivativeByteSize && WorkResultPackageCodec.sha256(derivativeFile.readBytes()) == retained.derivativeSha256) { "Retained photo is unreadable" }
-        if (!original.delete()) return created to false
+        if (retained.originalDeletionRequestedAtEpochMillis == null) {
+            retained = retained.copy(originalDeletionRequestedAtEpochMillis = now)
+            dao.updateRetainedImage(retained)
+        }
+        if (!original.delete() && original.exists()) return created to false
         dao.updateRetainedImage(retained.copy(originalDeletedAtEpochMillis = now))
         return created to true
     }

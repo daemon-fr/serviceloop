@@ -52,7 +52,7 @@ class B049WorkResultEndToEndInstrumentedTest {
                     .put("dispatchVisitId", "dispatch-v").put("dispatchItemId", "dispatch-$item")
                     .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1).put("assignmentMaterialHash", material)
                     .put("technicianId", exporter).put("technicianName", "Field technician").put("serviceDate", "2026-09-23")
-                    .put("outcome", "DONE").put("customerSnapshot", JSONObject().put("name", "Customer"))
+                    .put("outcome", "PERFORMED").put("customerSnapshot", JSONObject().put("name", "Customer"))
                     .put("siteSnapshot", JSONObject().put("name", "Site"))
                     .put("subjectSnapshot", JSONObject().put("type", if (first) "EQUIPMENT" else "SITE"))
                     .put("workSnapshot", JSONObject().put("serviceName", if (first) "Annual" else "Inspect site")

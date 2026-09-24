@@ -33,13 +33,13 @@ internal object WorkResultPackageCodec {
         val sections = linkedMapOf<String, ByteArray>()
         val declarations = mutableListOf(resultSection)
         val results = JSONArray()
-        val photoIds = mutableSetOf<String>()
+        val photoIds = mutableSetOf<Triple<String, String, String>>()
         value.results.forEach { result ->
             validateResult(result.value, value.targetIssuerId)
             val json = JSONObject(result.value.toString())
             val photos = JSONArray()
             result.photos.forEach { photo ->
-                require(photoIds.add(photo.sourcePhotoId)) { "Duplicate source photo" }
+                require(photoIds.add(Triple(json.getString("resultId"), json.getString("sourceFinalRevisionId"), photo.sourcePhotoId))) { "Duplicate source photo in result revision" }
                 val sectionName = "photo-${UUID.randomUUID()}"
                 val fileName = "$sectionName.jpg"
                 declarations += ServiceLoopSyncSectionDeclaration(sectionName, 1, fileName)
@@ -72,7 +72,7 @@ internal object WorkResultPackageCodec {
         require(resultArray.length() in 1..MAX_RESULTS) { "Invalid result count" }
         val usedSections = mutableSetOf("results")
         val resultKeys = mutableSetOf<Pair<String, String>>()
-        val photoIds = mutableSetOf<String>()
+        val photoIds = mutableSetOf<Triple<String, String, String>>()
         val results = (0 until resultArray.length()).map { index ->
             val json = resultArray.getJSONObject(index)
             validateResult(json, issuerId)
@@ -84,7 +84,7 @@ internal object WorkResultPackageCodec {
                 val sectionName = photo.getString("section")
                 require(usedSections.add(sectionName) && manifest.sections.any { it == ServiceLoopSyncSectionDeclaration(sectionName, 1, "$sectionName.jpg") }) { "Undeclared or duplicate photo" }
                 val photoId = photo.getString("sourcePhotoId")
-                require(photoIds.add(photoId)) { "Duplicate source photo" }
+                require(photoIds.add(Triple(json.getString("resultId"), json.getString("sourceFinalRevisionId"), photoId))) { "Duplicate source photo in result revision" }
                 val data = envelope.section(sectionName)
                 require(data.size in 1..MAX_PHOTO_BYTES && photo.getLong("byteSize") == data.size.toLong() && photo.getString("sha256") == sha256(data)) { "Result photo failed integrity check" }
                 require(photo.getString("mimeType") == "image/jpeg") { "Unsupported result photo format" }
@@ -100,6 +100,10 @@ internal object WorkResultPackageCodec {
         listOf("resultId", "sourceFinalRevisionId", "dispatchVisitId", "dispatchItemId", "assignmentMaterialHash", "assignmentIssuerId", "technicianId", "technicianName", "serviceDate", "outcome", "customerSnapshot", "siteSnapshot", "subjectSnapshot", "workSnapshot", "checklist", "findings", "parts", "followUps", "recurrence").forEach { key ->
             require(o.has(key) && !o.isNull(key)) { "Missing result $key" }
         }
+        listOf("resultId", "sourceFinalRevisionId", "dispatchVisitId", "dispatchItemId", "assignmentMaterialHash", "assignmentIssuerId", "technicianId", "technicianName", "serviceDate", "outcome").forEach { key ->
+            require(o.get(key) is String) { "Invalid result $key type" }
+        }
+        require(o.get("assignmentGeneration") is Number && o.get("assignmentGeneration").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid assignment generation" }
         require(o.getString("assignmentIssuerId") == targetIssuerId) { "Result issuer mismatch" }
         require(o.getInt("assignmentGeneration") > 0) { "Invalid assignment generation" }
         require(o.getString("resultId").isNotBlank() && o.getString("sourceFinalRevisionId").isNotBlank())
@@ -107,8 +111,35 @@ internal object WorkResultPackageCodec {
         require(o.getString("assignmentMaterialHash").matches(Regex("[a-fA-F0-9]{64}"))) { "Invalid assignment material hash" }
         require(o.getString("technicianId").isNotBlank() && o.getString("technicianName").isNotBlank())
         java.time.LocalDate.parse(o.getString("serviceDate"))
-        o.getJSONObject("customerSnapshot"); o.getJSONObject("siteSnapshot"); o.getJSONObject("subjectSnapshot"); o.getJSONObject("workSnapshot")
-        o.getJSONArray("checklist"); o.getJSONArray("findings"); o.getJSONArray("parts"); o.getJSONArray("followUps"); o.getJSONObject("recurrence")
+        o.getJSONObject("customerSnapshot"); o.getJSONObject("siteSnapshot"); o.getJSONObject("subjectSnapshot")
+        val work = o.getJSONObject("workSnapshot")
+        val recurrence = o.getJSONObject("recurrence")
+        o.getJSONArray("checklist"); o.getJSONArray("findings"); o.getJSONArray("parts"); o.getJSONArray("followUps")
+        val outcome = o.getString("outcome")
+        require(outcome in setOf("PERFORMED", "PARTLY_PERFORMED", "NOT_PERFORMED")) { "Unsupported result outcome" }
+        if (outcome == "NOT_PERFORMED") {
+            require(work.get("notPerformedReason") is String)
+            require(work.getString("notPerformedReason").isNotBlank()) { "Not performed needs a reason" }
+        } else {
+            require(work.get("publicWork") is String)
+            require(work.getString("publicWork").isNotBlank()) { "Performed work needs a description" }
+        }
+        if (work.has("fulfilledObligation")) {
+            require(work.get("fulfilledObligation") is Boolean) { "Invalid fulfillment decision" }
+            val fulfilled = work.getBoolean("fulfilledObligation")
+            require(outcome != "NOT_PERFORMED" || !fulfilled) { "Not performed cannot fulfill an obligation" }
+            if (recurrence.has("fulfilledObligation")) {
+                require(recurrence.get("fulfilledObligation") is Boolean) { "Invalid recurrence fulfillment" }
+                require(recurrence.getBoolean("fulfilledObligation") == fulfilled) { "Result recurrence contradicts work" }
+            }
+            if (fulfilled) {
+                require(recurrence.getString("oldDueDate").isNotBlank() && recurrence.getString("nextDueDate").isNotBlank()) { "Fulfilled result needs due dates" }
+                java.time.LocalDate.parse(recurrence.getString("oldDueDate"))
+                java.time.LocalDate.parse(recurrence.getString("nextDueDate"))
+            }
+        } else if (outcome == "PARTLY_PERFORMED") {
+            throw IllegalArgumentException("Partial work needs an explicit fulfillment decision")
+        }
     }
 
     internal fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

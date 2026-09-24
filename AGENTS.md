@@ -103,7 +103,7 @@ Tests must validate adopted business meaning rather than merely mirror implement
 
 Before changing production code for a UI-test failure, determine whether the problem is actually a stale selector, lazy-list composition, timing/synchronization, IME interference, or a real product defect. A test-harness failure is not automatically a production failure.
 
-At final acceptance gates, rerun affected checks after the last production/test edit. Do not rely on an earlier green run that predates later changes.
+Select checks by task risk and changed inputs using [the canonical prompt and handoff standard](docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md). Only checks affected by a later edit lose validity. A broad suite, lint, release build, or device run is required when its risk or inputs justify it, not merely because another commit exists. Record the broad checkpoint and each impact-scoped rerun honestly.
 
 ## Execution/tooling fallbacks
 

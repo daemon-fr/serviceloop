@@ -37,7 +37,8 @@ class B049ImageCleanupTest {
     @Before fun setup() = kotlinx.coroutines.runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
-        directory = File(context.filesDir, "b049-retention-${System.nanoTime()}").apply { mkdirs() }
+        ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+        directory = File(context.filesDir, "attachments/b049-retention-${System.nanoTime()}").apply { mkdirs() }
         cleanup = ImageCleanupService(context, database)
         cleanup.savePreference(ImageRetention.NEVER)
         val dao = database.serviceLoopDao()

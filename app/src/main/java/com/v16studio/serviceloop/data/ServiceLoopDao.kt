@@ -147,6 +147,8 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRecord(value: FinalRecordEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalRevision(value: FinalRecordRevisionEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalWorkItems(values: List<FinalWorkItemEntity>)
+    @Query("UPDATE final_work_items SET followUpsSnapshotJson=:snapshot WHERE id=:id AND followUpsSnapshotJson IS NULL")
+    suspend fun setFinalFollowUpSnapshot(id: String, snapshot: String): Int
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertFinalChecklistItems(values: List<FinalChecklistItemEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReportRendition(value: ReportRenditionEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertReusableTemplate(value: ReusableTemplateEntity)
@@ -204,9 +206,9 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM business_profiles WHERE id='primary'") suspend fun businessProfile(): BusinessProfileEntity?
     @Query("SELECT * FROM final_records WHERE visitId=:visitId") suspend fun finalRecordForVisit(visitId: String): FinalRecordEntity?
     @Query("SELECT * FROM final_records WHERE id=:id") suspend fun finalRecord(id: String): FinalRecordEntity?
-    @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun workResultReceipt(resultId: String, revisionId: String): WorkResultReceiptEntity?
-    @Query("SELECT * FROM work_result_receipts WHERE resultId=:resultId AND status='APPLIED' ORDER BY appliedAtEpochMillis DESC LIMIT 1") suspend fun appliedWorkResultLineage(resultId: String): WorkResultReceiptEntity?
-    @Query("SELECT * FROM remote_final_results WHERE resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun remoteFinalResult(resultId: String, revisionId: String): RemoteFinalResultEntity?
+    @Query("SELECT * FROM work_result_receipts WHERE exporterId=:authorId AND resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun workResultReceipt(authorId: String, resultId: String, revisionId: String): WorkResultReceiptEntity?
+    @Query("SELECT * FROM work_result_receipts WHERE exporterId=:authorId AND resultId=:resultId AND status='APPLIED' ORDER BY appliedAtEpochMillis DESC LIMIT 1") suspend fun appliedWorkResultLineage(authorId: String, resultId: String): WorkResultReceiptEntity?
+    @Query("SELECT * FROM remote_final_results WHERE technicianId=:authorId AND resultId=:resultId AND sourceFinalRevisionId=:revisionId") suspend fun remoteFinalResult(authorId: String, resultId: String, revisionId: String): RemoteFinalResultEntity?
     @Query("SELECT * FROM data_transfer_bindings WHERE originWorkspaceId=:origin AND entityType=:type AND sourceEntityId=:sourceId") suspend fun dataTransferBinding(origin: String, type: String, sourceId: String): DataTransferBindingEntity?
     @Query("SELECT * FROM data_transfer_bindings WHERE entityType=:type AND localEntityId=:localId ORDER BY importedAtEpochMillis") suspend fun dataTransferBindingsForLocal(type: String, localId: String): List<DataTransferBindingEntity>
     @Query("SELECT * FROM data_transfer_bindings") suspend fun allDataTransferBindings(): List<DataTransferBindingEntity>
@@ -217,6 +219,8 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM transferred_evidence WHERE sourceIdentityKey=:sourceKey") suspend fun transferredEvidenceBySourceKey(sourceKey: String): TransferredEvidenceEntity?
     @Query("SELECT * FROM transferred_evidence ORDER BY serviceDate, originWorkspaceId, sourceVisitId, sourceWorkItemId, sourcePhotoId") suspend fun allTransferredEvidence(): List<TransferredEvidenceEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredEvidence(values: List<TransferredEvidenceEntity>)
+    @Query("UPDATE transferred_evidence SET transferredFinalResultId=:resultId WHERE id=:evidenceId AND transferredFinalResultId IS NULL")
+    suspend fun linkTransferredEvidenceIfUnlinked(evidenceId: String, resultId: String): Int
     @Query("SELECT * FROM transferred_history_entries WHERE originWorkspaceId=:origin AND family=:family AND sourceEntityId=:sourceId AND sourceRevisionKey=:revisionKey") suspend fun transferredHistoryEntry(origin: String, family: String, sourceId: String, revisionKey: String): TransferredHistoryEntryEntity?
     @Query("SELECT * FROM transferred_history_entries ORDER BY eventDateTime, originWorkspaceId, family, sourceEntityId, sourceRevisionKey") suspend fun allTransferredHistoryEntries(): List<TransferredHistoryEntryEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredHistoryEntries(values: List<TransferredHistoryEntryEntity>)
@@ -307,7 +311,9 @@ interface ServiceLoopDao {
     @Update suspend fun updateRetainedImage(value: RetainedImageEntity)
     @Query("SELECT * FROM remote_final_results WHERE voidedAtEpochMillis IS NULL ORDER BY serviceDate, id") suspend fun activeRemoteFinalResults(): List<RemoteFinalResultEntity>
     @Query("SELECT * FROM remote_result_photos WHERE remoteFinalResultId=:resultId ORDER BY id") suspend fun remoteResultPhotos(resultId: String): List<RemoteResultPhotoEntity>
-    @Query("SELECT r.* FROM remote_final_results r JOIN work_result_receipts w ON w.resultId=r.resultId AND w.sourceFinalRevisionId=r.sourceFinalRevisionId WHERE w.status='APPLIED' AND r.voidedAtEpochMillis IS NULL ORDER BY r.serviceDate, r.id") suspend fun reportableRemoteFinalResults(): List<RemoteFinalResultEntity>
+    @Query("SELECT COUNT(*) FROM remote_result_photos WHERE relativePath=:path") suspend fun remotePhotoReferenceCount(path: String): Int
+    @Query("SELECT COUNT(*) FROM transferred_evidence WHERE relativePath=:path") suspend fun transferredEvidenceReferenceCount(path: String): Int
+    @Query("SELECT r.* FROM remote_final_results r JOIN work_result_receipts w ON w.exporterId=r.technicianId AND w.resultId=r.resultId AND w.sourceFinalRevisionId=r.sourceFinalRevisionId WHERE w.status='APPLIED' AND r.voidedAtEpochMillis IS NULL ORDER BY r.serviceDate, r.id") suspend fun reportableRemoteFinalResults(): List<RemoteFinalResultEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateReport(value: AggregateReportEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateSources(values: List<AggregateReportSourceEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateRendition(value: AggregateReportRenditionEntity)

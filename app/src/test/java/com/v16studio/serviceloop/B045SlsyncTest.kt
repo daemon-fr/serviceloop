@@ -48,6 +48,7 @@ class B045SlsyncTest {
     @Before fun setUp() {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         kotlinx.coroutines.runBlocking { database.dispatchDao().insertTechnicianIdentity(TechnicianIdentityEntity("primary", exporterId, "Device technician", 1L, 1L)) }
         attachmentRoot = File(context.cacheDir, "b045-${System.nanoTime()}").apply { mkdirs() }
     }
@@ -206,7 +207,7 @@ class B045SlsyncTest {
         dao.insertAggregateSources(listOf(source))
         dao.insertAggregateRendition(AggregateReportRenditionEntity("b049-rendition", "b049-aggregate", null, null, null, null, 4, "PENDING", null))
         val derivativeBytes = "retained B049 evidence".toByteArray()
-        val derivativePath = "retained/b049.jpg"
+        val derivativePath = "retained-images/b049.jpg"
         File(attachmentRoot, derivativePath).apply { parentFile!!.mkdirs(); writeBytes(derivativeBytes) }
         val derivativeHash = java.security.MessageDigest.getInstance("SHA-256").digest(derivativeBytes).joinToString("") { "%02x".format(it) }
         val retained = RetainedImageEntity("b049-retained", "FINAL_PHOTO", "b049-source-photo", null, 5, derivativePath, derivativeHash, derivativeBytes.size.toLong(), 12, 8, "image/jpeg", 4)
@@ -224,8 +225,8 @@ class B045SlsyncTest {
         assertEquals(listOf("b049-contact", "b049-contact-2"), dao.customerContacts("b049-customer").map { it.id })
         assertEquals("Internal instructions", dao.customerContacts("b049-customer").first().notes)
         assertEquals(listOf(1, 2), dao.customerContacts("b049-customer").map { it.position })
-        assertEquals(result, dao.remoteFinalResult("b049-result", "b049-revision"))
-        assertEquals(receipt, dao.workResultReceipt("b049-result", "b049-revision"))
+        assertEquals(result, dao.remoteFinalResult(result.technicianId, "b049-result", "b049-revision"))
+        assertEquals(receipt, dao.workResultReceipt(receipt.exporterId, "b049-result", "b049-revision"))
         assertEquals(report, dao.aggregateReport("b049-aggregate"))
         assertEquals(listOf(source), dao.aggregateSources("b049-aggregate"))
         assertEquals(retained, dao.retainedImage("FINAL_PHOTO", "b049-source-photo"))
@@ -272,7 +273,7 @@ class B045SlsyncTest {
         RecoveryPackage(database, attachmentRoot).normalizeTrustedServiceLoopIds(root)
 
         val tables = root.getJSONArray("tables")
-        assertEquals(18, root.getInt("schemaVersion"))
+        assertEquals(16, root.getInt("schemaVersion"))
         assertEquals("technician_identity", tables.getJSONObject(0).getString("name"))
         assertEquals(exporterId, tables.getJSONObject(0).getJSONArray("rows").getJSONObject(0).getString("technicianId"))
         assertEquals("trusted_service_loop_ids", tables.getJSONObject(1).getString("name"))

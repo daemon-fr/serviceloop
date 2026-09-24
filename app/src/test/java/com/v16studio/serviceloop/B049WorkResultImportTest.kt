@@ -66,7 +66,7 @@ class B049WorkResultImportTest {
             .put("dispatchVisitId", "dispatch-v").put("dispatchItemId", "dispatch-$item")
             .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1).put("assignmentMaterialHash", materialHash)
             .put("technicianId", exporter).put("technicianName", "Field technician").put("serviceDate", "2026-09-23")
-            .put("outcome", "DONE").put("customerSnapshot", JSONObject().put("name", "Customer"))
+            .put("outcome", "PERFORMED").put("customerSnapshot", JSONObject().put("name", "Customer"))
             .put("siteSnapshot", JSONObject().put("name", "Site"))
             .put("subjectSnapshot", JSONObject().put("type", if(first) "EQUIPMENT" else "SITE"))
             .put("workSnapshot", JSONObject().put("serviceName", if(first) "Annual" else "Inspect site")
@@ -93,7 +93,7 @@ class B049WorkResultImportTest {
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
         val correction = result(1).let { it.copy(value = JSONObject(it.value.toString()).put("sourceFinalRevisionId", "revision-1-corrected").put("recordedAt", "2026-09-24T10:00:00Z").put("publicNote", "Corrected wording")) }
         service.import(packageBytes("package-correction", correction))
-        assertEquals("APPLIED", database.serviceLoopDao().workResultReceipt("result-1", "revision-1-corrected")!!.status)
+        assertEquals("APPLIED", database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1-corrected")!!.status)
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
         service.import(packageBytes("package-2", result(2)))
         assertEquals("CONCLUDED", database.dispatchDao().outboxVisit("dispatch-v")!!.outboxStatus.name)
@@ -123,12 +123,31 @@ class B049WorkResultImportTest {
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { service.import(wrong) } }
     }
 
+    @Test fun correctionChangingAppliedRecurrenceReportsItsCommittedConflict() = runTest {
+        val service = WorkResultImportService(database, root)
+        service.import(packageBytes("original", result(1)))
+        val correction = result(1).let { source ->
+            source.copy(value = JSONObject(source.value.toString())
+                .put("sourceFinalRevisionId", "revision-1-conflicting")
+                .put("recurrence", JSONObject().put("fulfilledObligation", true)
+                    .put("oldDueDate", "2026-09-01").put("nextDueDate", "2028-09-01")))
+        }
+        val committed = service.import(packageBytes("correction", correction)).items.single()
+        assertEquals("CONFLICT", committed.status)
+        assertEquals("CONFLICT", database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1-conflicting")!!.status)
+        assertEquals("2027-09-01", database.serviceLoopDao().plan("plan")!!.currentDueDate)
+        assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
+        val replay = service.import(packageBytes("correction-replay", correction)).items.single()
+        assertEquals("ALREADY_RECEIVED", replay.status)
+        assertEquals(true, replay.reason?.startsWith("CONFLICT"))
+    }
+
     @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {
         ServiceLoopPeerTrustStore(database).remove(exporter)
         val bytes = packageBytes("untrusted", result(2))
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { WorkResultImportService(database, root).import(bytes) } }
-        assertNull(database.serviceLoopDao().workResultReceipt("result-2", "revision-2"))
-        assertNull(database.serviceLoopDao().remoteFinalResult("result-2", "revision-2"))
+        assertNull(database.serviceLoopDao().workResultReceipt(exporter, "result-2", "revision-2"))
+        assertNull(database.serviceLoopDao().remoteFinalResult(exporter, "result-2", "revision-2"))
         assertEquals("DISPATCHED", database.dispatchDao().outboxVisit("dispatch-v")!!.outboxStatus.name)
     }
 

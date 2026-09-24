@@ -34,6 +34,7 @@ class B026FlexibleWorkTest {
     @Before fun setup() {
         db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureReminderDefaults(db.openHelper.writableDatabase)
         root = File(context.cacheDir, "b026-${System.nanoTime()}").apply { mkdirs() }
     }
 

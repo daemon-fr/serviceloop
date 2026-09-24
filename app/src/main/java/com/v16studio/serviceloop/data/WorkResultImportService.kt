@@ -8,6 +8,9 @@ import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Coordinator ingestion preserves technician final truth separately from local Working edits. */
 class WorkResultImportService(private val database: ServiceLoopDatabase, private val attachmentRoot: File) {
@@ -20,15 +23,18 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
 
     suspend fun preview(bytes: ByteArray): Preview = preflight(bytes).first
 
-    suspend fun import(bytes: ByteArray): Preview {
+    suspend fun import(bytes: ByteArray): Preview = BusinessFileCoordinator.mutex.withLock { importLocked(bytes) }
+
+    private suspend fun importLocked(bytes: ByteArray): Preview {
         val (preview, prepared) = preflight(bytes)
         ServiceLoopPeerTrustStore(database).requireTrusted(preview.exporterId)
         val filesCreated = mutableListOf<File>()
         try {
             val ownedPhotos = prepared.filter { it.preview.status != "ALREADY_RECEIVED" }.associateWith { item ->
                 item.result.photos.map { photo ->
-                    val path = "remote-results/${stable(item.preview.resultId, item.preview.sourceFinalRevisionId, photo.sourcePhotoId)}.jpg"
+                    val path = "remote-results/${stable(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId, photo.sourcePhotoId)}.jpg"
                     val file = ownedFile(path)
+                    if (file.exists() && dao.remotePhotoReferenceCount(path) == 0) check(file.delete()) { "Unowned result staging file could not be removed" }
                     if (file.exists()) {
                         require(file.length() == photo.bytes.size.toLong() && WorkResultPackageCodec.sha256(file.readBytes()) == WorkResultPackageCodec.sha256(photo.bytes)) { "An owned result photo conflicts with this package" }
                     } else {
@@ -39,14 +45,20 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     path
                 }
             }
-            database.withTransaction {
+            val committedItems = database.withTransaction {
+                val outcomes = mutableListOf<ItemPreview>()
                 val currentIdentity = dispatch.technicianIdentity()?.technicianId ?: error("Local ServiceLoop identity is unavailable")
                 require(currentIdentity == preview.targetIssuerId) { "This result belongs to another assignment issuer" }
                 ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(preview.exporterId)
                 val now = System.currentTimeMillis()
                 prepared.forEach { item ->
-                    if (item.preview.status == "ALREADY_RECEIVED") return@forEach
-                    require(dao.workResultReceipt(item.preview.resultId, item.preview.sourceFinalRevisionId) == null) { "Result changed while importing" }
+                    if (item.preview.status == "ALREADY_RECEIVED") {
+                        val receipt = dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId)
+                            ?: error("Received result disappeared before commit")
+                        outcomes += item.preview.copy(reason = receipt.status + (receipt.conflictReason?.let { ": $it" } ?: ""))
+                        return@forEach
+                    }
+                    require(dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId) == null) { "Result changed while importing" }
                     require(dispatch.outboxVisit(item.preview.dispatchVisitId) == item.outbox &&
                         dispatch.outboxItems(item.preview.dispatchVisitId).firstOrNull { it.dispatchItemId == item.preview.dispatchItemId } == item.item &&
                         dispatch.outboxItemAssignees(item.preview.dispatchItemId).any { it.technicianId == preview.exporterId }) {
@@ -54,7 +66,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     }
                     val json = item.result.value
                     val work = json.getJSONObject("workSnapshot")
-                    val resultDbId = stable("remote-final", item.preview.resultId, item.preview.sourceFinalRevisionId)
+                    val resultDbId = stable("remote-final", preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId)
                     val localVisitId = item.outbox.localVisitId
                     val localWorkId = item.item.localWorkItemId
                     dao.insertRemoteFinalResult(RemoteFinalResultEntity(
@@ -66,10 +78,11 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         json.getJSONArray("checklist").toString(), json.getJSONArray("findings").toString(), json.getJSONArray("parts").toString(),
                         listOfNotNull(json.optString("privateInternalNote").takeIf { it.isNotBlank() }, work.optString("privateInternalNote").takeIf { it.isNotBlank() }).joinToString("\n").takeIf { it.isNotBlank() }, json.getJSONArray("followUps").toString(),
                         json.getJSONObject("recurrence").toString(), JSONObject().put("packageId", preview.packageId).put("exporterId", preview.exporterId)
-                            .put("serviceName", work.optString("serviceName"))
+                        .put("serviceName", work.optString("serviceName"))
                             .put("recordedAt", item.sourceRecordedAt)
                             .put("assignmentGeneration", json.getInt("assignmentGeneration")).put("assignmentMaterialHash", json.getString("assignmentMaterialHash"))
                             .put("assignmentIssuerId", preview.targetIssuerId).toString(), now,
+                        sourcePayloadJson = JSONObject().put("comparisonVersion", 2).put("result", JSONObject(json.toString())).toString(),
                     ))
                     dao.insertRemoteResultPhotos(item.result.photos.mapIndexed { index, photo ->
                         RemoteResultPhotoEntity(stable("remote-photo", resultDbId, photo.sourcePhotoId), resultDbId, photo.sourcePhotoId,
@@ -79,13 +92,13 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     var status = item.preview.status
                     var reason = item.preview.reason
                     var recurrenceAt: Long? = null
-                    val previousApplied = if (status == "APPLIED") dao.appliedWorkResultLineage(item.preview.resultId) else null
+                    val previousApplied = if (status == "APPLIED") dao.appliedWorkResultLineage(preview.exporterId, item.preview.resultId) else null
                     if (status == "APPLIED" && !work.optBoolean("fulfilledObligation") && previousApplied?.recurrenceAppliedAtEpochMillis != null) {
                         status = "CONFLICT"; reason = "Correction removes an already-applied recurrence; review before changing the plan"
                     }
                     if (status == "APPLIED" && work.optBoolean("fulfilledObligation")) {
                         val recurrence = json.getJSONObject("recurrence")
-                        val previousRemote = previousApplied?.let { dao.remoteFinalResult(it.resultId, it.sourceFinalRevisionId) }
+                        val previousRemote = previousApplied?.let { dao.remoteFinalResult(it.exporterId, it.resultId, it.sourceFinalRevisionId) }
                         val planId = item.localWork?.servicePlanId
                         val obligationId = item.localWork?.capturedObligationId
                         val plan = planId?.let { dao.plan(it) }
@@ -102,7 +115,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                             status = "CONFLICT"; reason = "The captured service obligation is no longer current; recurrence was not advanced"
                         } else {
                             LocalDate.parse(next)
-                            val nextId = stable("remote-next-obligation", item.preview.resultId, item.preview.sourceFinalRevisionId, plan.id)
+                            val nextId = stable("remote-next-obligation", preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId, plan.id)
                             require(dao.consumeObligation(obligation.id, plan.id, now, item.preview.sourceFinalRevisionId) == 1) { "Obligation changed during import" }
                             dao.insertObligations(listOf(ServiceObligationEntity(nextId, plan.id, obligation.sequence + 1, next, now)))
                             require(dao.advancePlan(plan.id, obligation.id, next, nextId, json.getString("serviceDate"), item.preview.sourceFinalRevisionId) == 1) { "Plan changed during import" }
@@ -110,11 +123,12 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         }
                     }
                     dao.insertWorkResultReceipt(WorkResultReceiptEntity(
-                        stable("receipt", item.preview.resultId, item.preview.sourceFinalRevisionId), preview.packageId,
+                        stable("receipt", preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId), preview.packageId,
                         item.preview.resultId, item.preview.sourceFinalRevisionId, preview.targetIssuerId, preview.exporterId,
                         item.preview.dispatchVisitId, item.preview.dispatchItemId, json.getInt("assignmentGeneration"), json.getString("assignmentMaterialHash"),
                         now, item.payloadHash, status, reason, if (status == "APPLIED") now else null, recurrenceAt,
                     ))
+                    outcomes += item.preview.copy(status = status, reason = reason)
                 }
                 prepared.map { it.outbox.dispatchVisitId }.distinct().forEach { visitId ->
                     val outbox = dispatch.outboxVisit(visitId) ?: return@forEach
@@ -138,10 +152,16 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         }
                     }
                 }
+                outcomes
             }
-            return preview
+            return preview.copy(items = committedItems)
         } catch (failure: Throwable) {
-            filesCreated.forEach { it.delete() }
+            withContext(NonCancellable) {
+                filesCreated.forEach { file ->
+                    val path = file.relativeTo(attachmentRoot).invariantSeparatorsPath
+                    if (dao.remotePhotoReferenceCount(path) == 0) check(file.delete() || !file.exists())
+                }
+            }
             throw failure
         }
     }
@@ -169,11 +189,34 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             val revisionId = json.getString("sourceFinalRevisionId")
             val sourceRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
                 ?: packageValue.generatedAt
-            val content = canonicalJson(JSONObject(json.toString()).apply { remove("photos") }).toByteArray(Charsets.UTF_8) +
-                result.photos.map { "${it.sourcePhotoId}:${WorkResultPackageCodec.sha256(it.bytes)}" }.sorted().joinToString("|").toByteArray(Charsets.UTF_8)
+            val content = canonicalJson(JSONObject(json.toString()).apply {
+                remove("photos")
+                put("photos", JSONArray().apply {
+                    result.photos.sortedWith(compareBy({ it.workItemId }, { it.sourcePhotoId })).forEach { photo ->
+                        put(JSONObject().put("sourcePhotoId", photo.sourcePhotoId).put("workItemId", photo.workItemId)
+                            .put("sha256", WorkResultPackageCodec.sha256(photo.bytes)).put("byteSize", photo.bytes.size)
+                            .put("mimeType", "image/jpeg").put("width", photo.width).put("height", photo.height)
+                            .put("caption", photo.caption).put("includeInReport", photo.includeInReport).put("visibility", photo.visibility))
+                    }
+                })
+            }).toByteArray(Charsets.UTF_8)
             val payloadHash = WorkResultPackageCodec.sha256(content)
-            val prior = dao.workResultReceipt(resultId, revisionId)
-            require(prior == null || prior.payloadSha256 == payloadHash) { "The same source revision has conflicting contents" }
+            val prior = dao.workResultReceipt(packageValue.exporterId, resultId, revisionId)
+            if (prior != null && prior.payloadSha256 != payloadHash) {
+                val legacyBytes = canonicalJson(JSONObject(json.toString()).apply { remove("photos") }).toByteArray(Charsets.UTF_8) +
+                    result.photos.map { "${it.sourcePhotoId}:${WorkResultPackageCodec.sha256(it.bytes)}" }.sorted().joinToString("|").toByteArray(Charsets.UTF_8)
+                val remote = dao.remoteFinalResult(packageValue.exporterId, resultId, revisionId)
+                val storedPhotos = remote?.let { dao.remoteResultPhotos(it.id) }.orEmpty()
+                val exactLegacyPhotos = storedPhotos.size == result.photos.size && result.photos.all { photo ->
+                    storedPhotos.any { stored -> stored.sourcePhotoId == photo.sourcePhotoId && stored.dispatchItemId == photo.workItemId &&
+                        stored.sha256 == WorkResultPackageCodec.sha256(photo.bytes) && stored.byteSize == photo.bytes.size.toLong() &&
+                        stored.width == photo.width && stored.height == photo.height && stored.mimeType == "image/jpeg" &&
+                        stored.caption == photo.caption && stored.visibility == photo.visibility && stored.includeInReport == photo.includeInReport }
+                }
+                require(prior.payloadSha256 == WorkResultPackageCodec.sha256(legacyBytes) && exactLegacyPhotos) {
+                    "The same source revision has conflicting contents"
+                }
+            }
             val status = when {
                 prior != null -> "ALREADY_RECEIVED"
                 outbox.lastExportedMaterialHash != json.getString("assignmentMaterialHash") -> "STALE"
@@ -193,7 +236,9 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         return file
     }
 
-    private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(parts.joinToString("|").toByteArray(Charsets.UTF_8)).toString()
+    private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(
+        parts.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8),
+    ).toString()
 
     private fun canonicalJson(value: Any?): String = when (value) {
         is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key -> "${JSONObject.quote(key)}:${canonicalJson(value.get(key))}" }

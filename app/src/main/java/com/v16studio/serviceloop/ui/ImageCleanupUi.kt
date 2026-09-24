@@ -38,7 +38,12 @@ internal fun ImageCleanupScreen(padding: PaddingValues) {
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LazyColumn(Modifier.padding(padding).testTag("image-cleanup"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Image cleanup", style = MaterialTheme.typography.headlineSmall); Text("Keep full-resolution photos for ${choice.title.lowercase()}."); Text("ServiceLoop keeps a report-quality copy for finalized work. Working photos are never automatically removed.") }
+        item {
+            Text("Image cleanup", style = MaterialTheme.typography.headlineSmall)
+            Text("Keep full-resolution photos for ${choice.title.lowercase()}.")
+            Text("ServiceLoop keeps a report-quality copy for finalized work. Working photos are never automatically removed.")
+            if (cleanup.requiresReconfirmation()) Text("The previous cleanup choice belongs to another or unverified workspace. Choose and save it again to enable cleanup.")
+        }
         ImageRetention.entries.forEach { option -> item { ServiceLoopSelectionOption(choice == option, { choice = option }, option.title, Modifier.testTag("image-retention-${option.name.lowercase()}")) } }
         item {
             ServiceLoopActionStack {

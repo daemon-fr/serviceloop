@@ -41,7 +41,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DataTransferBindingEntity::class, TransferredFinalResultEntity::class,
         TransferredEvidenceEntity::class, TransferredHistoryEntryEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 abstract class ServiceLoopDatabase : RoomDatabase() {
@@ -53,7 +53,7 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             context.applicationContext,
             ServiceLoopDatabase::class.java,
             "serviceloop.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .addCallback(object : Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     configureDispatchIdentity(db)
@@ -335,42 +335,94 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
 
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                val rebuilt = listOf("work_items", "final_work_items", "dispatch_outbox_items", "dispatch_item_bindings")
+                val children = listOf(
+                    "work_item_public_drafts", "work_item_private_drafts", "working_input_buffers",
+                    "working_responses", "part_entries", "final_checklist_items", "final_part_entries",
+                    "final_photo_entries", "final_dispatch_items", "dispatch_outbox_item_assignees",
+                )
+                val closure = (rebuilt + children).toSet()
+                val actualClosure = rebuilt.toMutableSet()
+                var changed: Boolean
+                do {
+                    changed = false
+                    db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").use { tables ->
+                        while (tables.moveToNext()) {
+                            val table = tables.getString(0)
+                            db.query("PRAGMA foreign_key_list(`$table`)").use { fks ->
+                                while (fks.moveToNext()) {
+                                    if (fks.getString(fks.getColumnIndexOrThrow("table")) in actualClosure && actualClosure.add(table)) changed = true
+                                }
+                            }
+                        }
+                    }
+                } while (changed)
+                check(actualClosure == closure) { "Unexpected v14 foreign-key dependency closure: $actualClosure" }
+                val childDefinitions = children.associateWith { table ->
+                    db.query("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table)).use { cursor ->
+                        check(cursor.moveToFirst()); cursor.getString(0)
+                    }
+                }
+                val childIndexes = children.associateWith { table ->
+                    val sql = mutableListOf<String>()
+                    db.query("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", arrayOf(table)).use { cursor ->
+                        while (cursor.moveToNext()) sql += cursor.getString(0)
+                    }
+                    sql
+                }
+                val stagedCounts = closure.associateWith { table ->
+                    db.execSQL("CREATE TEMP TABLE `b026_stage_$table` AS SELECT * FROM `$table`")
+                    db.query("SELECT count(*) FROM `b026_stage_$table`").use { cursor -> cursor.moveToFirst(); cursor.getLong(0) }
+                }
+                // Child-first drops leave no live inbound foreign key when a parent is rebuilt.
+                (listOf("dispatch_item_bindings") + children + rebuilt.filter { it != "dispatch_item_bindings" }).forEach { db.execSQL("DROP TABLE `$it`") }
                 db.execSQL("ALTER TABLE customers ADD COLUMN customerType TEXT NOT NULL DEFAULT 'STANDARD'")
-                db.execSQL("PRAGMA foreign_keys=OFF")
 
-                db.execSQL("ALTER TABLE work_items RENAME TO work_items_b026_old")
                 db.execSQL("CREATE TABLE work_items (id TEXT NOT NULL, visitId TEXT NOT NULL, equipmentId TEXT, servicePlanId TEXT, capturedObligationId TEXT, templateSnapshotId TEXT, equipmentNameSnapshot TEXT, equipmentReferenceSnapshot TEXT, serviceNameSnapshot TEXT NOT NULL, planReferenceSnapshot TEXT, dueDateSnapshot TEXT, intervalCountSnapshot INTEGER, intervalUnitSnapshot TEXT, checklistReviewed INTEGER NOT NULL, outcome TEXT, fulfillsCurrentObligation INTEGER, notPerformedReason TEXT, confirmedNextDueDate TEXT, nextDueDateCalculated INTEGER, nextDueOverrideReason TEXT, equipmentIdentifierSnapshot TEXT, equipmentMakeSnapshot TEXT, equipmentModelSnapshot TEXT, equipmentSerialSnapshot TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescriptionSnapshot TEXT, PRIMARY KEY(id), FOREIGN KEY(visitId) REFERENCES working_visits(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(servicePlanId) REFERENCES service_plans(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(capturedObligationId) REFERENCES service_obligations(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(templateSnapshotId) REFERENCES template_snapshots(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
-                db.execSQL("INSERT INTO work_items (id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,subjectType,equipmentDescriptionSnapshot) SELECT id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,'EQUIPMENT',NULL FROM work_items_b026_old")
-                db.execSQL("DROP TABLE work_items_b026_old")
+                db.execSQL("INSERT INTO work_items (id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,subjectType,equipmentDescriptionSnapshot) SELECT id,visitId,equipmentId,servicePlanId,capturedObligationId,templateSnapshotId,equipmentNameSnapshot,equipmentReferenceSnapshot,serviceNameSnapshot,planReferenceSnapshot,dueDateSnapshot,intervalCountSnapshot,intervalUnitSnapshot,checklistReviewed,outcome,fulfillsCurrentObligation,notPerformedReason,confirmedNextDueDate,nextDueDateCalculated,nextDueOverrideReason,equipmentIdentifierSnapshot,equipmentMakeSnapshot,equipmentModelSnapshot,equipmentSerialSnapshot,'EQUIPMENT',NULL FROM b026_stage_work_items")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_visitId ON work_items(visitId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_equipmentId ON work_items(equipmentId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_servicePlanId ON work_items(servicePlanId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_capturedObligationId ON work_items(capturedObligationId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_work_items_templateSnapshotId ON work_items(templateSnapshotId)")
 
-                db.execSQL("ALTER TABLE final_work_items RENAME TO final_work_items_b026_old")
                 db.execSQL("CREATE TABLE final_work_items (id TEXT NOT NULL, revisionId TEXT NOT NULL, position INTEGER NOT NULL, sourceWorkItemId TEXT NOT NULL, equipmentId TEXT, equipmentName TEXT, equipmentReference TEXT, equipmentIdentifier TEXT, equipmentMake TEXT, equipmentModel TEXT, equipmentSerial TEXT, serviceName TEXT NOT NULL, planId TEXT, planReference TEXT, outcome TEXT NOT NULL, publicWorkNote TEXT, notPerformedReason TEXT, fulfilledObligation INTEGER NOT NULL, oldDueDate TEXT, nextDueDate TEXT, intervalCount INTEGER, intervalUnit TEXT, capturedObligationId TEXT, privateInternalNote TEXT, nextDueDateCalculated INTEGER, nextDueOverrideReason TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescription TEXT, PRIMARY KEY(id), FOREIGN KEY(revisionId) REFERENCES final_record_revisions(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
-                db.execSQL("INSERT INTO final_work_items (id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,subjectType,equipmentDescription) SELECT id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,'EQUIPMENT',NULL FROM final_work_items_b026_old")
-                db.execSQL("DROP TABLE final_work_items_b026_old")
+                db.execSQL("INSERT INTO final_work_items (id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,subjectType,equipmentDescription) SELECT id,revisionId,position,sourceWorkItemId,equipmentId,equipmentName,equipmentReference,equipmentIdentifier,equipmentMake,equipmentModel,equipmentSerial,serviceName,planId,planReference,outcome,publicWorkNote,notPerformedReason,fulfilledObligation,oldDueDate,nextDueDate,intervalCount,intervalUnit,capturedObligationId,privateInternalNote,nextDueDateCalculated,nextDueOverrideReason,'EQUIPMENT',NULL FROM b026_stage_final_work_items")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_final_work_items_revisionId ON final_work_items(revisionId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_final_work_items_revisionId_position ON final_work_items(revisionId,position)")
 
-                db.execSQL("ALTER TABLE dispatch_outbox_items RENAME TO dispatch_outbox_items_b026_old")
                 db.execSQL("CREATE TABLE dispatch_outbox_items (dispatchItemId TEXT NOT NULL, dispatchVisitId TEXT NOT NULL, position INTEGER NOT NULL, equipmentId TEXT, taskName TEXT NOT NULL, servicePlanReference TEXT, dueDateSnapshot TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescription TEXT, PRIMARY KEY(dispatchItemId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_outbox_visits(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(equipmentId) REFERENCES equipment(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
-                db.execSQL("INSERT INTO dispatch_outbox_items (dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,subjectType,equipmentDescription) SELECT dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,'EQUIPMENT',NULL FROM dispatch_outbox_items_b026_old")
-                db.execSQL("DROP TABLE dispatch_outbox_items_b026_old")
+                db.execSQL("INSERT INTO dispatch_outbox_items (dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,subjectType,equipmentDescription) SELECT dispatchItemId,dispatchVisitId,position,equipmentId,taskName,servicePlanReference,dueDateSnapshot,'EQUIPMENT',NULL FROM b026_stage_dispatch_outbox_items")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId ON dispatch_outbox_items(dispatchVisitId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_outbox_items_equipmentId ON dispatch_outbox_items(equipmentId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_outbox_items_dispatchVisitId_position ON dispatch_outbox_items(dispatchVisitId,position)")
 
-                db.execSQL("ALTER TABLE dispatch_item_bindings RENAME TO dispatch_item_bindings_b026_old")
                 db.execSQL("CREATE TABLE dispatch_item_bindings (dispatchVisitId TEXT NOT NULL, dispatchItemId TEXT NOT NULL, localWorkItemId TEXT, equipmentReferenceSnapshot TEXT, taskNameSnapshot TEXT NOT NULL, servicePlanReferenceSnapshot TEXT, dueDateSnapshot TEXT, assignedTechniciansJson TEXT NOT NULL, assignmentMeaning TEXT NOT NULL, localRole TEXT NOT NULL, documentationDisposition TEXT NOT NULL, deferredToTechnicianId TEXT, deferredToName TEXT, subjectType TEXT NOT NULL DEFAULT 'EQUIPMENT', equipmentDescriptionSnapshot TEXT, PRIMARY KEY(dispatchVisitId,dispatchItemId), FOREIGN KEY(dispatchVisitId) REFERENCES dispatch_visit_bindings(dispatchVisitId) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(localWorkItemId) REFERENCES work_items(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
-                db.execSQL("INSERT INTO dispatch_item_bindings (dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,subjectType,equipmentDescriptionSnapshot) SELECT dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,'EQUIPMENT',NULL FROM dispatch_item_bindings_b026_old")
-                db.execSQL("DROP TABLE dispatch_item_bindings_b026_old")
+                db.execSQL("INSERT INTO dispatch_item_bindings (dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,subjectType,equipmentDescriptionSnapshot) SELECT dispatchVisitId,dispatchItemId,localWorkItemId,equipmentReferenceSnapshot,taskNameSnapshot,servicePlanReferenceSnapshot,dueDateSnapshot,assignedTechniciansJson,assignmentMeaning,localRole,documentationDisposition,deferredToTechnicianId,deferredToName,'EQUIPMENT',NULL FROM b026_stage_dispatch_item_bindings")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_dispatch_item_bindings_dispatchVisitId ON dispatch_item_bindings(dispatchVisitId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_dispatch_item_bindings_localWorkItemId ON dispatch_item_bindings(localWorkItemId)")
 
-                db.execSQL("PRAGMA foreign_keys=ON")
+                children.forEach { table ->
+                    db.execSQL(childDefinitions.getValue(table))
+                    db.execSQL("INSERT INTO `$table` SELECT * FROM `b026_stage_$table`")
+                    childIndexes.getValue(table).forEach(db::execSQL)
+                }
+                closure.forEach { table ->
+                    db.query("SELECT count(*) FROM `$table`").use { cursor ->
+                        check(cursor.moveToFirst() && cursor.getLong(0) == stagedCounts.getValue(table)) { "Migration lost rows in $table" }
+                    }
+                    val columns = mutableListOf<String>()
+                    db.query("PRAGMA table_info(`b026_stage_$table`)").use { cursor ->
+                        while (cursor.moveToNext()) columns += "`" + cursor.getString(cursor.getColumnIndexOrThrow("name")) + "`"
+                    }
+                    val projection = columns.joinToString(",")
+                    db.query("SELECT $projection FROM `b026_stage_$table` EXCEPT SELECT $projection FROM `$table`").use {
+                        check(!it.moveToFirst()) { "Migration changed original values in $table" }
+                    }
+                }
+                db.query("PRAGMA foreign_key_check").use { check(!it.moveToFirst()) { "Migration broke a foreign key" } }
+                db.query("PRAGMA integrity_check").use { check(it.moveToFirst() && it.getString(0) == "ok") { "Migration failed integrity check" } }
+                closure.forEach { db.execSQL("DROP TABLE `b026_stage_$it`") }
                 configureStage4Tracking(db)
             }
         }
@@ -458,7 +510,21 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
             }
         }
 
-        private fun configureReminderDefaults(db: SupportSQLiteDatabase) {
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE final_work_items ADD COLUMN followUpsSnapshotJson TEXT")
+                db.execSQL("ALTER TABLE remote_final_results ADD COLUMN sourcePayloadJson TEXT")
+                db.execSQL("ALTER TABLE transferred_final_results ADD COLUMN sourcePayloadJson TEXT")
+                db.execSQL("ALTER TABLE retained_images ADD COLUMN originalDeletionRequestedAtEpochMillis INTEGER")
+                db.execSQL("DROP INDEX index_work_result_receipts_resultId_sourceFinalRevisionId")
+                db.execSQL("CREATE UNIQUE INDEX index_work_result_receipts_exporterId_resultId_sourceFinalRevisionId ON work_result_receipts(exporterId,resultId,sourceFinalRevisionId)")
+                db.execSQL("DROP INDEX index_remote_final_results_resultId_sourceFinalRevisionId")
+                db.execSQL("CREATE UNIQUE INDEX index_remote_final_results_technicianId_resultId_sourceFinalRevisionId ON remote_final_results(technicianId,resultId,sourceFinalRevisionId)")
+                configureStage4Tracking(db)
+            }
+        }
+
+        internal fun configureReminderDefaults(db: SupportSQLiteDatabase) {
             db.execSQL("INSERT OR IGNORE INTO reminder_preferences(id,dailySummaryEnabled,summaryHour,summaryMinute,summaryDaysMask,dueSoonHorizonDays,includeDueServices,includeVisits,includeFollowUps,includeUnfinishedVisits,includeBackupReminder,appointmentAlertsEnabled,defaultAppointmentLeadMinutes) VALUES('primary',1,8,0,127,14,1,1,1,1,1,0,180)")
         }
 

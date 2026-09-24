@@ -62,6 +62,23 @@ class B049WorkResultExportTest {
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { exchange.exportFinalRevisions(listOf("revision")) } }
     }
 
+    @Test fun capturedFollowUpsStayFixedWhenLivePlanningChanges() = runTest {
+        val dao = database.serviceLoopDao()
+        ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
+        val original = FollowUpEntity("follow-up", "FU-1", "SERVICE", "Call customer", "2026-09-30", "OPEN",
+            "c", "s", null, "Private plan", "v", "w", 2)
+        dao.insertFollowUp(original)
+        val snapshot = FinalFollowUpSnapshot.capture(2, listOf(original))
+        assertEquals(1, dao.setFinalFollowUpSnapshot("final-work", snapshot))
+        val exchange = WorkResultExchangeService(database, root)
+        val first = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().value
+        dao.updateFollowUp(original.copy(title = "Changed today", state = "CANCELLED", privatePlanningNote = "New plan", updatedAtEpochMillis = 10))
+        val second = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().value
+        assertEquals("CAPTURED_AT_REVISION", second.getString("followUpCaptureState"))
+        assertEquals(first.getJSONArray("followUps").toString(), second.getJSONArray("followUps").toString())
+        assertEquals("Call customer", second.getJSONArray("followUps").getJSONObject(0).getString("title"))
+    }
+
     @Test fun resultPhotosComeOnlyFromFrozenRevisionAndKeepIndependentFlags() = runTest {
         val dao = database.serviceLoopDao()
         ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")

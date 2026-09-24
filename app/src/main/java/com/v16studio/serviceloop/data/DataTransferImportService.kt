@@ -10,8 +10,20 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 enum class DataTransferClassification { NEW, MATCH_EXISTING, ALREADY_CURRENT, NEW_HISTORY, ALREADY_IMPORTED, CONFLICT }
+
+internal enum class SourceEntityType { CUSTOMER, SITE, EQUIPMENT, CUSTOMER_CONTACT, SERVICE_PLAN, INSPECTION_TEMPLATE }
+internal data class SourceEntityKey(
+    val originWorkspaceId: String,
+    val entityType: SourceEntityType,
+    val sourceEntityId: String,
+) {
+    val first get() = originWorkspaceId
+    val second get() = sourceEntityId
+}
 
 data class DataTransferImportItem(
     val family: DataTransferFamily,
@@ -63,7 +75,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         val evidence: List<ParsedEvidence>,
         val templatePreview: InspectionTemplateImportPreview?,
         val templateEntries: List<InspectionTemplateTransferEntry>,
-        val mapping: Map<Pair<String, String>, String>,
+        val mapping: Map<SourceEntityKey, String>,
         val items: List<DataTransferImportItem>,
         val counts: Map<DataTransferFamily, Int>,
     )
@@ -81,9 +93,9 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         val initial = buildPlan(payload, createSeparateTemplates)
         require(initial.items.none { item -> item.classification == DataTransferClassification.CONFLICT &&
             !(item.family == DataTransferFamily.INSPECTION_TEMPLATES && item.sourceKey in createSeparateTemplates) }) { "Resolve the listed data-transfer conflicts before importing" }
-        val createdFiles = mutableListOf<File>()
-        try {
-            return BusinessFileCoordinator.mutex.withLock {
+        return BusinessFileCoordinator.mutex.withLock {
+            val createdFiles = mutableListOf<File>()
+            try {
                 val staged = stageEvidence(initial.evidence, createdFiles)
                 val importedAt = System.currentTimeMillis()
                 database.withTransaction {
@@ -96,6 +108,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                     applyPlans(current.current, current.mapping, templateLocalIds, importedAt)
                     applyHistory(current.history, payload, current.mapping, staged, importedAt)
                     applyEvidence(current.evidence, payload, current.mapping, staged, importedAt)
+                    reconcileEvidenceAssociations()
                     if (current.current.any { it.classification == DataTransferClassification.NEW || it.classification == DataTransferClassification.MATCH_EXISTING } ||
                         current.history.any { it.classification == DataTransferClassification.NEW_HISTORY } || current.evidence.any { it.classification == DataTransferClassification.NEW_HISTORY }) {
                         dao.recoveryMetadata()?.let { metadata -> dao.upsertRecoveryMetadata(metadata.copy(
@@ -105,10 +118,15 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                     }
                     DataTransferImportPreview(payload, preview.packageId, current.counts, current.items, current.templatePreview)
                 }
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    createdFiles.forEach { file ->
+                        val path = relative(file)
+                        if (dao.transferredEvidenceReferenceCount(path) == 0) check(file.delete() || !file.exists())
+                    }
+                }
+                throw failure
             }
-        } catch (failure: Throwable) {
-            createdFiles.forEach { runCatching { it.delete() } }
-            throw failure
         }
     }
 
@@ -118,13 +136,13 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         val current = mutableListOf<CurrentPlan>()
         val history = mutableListOf<ParsedHistory>()
         val items = mutableListOf<DataTransferImportItem>()
-        val mapping = linkedMapOf<Pair<String, String>, String>()
+        val mapping = linkedMapOf<SourceEntityKey, String>()
         val register = payload.families[DataTransferFamily.REGISTER]?.let { JSONObject(it.toString(Charsets.UTF_8)) }
         validateRegister(register)
         if (register != null) {
             val customers = register.getJSONArray("customers")
             for (i in 0 until customers.length()) {
-                val row = withNullableFields(customers.getJSONObject(i), "contactName", "phone", "email"); val id = sourceKey(row); val fp = fingerprint(row)
+                val row = withNullableFields(customers.getJSONObject(i), "contactName", "phone", "email"); val id = sourceKey(row,"CUSTOMER"); val fp = fingerprint(row)
                 val bound = dao.dataTransferBinding(id.first, "CUSTOMER", id.second)
                 val target = bound?.localEntityId?.let { dao.customer(it) }
                 val same = target?.let { fingerprint(customerJson(it, row)) == bound?.appliedSourceFingerprint && bound.appliedSourceFingerprint == fp } == true
@@ -137,7 +155,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             val sites = register.getJSONArray("sites")
             for (i in 0 until sites.length()) {
-                val row = withNullableFields(sites.getJSONObject(i), "address", "contactName", "phone", "email"); val id = sourceKey(row); val customerKey = parentKey(row, "customer")
+                val row = withNullableFields(sites.getJSONObject(i), "address", "contactName", "phone", "email"); val id = sourceKey(row,"SITE"); val customerKey = parentKey(row, "customer")
                 val customerId = mapping[customerKey] ?: resolveBinding(customerKey, "CUSTOMER")
                 if (customerId == null) { current += conflictPlan(DataTransferFamily.REGISTER,"SITE",row,"Site has no resolvable Customer dependency"); items += display(current.last(),"Site ${row.optString("reference")}"); continue }
                 val bound = dao.dataTransferBinding(id.first, "SITE", id.second); val target = bound?.localEntityId?.let { dao.site(it) }
@@ -152,7 +170,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             val equipment = register.getJSONArray("equipment")
             for (i in 0 until equipment.length()) {
-                val row = withNullableFields(equipment.getJSONObject(i), "technicianIdentifier", "make", "model", "serialNumber"); val id = sourceKey(row); val siteKey = parentKey(row,"site")
+                val row = withNullableFields(equipment.getJSONObject(i), "technicianIdentifier", "make", "model", "serialNumber"); val id = sourceKey(row,"EQUIPMENT"); val siteKey = parentKey(row,"site")
                 val siteId = mapping[siteKey] ?: resolveBinding(siteKey,"SITE")
                 if (siteId == null) { current += conflictPlan(DataTransferFamily.REGISTER,"EQUIPMENT",row,"Equipment has no resolvable Site dependency"); items += display(current.last(),"Equipment ${row.optString("reference")}"); continue }
                 val bound=dao.dataTransferBinding(id.first,"EQUIPMENT",id.second); val target=bound?.localEntityId?.let{dao.equipment(it)}
@@ -167,7 +185,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             val contacts=register.getJSONArray("contacts")
             for(i in 0 until contacts.length()){
-                val row=contacts.getJSONObject(i);val id=sourceKey(row);val parent=parentKey(row,"customer");val customerId=mapping[parent]?:resolveBinding(parent,"CUSTOMER")
+                val row=contacts.getJSONObject(i);val id=sourceKey(row,"CUSTOMER_CONTACT");val parent=parentKey(row,"customer");val customerId=mapping[parent]?:resolveBinding(parent,"CUSTOMER")
                 if(customerId==null){current+=conflictPlan(DataTransferFamily.REGISTER,"CUSTOMER_CONTACT",row,"Contact has no resolvable Customer dependency");items+=display(current.last(),"Customer contact");continue}
                 val bound=dao.dataTransferBinding(id.first,"CUSTOMER_CONTACT",id.second);val target=bound?.localEntityId?.let{contactById(it)}
                 val fp=fingerprint(row);val same=target?.let{it.customerId==customerId&&fingerprint(contactJson(it,row))==bound?.appliedSourceFingerprint&&bound.appliedSourceFingerprint==fp}==true
@@ -202,17 +220,17 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             val localId = target?.id ?: dao.reusableTemplates().firstOrNull { it.reference == entry.reference && exact }?.id ?: UUID.randomUUID().toString()
             val row=JSONObject().put("originWorkspaceId",sourceOrigin).put("sourceEntityId",sourceId).put("reference",entry.reference)
             val plan=currentPlan(DataTransferFamily.INSPECTION_TEMPLATES,"INSPECTION_TEMPLATE",row,localId,classification,fingerprint)
-            current+=plan;mapping[sourceOrigin to sourceId]=localId
+            current+=plan;mapping[SourceEntityKey(sourceOrigin,SourceEntityType.INSPECTION_TEMPLATE,sourceId)]=localId
             items+=DataTransferImportItem(DataTransferFamily.INSPECTION_TEMPLATES,if(classification==DataTransferClassification.CONFLICT)entry.reference else "$sourceOrigin:$sourceId",classification,"Template ${entry.reference}",if(classification==DataTransferClassification.CONFLICT)"An inspection template with this reference or bound source has different content."else null)
         }
 
         val plansRoot=payload.families[DataTransferFamily.SERVICE_PLANS]?.let{JSONObject(it.toString(Charsets.UTF_8))}
         validatePlans(plansRoot)
         plansRoot?.getJSONArray("plans")?.let{rows->for(i in 0 until rows.length()){
-            val row=rows.getJSONObject(i);val id=sourceKey(row);val equipmentKey=parentKey(row,"equipment");val equipmentId=mapping[equipmentKey]?:resolveBinding(equipmentKey,"EQUIPMENT")
+            val row=rows.getJSONObject(i);val id=sourceKey(row,"SERVICE_PLAN");val equipmentKey=parentKey(row,"equipment");val equipmentId=mapping[equipmentKey]?:resolveBinding(equipmentKey,"EQUIPMENT")
             if(equipmentId==null){current+=conflictPlan(DataTransferFamily.SERVICE_PLANS,"SERVICE_PLAN",row,"Service Plan has no resolvable Equipment dependency");items+=display(current.last(),"Plan ${row.optString("reference")}");continue}
             val templateId=if(row.isNull("templateSourceEntityId"))null else {
-                val key=row.optString("templateOriginWorkspaceId") to row.optString("templateSourceEntityId")
+                val key=SourceEntityKey(validOrigin(row.getString("templateOriginWorkspaceId")),SourceEntityType.INSPECTION_TEMPLATE,required(row,"templateSourceEntityId"))
                 mapping[key]?:resolveBinding(key,"INSPECTION_TEMPLATE")
             }
             if(!row.isNull("templateSourceEntityId")&&templateId==null){current+=conflictPlan(DataTransferFamily.SERVICE_PLANS,"SERVICE_PLAN",row,"Service Plan template dependency cannot be resolved");items+=display(current.last(),"Plan ${row.optString("reference")}");continue}
@@ -250,7 +268,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         items.filter { it.type in setOf("CUSTOMER","SITE","EQUIPMENT","CUSTOMER_CONTACT") && it.classification==DataTransferClassification.MATCH_EXISTING }.forEach { insertBinding(it,now) }
     }
 
-    private suspend fun applyTemplates(plan: PlanSet, payload: DataTransferPayload, createSeparate: Set<String>, now: Long): Map<Pair<String,String>,String> {
+    private suspend fun applyTemplates(plan: PlanSet, payload: DataTransferPayload, createSeparate: Set<String>, now: Long): Map<SourceEntityKey,String> {
         val templateRows=plan.current.filter{it.type=="INSPECTION_TEMPLATE"}
         if(templateRows.isEmpty())return emptyMap()
         val conflictedRefs=plan.templatePreview?.entries?.filter{entry->
@@ -262,7 +280,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         val result=if(plan.templatePreview!=null && plan.templatePreview.entries.any{it.classification!=InspectionTemplateImportClassification.EXACT_EXISTING})
             templateExchange.import(plan.templatePreview,payload.exporterId,createSeparate) else InspectionTemplateImportResult(emptyList(),plan.templateEntries.map{it.reference},emptyList())
         val localRows=dao.reusableTemplates()
-        val out=linkedMapOf<Pair<String,String>,String>()
+        val out=linkedMapOf<SourceEntityKey,String>()
         plan.templateEntries.forEach { entry ->
             val origin=entry.originWorkspaceId?:payload.sourceWorkspaceId;val source=entry.sourceEntityId?:entry.reference
             val existingBinding=dao.dataTransferBinding(origin,"INSPECTION_TEMPLATE",source)
@@ -271,16 +289,16 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                 val wantedReference=separateReference?:entry.reference
                 localRows.firstOrNull{it.reference==wantedReference} ?: localRows.firstOrNull{it.reference.startsWith("${entry.reference}-imported-")&&templateContentEquals(it,entry)}
             } ?: error("Imported inspection template could not be resolved")
-            out[origin to source]=target.id
+            out[SourceEntityKey(origin,SourceEntityType.INSPECTION_TEMPLATE,source)]=target.id
             if(existingBinding==null) dao.insertDataTransferBinding(DataTransferBindingEntity(UUID.randomUUID().toString(),origin,"INSPECTION_TEMPLATE",source,target.id,InspectionTemplateCodec.fingerprint(entry),now))
         }
         return out
     }
 
-    private suspend fun applyPlans(items: List<CurrentPlan>, mapping: Map<Pair<String,String>,String>, templateIds: Map<Pair<String,String>,String>, now: Long) {
+    private suspend fun applyPlans(items: List<CurrentPlan>, mapping: Map<SourceEntityKey,String>, templateIds: Map<SourceEntityKey,String>, now: Long) {
         val plans=items.filter{it.type=="SERVICE_PLAN"}
         plans.filter{it.classification==DataTransferClassification.NEW}.forEach { item ->
-            val row=item.json;val templateKey=if(row.isNull("templateSourceEntityId"))null else row.optString("templateOriginWorkspaceId") to row.optString("templateSourceEntityId")
+            val row=item.json;val templateKey=if(row.isNull("templateSourceEntityId"))null else SourceEntityKey(validOrigin(row.getString("templateOriginWorkspaceId")),SourceEntityType.INSPECTION_TEMPLATE,required(row,"templateSourceEntityId"))
             val templateId=templateKey?.let{templateIds[it]?:mapping[it]}
             val active=row.optString("state")=="ACTIVE";val obligationId=if(active)UUID.randomUUID().toString()else null
             dao.insertPlans(listOf(ServicePlanEntity(item.localId,item.parentLocalId!!,row.getString("reference"),row.getString("name"),row.getInt("intervalCount"),row.getString("intervalUnit"),row.getString("currentDueDate"),row.getString("state"),obligationId,reusableTemplateId=templateId)))
@@ -289,7 +307,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         plans.filter{it.classification in setOf(DataTransferClassification.NEW,DataTransferClassification.MATCH_EXISTING)}.forEach{insertBinding(it,now)}
     }
 
-    private suspend fun applyHistory(history: List<ParsedHistory>, payload: DataTransferPayload, mapping: Map<Pair<String,String>,String>, staged: Map<String,File>, now: Long) {
+    private suspend fun applyHistory(history: List<ParsedHistory>, payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, staged: Map<String,File>, now: Long) {
         history.filter{it.family!=DataTransferFamily.PERFORMED_WORK}.filter{it.classification==DataTransferClassification.NEW_HISTORY}.forEach{item->
             val row=item.source;val refs=historyMappings(row,mapping)
             dao.insertTransferredHistoryEntries(listOf(TransferredHistoryEntryEntity(UUID.randomUUID().toString(),row.getString("originWorkspaceId"),item.family.name,row.getString("sourceEntityId"),row.optNullable("sourceRevisionId"),row.optNullable("sourceRevisionId")?:"",payload.exporterId,refs.first,refs.second,refs.third,row.optNullable("eventDateTime"),row.getJSONObject("payload").toString(),item.fingerprint,now)))
@@ -303,7 +321,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun applyEvidence(evidence: List<ParsedEvidence>, payload: DataTransferPayload, mapping: Map<Pair<String,String>,String>, staged: Map<String,File>, now: Long) {
+    private suspend fun applyEvidence(evidence: List<ParsedEvidence>, payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, staged: Map<String,File>, now: Long) {
         evidence.filter{it.classification==DataTransferClassification.NEW_HISTORY}.forEach{item->
             val row=item.value;val customerKey=optionalRef(row,"customer");val siteKey=optionalRef(row,"site");val equipmentKey=optionalRef(row,"equipment")
             val customerId=customerKey?.let{mapping[it]?:resolveBinding(it,"CUSTOMER")};val siteId=siteKey?.let{mapping[it]?:resolveBinding(it,"SITE")};val equipmentId=equipmentKey?.let{mapping[it]?:resolveBinding(it,"EQUIPMENT")}
@@ -311,6 +329,23 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             val target=staged.getValue(item.key)
             dao.insertTransferredEvidence(listOf(TransferredEvidenceEntity(UUID.randomUUID().toString(),item.key,row.getString("originWorkspaceId"),row.getString("sourcePhotoId"),row.getString("sourceVisitId"),row.getString("sourceWorkItemId"),row.optNullable("sourceFinalRevisionId"),result?.id,payload.exporterId,customerId,siteId,equipmentId,row.getString("serviceDate"),row.getString("visitReference"),row.getString("serviceName"),relative(target),item.hash,item.bytes.size.toLong(),row.getInt("width"),row.getInt("height"),row.optString("mimeType","image/jpeg"),row.optNullable("caption"),row.getString("visibility"),row.optBoolean("includedInCustomerReport"),now,
                 JSONObject().put("customerOriginWorkspaceId",row.optString("originCustomerWorkspaceId")).put("customerSourceEntityId",row.optString("originCustomerSourceId")).put("siteOriginWorkspaceId",row.optString("originSiteWorkspaceId")).put("siteSourceEntityId",row.optString("originSiteSourceId")).put("equipmentOriginWorkspaceId",row.optString("originEquipmentWorkspaceId")).put("equipmentSourceEntityId",row.optString("originEquipmentSourceId")).put("relayExporterId",payload.exporterId).toString())))
+        }
+    }
+
+    private suspend fun reconcileEvidenceAssociations() {
+        dao.allTransferredEvidence().forEach { evidence ->
+            val revision = evidence.sourceFinalRevisionId ?: return@forEach
+            val result = dao.transferredFinalResult(evidence.originWorkspaceId, evidence.sourceWorkItemId, revision)
+                ?: return@forEach
+            require(result.sourceVisitId == evidence.sourceVisitId &&
+                result.originWorkspaceId == evidence.originWorkspaceId &&
+                result.sourceWorkItemId == evidence.sourceWorkItemId &&
+                result.sourceFinalRevisionId == revision) { "Transferred evidence belongs to another final source" }
+            when (evidence.transferredFinalResultId) {
+                null -> require(dao.linkTransferredEvidenceIfUnlinked(evidence.id, result.id) == 1) { "Evidence association changed during import" }
+                result.id -> Unit
+                else -> error("Transferred evidence is linked to a conflicting final result")
+            }
         }
     }
 
@@ -323,7 +358,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun parsePerformed(payload: DataTransferPayload, mapping: Map<Pair<String,String>,String>, history: MutableList<ParsedHistory>, items: MutableList<DataTransferImportItem>) {
+    private suspend fun parsePerformed(payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, history: MutableList<ParsedHistory>, items: MutableList<DataTransferImportItem>) {
         val bytes=payload.families[DataTransferFamily.PERFORMED_WORK]?:return;val root=JSONObject(bytes.toString(Charsets.UTF_8));require(root.getInt("version")==1)
         val visits=root.getJSONArray("visits");val visitKeys=mutableSetOf<Pair<String,String>>();val resultKeys=mutableSetOf<Triple<String,String,String>>()
         for(i in 0 until visits.length()){
@@ -348,7 +383,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun parseHistory(payload: DataTransferPayload, mapping: Map<Pair<String,String>,String>, history: MutableList<ParsedHistory>, items: MutableList<DataTransferImportItem>) {
+    private suspend fun parseHistory(payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, history: MutableList<ParsedHistory>, items: MutableList<DataTransferImportItem>) {
         listOf(DataTransferFamily.FOLLOW_UPS,DataTransferFamily.CONTACT_NOTES,DataTransferFamily.CHANGE_HISTORY).forEach{family->
             val bytes=payload.families[family]?:return@forEach;val array=JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("records");val seen=mutableSetOf<String>()
             for(index in 0 until array.length()){
@@ -362,7 +397,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun parseEvidence(payload: DataTransferPayload, mapping: Map<Pair<String,String>,String>, items: MutableList<DataTransferImportItem>): List<ParsedEvidence> {
+    private suspend fun parseEvidence(payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, items: MutableList<DataTransferImportItem>): List<ParsedEvidence> {
         val bytes=payload.families[DataTransferFamily.EVIDENCE]?:return emptyList();val array=JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("photos");val seen=mutableSetOf<String>();val result=mutableListOf<ParsedEvidence>()
         for(i in 0 until array.length()){
             val row=array.getJSONObject(i);val origin=validOrigin(row.getString("originWorkspaceId"));val photo=required(row,"sourcePhotoId");val revision=row.optString("sourceFinalRevisionId").takeIf{it.isNotBlank()&&it!="null"};val key=transferEvidenceSourceKey(origin,photo,revision)
@@ -385,11 +420,11 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     private fun validateRegister(root:JSONObject?) {
         if(root==null)return;require(root.getInt("version")==1)
         val seen=mutableMapOf<String,MutableSet<String>>();val arrays=mapOf("CUSTOMER" to "customers","CUSTOMER_CONTACT" to "contacts","SITE" to "sites","EQUIPMENT" to "equipment")
-        arrays.forEach{(type,name)->val array=root.getJSONArray(name);val set=mutableSetOf<String>();seen[type]=set;for(i in 0 until array.length()){val row=array.getJSONObject(i);val key=sourceKey(row);require(set.add("${key.first}:${key.second}")){"Duplicate $type source"};when(type){"CUSTOMER"->{required(row,"reference");required(row,"name");require(row.optString("customerType","STANDARD") in setOf("STANDARD","ONE_TIME"))};"CUSTOMER_CONTACT"->{required(row,"value");require(row.getString("channel") in setOf("PHONE","SMS","WHATSAPP","EMAIL","OTHER"));require(row.has("position")&&row.optInt("position")>0){"Invalid Customer contact position"}};else->required(row,"reference")}}}
+        arrays.forEach{(type,name)->val array=root.getJSONArray(name);val set=mutableSetOf<SourceEntityKey>();for(i in 0 until array.length()){val row=array.getJSONObject(i);val key=sourceKey(row,type);require(set.add(key)){"Duplicate $type source"};when(type){"CUSTOMER"->{required(row,"reference");required(row,"name");require(row.optString("customerType","STANDARD") in setOf("STANDARD","ONE_TIME"))};"CUSTOMER_CONTACT"->{required(row,"value");require(row.getString("channel") in setOf("PHONE","SMS","WHATSAPP","EMAIL","OTHER"));require(row.has("position")&&row.optInt("position")>0){"Invalid Customer contact position"}};else->required(row,"reference")}}}
         root.getJSONArray("sites").forEachJson{row->parentKey(row,"customer")};root.getJSONArray("equipment").forEachJson{row->parentKey(row,"site")};root.getJSONArray("contacts").forEachJson{row->parentKey(row,"customer")}
     }
 
-    private fun validatePlans(root:JSONObject?) { if(root==null)return;require(root.getInt("version")==1);val a=root.getJSONArray("plans");val seen=mutableSetOf<String>();for(i in 0 until a.length()){val row=a.getJSONObject(i);val id=sourceKey(row);require(seen.add("${id.first}:${id.second}"));parentKey(row,"equipment");required(row,"reference");required(row,"name");require(row.getInt("intervalCount")>0&&row.getString("intervalUnit") in setOf("DAYS","WEEKS","MONTHS","YEARS"));LocalDate.parse(row.getString("currentDueDate"));require(row.getString("state") in setOf("ACTIVE","ARCHIVED","RETIRED","DISABLED"))} }
+    private fun validatePlans(root:JSONObject?) { if(root==null)return;require(root.getInt("version")==1);val a=root.getJSONArray("plans");val seen=mutableSetOf<SourceEntityKey>();for(i in 0 until a.length()){val row=a.getJSONObject(i);val id=sourceKey(row,"SERVICE_PLAN");require(seen.add(id));parentKey(row,"equipment");required(row,"reference");required(row,"name");require(row.getInt("intervalCount")>0&&row.getString("intervalUnit") in setOf("DAYS","WEEKS","MONTHS","YEARS"));LocalDate.parse(row.getString("currentDueDate"));require(row.getString("state") in setOf("ACTIVE","ARCHIVED","RETIRED","DISABLED"));val templateOrigin=row.has("templateOriginWorkspaceId")&&!row.isNull("templateOriginWorkspaceId");val templateSource=row.has("templateSourceEntityId")&&!row.isNull("templateSourceEntityId");require(templateOrigin==templateSource){"Template reference must be fully present or absent"};if(templateOrigin){validOrigin(required(row,"templateOriginWorkspaceId"));required(row,"templateSourceEntityId")}} }
 
     private fun familyCounts(payload:DataTransferPayload):Map<DataTransferFamily,Int> = payload.families.mapValues{(family,bytes)->runCatching{when(family){DataTransferFamily.REGISTER->{val j=JSONObject(bytes.toString(Charsets.UTF_8));listOf("customers","contacts","sites","equipment").sumOf{j.getJSONArray(it).length()}};DataTransferFamily.SERVICE_PLANS->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("plans").length();DataTransferFamily.INSPECTION_TEMPLATES->InspectionTemplateCodec.decode(bytes).templates.size;DataTransferFamily.PERFORMED_WORK->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("visits").let{v->(0 until v.length()).sumOf{v.getJSONObject(it).getJSONArray("records").length()}};DataTransferFamily.FOLLOW_UPS,DataTransferFamily.CONTACT_NOTES,DataTransferFamily.CHANGE_HISTORY->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("records").length();DataTransferFamily.EVIDENCE->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("photos").length()}}.getOrElse{0}}
 
@@ -408,7 +443,8 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     private fun display(plan:CurrentPlan,description:String)=DataTransferImportItem(plan.family,"${plan.origin}:${plan.sourceId}",plan.classification,description,if(plan.classification==DataTransferClassification.CONFLICT) "A bound or same-reference record has materially different carried content." else null)
     private suspend fun insertBinding(item:CurrentPlan,now:Long){if(dao.dataTransferBinding(item.origin,item.type,item.sourceId)==null)dao.insertDataTransferBinding(DataTransferBindingEntity(UUID.randomUUID().toString(),item.origin,item.type,item.sourceId,item.localId,item.fingerprint,now))}
 
-    private suspend fun resolveBinding(key:Pair<String,String>,type:String):String? {
+    private suspend fun resolveBinding(key:SourceEntityKey,type:String):String? {
+        require(key.entityType.name == type) { "Source identity has the wrong entity type" }
         val local=dao.dataTransferBinding(key.first,type,key.second)?.localEntityId?:return null
         return when(type){"CUSTOMER"->if(dao.customer(local)!=null)local else null;"SITE"->if(dao.site(local)!=null)local else null;"EQUIPMENT"->if(dao.equipment(local)!=null)local else null;"SERVICE_PLAN"->if(dao.plan(local)!=null)local else null;"INSPECTION_TEMPLATE"->if(dao.reusableTemplate(local)!=null)local else null;"CUSTOMER_CONTACT"->if(contactById(local)!=null)local else null;else->null}
     }
@@ -441,7 +477,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         .put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId"))
         .put("position",source.optInt("position")).put("personName",row.personName ?: JSONObject.NULL).put("channel",row.channel).put("value",row.value)
         .apply { if(source.has("notes"))put("notes",row.notes ?: JSONObject.NULL) }
-    private fun planJson(row:ServicePlanEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId")).put("equipmentOriginWorkspaceId",source.optString("equipmentOriginWorkspaceId")).put("equipmentSourceEntityId",source.optString("equipmentSourceEntityId")).put("templateOriginWorkspaceId",source.optString("templateOriginWorkspaceId")).put("templateSourceEntityId",source.optString("templateSourceEntityId")).put("reference",row.reference).put("name",row.name).put("intervalCount",row.intervalCount).put("intervalUnit",row.intervalUnit).put("currentDueDate",row.currentDueDate).put("state",row.state)
+    private fun planJson(row:ServicePlanEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId")).put("equipmentOriginWorkspaceId",source.optString("equipmentOriginWorkspaceId")).put("equipmentSourceEntityId",source.optString("equipmentSourceEntityId")).put("templateOriginWorkspaceId",if(source.isNull("templateOriginWorkspaceId"))JSONObject.NULL else source.getString("templateOriginWorkspaceId")).put("templateSourceEntityId",if(source.isNull("templateSourceEntityId"))JSONObject.NULL else source.getString("templateSourceEntityId")).put("reference",row.reference).put("name",row.name).put("intervalCount",row.intervalCount).put("intervalUnit",row.intervalUnit).put("currentDueDate",row.currentDueDate).put("state",row.state)
     private fun normalizedContactMatch(local:CustomerContactEntity,incoming:JSONObject)=local.channel.trim().uppercase()==incoming.optString("channel").trim().uppercase()&&local.value.trim()==incoming.optString("value").trim()&&local.personName.orEmpty().trim()==incoming.optString("personName").trim()&&(!incoming.has("notes")||local.notes.orEmpty().trim()==incoming.optString("notes").trim())
     private fun fingerprint(value:JSONObject):String=sha256(canonical(value.copyForFingerprint()).toByteArray(Charsets.UTF_8))
     private fun evidenceMetadataFingerprint(row:JSONObject):String = evidenceMetadataFingerprint(
@@ -505,15 +541,28 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     }
     private fun JSONObject.copyForFingerprint():JSONObject=JSONObject(toString()).apply{remove("originWorkspaceId");remove("sourceEntityId");remove("sourceRevisionId");remove("binaryName");remove("sha256");remove("byteSize");remove("width");remove("height");remove("mimeType")}
     private fun canonical(value:Any?):String=when(value){is JSONObject->value.keys().asSequence().toList().sorted().joinToString(",","{","}"){key->"${JSONObject.quote(key)}:${canonical(value.get(key))}"};is JSONArray->(0 until value.length()).joinToString(",","[","]"){canonical(value.get(it))};JSONObject.NULL,null->"null";is String->JSONObject.quote(value);else->value.toString()}
-    private fun sourceKey(row:JSONObject):Pair<String,String> = validOrigin(row.getString("originWorkspaceId")) to required(row,"sourceEntityId")
-    private fun parentKey(row:JSONObject,name:String):Pair<String,String> { val prefix="${name}OriginWorkspaceId";val source="${name}SourceEntityId";return validOrigin(required(row,prefix)) to required(row,source) }
-    private fun optionalRef(row:JSONObject,name:String):Pair<String,String>? {val value=row.optJSONObject(name)?:return null;return sourceKey(value)}
+    private fun sourceKey(row:JSONObject,type:String):SourceEntityKey =
+        SourceEntityKey(validOrigin(row.getString("originWorkspaceId")), SourceEntityType.valueOf(type), required(row,"sourceEntityId"))
+    private fun parentKey(row:JSONObject,name:String):SourceEntityKey {
+        val prefix="${name}OriginWorkspaceId";val source="${name}SourceEntityId"
+        return SourceEntityKey(validOrigin(required(row,prefix)), SourceEntityType.valueOf(name.uppercase()), required(row,source))
+    }
+    private fun optionalRef(row:JSONObject,name:String):SourceEntityKey? {
+        if (!row.has(name) || row.isNull(name)) return null
+        val value=row.get(name)
+        require(value is JSONObject) { "Invalid $name reference" }
+        return sourceKey(value,name.uppercase())
+    }
     private fun validOrigin(value:String)=TechnicianIdCodec.normalize(value)?:throw IllegalArgumentException("Invalid record origin workspace ID")
-    private fun required(row:JSONObject,key:String,max:Int=4000)=row.getString(key).trim().also{require(it.isNotEmpty()&&it.length<=max){"Invalid $key"}}
+    private fun required(row:JSONObject,key:String,max:Int=4000):String {
+        val value=row.get(key)
+        require(value is String) { "Invalid $key type" }
+        return value.trim().also { require(it.isNotEmpty()&&it.length<=max) { "Invalid $key" } }
+    }
     private fun JSONObject.optNullable(key:String):String?=if(!has(key)||isNull(key))null else optString(key).takeIf{it!="null"&&it.isNotBlank()}
     private fun JSONArray.forEachJson(block:(JSONObject)->Unit){for(i in 0 until length())block(getJSONObject(i))}
-    private suspend fun validateHistoryMappings(row:JSONObject,mapping:Map<Pair<String,String>,String>){listOf("customer","site","equipment").forEach{name->val key=optionalRef(row,name)?:return@forEach;if(key !in mapping){val type=name.uppercase();if(resolveBinding(key,type)==null)throw IllegalArgumentException("Transferred ${name} dependency is missing")}}}
-    private suspend fun historyMappings(row:JSONObject,mapping:Map<Pair<String,String>,String>):Triple<String?,String?,String?>{
+    private suspend fun validateHistoryMappings(row:JSONObject,mapping:Map<SourceEntityKey,String>){listOf("customer","site","equipment").forEach{name->val key=optionalRef(row,name)?:return@forEach;if(key !in mapping){val type=name.uppercase();if(resolveBinding(key,type)==null)throw IllegalArgumentException("Transferred ${name} dependency is missing")}}}
+    private suspend fun historyMappings(row:JSONObject,mapping:Map<SourceEntityKey,String>):Triple<String?,String?,String?>{
         suspend fun mapped(name:String,type:String):String?{val key=optionalRef(row,name)?:return null;return mapping[key]?:resolveBinding(key,type)}
         return Triple(mapped("customer","CUSTOMER"),mapped("site","SITE"),mapped("equipment","EQUIPMENT"))
     }

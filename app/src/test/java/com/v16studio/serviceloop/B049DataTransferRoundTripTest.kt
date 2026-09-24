@@ -37,6 +37,8 @@ class B049DataTransferRoundTripTest {
         b = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         ServiceLoopDatabase.configureStage4Tracking(a.openHelper.writableDatabase)
         ServiceLoopDatabase.configureStage4Tracking(b.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureReminderDefaults(a.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureReminderDefaults(b.openHelper.writableDatabase)
         rootA = File(context.cacheDir, "b049-transfer-a-${System.nanoTime()}").apply { mkdirs() }
         rootB = File(context.cacheDir, "b049-transfer-b-${System.nanoTime()}").apply { mkdirs() }
     }
@@ -64,6 +66,27 @@ class B049DataTransferRoundTripTest {
 
     private suspend fun trustedReceiver(sourceId: String) {
         ServiceLoopPeerTrustStore(b).add(sourceId, "Workspace A")
+    }
+
+    @Test fun sameSourceIdAcrossNativeEntityTypesKeepsItsHierarchy() = runBlocking {
+        val source = a.serviceLoopDao()
+        source.insertCustomers(listOf(CustomerEntity("shared", "CU-SHARED", "Shared customer")))
+        source.insertSites(listOf(SiteEntity("shared", "shared", "ST-SHARED", "Shared site", null, null)))
+        source.insertEquipment(listOf(EquipmentEntity("shared", "shared", "EQ-SHARED", null, "Shared equipment", null, null, null, null)))
+        val sourceId = ServiceLoopPeerTrustStore(a).localIdentity().technicianId
+        val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(families = ExportPreset.CUSTOMER_DATA.families))
+        trustedReceiver(sourceId)
+        val importer = DataTransferImportService(b, rootB)
+        importer.import(importer.preview(bytes))
+        val receiver = b.serviceLoopDao()
+        val customer = receiver.allCustomers().single()
+        val site = receiver.allSites().single()
+        val equipment = receiver.allEquipment().single()
+        assertEquals(customer.id, site.customerId)
+        assertEquals(site.id, equipment.siteId)
+        assertEquals("CU-SHARED", customer.reference)
+        assertEquals("ST-SHARED", site.reference)
+        assertEquals("EQ-SHARED", equipment.reference)
     }
 
     @Test fun customerPlanTemplateAndOrderedContactsMergeIdempotentlyAndDetectDrift() = runBlocking {
@@ -217,6 +240,38 @@ class B049DataTransferRoundTripTest {
             assertEquals(2, standaloneB.serviceLoopDao().allTransferredEvidence().size)
             assertTrue(standaloneB.serviceLoopDao().allTransferredEvidence().all { File(rootStandalone, it.relativePath).isFile })
         } finally { standaloneB.close(); rootStandalone.deleteRecursively() }
+    }
+
+    @Test fun evidenceImportedBeforeHistoryLinksToExactFinalRevisionOnLaterImport() = runBlocking {
+        val sourceId = seedCompletedWorkWithEvidence()
+        trustedReceiver(sourceId)
+        val exporter = DataTransferExportService(a, rootA)
+        val evidenceOnly = exporter.export(ExportCenterSelection(
+            families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES),
+            includePrivate = false,
+        ))
+        val workOnly = exporter.export(ExportCenterSelection(
+            families = setOf(ExportFamily.VISITS, ExportFamily.SERVICE_RECORDS, ExportFamily.CHECKLIST, ExportFamily.PARTS),
+            includePrivate = false,
+        ))
+        val importer = DataTransferImportService(b, rootB)
+        importer.import(importer.preview(evidenceOnly))
+        assertEquals(2, b.serviceLoopDao().allTransferredEvidence().size)
+        assertTrue(b.serviceLoopDao().allTransferredEvidence().all { it.transferredFinalResultId == null })
+        importer.import(importer.preview(workOnly))
+        val results = b.serviceLoopDao().allTransferredFinalResults()
+        val linked = b.serviceLoopDao().allTransferredEvidence()
+        assertEquals(2, results.size)
+        assertEquals(2, linked.size)
+        assertTrue(linked.all { evidence -> results.any { result ->
+            result.id == evidence.transferredFinalResultId &&
+                result.originWorkspaceId == evidence.originWorkspaceId &&
+                result.sourceVisitId == evidence.sourceVisitId &&
+                result.sourceWorkItemId == evidence.sourceWorkItemId &&
+                result.sourceFinalRevisionId == evidence.sourceFinalRevisionId
+        } })
+        importer.import(importer.preview(workOnly))
+        assertEquals(linked, b.serviceLoopDao().allTransferredEvidence())
     }
 
     @Test fun untrustedSourceAndConflictingBoundRecordCannotPartiallyWrite() = runBlocking {

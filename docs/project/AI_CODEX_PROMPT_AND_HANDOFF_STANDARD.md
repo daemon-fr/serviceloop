@@ -1,6 +1,6 @@
 # ServiceLoop — AI Codex Prompt, Execution, Review, and Handoff Standard
 
-**Version:** 2.0  
+**Version:** 2.1
 **Status:** ACTIVE PROCESS AUTHORITY  
 **Project:** ServiceLoop  
 **Purpose:** Define how ServiceLoop AI orchestrators turn adopted product intent and current repository reality into execution-level Codex assignments, how Codex is expected to execute them, how evidence is classified, how completed work is independently reviewed, and how interrupted or fresh-thread work is handed off without owner reconstruction.
@@ -702,7 +702,7 @@ If a required evidence type was not run, say so plainly.
 
 A runtime smoke is not merely launching the app.
 
-For substantial changes, enumerate the screens/actions to exercise.
+For substantial changes, enumerate the screens/actions whose behavior or inputs changed. Choose the cheapest evidence layer that actually proves each requirement. Run actual device, rendered, or system handoff checks where those behaviors matter; do not repeat an unaffected screen tour merely because a later file changed.
 
 Potential examples:
 
@@ -876,9 +876,11 @@ A domain substitute is not equivalent.
 
 ---
 
-## 23. Full verification gate for substantial work
+## 23. Risk-based verification and evidence validity
 
-For large ServiceLoop tasks, normally require:
+Felix's 2026-09-24 process amendment requires judicious test selection. Derive the check set from the changed code, data contracts, failure risks, and required acceptance scenarios. During development, use focused tests and builds. A shared or high-risk integration assignment normally warrants one planned broad pass after stabilization, with focused migration, domain, UI, rendered, and system evidence where those behaviors actually require them.
+
+Available established checks include:
 
 ```text
 gradlew.bat :app:testDebugUnitTest --no-parallel --console=plain
@@ -889,21 +891,11 @@ gradlew.bat :app:assembleRelease --no-parallel --console=plain
 git diff --check
 ```
 
-Adapt only when a gate is genuinely irrelevant or unavailable.
+Select the commands that cover the task's actual risks; do not run every command by ritual. A release APK must match final production source when release assembly is a deliverable. Rebuild an Android-test APK when its inputs change.
 
-Also require focused:
+After an edit, invalidate only evidence whose inputs or behavior it can affect. Run focused affected checks. Repeat a broad suite when shared schema, locking, serialization, or an unbounded impact genuinely requires it. Documentation-only and test-selector-only edits do not invalidate production build or runtime evidence. A broad checkpoint plus documented impact-scoped reruns can be current final evidence; never describe it as a fresh full run on final HEAD.
 
-- migration tests;
-- instrumentation;
-- rendered inspection;
-- system handoffs;
-- domain journeys
-
-appropriate to the task.
-
-At the final acceptance gate, rerun affected checks **after the last production/test edit**.
-
-Do not cite a stale earlier green run as final evidence.
+Report exact commands, outcomes, counts, checkpoint SHA or diff, subsequent changes, and the reason each earlier result remains valid. A known failing required scenario still needs repair or a genuine external blocker.
 
 ---
 
@@ -992,6 +984,7 @@ Codex final report should include, as applicable:
 - AVD runtime;
 - system handoffs;
 - rendered inspection.
+- broad checkpoint and subsequent impact-scoped reruns, with evidence carried forward only when its inputs remain valid.
 
 ### WORKAROUNDS
 - actual environment/tool fallbacks.
@@ -1091,6 +1084,7 @@ After every substantial Codex handoff:
 10. inspect route-level enforcement;
 11. inspect repo hygiene;
 12. distinguish Codex-reported tests from independently rerun evidence.
+13. check that verification selection and late reruns follow section 23's risk and input rule.
 
 Look specifically for:
 
@@ -1513,7 +1507,7 @@ A clean checkpoint is not permission to stop.
 
 FINAL GATES
 -----------
-<full unit/build/lint/instrumentation/runtime/git>
+<risk-selected unit/build/lint/instrumentation/runtime/git checks, one planned broad pass when justified, and impact-scoped late reruns>
 
 CHECKLIST
 ---------
@@ -1560,6 +1554,7 @@ Before sending a substantial Codex prompt, the orchestrator must ask:
 - Do tests reproduce actual bugs rather than proxies?
 - Did I separate JVM/migration/domain/UI/system/rendered evidence?
 - Did I define negative/retry/conflict cases?
+- Is the check set proportional to changed inputs and risk, with a planned broad pass only where justified?
 
 ### Runtime
 - Did I name the canonical AVD rule?
@@ -1600,7 +1595,7 @@ Before accepting Codex work, the reviewer must ask:
 - Can readable export contradict native/history semantics?
 - Are correction/void revisions immutable?
 - Do tests prove the actual requirement?
-- Were final gates rerun after last production edit?
+- Are all affected checks current after later edits, with broad checkpoint and impact-scoped reruns classified honestly?
 - Which claims are Codex-reported versus independently verified?
 - Is owner review still outstanding?
 

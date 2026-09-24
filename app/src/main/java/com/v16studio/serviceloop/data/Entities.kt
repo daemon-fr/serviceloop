@@ -305,6 +305,7 @@ data class FinalWorkItemEntity(
     val nextDueOverrideReason: String? = null,
     @ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
     val equipmentDescription: String? = null,
+    val followUpsSnapshotJson: String? = null,
 )
 
 @Entity(

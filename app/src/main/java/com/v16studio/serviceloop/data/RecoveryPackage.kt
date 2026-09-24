@@ -105,7 +105,9 @@ class RecoveryPackage(
         }
         require(entries.keys.all { it == "manifest.json" || it == "database.json" || (it.startsWith("files/") && it.removePrefix("files/") in paths) }) { "Unexpected backup entry" }
         val db = JSONObject(databaseBytes.toString(Charsets.UTF_8))
+        require(db.getInt("schemaVersion") == manifest.getInt("schemaVersion")) { "Backup schema versions disagree" }
         validateDatabase(db)
+        require(tableRows(db, "recovery_metadata").single().getString("datasetId") == manifest.getString("datasetId")) { "Backup dataset identity disagrees" }
         val missing = manifest.getJSONArray("missingFiles").let { array -> List(array.length()) { array.getString(it) } }
         require(missing.size == missing.toSet().size && missing.all(::safeRelativePath) && missing.none { it in paths }) { "Unsafe or conflicting missing-file declaration" }
         val complete = manifest.getBoolean("complete")
@@ -119,7 +121,28 @@ class RecoveryPackage(
     private suspend fun restoreUnlocked(inspection: BackupInspection) {
         val entries = unzip(inspection.stagedPayload)
         val databaseObject = JSONObject(entries.getValue("database.json").toString(Charsets.UTF_8))
+        val manifest = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
+        require(manifest.getInt("formatVersion") == FORMAT_VERSION &&
+            manifest.getString("datasetId") == inspection.datasetId &&
+            manifest.getLong("snapshotAtEpochMillis") == inspection.snapshotAtEpochMillis) { "Recovery inspection no longer matches the staged package" }
+        require(manifest.getInt("schemaVersion") == databaseObject.getInt("schemaVersion") && manifest.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
+        require(sha256(entries.getValue("database.json")) == manifest.getString("databaseSha256")) { "Database snapshot integrity check failed" }
+        require(tableRows(databaseObject, "recovery_metadata").single().getString("datasetId") == manifest.getString("datasetId")) { "Backup dataset identity disagrees" }
         validateDatabase(databaseObject)
+        val missing = manifest.getJSONArray("missingFiles").let { array -> List(array.length()) { array.getString(it) } }
+        require(missing == inspection.missingFiles && missing.size == missing.toSet().size && missing.all(::safeRelativePath)) { "Recovery missing-file declarations changed" }
+        val stagedFiles = manifest.getJSONArray("files")
+        val stagedPaths = mutableSetOf<String>()
+        for (index in 0 until stagedFiles.length()) {
+            val descriptor = stagedFiles.getJSONObject(index)
+            val path = descriptor.getString("path")
+            require(safeRelativePath(path) && stagedPaths.add(path) && path !in missing) { "Unsafe or duplicate staged file" }
+            val bytes = entries["files/${path.replace('\\', '/')}"] ?: error("Staged recovery file is missing: $path")
+            require(bytes.size.toLong() == descriptor.getLong("size") && sha256(bytes) == descriptor.getString("sha256")) { "Staged recovery file changed: $path" }
+        }
+        require(entries.keys.all { it == "manifest.json" || it == "database.json" || (it.startsWith("files/") && it.removePrefix("files/") in stagedPaths) }) { "Unexpected staged recovery entry" }
+        require(manifest.getBoolean("complete") == missing.isEmpty() && inspection.complete == missing.isEmpty()) { "Recovery completeness changed" }
+        crossValidateFiles(databaseObject, stagedFiles, missing)
         val recoveryRoot = File(fileRoot, "recovery")
         var restrictedQuarantine: File? = null
         if (recoverInterrupted(database, fileRoot) == RecoveryResult.RESTRICTED) {
@@ -131,7 +154,6 @@ class RecoveryPackage(
         check(!journalFile(recoveryRoot).exists()) { "Another recovery operation is unfinished" }
         stage.deleteRecursively(); rollback.deleteRecursively()
         require(stage.mkdirs() && rollback.mkdirs()) { "Unable to create recovery staging" }
-        val manifest = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
         val declared = manifest.getJSONArray("files")
         val paths = List(declared.length()) { declared.getJSONObject(it).getString("path") }
         val touchedPaths = (ownedBusinessFiles() + paths).distinct().sorted()
@@ -186,14 +208,22 @@ class RecoveryPackage(
         val attachments = tableRows(root, "attachments")
             .filterNot { ("ATTACHMENT" to it.getString("id")) in deletedOriginals }
             .map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "ATTACHMENT") }
+        val finalPhotos = tableRows(root, "final_photo_entries")
+            .filterNot { ("FINAL_PHOTO" to it.getString("id")) in deletedOriginals ||
+                ("ATTACHMENT" to it.getString("sourceAttachmentId")) in deletedOriginals }
+            .map { RequiredFile(it.getString("storedRelativePath"), it.getLong("byteSize"), it.getString("sha256"), "FINAL_PHOTO") }
         val reports = tableRows(root, "report_renditions").filter { it.getString("status") in setOf("READY", "MISSING") && !it.isNull("sha256") }.map { RequiredFile(it.getString("relativePath"), it.optLong("byteSize"), it.getString("sha256"), "REPORT") }
         val remotePhotos = tableRows(root, "remote_result_photos").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "REMOTE_PHOTO") }
-        val aggregateReports = tableRows(root, "aggregate_report_renditions").filter { it.getString("status") == "READY" }.map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "AGGREGATE_REPORT") }
+        val aggregateReports = tableRows(root, "aggregate_report_renditions").filter { it.getString("status") in setOf("READY", "MISSING") && !it.isNull("relativePath") && !it.isNull("sha256") }.map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "AGGREGATE_REPORT") }
         val derivatives = tableRows(root, "retained_images").map { RequiredFile(it.getString("derivativeRelativePath"), it.getLong("derivativeByteSize"), it.getString("derivativeSha256"), "IMAGE_DERIVATIVE") }
         val transferredPhotos = tableRows(root, "transferred_evidence").map { RequiredFile(it.getString("relativePath"), it.getLong("byteSize"), it.getString("sha256"), "TRANSFERRED_EVIDENCE") }
-        val all = attachments + reports + remotePhotos + aggregateReports + derivatives + transferredPhotos
-        require(all.map { it.path }.size == all.map { it.path }.toSet().size) { "Two database file references use the same path" }
-        return all
+        val all = attachments + finalPhotos + reports + remotePhotos + aggregateReports + derivatives + transferredPhotos
+        all.forEach { OwnedBusinessFiles.resolve(fileRoot, it.path) }
+        return all.groupBy { it.path }.map { (path, references) ->
+            val first = references.first()
+            require(references.all { it.hash == first.hash && it.size == first.size }) { "Conflicting file descriptors for $path" }
+            first
+        }
     }
 
     private fun exportDatabase(): ByteArray {
@@ -221,14 +251,34 @@ class RecoveryPackage(
     }
 
     private fun validateDatabase(root: JSONObject) {
-        normalizeLegacyReminderState(root)
-        normalizeWorkingInputBuffers(root)
-        normalizeB026State(root)
-        normalizeCustomerContacts(root)
-        normalizeContactOrder(root)
-        normalizeTrustedServiceLoopIds(root)
-        normalizeB049Tables(root)
-        require(root.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
+        val sourceVersion = root.getInt("schemaVersion")
+        require(sourceVersion in SUPPORTED_SCHEMA_VERSIONS) { "Unsupported Recovery schema" }
+        val originalTables = root.getJSONArray("tables")
+        val declaredNames = (0 until originalTables.length()).map { originalTables.getJSONObject(it).getString("name") }
+        require(declaredNames == expectedTables(sourceVersion)) { "Recovery source table declarations are incomplete, duplicated, or out of order" }
+        originalTables.let { tables ->
+            for (index in 0 until tables.length()) {
+                val declaration = tables.getJSONObject(index)
+                val rows = declaration.getJSONArray("rows")
+                require(rows.length() <= MAX_ROWS_PER_TABLE) { "Backup contains too many records" }
+                val expectedColumns = RecoverySourceShapes.columns(sourceVersion, declaration.getString("name"))
+                for (rowIndex in 0 until rows.length()) {
+                    val row = rows.getJSONObject(rowIndex)
+                    require(row.keys().asSequence().toSet() == expectedColumns) {
+                        "Recovery source row has missing or conflicting columns in ${declaration.getString("name")}"
+                    }
+                }
+            }
+        }
+        if (sourceVersion < 11) normalizeLegacyReminderState(root)
+        if (sourceVersion < 14) normalizeWorkingInputBuffers(root)
+        if (sourceVersion < 15) normalizeB026State(root)
+        if (sourceVersion < 16) normalizeCustomerContacts(root)
+        if (sourceVersion < 18) normalizeContactOrder(root)
+        if (sourceVersion < 17) normalizeTrustedServiceLoopIds(root)
+        if (sourceVersion < 18) normalizeB049Tables(root)
+        if (sourceVersion < 19) normalizeRepairColumns(root)
+        root.put("schemaVersion", SCHEMA_VERSION)
         val tables = root.getJSONArray("tables")
         require(tables.length() == TABLE_ORDER.size)
         val names = mutableSetOf<String>()
@@ -286,6 +336,34 @@ class RecoveryPackage(
         val visitIds = ids("working_visits")
         require(tableRows(root, "dispatch_visit_bindings").all { it.getString("localVisitId") in visitIds }) { "Dispatch binding points to a missing Visit" }
         validateAgainstRoomSchema(root)
+    }
+
+    private fun expectedTables(version: Int): List<String> = TABLE_ORDER.filter { table ->
+        when (table) {
+            "reminder_preferences" -> version >= 11
+            "working_input_buffers" -> version >= 14
+            "customer_contacts" -> version >= 16
+            "trusted_service_loop_ids" -> version >= 17
+            "work_result_receipts", "remote_final_results", "remote_result_photos",
+            "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images",
+            "data_transfer_bindings", "transferred_final_results", "transferred_evidence",
+            "transferred_history_entries" -> version >= 18
+            else -> true
+        }
+    }
+
+    private fun normalizeRepairColumns(root: JSONObject) {
+        listOf(
+            "final_work_items" to "followUpsSnapshotJson",
+            "remote_final_results" to "sourcePayloadJson",
+            "transferred_final_results" to "sourcePayloadJson",
+            "retained_images" to "originalDeletionRequestedAtEpochMillis",
+        ).forEach { (table, column) ->
+            tableRows(root, table).forEach { row ->
+                require(!row.has(column)) { "Recovery source claims a newer column" }
+                row.put(column, JSONObject.NULL)
+            }
+        }
     }
 
     /** Replays the current generated Room schema into an isolated throwaway database. */
@@ -410,11 +488,12 @@ class RecoveryPackage(
         if ((0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "customer_contacts" }) {
             val contacts = JSONArray()
             val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "customers" }?.plus(1) ?: 0
-            tables.put(JSONObject().put("name", "customer_contacts").put("rows", contacts))
-            for (index in tables.length() - 1 downTo insertAt + 1) tables.put(index, tables.get(index - 1))
-            tables.put(insertAt, JSONObject().put("name", "customer_contacts").put("rows", contacts))
-            tables.remove(tables.length() - 1)
-            root.put("schemaVersion", maxOf(root.optInt("schemaVersion", SCHEMA_VERSION), 16))
+            val normalized = JSONArray()
+            for (index in 0 until tables.length()) {
+                if (index == insertAt) normalized.put(JSONObject().put("name", "customer_contacts").put("rows", contacts))
+                normalized.put(tables.get(index))
+            }
+            root.put("tables", normalized)
         }
     }
 
@@ -442,7 +521,6 @@ class RecoveryPackage(
             for (index in tables.length() downTo insertAt + 1) tables.put(index, tables.get(index - 1))
             tables.put(insertAt, JSONObject().put("name", "trusted_service_loop_ids").put("rows", JSONArray()))
         }
-        root.put("schemaVersion", SCHEMA_VERSION)
     }
 
     private fun normalizeB049Tables(root: JSONObject) {
@@ -465,7 +543,6 @@ class RecoveryPackage(
             normalized.put(if (existing != null) tables.getJSONObject(existing) else JSONObject().put("name", name).put("rows", JSONArray()))
         }
         root.put("tables", normalized)
-        root.put("schemaVersion", SCHEMA_VERSION)
     }
 
     internal fun normalizeB049PhotoFlags(root: JSONObject) {
@@ -597,8 +674,12 @@ class RecoveryPackage(
     }
 
     private fun crossValidateFiles(root: JSONObject, manifest: JSONArray, missing: List<String>) {
-        val expected = requiredFiles(root).associateBy { it.path }
-        val declared = List(manifest.length()) { manifest.getJSONObject(it) }.associateBy { it.getString("path") }
+        val references = requiredFiles(root)
+        val expected = references.associateBy { it.path }
+        require(expected.size == references.size) { "Conflicting file references in database snapshot" }
+        val declarations = List(manifest.length()) { manifest.getJSONObject(it) }
+        val declared = declarations.associateBy { it.getString("path") }
+        require(declared.size == declarations.size) { "Duplicate recovery file declaration" }
         require(expected.keys == declared.keys + missing.toSet()) { "Database file references do not match the backup manifest" }
         declared.forEach { (path, item) ->
             val reference = expected.getValue(path)
@@ -616,11 +697,8 @@ class RecoveryPackage(
 
     private fun recoveryMetadata(root: JSONObject) = tableRows(root, "recovery_metadata").single()
     private fun setAdoptionToken(root: JSONObject, token: String) { recoveryMetadata(root).put("adoptionToken", token).put("restrictedRecoveryState", 0) }
-    private fun ownedRootDirectories() = BUSINESS_ROOTS.map { File(fileRoot, it) }
-    private fun ownedBusinessFiles(): List<String> = BUSINESS_ROOTS.flatMap { rootName ->
-        val root = File(fileRoot, rootName)
-        if (!root.isDirectory) emptyList() else root.walkTopDown().filter { it.isFile }.map { it.relativeTo(fileRoot).invariantSeparatorsPath }.toList()
-    }
+    private fun ownedRootDirectories() = OwnedBusinessFiles.roots.map { File(fileRoot, it) }
+    private fun ownedBusinessFiles(): List<String> = OwnedBusinessFiles.existing(fileRoot)
     private fun writeJournal(file: File, value: JSONObject) {
         file.parentFile?.mkdirs()
         val temporary = File(file.parentFile, "$JOURNAL.tmp")
@@ -672,9 +750,8 @@ class RecoveryPackage(
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
-        internal const val SCHEMA_VERSION = 18
-        private val SUPPORTED_SCHEMA_VERSIONS = setOf(9, 10, 11, 12, 13, 14, 15, 16, 17, SCHEMA_VERSION)
-        private val BUSINESS_ROOTS = listOf("attachments", "reports")
+        internal const val SCHEMA_VERSION = 19
+        private val SUPPORTED_SCHEMA_VERSIONS = (9..SCHEMA_VERSION).toSet()
         const val FORMAT_VERSION = 2
         const val ITERATIONS = 310_000
         const val MAX_PACKAGE_BYTES = 512 * 1024 * 1024
