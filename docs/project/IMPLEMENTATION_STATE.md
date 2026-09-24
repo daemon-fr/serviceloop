@@ -386,3 +386,9 @@ Privacy-off DATA_TRANSFER preserves ordinary directory values with private field
 Final correction verification: 513 JVM tests PASS; debug, Android-test, lint, and release gates PASS; focused canonical AVD tests PASS (Data Transfer 1, Export Center UI 5, Room 18→19 migration 1, system handoff 2); delayed startup smoke PASS. Details and limitations are in the B049 milestone correction record. Owner UI review remains; this is not owner accepted or merged, and B-008 remains outstanding.
 
 The starting worktree also contained an unstaged `.idea/misc.xml` IDE metadata edit that adds `default="true"` to the JDK 20 project-root setting. It was preserved outside the implementation and evidence commits.
+
+## B049 native-sharing lifecycle-selection follow-up — 2026-09-24
+
+Independent review found that Customer Contacts selection could add an unrelated archived Customer because it skipped the `includeInactive` filter before directory dependency closure. The exporter now derives Contact rows from lifecycle-eligible scoped Customers. Required inactive dependencies for selected history/evidence/plans remain included. Implementation commit `513fdfee473306fc7a693d985c04615ab8f3dd9c` adds the fix, a regression covering both lifecycle-toggle values and Customer scope, and an explicit archived-history dependency assertion.
+
+The regression failed on the starting exporter and passes after the fix. The full JVM suite passes with 514 tests; debug, Android-test, lint, and release gates pass. The final debug APK was installed with `install -r` on the dynamically identified `Pixel 10a ServiceLoop` AVD; the app remained alive after 9 seconds with no sampled fatal AndroidRuntime error. `git diff --check` passes. System handoff and rendered/UI review were not rerun for this selection-only correction. B049 remains ready for owner UI review; owner acceptance, pilot, and merge are outstanding.

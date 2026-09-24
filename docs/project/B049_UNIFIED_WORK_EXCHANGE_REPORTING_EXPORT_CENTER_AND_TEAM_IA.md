@@ -2642,3 +2642,18 @@ Final correction evidence:
 - **Git:** `git diff --check` PASS. The exact evidence/documentation commit and final branch parity are given in the task handoff. A pre-existing Android Studio JDK metadata edit in `.idea/misc.xml` was preserved outside the correction commits.
 
 The correction is independently source-reviewed and ready for owner UI defect review. No broad UI pass or rendered-screen review was performed in this correction. Owner acceptance, B-008 external pilot, release, and protected-master integration remain outstanding.
+
+### Residual lifecycle-selection correction — 2026-09-24
+
+Final independent review found that selecting Customer Contacts could reintroduce an unrelated archived Customer: contact selection used the scoped directory set without applying `includeInactive`, then added each parent Customer as a required directory dependency. The selection now filters scoped Customers by `includeInactive || state == "ACTIVE"` before checking for Contacts. Contact rows are emitted only for that eligible set. The shared scope remains applied before lifecycle selection, while dependencies for selected performed history, evidence, and plans continue to include required inactive directory rows.
+
+Implementation commit: `513fdfee473306fc7a693d985c04615ab8f3dd9c` (`Correct B049 inactive contact export selection`). The new regression failed against the starting exporter because `CU-B` appeared with `includeInactive=false`; it passes after the fix for the false/true toggle cases and a Customer-scoped export. The existing inactive-history dependency regression was strengthened to assert that archived `CU-2` remains included, and passes.
+
+Final correction evidence:
+
+- **JVM-TESTED:** focused lifecycle-selection regression PASS; archived-history dependency safeguard PASS; full `:app:testDebugUnitTest`: 514 tests PASS, zero failures/errors/skips.
+- **TESTED — builds/lint:** `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease`: PASS after the final production and test edits.
+- **Startup smoke:** final debug APK installed with `adb -s emulator-5554 install -r` on the running AVD whose resolved ID/config display name is `Pixel_10a_ServiceLoop` / `Pixel 10a ServiceLoop`; after 9 seconds process PID 7088 remained alive and the sampled `AndroidRuntime` fatal-error log was empty.
+- `git diff --check`: PASS. App 1.3.0/code 5, Room 19, Recovery 18, envelope v2, and DATA_TRANSFER v2 remain unchanged.
+
+No system handoff, broad UI instrumentation, or rendered review was rerun for this selection-only correction. B049 remains ready for owner UI review; owner acceptance, B-008 pilot, release authorization, and protected-master integration are not claimed. The pre-existing `.idea/gradle.xml` and `.idea/misc.xml` metadata edits remain outside the correction commits.
