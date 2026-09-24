@@ -1,6 +1,6 @@
 # ServiceLoop — Source of Truth
 
-**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-22.
+**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-24.
 
 ## Authority order
 
@@ -30,6 +30,8 @@ Before writing any substantial Codex prompt or continuation handoff, the orchest
 A stronger implementation model is not a reason to reduce prompt detail. Prompts should be executable by the least expensive intended model, normally Luna High, without forcing that model to reconstruct avoidable architecture/product decisions.
 
 For the current branch/SHA/version/milestone pointer, read `IMPLEMENTATION_STATE.md` and verify Git state directly. Do not infer current implementation state from an older milestone paragraph in this file.
+
+The 2026-09-24 persistence repair candidate and its exact compatibility/evidence boundaries are summarized in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md) and [acceptance ledger](PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md). These describe implementation on the designated repair branch; they do not imply owner acceptance or protected-branch integration.
 
 ## Accepted baseline and active implementation line
 

@@ -2674,3 +2674,7 @@ Required JVM coverage also exposed a narrow WORK_RESULT chronology fallback: whe
 - **Git:** `git diff --check` PASS after the documentation edit; branch push and parity are recorded at handoff.
 
 B049 remains available for further owner UI review. This record does not claim owner acceptance, merge to `master`, release, or B-008 pilot completion.
+
+## Persistence repair follow-on — 2026-09-24
+
+The authorized follow-on candidate is implemented on `codex/persistence-web-foundation-audit`, based on the reviewed B049 source/evidence checkpoint `13552b917d62a453f1840a5a8121742c9b11e420`. The focused R01–R14 compatibility, source, ownership, and verification decisions are recorded in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md) and [acceptance ledger](PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md). This follow-on advances Room v19→v20 and Recovery schema v18→v19, writes WORK_RESULT/PERFORMED_WORK v2 with v1 reads retained, and completes the R05 durable file adoption/coherent export and R07 immutable source projection gaps. Its final gate and exact evidence are recorded in those documents. The preceding B049 test counts, screenshots, and version claims above remain unchanged as historical evidence for their original checkpoint; this pointer does not claim independent review or owner acceptance.

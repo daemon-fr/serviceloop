@@ -8,17 +8,17 @@ This file is the concise current-state summary. Detailed milestone evidence rema
 
 This file is the maintained first-stop implementation pointer. A fresh AI should read this section before historical milestone detail, then verify Git directly.
 
-Current B049 implementation line:
+Current persistence repair candidate:
 
-- active branch: `codex/b049-work-exchange-reporting-export-center`
-- continuation worktree starting revision: `83a67e4f784737b6c492ba434fd4157dbbebc92a`
-- B049 implementation base: `653a0978b8f6be560acacd45e26c2405ab23e526`; earlier B048 line: `cadc0668fe2ba5172d17a86a157323303a71d83f`
+- active candidate branch: `codex/persistence-web-foundation-audit`
+- reviewed B049 source/evidence base: `13552b917d62a453f1840a5a8121742c9b11e420`
+- R05/R07 implementation checkpoint: `546e2d50480c7ad2423def9ce985f5652746b56b`
 - protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
-- current executable: `1.3.0` / versionCode `5`
-- current Room: v19, with non-destructive 18→19 migration
-- current Recovery: schema v18, with 17→18 compatibility
-- FULL_WORKSPACE register: v3, with v2 read compatibility
-- B049 is implemented and verified for owner review on the designated branch. Final source gates passed 509 JVM tests, debug/Android-test/release builds, lintDebug, 12 canonical-AVD instrumented cases across seven classes plus a focused preview rerun, system picker/sharesheet handoffs, rendered inspection, and startup smoke. The canonical development-only v19 database was additively repaired and audited against its pre-test checkpoint; Room stays v19 with only the production 18→19 migration. B-008 pilot, owner acceptance, and merge remain outstanding. See `B049_UNIFIED_WORK_EXCHANGE_REPORTING_EXPORT_CENTER_AND_TEAM_IA.md` for detailed evidence; verify final Git tip and remote parity directly.
+- candidate versions: app `1.3.0`/code `5`, Room v20, Recovery schema v19, envelope/metadata v2, WORK_RESULT and PERFORMED_WORK v2, FULL_WORKSPACE register v3, Dispatch v5.
+- final shared gate: 579 JVM tests, debug and Android-test APK builds, and lint PASS; final R12 and WORK_RESULT canonical-AVD journeys PASS. Detailed source contracts and limits are in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md), with exact method/assertion evidence in [the acceptance ledger](PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md).
+- candidate state is implemented/tested for independent review. Owner acceptance, B-008 pilot, protected-branch integration, and release remain outstanding. Verify final Git tip and remote parity directly.
+
+The B049 milestone is the reviewed predecessor and its verification paragraphs below are historical evidence for their named checkpoint. Do not treat those paragraphs as the current repair-branch version or rewrite their result counts.
 
 For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
 
