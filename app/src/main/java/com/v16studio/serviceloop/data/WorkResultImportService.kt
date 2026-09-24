@@ -31,19 +31,30 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
     private suspend fun importLocked(bytes: ByteArray): Preview {
         val (preview, prepared) = preflight(bytes)
         ServiceLoopPeerTrustStore(database).requireTrusted(preview.exporterId)
-        val filesCreated = mutableListOf<File>()
+        check(BusinessFileAdoptionJournal.recoverInterrupted(database, attachmentRoot)) {
+            "An earlier result photo adoption needs recovery"
+        }
+        val newPhotos = linkedMapOf<String, ByteArray>()
+        prepared.filter { it.preview.status != "ALREADY_RECEIVED" }.forEach { item ->
+            item.result.photos.forEach { photo ->
+                val path = "remote-results/${stable(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId, photo.sourcePhotoId)}.jpg"
+                val file = ownedFile(path)
+                if (file.exists() && dao.remotePhotoReferenceCount(path) == 0) check(file.delete()) {
+                    "Unowned result staging file could not be removed"
+                }
+                if (!file.exists()) require(newPhotos.putIfAbsent(path, photo.bytes) == null) { "Duplicate result photo target" }
+            }
+        }
+        val adoption = BusinessFileAdoptionJournal.begin(database, attachmentRoot, newPhotos)
         try {
             val ownedPhotos = prepared.filter { it.preview.status != "ALREADY_RECEIVED" }.associateWith { item ->
                 item.result.photos.map { photo ->
                     val path = "remote-results/${stable(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId, photo.sourcePhotoId)}.jpg"
                     val file = ownedFile(path)
-                    if (file.exists() && dao.remotePhotoReferenceCount(path) == 0) check(file.delete()) { "Unowned result staging file could not be removed" }
                     if (file.exists()) {
                         require(file.length() == photo.bytes.size.toLong() && WorkResultPackageCodec.sha256(file.readBytes()) == WorkResultPackageCodec.sha256(photo.bytes)) { "An owned result photo conflicts with this package" }
                     } else {
-                        require(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
-                        filesCreated += file
-                        file.outputStream().use { stream -> stream.write(photo.bytes); stream.fd.sync() }
+                        adoption.adopt(path, photo.bytes)
                     }
                     path
                 }
@@ -160,13 +171,11 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 }
                 outcomes
             }
+            adoption.finish()
             return preview.copy(items = committedItems)
         } catch (failure: Throwable) {
             withContext(NonCancellable) {
-                filesCreated.forEach { file ->
-                    val path = file.relativeTo(attachmentRoot).invariantSeparatorsPath
-                    if (dao.remotePhotoReferenceCount(path) == 0) check(file.delete() || !file.exists())
-                }
+                adoption.reconcileAfterFailure()
             }
             throw failure
         }

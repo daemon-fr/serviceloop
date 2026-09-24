@@ -1,5 +1,6 @@
 package com.v16studio.serviceloop.data
 
+import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.ServiceLoopScopeFilter
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -40,10 +41,13 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
     private val dao = database.serviceLoopDao()
 
     suspend fun export(selection: ExportCenterSelection): ByteArray = BusinessFileCoordinator.mutex.withLock {
-        exportLocked(selection)
+        val captured = database.withTransaction { exportLocked(selection) }
+        ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> captured.forEach { (name, bytes) ->
+            zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry()
+        } } }.toByteArray()
     }
 
-    private suspend fun exportLocked(selection: ExportCenterSelection): ByteArray {
+    private suspend fun exportLocked(selection: ExportCenterSelection): Map<String, ByteArray> {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val scope = selection.scope
         val businessZone = dao.businessProfile()?.zoneId?.let(ZoneId::of) ?: ZoneId.systemDefault()
@@ -197,7 +201,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
             appendLine("Private: ${selection.includePrivate}; inactive: ${selection.includeInactive}; previous revisions: ${selection.includePreviousRevisions}")
         }.toByteArray(Charsets.UTF_8)
         entries["README.txt"] = readme
-        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } } }.toByteArray()
+        return entries
     }
 
     private fun ownedFile(path: String): File {

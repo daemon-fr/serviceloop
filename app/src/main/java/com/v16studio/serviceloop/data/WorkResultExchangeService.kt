@@ -1,5 +1,6 @@
 package com.v16studio.serviceloop.data
 
+import androidx.room.withTransaction
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -13,10 +14,20 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
     private val dispatch = database.dispatchDao()
 
     suspend fun exportFinalRevisions(revisionIds: List<String>): ByteArray = BusinessFileCoordinator.mutex.withLock {
-        exportLocked(revisionIds)
+        require(revisionIds.isNotEmpty() && revisionIds.size <= WorkResultPackageCodec.MAX_RESULTS)
+        val derivativeStore = CanonicalFinalPhotoDerivative(database, attachmentRoot)
+        val prepared = linkedMapOf<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>>()
+        revisionIds.distinct().forEach { revisionId -> dao.finalWorkItems(revisionId).forEach { item ->
+            dao.finalPhotos(item.id).forEach { photo ->
+                prepared[photo.id] = photo.sha256 to derivativeStore.bytes(photo)
+            }
+        } }
+        val captured = database.withTransaction { exportLocked(revisionIds, prepared) }
+        WorkResultPackageCodec.encode(captured)
     }
 
-    private suspend fun exportLocked(revisionIds: List<String>): ByteArray {
+    private suspend fun exportLocked(revisionIds: List<String>,
+        prepared: Map<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>>): WorkResultPackageCodec.Package {
         require(revisionIds.isNotEmpty() && revisionIds.size <= WorkResultPackageCodec.MAX_RESULTS)
         val exporterId = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
         val results = revisionIds.distinct().flatMap { revisionId ->
@@ -90,9 +101,10 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                         .put("includeInReport", photo.includedInCustomerReport).put("addedInCorrection", photo.addedInCorrection)
                         .put("addedAtEpochMillis", photo.addedAtEpochMillis ?: JSONObject.NULL))
                 } })
-                val derivativeStore = CanonicalFinalPhotoDerivative(database, attachmentRoot)
                 val photos = finalPhotos.map { finalPhoto ->
-                        val derivative = derivativeStore.bytes(finalPhoto)
+                        val ready = prepared[finalPhoto.id] ?: error("Final photo was not captured")
+                        require(ready.first == finalPhoto.sha256) { "Final photo changed during export capture" }
+                        val derivative = ready.second
                         WorkResultPackageCodec.Photo(finalPhoto.sourceAttachmentId, derivative.bytes, finalPhoto.caption,
                             finalPhoto.includedInCustomerReport, finalPhoto.visibility,
                             itemProvenance.dispatchItemId, derivative.width, derivative.height)
@@ -104,7 +116,7 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
         val issuers = results.map { it.value.getString("assignmentIssuerId") }.toSet()
         require(issuers.size == 1) { "Select results from one assignment issuer" }
         ServiceLoopPeerTrustStore(database).requireTrusted(issuers.single())
-        return WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(UUID.randomUUID().toString(), exporterId, issuers.single(), Instant.now().toString(), results))
+        return WorkResultPackageCodec.Package(UUID.randomUUID().toString(), exporterId, issuers.single(), Instant.now().toString(), results)
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(parts.joinToString("|").toByteArray(Charsets.UTF_8)).toString()

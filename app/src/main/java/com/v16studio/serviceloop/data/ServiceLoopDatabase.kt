@@ -61,7 +61,12 @@ abstract class ServiceLoopDatabase : RoomDatabase() {
                     configureStage4Tracking(db)
                 }
             })
-            .build().also { database -> RecoveryPackage.recoverInterrupted(database, context.applicationContext.filesDir) }
+            .build().also { database ->
+                if (RecoveryPackage.recoverInterrupted(database, context.applicationContext.filesDir) !=
+                    RecoveryPackage.RecoveryResult.RESTRICTED) {
+                    BusinessFileAdoptionJournal.recoverInterrupted(database, context.applicationContext.filesDir)
+                }
+            }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {

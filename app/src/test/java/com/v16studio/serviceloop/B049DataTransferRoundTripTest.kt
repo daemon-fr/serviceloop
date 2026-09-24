@@ -359,6 +359,27 @@ class B049DataTransferRoundTripTest {
         } finally { standaloneB.close(); rootStandalone.deleteRecursively() }
     }
 
+    @Test fun identicalV2ReplayRecoversMissingLegacySourceRepresentation() = runBlocking {
+        val sourceId = seedCompletedWorkWithEvidence()
+        trustedReceiver(sourceId)
+        val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(
+            families = setOf(ExportFamily.SERVICE_RECORDS, ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)))
+        val importer = DataTransferImportService(b, rootB)
+        importer.import(importer.preview(bytes))
+        val before = b.serviceLoopDao().allTransferredFinalResults()
+        assertTrue(before.isNotEmpty())
+        b.openHelper.writableDatabase.execSQL("UPDATE transferred_final_results SET sourcePayloadJson=NULL")
+        assertTrue(b.serviceLoopDao().allTransferredFinalResults().all { it.sourcePayloadJson == null })
+        val replay = importer.preview(bytes)
+        assertTrue(replay.items.filter { it.family == DataTransferFamily.PERFORMED_WORK }
+            .all { it.classification == DataTransferClassification.ALREADY_IMPORTED })
+        importer.import(replay)
+        val after = b.serviceLoopDao().allTransferredFinalResults()
+        assertEquals(before.map { it.id }, after.map { it.id })
+        assertTrue(after.all { JSONObject(it.sourcePayloadJson!!).getJSONObject("record")
+            .getString("originWorkspaceId") == sourceId })
+    }
+
     @Test fun evidenceAndPerformedHistoryAssociateInEitherArrivalOrder() = runBlocking {
         val sourceId = seedCompletedWorkWithEvidence()
         val history = DataTransferExportService(a, rootA).export(ExportCenterSelection(

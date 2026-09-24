@@ -254,6 +254,50 @@ class RecoveryLegacyCompatibilityTest {
         }
     }
 
+    @Test fun polymorphicAggregateAndTransferredEvidenceOwnersRejectBeforeReplacement() = runBlocking {
+        val dao = database.serviceLoopDao()
+        dao.insertAggregateReport(AggregateReportEntity("graph-report", "legacy-customer", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
+        val recovery = RecoveryPackage(database, root)
+        val current = recovery.create(password, false).bytes
+        fun addRow(snapshot: JSONObject, name: String, row: JSONObject) {
+            val tables = snapshot.getJSONArray("tables")
+            (0 until tables.length()).map(tables::getJSONObject).first { it.getString("name") == name }
+                .getJSONArray("rows").put(row)
+        }
+        val cases = listOf(
+            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+                JSONObject().put("aggregateReportId", "graph-report").put("sourceOrder", 1)
+                    .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "REMOTE")
+                    .put("visitId", "local-visit").put("sourceEntityId", "missing-remote")) } to "An aggregate source does not resolve to its exact final revision",
+            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+                JSONObject().put("aggregateReportId", "graph-report").put("sourceOrder", 1)
+                    .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "TRANSFERRED")
+                    .put("visitId", "TRANSFERRED:origin:visit").put("sourceEntityId", "missing-transfer")) } to "An aggregate source does not resolve to its exact final revision",
+            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "transferred_evidence",
+                JSONObject().put("id", "orphan-evidence").put("sourceIdentityKey", "origin:visit:item:revision:photo")
+                    .put("originWorkspaceId", "origin").put("sourcePhotoId", "photo")
+                    .put("sourceVisitId", "visit").put("sourceWorkItemId", "item")
+                    .put("sourceFinalRevisionId", "revision").put("transferredFinalResultId", "missing-transfer")
+                    .put("relayExporterId", "exporter").put("localCustomerId", JSONObject.NULL)
+                    .put("localSiteId", JSONObject.NULL).put("localEquipmentId", JSONObject.NULL)
+                    .put("serviceDate", "2026-09-24").put("visitReference", "visit")
+                    .put("serviceName", "Service").put("relativePath", "transferred-evidence/orphan.jpg")
+                    .put("sha256", "a".repeat(64)).put("byteSize", 1).put("width", 1).put("height", 1)
+                    .put("mimeType", "image/jpeg").put("caption", JSONObject.NULL).put("visibility", "PUBLIC")
+                    .put("includedInCustomerReport", 1).put("importedAtEpochMillis", 1).put("provenanceJson", "{}")) } to "Transferred evidence is linked to another source execution",
+            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_renditions",
+                JSONObject().put("id", "orphan-rendition").put("aggregateReportId", "missing-report")
+                    .put("relativePath", JSONObject.NULL).put("sha256", JSONObject.NULL).put("byteSize", JSONObject.NULL)
+                    .put("pageCount", JSONObject.NULL).put("generatedAtEpochMillis", 1)
+                    .put("status", "MISSING").put("failureReason", "unavailable")) } to "An aggregate rendition has no report owner",
+        )
+        cases.forEach { (fixture, expectedMessage) ->
+            val failure = assertThrows(IllegalArgumentException::class.java) { recovery.inspect(fixture, password) }
+            assertEquals(expectedMessage, failure.message)
+            assertEquals("Historical customer", dao.customer("legacy-customer")!!.name)
+        }
+    }
+
     private fun sourceFixture(recovery: RecoveryPackage, encrypted: ByteArray, version: Int, alter: (JSONObject) -> Unit = {}): ByteArray {
         val entries = unzip(invokeCrypt(recovery, "unprotect", encrypted))
         val snapshot = JSONObject(entries.getValue("database.json").toString(Charsets.UTF_8))

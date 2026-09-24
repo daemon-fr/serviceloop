@@ -84,8 +84,11 @@ internal fun effectiveImportedFinalResults(
         listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId)
     }.values.map { matching ->
         if (matching.size > 1 && matching.all { it.identityNamespace == "SOURCE" }) {
-            val fingerprints = matching.map { comparableImportedSourceFacts(it) }.distinct()
-            require(fingerprints.size == 1) { "Conflicting representations of the same source revision" }
+            val projections = matching.map(FinalSourceProjectionV2::of)
+            require(projections.map { it.publicFacts }.distinct().size == 1 &&
+                projections.filter { it.privateFacts != null }.map { it.privateFacts }.distinct().size <= 1) {
+                "Conflicting representations of the same source revision"
+            }
         }
         matching.lastOrNull { it.voided } ?: matching.firstOrNull { it.remote != null } ?: matching.first()
     }
@@ -111,7 +114,16 @@ internal fun effectiveImportedFinalResults(
 }
 
 /** Compare common frozen source facts across direct WORK_RESULT and native relay transports. */
-private fun comparableImportedSourceFacts(value: EffectiveImportedFinalResult): String {
+internal data class FinalSourceProjectionV2(val publicFacts: String, val privateFacts: String?) {
+    companion object {
+        const val VERSION = 2
+
+        fun of(value: EffectiveImportedFinalResult): FinalSourceProjectionV2 = projectFinalSourceV2(value)
+    }
+}
+
+/** Versioned common facts: public relays may omit private facts, while two full copies must agree. */
+private fun projectFinalSourceV2(value: EffectiveImportedFinalResult): FinalSourceProjectionV2 {
     val remote = value.remote
     val transferred = value.transferred
     val result = remote?.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
@@ -193,7 +205,18 @@ private fun comparableImportedSourceFacts(value: EffectiveImportedFinalResult): 
             .put("privateFollowUps", native?.getJSONArray("followUps")?.let(::privateFollowUpFacts))
             .put("privateSourcePhotos", native?.getJSONArray("sourcePhotos")?.let(::privatePhotoFacts))
     }
-    return SourceCanonicalJson.text(facts)
+    val hasPrivateFacts = result != null || native?.let { it.has("internalNotes") && it.has("finalInternalNote") } == true
+    val privateFacts = if (hasPrivateFacts) SourceCanonicalJson.text(JSONObject()
+        .put("version", FinalSourceProjectionV2.VERSION)
+        .put("workNote", facts.remove("privateWorkNote") ?: JSONObject.NULL)
+        .put("revisionNote", facts.remove("privateRevisionNote") ?: JSONObject.NULL)
+        .put("followUps", facts.remove("privateFollowUps") ?: JSONObject.NULL)
+        .put("photos", facts.remove("privateSourcePhotos") ?: JSONObject.NULL)) else {
+        listOf("privateWorkNote", "privateRevisionNote", "privateFollowUps", "privateSourcePhotos").forEach(facts::remove)
+        null
+    }
+    return FinalSourceProjectionV2(SourceCanonicalJson.text(JSONObject()
+        .put("version", FinalSourceProjectionV2.VERSION).put("facts", facts)), privateFacts)
 }
 
 private fun comparableWorkFacts(work: JSONObject): JSONObject = JSONObject().also { facts ->

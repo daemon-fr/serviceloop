@@ -247,9 +247,15 @@ class B049WorkResultExportTest {
             privateSource.getJSONObject("record").getJSONObject("workSnapshot")
                 .put("privateInternalNote", "source-only private fact")
             val transferredResults = b.allTransferredFinalResults()
+            assertEquals(1, effectiveImportedFinalResults(
+                listOf(received.single().copy(sourcePayloadJson = privateSource.toString())),
+                transferredResults).size)
+            val privatelyCarried = JSONObject(transferredResults.single().sourcePayloadJson!!)
+            privatelyCarried.getJSONObject("record").put("internalNotes", JSONObject.NULL)
+                .put("finalInternalNote", JSONObject.NULL)
             assertThrows(IllegalArgumentException::class.java) {
                 effectiveImportedFinalResults(listOf(received.single().copy(sourcePayloadJson = privateSource.toString())),
-                    transferredResults)
+                    listOf(transferredResults.single().copy(sourcePayloadJson = privatelyCarried.toString())))
             }
             assertEquals(1, effectiveImportedFinalResults(
                 b.reportableRemoteFinalResults(), b.allTransferredFinalResults(), includePreviousRevisions = true).size)

@@ -1,6 +1,7 @@
 package com.v16studio.serviceloop.data
 
 import android.graphics.BitmapFactory
+import androidx.room.withTransaction
 import com.v16studio.serviceloop.domain.ServiceLoopScopeFilter
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,11 +21,19 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val equipment: MutableSet<String> = linkedSetOf(),
     )
 
+    private data class CapturedExport(val identity: String, val families: Map<DataTransferFamily, ByteArray>,
+        val binaries: Map<String, ByteArray>, val options: DataTransferOptions)
+
     suspend fun export(selection: ExportCenterSelection): ByteArray = BusinessFileCoordinator.mutex.withLock {
-        exportLocked(selection)
+        val prepared = if (selection.families.any { it in setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES) })
+            prepareImageDerivatives(selection) else emptyMap()
+        val captured = database.withTransaction { exportLocked(selection, prepared) }
+        DataTransferCodec.encode(captured.identity, Instant.now().toString(), captured.families,
+            captured.binaries, captured.identity, captured.options)
     }
 
-    private suspend fun exportLocked(selection: ExportCenterSelection): ByteArray {
+    private suspend fun exportLocked(selection: ExportCenterSelection,
+        prepared: Map<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>>): CapturedExport {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val identity = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
         val requested = selection.families
@@ -94,7 +103,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         if (wantsFollowUps) families[DataTransferFamily.FOLLOW_UPS] = encodeTransferredContext(selection, identity, "FOLLOW_UPS", dependencies)
         if (wantsContactNotes) families[DataTransferFamily.CONTACT_NOTES] = encodeTransferredContext(selection, identity, "CONTACT_NOTES", dependencies)
         if (wantsChanges) families[DataTransferFamily.CHANGE_HISTORY] = encodeTransferredContext(selection, identity, "CHANGE_HISTORY", dependencies)
-        val evidence = if (wantsEvidence) encodeEvidence(selection, identity, dependencies) else null
+        val evidence = if (wantsEvidence) encodeEvidence(selection, identity, dependencies, prepared) else null
         val binaries = evidence?.binaries.orEmpty()
         if (evidence != null) families[DataTransferFamily.EVIDENCE] = evidence.metadata
         if (hasRegisterContent(requested) || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence) {
@@ -110,17 +119,44 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 includeEquipment = ExportFamily.EQUIPMENT in requested || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence,
             )
         }
-        return DataTransferCodec.encode(
-            exporterId = identity,
-            generatedAt = Instant.now().toString(),
-            families = families,
-            binaries = binaries,
-            sourceWorkspaceId = identity,
-            options = DataTransferOptions(selection.includePrivate, selection.includeInactive, selection.includePreviousRevisions),
-        )
+        return CapturedExport(identity, families, binaries,
+            DataTransferOptions(selection.includePrivate, selection.includeInactive, selection.includePreviousRevisions))
     }
 
     private data class EncodedEvidence(val metadata: ByteArray, val binaries: Map<String, ByteArray>)
+
+    /** Do JPEG work before the short Room read transaction; hashes bind prepared bytes to captured rows. */
+    private suspend fun prepareImageDerivatives(selection: ExportCenterSelection): Map<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>> {
+        val prepared = linkedMapOf<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>>()
+        val derivativeStore = CanonicalFinalPhotoDerivative(database, filesRoot)
+        dao.allFinalRecords().filterNot { it.voided }.forEach { record ->
+            val visit = dao.visit(record.visitId) ?: return@forEach
+            val revisions = if (selection.includePreviousRevisions) dao.finalRevisions(record.id)
+                else listOfNotNull(dao.finalRevision(record.currentRevisionId))
+            revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach { work ->
+                if (selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId,
+                        LocalDate.parse(revision.actualServiceDate))) {
+                    dao.finalPhotos(work.id).forEach { photo ->
+                        prepared["FINAL:${photo.id}"] = photo.sha256 to derivativeStore.bytes(photo)
+                    }
+                }
+            } }
+        }
+        val frozen = dao.allFinalRecords().flatMap { record -> dao.finalRevisions(record.id).flatMap { revision ->
+            dao.finalWorkItems(revision.id).flatMap { work -> dao.finalPhotos(work.id).map { it.sourceAttachmentId } }
+        } }.toSet()
+        dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.id !in frozen }.forEach { photo ->
+            val work = dao.workItem(photo.ownerId) ?: return@forEach
+            val visit = dao.visit(work.visitId) ?: return@forEach
+            if (selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId,
+                    LocalDate.parse(visit.actualServiceDate)) && dao.retainedImage("ATTACHMENT", photo.id) == null) {
+                val bytes = readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
+                    ?: error("Photo ${photo.id} has no verified owned copy")
+                prepared["ATTACHMENT:${photo.id}"] = photo.sha256 to AppOwnedImageNormalizer.workResultDerivative(bytes)
+            }
+        }
+        return prepared
+    }
 
     private fun hasRegisterContent(families: Set<ExportFamily>) = families.any { it in setOf(ExportFamily.CUSTOMERS, ExportFamily.CONTACTS, ExportFamily.SITES, ExportFamily.EQUIPMENT) }
 
@@ -492,11 +528,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return JSONObject().put("version", 1).put("records", records).toString().toByteArray(Charsets.UTF_8)
     }
 
-    private suspend fun encodeEvidence(selection: ExportCenterSelection, origin: String, dependencies: DirectoryDependencies): EncodedEvidence {
+    private suspend fun encodeEvidence(selection: ExportCenterSelection, origin: String, dependencies: DirectoryDependencies,
+        prepared: Map<String, Pair<String, AppOwnedImageNormalizer.TransportDerivative>>): EncodedEvidence {
         val binaries = linkedMapOf<String, ByteArray>()
         val photos = JSONArray()
         val already = mutableSetOf<String>()
-        val derivativeStore = CanonicalFinalPhotoDerivative(database, filesRoot)
         fun add(row: JSONObject, bytes: ByteArray, retained: AppOwnedImageNormalizer.TransportDerivative? = null): Boolean {
             val sourceKey = transferEvidenceSourceKey(row.getString("originWorkspaceId"), row.getString("sourcePhotoId"), row.optNullable("sourceFinalRevisionId"))
             if (!selection.includePrivate && row.getString("visibility") != "PUBLIC") return false
@@ -524,7 +560,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach workLoop@{ work ->
                 if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@workLoop
                 dao.finalPhotos(work.id).forEach { photo ->
-                val derivative = derivativeStore.bytes(photo)
+                val preparedPhoto = prepared["FINAL:${photo.id}"] ?: error("Final photo was not captured")
+                require(preparedPhoto.first == photo.sha256) { "Final photo changed during export capture" }
+                val derivative = preparedPhoto.second
                 val row = JSONObject().put("originWorkspaceId", origin).put("sourcePhotoId", photo.sourceAttachmentId).put("sourceVisitId", visit.id)
                     .put("sourceWorkItemId", work.sourceWorkItemId).put("sourceFinalRevisionId", revision.id).put("originCustomerSourceId", sourceOf("CUSTOMER", visit.customerId))
                     .put("originCustomerWorkspaceId", originOf("CUSTOMER", visit.customerId, origin)).put("originSiteSourceId", sourceOf("SITE", visit.siteId))
@@ -559,7 +597,10 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                 .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                 .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-            if (add(row, source, retained?.let { verifiedDerivative(source, it.derivativeWidth, it.derivativeHeight) }))
+            val capturedDerivative = if (retained != null) verifiedDerivative(source, retained.derivativeWidth, retained.derivativeHeight)
+                else prepared["ATTACHMENT:${photo.id}"]?.also { require(it.first == photo.sha256) {
+                    "Photo changed during export capture" } }?.second ?: error("Photo was not captured")
+            if (add(row, source, capturedDerivative))
                 addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
         }
         // Imported WORK_RESULT evidence already owns bounded JPEG derivatives.

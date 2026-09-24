@@ -218,6 +218,8 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM transferred_final_results WHERE originWorkspaceId=:origin AND sourceWorkItemId=:workItemId AND sourceFinalRevisionId=:revisionId") suspend fun transferredFinalResult(origin: String, workItemId: String, revisionId: String): TransferredFinalResultEntity?
     @Query("SELECT * FROM transferred_final_results ORDER BY serviceDate, originWorkspaceId, sourceVisitId, sourceWorkItemId, sourceFinalRevisionId") suspend fun allTransferredFinalResults(): List<TransferredFinalResultEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTransferredFinalResults(values: List<TransferredFinalResultEntity>)
+    @Query("UPDATE transferred_final_results SET sourcePayloadJson=:snapshot WHERE id=:id AND sourcePayloadJson IS NULL")
+    suspend fun recoverTransferredSourceSnapshot(id: String, snapshot: String): Int
     @Query("SELECT * FROM transferred_evidence WHERE sourceIdentityKey=:sourceKey") suspend fun transferredEvidenceBySourceKey(sourceKey: String): TransferredEvidenceEntity?
     @Query("SELECT * FROM transferred_evidence WHERE originWorkspaceId=:origin AND sourcePhotoId=:photo AND (sourceFinalRevisionId=:revision OR (sourceFinalRevisionId IS NULL AND :revision IS NULL))")
     suspend fun transferredEvidenceBySourceIdentity(origin: String, photo: String, revision: String?): List<TransferredEvidenceEntity>

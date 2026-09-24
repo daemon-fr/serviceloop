@@ -158,6 +158,11 @@ class B049DataTransferEndToEndInstrumentedTest {
             assertEquals("visit", visit.getString("sourceVisitId"))
             assertEquals(sourceId, visit.getString("originWorkspaceId"))
 
+            fun subset(families: Set<DataTransferFamily>) = DataTransferCodec.encode(
+                exporterId = decodedPackage.exporterId, sourceWorkspaceId = decodedPackage.sourceWorkspaceId,
+                families = decodedPackage.families.filterKeys { it in families },
+                binaries = if (DataTransferFamily.EVIDENCE in families) decodedPackage.binaries else emptyMap(),
+                options = decodedPackage.options)
             val workspaceC = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
             val rootC = File(context.cacheDir, "b049-transfer-c-device-${System.nanoTime()}").apply { mkdirs() }
             try {
@@ -165,14 +170,13 @@ class B049DataTransferEndToEndInstrumentedTest {
                 ServiceLoopDatabase.configureReminderDefaults(workspaceC.openHelper.writableDatabase)
                 ServiceLoopPeerTrustStore(workspaceC).add(sourceId, "Workspace A")
                 val importerC = DataTransferImportService(workspaceC, rootC)
-                fun subset(families: Set<DataTransferFamily>) = DataTransferCodec.encode(
-                    exporterId = decodedPackage.exporterId, sourceWorkspaceId = decodedPackage.sourceWorkspaceId,
-                    families = decodedPackage.families.filterKeys { it in families },
-                    binaries = if (DataTransferFamily.EVIDENCE in families) decodedPackage.binaries else emptyMap(),
-                    options = decodedPackage.options)
                 val evidenceFirst = subset(setOf(DataTransferFamily.REGISTER, DataTransferFamily.EVIDENCE))
                 importerC.import(importerC.preview(evidenceFirst))
                 assertNull(workspaceC.serviceLoopDao().allTransferredEvidence().single().transferredFinalResultId)
+                val recoveryC = RecoveryPackage(workspaceC, rootC)
+                val checkpointC = recoveryC.create("evidence first device recovery".toCharArray(), false)
+                assertTrue(checkpointC.complete)
+                recoveryC.restore(recoveryC.inspect(checkpointC.bytes, "evidence first device recovery".toCharArray()))
                 val historySecond = subset(setOf(DataTransferFamily.PERFORMED_WORK))
                 importerC.import(importerC.preview(historySecond))
                 val c = workspaceC.serviceLoopDao()
@@ -188,6 +192,39 @@ class B049DataTransferEndToEndInstrumentedTest {
                 aggregate.generate(ServiceLoopScopeFilter(customerId = selected.single().customerId), listOf(selected.single().key))
                 assertEquals(1, rendered.single().lines.sumOf { it.photos.size })
             } finally { workspaceC.close(); rootC.deleteRecursively() }
+
+            val workspaceD = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+            val rootD = File(context.cacheDir, "b049-transfer-d-device-${System.nanoTime()}").apply { mkdirs() }
+            try {
+                ServiceLoopDatabase.configureStage4Tracking(workspaceD.openHelper.writableDatabase)
+                ServiceLoopDatabase.configureReminderDefaults(workspaceD.openHelper.writableDatabase)
+                ServiceLoopPeerTrustStore(workspaceD).add(sourceId, "Workspace A")
+                val importerD = DataTransferImportService(workspaceD, rootD)
+                val historyFirst = subset(setOf(DataTransferFamily.REGISTER, DataTransferFamily.PERFORMED_WORK))
+                importerD.import(importerD.preview(historyFirst))
+                assertTrue(workspaceD.serviceLoopDao().allTransferredEvidence().isEmpty())
+                val recoveryD = RecoveryPackage(workspaceD, rootD)
+                val checkpointD = recoveryD.create("history first device recovery".toCharArray(), false)
+                assertTrue(checkpointD.complete)
+                recoveryD.restore(recoveryD.inspect(checkpointD.bytes, "history first device recovery".toCharArray()))
+                val evidenceLast = subset(setOf(DataTransferFamily.EVIDENCE))
+                importerD.import(importerD.preview(evidenceLast))
+                val d = workspaceD.serviceLoopDao()
+                val linked = d.allTransferredEvidence().single()
+                assertEquals(d.allTransferredFinalResults().single().id, linked.transferredFinalResultId)
+                assertEquals(sourceId, linked.originWorkspaceId)
+                assertTrue(File(rootD, linked.relativePath).isFile)
+                val customer = d.allCustomers().single { it.reference == "CU-DEVICE" }
+                d.upsertBusinessProfile(BusinessProfileEntity(businessName = "Receiver", technicianName = "Coordinator",
+                    phone = null, email = null, postalAddress = null, zoneId = "UTC", modifiedAtEpochMillis = 1))
+                var renderedD: List<com.v16studio.serviceloop.domain.PublicReportModel> = emptyList()
+                val aggregateD = AggregateReportService(workspaceD,
+                    RoomServiceLoopRepository(workspaceD, ClockBusinessTime(zoneId = ZoneId.of("UTC")), attachmentRoot = rootD), rootD,
+                    AggregateReportWriter { models, _, _, _, target, _ -> renderedD = models; target.writeBytes(byteArrayOf(1)); 1 })
+                val reportableD = aggregateD.reportable(ServiceLoopScopeFilter(customerId = customer.id))
+                aggregateD.generate(ServiceLoopScopeFilter(customerId = customer.id), listOf(reportableD.single().key))
+                assertEquals(1, renderedD.single().lines.sumOf { it.photos.size })
+            } finally { workspaceD.close(); rootD.deleteRecursively() }
         } finally {
             workspaceA.close(); workspaceB.close(); rootA.deleteRecursively(); rootB.deleteRecursively()
         }

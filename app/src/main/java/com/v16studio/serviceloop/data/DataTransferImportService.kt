@@ -94,11 +94,21 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         require(initial.items.none { item -> item.classification == DataTransferClassification.CONFLICT &&
             !(item.family == DataTransferFamily.INSPECTION_TEMPLATES && item.sourceKey in createSeparateTemplates) }) { "Resolve the listed data-transfer conflicts before importing" }
         return BusinessFileCoordinator.mutex.withLock {
-            val createdFiles = mutableListOf<File>()
+            check(BusinessFileAdoptionJournal.recoverInterrupted(database, filesRoot)) {
+                "An earlier transfer evidence adoption needs recovery"
+            }
+            val planned = linkedMapOf<String, ByteArray>()
+            initial.evidence.forEach { row ->
+                val path = "transferred-evidence/${sha256(row.key.toByteArray())}.jpg"
+                if (!ownedFile(path).exists()) require(planned.putIfAbsent(path, row.bytes) == null) {
+                    "Duplicate transfer evidence target"
+                }
+            }
+            val adoption = BusinessFileAdoptionJournal.begin(database, filesRoot, planned)
             try {
-                val staged = stageEvidence(initial.evidence, createdFiles)
+                val staged = stageEvidence(initial.evidence, adoption)
                 val importedAt = System.currentTimeMillis()
-                database.withTransaction {
+                val committed = database.withTransaction {
                     ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(payload.exporterId)
                     val current = buildPlan(payload, createSeparateTemplates)
                     require(current.items.none { item -> item.classification == DataTransferClassification.CONFLICT &&
@@ -118,12 +128,11 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                     }
                     DataTransferImportPreview(payload, preview.packageId, current.counts, current.items, current.templatePreview)
                 }
+                adoption.finish()
+                committed
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
-                    createdFiles.forEach { file ->
-                        val path = relative(file)
-                        if (dao.transferredEvidenceReferenceCount(path) == 0) check(file.delete() || !file.exists())
-                    }
+                    adoption.reconcileAfterFailure()
                 }
                 throw failure
             }
@@ -334,6 +343,24 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                     FinalSourceSnapshot.encode("PERFORMED_WORK", 2, 2, row) else null)
             dao.insertTransferredFinalResults(listOf(entity))
         }
+        if (payload.familyVersions[DataTransferFamily.PERFORMED_WORK] == 2) {
+            history.filter { it.family == DataTransferFamily.PERFORMED_WORK &&
+                it.classification == DataTransferClassification.ALREADY_IMPORTED }.forEach { item ->
+                val row = item.source
+                val existing = dao.transferredFinalResult(row.getString("originWorkspaceId"),
+                    row.getString("sourceWorkItemId"), row.getString("sourceFinalRevisionId"))
+                    ?: error("Previously imported final result disappeared")
+                require(existing.payloadSha256 == item.fingerprint) {
+                    "Previously imported source facts changed"
+                }
+                if (existing.sourcePayloadJson == null) {
+                    val snapshot = FinalSourceSnapshot.encode("PERFORMED_WORK", 2, 2, row)
+                    require(dao.recoverTransferredSourceSnapshot(existing.id, snapshot) == 1) {
+                        "Source snapshot recovery raced with another write"
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun applyEvidence(evidence: List<ParsedEvidence>, payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, staged: Map<String,File>, now: Long) {
@@ -370,11 +397,11 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun stageEvidence(rows: List<ParsedEvidence>, created: MutableList<File>): Map<String,File> = buildMap {
+    private suspend fun stageEvidence(rows: List<ParsedEvidence>, adoption: BusinessFileAdoptionJournal): Map<String,File> = buildMap {
         rows.forEach { row ->
             val path="transferred-evidence/${sha256(row.key.toByteArray())}.jpg";val file=ownedFile(path)
             if(file.exists())require(file.length()==row.bytes.size.toLong()&&sha256(file.readBytes())==row.hash){"Receiver evidence path contains conflicting bytes"}
-            else{require(file.parentFile!!.isDirectory||file.parentFile!!.mkdirs());created+=file;file.outputStream().use{stream->stream.write(row.bytes);stream.fd.sync()}}
+            else adoption.adopt(path, row.bytes)
             put(row.key,file)
         }
     }
