@@ -5,6 +5,7 @@ import com.v16studio.serviceloop.data.RoomServiceLoopRepository
 import com.v16studio.serviceloop.data.ServiceLoopDatabase
 import com.v16studio.serviceloop.data.ServiceLoopRepository
 import com.v16studio.serviceloop.data.ImageCleanupService
+import com.v16studio.serviceloop.data.AggregateReportService
 import com.v16studio.serviceloop.domain.BusinessDateSignal
 import com.v16studio.serviceloop.domain.MutableBusinessTime
 import com.v16studio.serviceloop.reminders.ReminderCoordinator
@@ -37,6 +38,7 @@ class ServiceLoopApplication : Application() {
         val startup = applicationScope.async(Dispatchers.IO) {
             if (!restrictedRecoveryState) {
                 FixtureSeederFactory.create(database).seedIfNeeded()
+                runCatching { AggregateReportService(database, RoomServiceLoopRepository(database, businessTime, attachmentRoot = filesDir), filesDir).reconcile() }
                 runCatching { ImageCleanupService(this@ServiceLoopApplication, database).runIfDue() }
             }
         }

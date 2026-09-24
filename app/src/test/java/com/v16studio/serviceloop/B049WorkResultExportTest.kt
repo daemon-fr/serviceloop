@@ -98,8 +98,8 @@ class B049WorkResultExportTest {
         frozen.forEachIndexed { index, (id, included, visibility) ->
             val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(listOf(Color.RED, Color.BLUE, Color.GREEN)[index]) }
             val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it); bitmap.recycle() }.toByteArray()
-            val path = "$id.jpg"
-            File(root, path).writeBytes(bytes)
+            val path = "attachments/$id.jpg"
+            File(root, path).apply { parentFile!!.mkdirs(); writeBytes(bytes) }
             val hash = WorkResultPackageCodec.sha256(bytes)
             dao.insertAttachments(listOf(AttachmentEntity(id, "WORK_ITEM", "w", path, hash, null, "image/jpeg", included, "PRESENT", bytes.size.toLong(), "live-$id", visibility)))
             dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("final-$id", "final-work", index + 1, id, path, hash, bytes.size.toLong(), "image/jpeg", "frozen-$id", includedInCustomerReport = included, visibility = visibility)))
@@ -165,13 +165,37 @@ class B049WorkResultExportTest {
         assertTrue(derivative.bytes.contentEquals(transfer.binaries.values.single()))
     }
 
+    @Test fun firstExportPersistsOneCanonicalDerivativeAcrossServiceRestartAndNativeRelay() = runTest {
+        ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
+        val image = Bitmap.createBitmap(32, 21, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.YELLOW) }
+        val original = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 91, it); image.recycle() }.toByteArray()
+        val path = "attachments/canonical-source.jpg"
+        File(root, path).apply { parentFile!!.mkdirs(); writeBytes(original) }
+        database.serviceLoopDao().insertFinalPhotos(listOf(FinalPhotoEntryEntity("canonical-final", "final-work", 1,
+            "canonical-source", path, WorkResultPackageCodec.sha256(original), original.size.toLong(), "image/jpeg", "Frozen")))
+        fun photo(bytes: ByteArray) = WorkResultPackageCodec.decode(bytes).results.single().photos.single().bytes
+        val first = photo(WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision")))
+        val retained = database.serviceLoopDao().retainedImage("FINAL_PHOTO", "canonical-final")!!
+        assertTrue(File(root, retained.derivativeRelativePath).readBytes().contentEquals(first))
+        val restarted = photo(WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision")))
+        assertTrue(first.contentEquals(restarted))
+        database.serviceLoopDao().updateRetainedImage(retained.copy(originalDeletionRequestedAtEpochMillis = 3, originalDeletedAtEpochMillis = 4))
+        assertTrue(File(root, path).delete())
+        val afterCleanup = photo(WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision")))
+        assertTrue(first.contentEquals(afterCleanup))
+        val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
+            ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES))))
+        assertTrue(first.contentEquals(transfer.binaries.values.single()))
+        assertTrue(RecoveryPackage(database, root).create("canonical derivative backup".toCharArray(), false).complete)
+    }
+
     @Test fun directPerformedAndWorkResultRelayHaveOneSourceFingerprint() = runTest {
         ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
         val image = Bitmap.createBitmap(24, 18, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
         val sourcePhoto = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it); image.recycle() }.toByteArray()
-        File(root, "bridge-photo.jpg").writeBytes(sourcePhoto)
+        File(root, "attachments/bridge-photo.jpg").apply { parentFile!!.mkdirs(); writeBytes(sourcePhoto) }
         database.serviceLoopDao().insertFinalPhotos(listOf(FinalPhotoEntryEntity("bridge-final-photo", "final-work", 1,
-            "bridge-source-photo", "bridge-photo.jpg", WorkResultPackageCodec.sha256(sourcePhoto), sourcePhoto.size.toLong(),
+            "bridge-source-photo", "attachments/bridge-photo.jpg", WorkResultPackageCodec.sha256(sourcePhoto), sourcePhoto.size.toLong(),
             "image/jpeg", "Frozen photo", includedInCustomerReport = true, visibility = "PUBLIC")))
         val context = ApplicationProvider.getApplicationContext<Context>()
         val coordinator = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()

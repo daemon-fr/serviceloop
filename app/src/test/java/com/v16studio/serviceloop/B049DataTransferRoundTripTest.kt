@@ -190,7 +190,7 @@ class B049DataTransferRoundTripTest {
         dao.insertFinalChecklistItems(listOf(FinalChecklistItemEntity("check", "final-1", 1, null, null, "Pressure", "NUMBER", "bar", true, "PASS", "2.0", null, null)))
         dao.insertFinalParts(listOf(FinalPartEntryEntity("part", "final-2", 1, "Filter", "1", "each")))
 
-        val imageDir = File(rootA, "photos").apply { mkdirs() }
+        val imageDir = File(rootA, "attachments").apply { mkdirs() }
         fun jpeg(fileName: String): Pair<String, Pair<ByteArray, String>> {
             val bytes = ByteArrayOutputStream().also { output -> Bitmap.createBitmap(24, 18, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, output) }.toByteArray()
             val file = File(imageDir, fileName).apply { writeBytes(bytes) }

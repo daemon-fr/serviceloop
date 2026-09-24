@@ -477,6 +477,10 @@ class B049WorkResultImportTest {
         val service = AggregateReportService(database, repository, root, AggregateReportWriter { _, _, _, _, target, _ ->
             target.writeBytes("%PDF-new".toByteArray()); 1
         })
+        service.reconcile()
+        assertEquals("READY", dao.aggregateRenditions("prior-good").single().status)
+        assertEquals("FAILED", dao.aggregateRenditions("prior-bad").single().status)
+        assertEquals("READY", dao.aggregateRenditions("prior-staged").single().status)
         val scope = ServiceLoopScopeFilter(customerId = "c")
         service.generate(scope, listOf(service.reportable(scope).single().key))
         assertEquals("READY", dao.aggregateRenditions("prior-good").single().status)

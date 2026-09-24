@@ -8,6 +8,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
+import kotlinx.coroutines.sync.withLock
 
 /** Builds the native additive-sharing package from the same choices as readable Export Center. */
 class DataTransferExportService(private val database: ServiceLoopDatabase, private val filesRoot: File) {
@@ -19,7 +20,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val equipment: MutableSet<String> = linkedSetOf(),
     )
 
-    suspend fun export(selection: ExportCenterSelection): ByteArray {
+    suspend fun export(selection: ExportCenterSelection): ByteArray = BusinessFileCoordinator.mutex.withLock {
+        exportLocked(selection)
+    }
+
+    private suspend fun exportLocked(selection: ExportCenterSelection): ByteArray {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val identity = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
         val requested = selection.families
@@ -461,6 +466,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val binaries = linkedMapOf<String, ByteArray>()
         val photos = JSONArray()
         val already = mutableSetOf<String>()
+        val derivativeStore = CanonicalFinalPhotoDerivative(database, filesRoot)
         fun add(row: JSONObject, bytes: ByteArray, retained: AppOwnedImageNormalizer.TransportDerivative? = null): Boolean {
             val sourceKey = transferEvidenceSourceKey(row.getString("originWorkspaceId"), row.getString("sourcePhotoId"), row.optNullable("sourceFinalRevisionId"))
             if (!selection.includePrivate && row.getString("visibility") != "PUBLIC") return false
@@ -488,12 +494,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach workLoop@{ work ->
                 if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@workLoop
                 dao.finalPhotos(work.id).forEach { photo ->
-                val retained = dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)
-                    ?: dao.retainedImage("FINAL_PHOTO", photo.id)
-                    ?: dao.retainedImageByOriginalPath(photo.storedRelativePath)
-                val source = if (retained != null) readImage(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
-                    ?: error("Retained final photo ${photo.id} is missing") else readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
-                    ?: error("Final photo ${photo.id} has no verified owned copy")
+                val derivative = derivativeStore.bytes(photo)
                 val row = JSONObject().put("originWorkspaceId", origin).put("sourcePhotoId", photo.sourceAttachmentId).put("sourceVisitId", visit.id)
                     .put("sourceWorkItemId", work.sourceWorkItemId).put("sourceFinalRevisionId", revision.id).put("originCustomerSourceId", sourceOf("CUSTOMER", visit.customerId))
                     .put("originCustomerWorkspaceId", originOf("CUSTOMER", visit.customerId, origin)).put("originSiteSourceId", sourceOf("SITE", visit.siteId))
@@ -503,7 +504,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                     .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                     .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-                if (add(row, source, retained?.let { verifiedDerivative(source, it.derivativeWidth, it.derivativeHeight) }))
+                if (add(row, derivative.bytes, derivative))
                     addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
             } }
             }

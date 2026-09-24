@@ -108,6 +108,8 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             generateLocked(scope, selectedKeys)
         }
 
+    suspend fun reconcile() = BusinessFileCoordinator.mutex.withLock { reconcileInterruptedRenditions() }
+
     private suspend fun generateLocked(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
         val customerId = requireNotNull(scope.customerId) { "Choose one Customer" }
         require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 Visits" }

@@ -5,13 +5,18 @@ import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.sync.withLock
 
 /** Domain export of immutable finalized technician work. The caller owns Android file handoff. */
 class WorkResultExchangeService(private val database: ServiceLoopDatabase, private val attachmentRoot: File) {
     private val dao = database.serviceLoopDao()
     private val dispatch = database.dispatchDao()
 
-    suspend fun exportFinalRevisions(revisionIds: List<String>): ByteArray {
+    suspend fun exportFinalRevisions(revisionIds: List<String>): ByteArray = BusinessFileCoordinator.mutex.withLock {
+        exportLocked(revisionIds)
+    }
+
+    private suspend fun exportLocked(revisionIds: List<String>): ByteArray {
         require(revisionIds.isNotEmpty() && revisionIds.size <= WorkResultPackageCodec.MAX_RESULTS)
         val exporterId = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
         val results = revisionIds.distinct().flatMap { revisionId ->
@@ -82,12 +87,9 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                         .put("includeInReport", photo.includedInCustomerReport).put("addedInCorrection", photo.addedInCorrection)
                         .put("addedAtEpochMillis", photo.addedAtEpochMillis ?: JSONObject.NULL))
                 } })
+                val derivativeStore = CanonicalFinalPhotoDerivative(database, attachmentRoot)
                 val photos = finalPhotos.map { finalPhoto ->
-                        val retained = dao.retainedImage("ATTACHMENT", finalPhoto.sourceAttachmentId)
-                            ?: dao.retainedImage("FINAL_PHOTO", finalPhoto.id)
-                            ?: dao.retainedImageByOriginalPath(finalPhoto.storedRelativePath)
-                        val derivative = if (retained != null) readRetainedDerivative(retained) else
-                            AppOwnedImageNormalizer.workResultDerivative(readOwnedPhoto(finalPhoto.storedRelativePath, finalPhoto.sha256, finalPhoto.byteSize))
+                        val derivative = derivativeStore.bytes(finalPhoto)
                         WorkResultPackageCodec.Photo(finalPhoto.sourceAttachmentId, derivative.bytes, finalPhoto.caption,
                             finalPhoto.includedInCustomerReport, finalPhoto.visibility,
                             itemProvenance.dispatchItemId, derivative.width, derivative.height)
@@ -100,23 +102,6 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
         require(issuers.size == 1) { "Select results from one assignment issuer" }
         ServiceLoopPeerTrustStore(database).requireTrusted(issuers.single())
         return WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(UUID.randomUUID().toString(), exporterId, issuers.single(), Instant.now().toString(), results))
-    }
-
-    private fun readOwnedPhoto(path: String, hash: String, size: Long): ByteArray {
-        val root = attachmentRoot.canonicalFile
-        val file = File(root, path).canonicalFile
-        require(file.path.startsWith(root.path + File.separator) && file.isFile && file.length() == size && size in 1..AppOwnedImageNormalizer.MAX_SOURCE_BYTES.toLong()) { "Final photo is missing or outside app storage" }
-        return file.readBytes().also { require(WorkResultPackageCodec.sha256(it) == hash) { "Final photo changed after finalization" } }
-    }
-
-    private fun readRetainedDerivative(retained: RetainedImageEntity): AppOwnedImageNormalizer.TransportDerivative {
-        require(retained.derivativeMimeType == "image/jpeg" && retained.derivativeWidth in 1..1200 && retained.derivativeHeight in 1..1200)
-        val bytes = readOwnedPhoto(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
-        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        require(bytes.size >= 4 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() &&
-            bounds.outWidth == retained.derivativeWidth && bounds.outHeight == retained.derivativeHeight) { "Retained result derivative is invalid" }
-        return AppOwnedImageNormalizer.TransportDerivative(bytes, retained.derivativeWidth, retained.derivativeHeight)
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(parts.joinToString("|").toByteArray(Charsets.UTF_8)).toString()
