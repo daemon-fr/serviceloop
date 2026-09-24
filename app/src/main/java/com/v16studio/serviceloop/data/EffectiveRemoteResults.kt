@@ -84,7 +84,7 @@ internal fun effectiveImportedFinalResults(
         listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId)
     }.values.map { matching ->
         if (matching.size > 1 && matching.all { it.identityNamespace == "SOURCE" }) {
-            val fingerprints = matching.map { importedPublicFacts(it) }.distinct()
+            val fingerprints = matching.map { comparableImportedSourceFacts(it) }.distinct()
             require(fingerprints.size == 1) { "Conflicting representations of the same source revision" }
         }
         matching.lastOrNull { it.voided } ?: matching.firstOrNull { it.remote != null } ?: matching.first()
@@ -110,8 +110,8 @@ internal fun effectiveImportedFinalResults(
     }.filterNot { it.voided }
 }
 
-/** Compare immutable public source facts across direct WORK_RESULT and native relay transports. */
-private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
+/** Compare common frozen source facts across direct WORK_RESULT and native relay transports. */
+private fun comparableImportedSourceFacts(value: EffectiveImportedFinalResult): String {
     val remote = value.remote
     val transferred = value.transferred
     val result = remote?.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
@@ -143,6 +143,20 @@ private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
             .put("followUpCaptureState", result.getString("followUpCaptureState"))
             .put("followUps", publicFollowUpFacts(result.getJSONArray("followUps")))
             .put("sourcePhotos", publicPhotoFacts(result.getJSONArray("sourcePhotos")))
+            .put("sourceWorkSnapshot", comparableWorkFacts(work))
+            .put("privateWorkNote", work.opt("privateInternalNote") ?: JSONObject.NULL)
+            .put("privateRevisionNote", result.opt("privateInternalNote") ?: JSONObject.NULL)
+            .put("correctionReason", result.opt("correctionReason") ?: JSONObject.NULL)
+            .put("sourceCustomerRef", result.opt("sourceCustomerRef") ?: JSONObject.NULL)
+            .put("sourceSiteRef", result.opt("sourceSiteRef") ?: JSONObject.NULL)
+            .put("sourceEquipmentRef", result.opt("sourceEquipmentRef") ?: JSONObject.NULL)
+            .put("assignment", JSONObject().put("issuerId", result.opt("assignmentIssuerId") ?: JSONObject.NULL)
+                .put("dispatchVisitId", result.opt("dispatchVisitId") ?: JSONObject.NULL)
+                .put("dispatchItemId", result.opt("dispatchItemId") ?: JSONObject.NULL)
+                .put("generation", result.opt("assignmentGeneration") ?: JSONObject.NULL)
+                .put("materialHash", result.opt("assignmentMaterialHash") ?: JSONObject.NULL))
+            .put("privateFollowUps", privateFollowUpFacts(result.getJSONArray("followUps")))
+            .put("privateSourcePhotos", privatePhotoFacts(result.getJSONArray("sourcePhotos")))
     } else if (transferred != null) {
         facts.put("customer", JSONObject(transferred.customerSnapshotJson))
             .put("site", JSONObject(transferred.siteSnapshotJson))
@@ -168,8 +182,42 @@ private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
             .put("followUpCaptureState", native?.getString("followUpCaptureState"))
             .put("followUps", native?.getJSONArray("followUps")?.let(::publicFollowUpFacts))
             .put("sourcePhotos", native?.getJSONArray("sourcePhotos")?.let(::publicPhotoFacts))
+            .put("sourceWorkSnapshot", native?.optJSONObject("sourceWorkSnapshot")?.let(::comparableWorkFacts))
+            .put("privateWorkNote", native?.optJSONObject("sourceWorkSnapshot")?.opt("privateInternalNote") ?: JSONObject.NULL)
+            .put("privateRevisionNote", native?.opt("finalInternalNote") ?: JSONObject.NULL)
+            .put("correctionReason", native?.opt("correctionReason") ?: JSONObject.NULL)
+            .put("sourceCustomerRef", native?.opt("sourceCustomerRef") ?: JSONObject.NULL)
+            .put("sourceSiteRef", native?.opt("sourceSiteRef") ?: JSONObject.NULL)
+            .put("sourceEquipmentRef", native?.opt("sourceEquipmentRef") ?: JSONObject.NULL)
+            .put("assignment", native?.opt("assignmentProvenance") ?: JSONObject.NULL)
+            .put("privateFollowUps", native?.getJSONArray("followUps")?.let(::privateFollowUpFacts))
+            .put("privateSourcePhotos", native?.getJSONArray("sourcePhotos")?.let(::privatePhotoFacts))
     }
     return SourceCanonicalJson.text(facts)
+}
+
+private fun comparableWorkFacts(work: JSONObject): JSONObject = JSONObject().also { facts ->
+    listOf("serviceName", "planId", "planReference", "publicWork", "notPerformedReason",
+        "fulfilledObligation", "oldDueDate", "nextDueDate", "nextDueDateCalculated",
+        "nextDueOverrideReason", "capturedObligationId").forEach { key ->
+        facts.put(key, work.opt(key) ?: JSONObject.NULL)
+    }
+}
+
+private fun privateFollowUpFacts(records: org.json.JSONArray) = org.json.JSONArray().also { private ->
+    for (index in 0 until records.length()) {
+        val row = records.getJSONObject(index)
+        if (row.has("privatePlanningNote") && !row.isNull("privatePlanningNote")) private.put(
+            JSONObject().put("sourceId", row.opt("sourceId") ?: JSONObject.NULL)
+                .put("privatePlanningNote", row.get("privatePlanningNote")))
+    }
+}
+
+private fun privatePhotoFacts(records: org.json.JSONArray) = org.json.JSONArray().also { private ->
+    for (index in 0 until records.length()) {
+        val row = records.getJSONObject(index)
+        if (row.getString("visibility") != "PUBLIC") private.put(row)
+    }
 }
 
 private fun publicFollowUpFacts(records: org.json.JSONArray) = org.json.JSONArray().also { public ->

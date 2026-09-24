@@ -94,10 +94,16 @@ internal object WorkResultPackageCodec {
                 require(photoIds.add(Triple(json.getString("resultId"), json.getString("sourceFinalRevisionId"), photoId))) { "Duplicate source photo in result revision" }
                 require(photo.get("sourcePhotoId") is String && photo.get("workItemId") is String &&
                     photo.getString("workItemId") == json.getString("dispatchItemId") &&
+                    photo.get("section") is String && photo.get("sha256") is String &&
+                    photo.getString("sha256").matches(Regex("[a-fA-F0-9]{64}")) &&
+                    photo.get("mimeType") is String &&
                     photo.get("includeInReport") is Boolean && photo.get("visibility") is String &&
                     (photo.isNull("caption") || photo.get("caption") is String) &&
-                    photo.get("width").toString().toIntOrNull() != null && photo.get("height").toString().toIntOrNull() != null &&
-                    photo.get("byteSize").toString().toLongOrNull() != null) { "Invalid result photo descriptor" }
+                    photo.get("width") is Number && photo.get("width").toString().matches(Regex("[1-9][0-9]*")) &&
+                    photo.get("height") is Number && photo.get("height").toString().matches(Regex("[1-9][0-9]*")) &&
+                    photo.get("byteSize") is Number && photo.get("byteSize").toString().matches(Regex("[1-9][0-9]*"))) {
+                    "Invalid result photo descriptor"
+                }
                 val data = envelope.section(sectionName)
                 require(data.size in 1..MAX_PHOTO_BYTES && photo.getLong("byteSize") == data.size.toLong() && photo.getString("sha256") == sha256(data)) { "Result photo failed integrity check" }
                 require(photo.getString("mimeType") == "image/jpeg") { "Unsupported result photo format" }
@@ -315,8 +321,18 @@ internal object WorkResultPackageCodec {
         for (index in 0 until facts.length()) {
             val fact = facts.getJSONObject(index)
             val sourceId = fact.getString("sourcePhotoId")
-            require(sourceId.isNotBlank() && seen.add(sourceId) && fact.getString("sourceWorkItemId") == result.getString("sourceWorkItemId")) { "Invalid source photo identity" }
-            require(fact.getInt("position") > 0 && fact.getLong("originalByteSize") > 0 &&
+            require(fact.get("sourcePhotoId") is String && fact.get("sourceWorkItemId") is String &&
+                sourceId.isNotBlank() && seen.add(sourceId) &&
+                fact.getString("sourceWorkItemId") == result.getString("sourceWorkItemId")) { "Invalid source photo identity" }
+            require(fact.get("position") is Number && fact.get("position").toString().matches(Regex("[1-9][0-9]*")) &&
+                fact.get("originalByteSize") is Number && fact.get("originalByteSize").toString().matches(Regex("[1-9][0-9]*")) &&
+                fact.get("originalByteSize").toString().toLong() <= AppOwnedImageNormalizer.MAX_SOURCE_BYTES &&
+                fact.get("originalSha256") is String && fact.get("originalMimeType") is String &&
+                fact.get("visibility") is String && fact.get("includeInReport") is Boolean &&
+                fact.get("addedInCorrection") is Boolean &&
+                (!fact.has("addedAtEpochMillis") || fact.isNull("addedAtEpochMillis") ||
+                    fact.get("addedAtEpochMillis") is Number && fact.get("addedAtEpochMillis").toString().matches(Regex("[0-9]+"))) &&
+                (!fact.has("caption") || fact.isNull("caption") || fact.get("caption") is String) &&
                 fact.getString("originalSha256").matches(Regex("[a-fA-F0-9]{64}")) &&
                 fact.getString("originalMimeType").startsWith("image/")) { "Invalid original photo descriptor" }
             val photo = photos.singleOrNull { it.sourcePhotoId == sourceId } ?: throw IllegalArgumentException("Source photo binary is missing")

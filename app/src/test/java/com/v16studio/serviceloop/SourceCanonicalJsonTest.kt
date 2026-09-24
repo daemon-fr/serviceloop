@@ -62,6 +62,30 @@ class SourceCanonicalJsonTest {
                 .put("dueDate", "2026-10-02").put("state", "OPEN"))) }
     }
 
+    @Test fun v2SourcePhotoFactsRejectCoercedNumericAndBooleanTypes() {
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+            .use { it.readBytes().toString(Charsets.UTF_8) })
+        val fact = JSONObject().put("sourcePhotoId", "p").put("sourceWorkItemId", record.getString("sourceWorkItemId"))
+            .put("position", 1).put("originalByteSize", 1).put("originalSha256", "a".repeat(64))
+            .put("originalMimeType", "image/jpeg").put("caption", JSONObject.NULL)
+            .put("visibility", "PUBLIC").put("includeInReport", true).put("addedInCorrection", false)
+            .put("addedAtEpochMillis", JSONObject.NULL)
+        val photo = WorkResultPackageCodec.Photo("p", byteArrayOf(1), null, true, "PUBLIC",
+            record.getString("dispatchItemId"), 1, 1)
+        fun rejects(key: String, value: Any) {
+            val changed = JSONObject(record.toString()).put("sourcePhotos", JSONArray().put(JSONObject(fact.toString()).put(key, value)))
+            val payload = WorkResultPackageCodec.Package("typed-photo", changed.getString("technicianId"),
+                changed.getString("assignmentIssuerId"), "2026-09-24T10:00:00Z",
+                listOf(WorkResultPackageCodec.Result(changed, listOf(photo))))
+            assertThrows(IllegalArgumentException::class.java) { WorkResultPackageCodec.encode(payload) }
+        }
+        rejects("position", "1")
+        rejects("sourcePhotoId", 7)
+        rejects("originalByteSize", "1")
+        rejects("includeInReport", "true")
+        rejects("addedInCorrection", 0)
+    }
+
     @Test fun portableV2RecordFixtureMatchesLiteralBytesDigestAndAcceptedWireSemantics() {
         fun fixture(name: String) = requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/$name")).use { it.readBytes() }
         val record = JSONObject(fixture("work-result-v2-record.json").toString(Charsets.UTF_8))
