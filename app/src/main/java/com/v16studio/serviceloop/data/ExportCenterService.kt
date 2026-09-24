@@ -185,5 +185,21 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
         return file
     }
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-    private fun csv(headers: List<String>, rows: List<List<String>>): ByteArray = (listOf(headers) + rows).joinToString("\r\n") { row -> row.joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" } }.plus("\r\n").toByteArray(Charsets.UTF_8)
+    private fun csv(headers: List<String>, rows: List<List<String>>): ByteArray {
+        val numericColumns = setOf("position", "interval_count", "quantity", "included_in_report")
+        val numeric = Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?")
+        fun quote(value: String) = "\"${value.replace("\"", "\"\"")}\""
+        fun presentation(header: String, value: String): String {
+            if (header in numericColumns && numeric.matches(value)) return value
+            val firstSignificant = value.firstOrNull { !it.isWhitespace() && !it.isISOControl() }
+            val formulaLike = firstSignificant in setOf('=', '+', '-', '@') ||
+                value.firstOrNull()?.let { it.isISOControl() } == true
+            // CSV is a readable projection; the apostrophe is intentionally absent from native transfer.
+            return if (formulaLike) "'$value" else value
+        }
+        return (listOf(headers.map(::quote)) + rows.map { row ->
+            require(row.size == headers.size) { "Readable export row does not match its header" }
+            row.mapIndexed { index, value -> quote(presentation(headers[index], value)) }
+        }).joinToString("\r\n") { it.joinToString(",") }.plus("\r\n").toByteArray(Charsets.UTF_8)
+    }
 }

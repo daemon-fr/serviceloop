@@ -262,6 +262,29 @@ class B049WorkResultImportTest {
         assertEquals(1, database.serviceLoopDao().obligationCount("plan"))
     }
 
+    @Test fun readableCsvEscapesFormulaLikeTextAndRetainsQuotedUnicodeAndTypedNumbers() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.insertCustomers(listOf(
+            CustomerEntity("formula", "CU-F", "  =HYPERLINK(1,2)", privateNote = "quoted \"value\", line\nΔ"),
+            CustomerEntity("control", "CU-C", "\t@EXEC", privateNote = "+1"),
+        ))
+        val bytes = ExportCenterService(database, root).export(ExportCenterSelection(
+            families = setOf(ExportFamily.CUSTOMERS, ExportFamily.PLANS), includePrivate = true))
+        val entries = mutableMapOf<String, String>()
+        ZipInputStream(bytes.inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        val customers = entries.getValue("customers.csv")
+        assertEquals(true, customers.contains("\"'  =HYPERLINK(1,2)\""))
+        assertEquals(true, customers.contains("\"'\t@EXEC\""))
+        assertEquals(true, customers.contains("\"'+1\""))
+        assertEquals(true, customers.contains("\"quoted \"\"value\"\", line\nΔ\""))
+        assertEquals(true, entries.getValue("service_plans.csv").contains("\"1\",\"YEARS\""))
+    }
+
     @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {
         ServiceLoopPeerTrustStore(database).remove(exporter)
         val bytes = packageBytes("untrusted", result(2))

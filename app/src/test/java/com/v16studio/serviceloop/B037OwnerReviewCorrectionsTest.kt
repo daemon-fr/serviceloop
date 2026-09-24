@@ -46,7 +46,7 @@ class B037OwnerReviewCorrectionsTest {
 
     @Test
     fun createVisitDirtySnapshotDoesNotContainPresentationOnlyModeOrSiteSearch() {
-        val source = productionKotlinFunctionSource("internal data class VisitSetupDraft", "@Composable\ninternal fun VisitSetupForm")
+        val source = productionKotlinFunctionSource("internal data class VisitSetupDraft", "private const val SETUP_SEPARATOR")
         assertFalse(source.contains("siteQuery"))
         assertTrue(source.contains("mode:"))
         assertTrue(productionKotlinSource("com/v16studio/serviceloop/ui").contains("visitSetupIsDirty(baseline, draft)"))

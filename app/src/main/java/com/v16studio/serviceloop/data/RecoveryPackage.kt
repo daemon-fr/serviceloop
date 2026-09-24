@@ -52,6 +52,9 @@ class RecoveryPackage(
             )
             JSONObject(exportDatabase().toString(Charsets.UTF_8))
         }
+        // An unopened preference store can have no persisted singleton yet. Capture the
+        // product default as portable state so this backup passes the same restore contract.
+        if (tableRows(databaseObject, "reminder_preferences").isEmpty()) normalizeLegacyReminderState(databaseObject)
         val files = requiredFiles(databaseObject)
         val missing = files.filterNot { File(fileRoot, it.path).isFile }.map { it.path }
         if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing")
