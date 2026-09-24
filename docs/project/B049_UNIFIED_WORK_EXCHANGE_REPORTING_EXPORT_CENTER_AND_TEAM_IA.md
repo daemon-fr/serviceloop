@@ -2657,3 +2657,20 @@ Final correction evidence:
 - `git diff --check`: PASS. App 1.3.0/code 5, Room 19, Recovery 18, envelope v2, and DATA_TRANSFER v2 remain unchanged.
 
 No system handoff, broad UI instrumentation, or rendered review was rerun for this selection-only correction. B049 remains ready for owner UI review; owner acceptance, B-008 pilot, release authorization, and protected-master integration are not claimed. The pre-existing `.idea/gradle.xml` and `.idea/misc.xml` metadata edits remain outside the correction commits.
+
+## B049 owner UI defect pass 1 — 2026-09-24
+
+The owner-reviewed UI defect pass is implemented on `codex/b049-work-exchange-reporting-export-center`. Team exchange rows now have consistent breathing room and the local role ID surface no longer has a distinct filled card. Export Center spacing and format wording are clearer, both `.slsync` and readable CSV ZIP exports are visible, date fields share picker affordances with Generate report, and selectable rows use CheckFat in both states: selected is action-colored and unselected is muted gray. Generate report uses the same scope/date component. Dashboard Visit date/status share one row and New visit has the add icon. Import errors use a reusable modal that explains unreadable files, unsupported versions, purpose mismatches, and available alternate import routes. Role labels have icon spacing and the separate “Coordinator tools are available from Home > Team page.” paragraph. Settings spacing and teal headings, Image cleanup button spacing, a 90-day backup reminder, and destructive erase styling were corrected.
+
+Required JVM coverage also exposed a narrow WORK_RESULT chronology fallback: when a result has no valid recorded timestamp, the package generation timestamp now supplies source chronology; a valid recorded timestamp still takes precedence. This fixes latest-effective-imported-revision selection in Export Center and Aggregate Report. No Room schema or DATA_TRANSFER contract changed.
+
+### Pass 1 verification
+
+- **TESTED — JVM:** `:app:testDebugUnitTest`: 515 tests PASS, 0 failures/errors/skips.
+- **TESTED — build/lint:** `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease`: PASS after the final icon and test edits.
+- **UI-INSTRUMENTED:** `B049ExportCenterUiTest` 7 PASS; `B049ImportErrorUiTest` 3 PASS; `B049RenderedEvidenceUiTest` 2 PASS on the canonical `Pixel 10a ServiceLoop` AVD. A prior multi-invocation run had one `new-visit-home-icon` visibility assertion fail; the focused method and then the complete rendered-evidence class passed on rerun. The AVD was not cleared or reset.
+- **HUMAN/RENDERED:** 30 owner-review screenshots and an import-error dialog screenshot were pulled from the final passing device run and visually inspected. Evidence is retained under ignored `app/build/b049-owner-ui-evidence/check-fat-final/`.
+- **Startup smoke:** final debug APK installed with `adb -s <dynamically resolved canonical serial> install -r`; app process remained alive after 8 seconds and no sampled fatal AndroidRuntime crash appeared. No application data was cleared.
+- **Git:** `git diff --check` PASS after the documentation edit; branch push and parity are recorded at handoff.
+
+B049 remains available for further owner UI review. This record does not claim owner acceptance, merge to `master`, release, or B-008 pilot completion.
