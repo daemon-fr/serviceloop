@@ -36,8 +36,7 @@ class B049ImageCleanupTest {
 
     @Before fun setup() = kotlinx.coroutines.runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
-        ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         directory = File(context.filesDir, "attachments/b049-retention-${System.nanoTime()}").apply { mkdirs() }
         cleanup = ImageCleanupService(context, database)
         cleanup.savePreference(ImageRetention.NEVER)
@@ -55,7 +54,7 @@ class B049ImageCleanupTest {
         ))
         dao.insertFinalRecord(FinalRecordEntity("record","final-visit","revision",old))
         dao.insertFinalRevision(FinalRecordRevisionEntity("revision","record",1,"V-1","2025-01-01",old,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null))
-        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-item","revision",1,"final-work",null,null,null,null,null,null,null,"Inspect",null,null,"DONE",null,null,false,null,null,null,null,null,null,null)))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-item","revision",1,"final-work",null,null,null,null,null,null,null,"Inspect",null,null,"DONE",null,null,false,null,null,null,null,null,null,null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         val image = Bitmap.createBitmap(2400, 1200, Bitmap.Config.ARGB_8888)
         val bytes = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it); image.recycle() }.toByteArray()
         val finalFile = File(directory, "final.jpg").apply { writeBytes(bytes); setLastModified(old) }
@@ -177,7 +176,7 @@ class B049ImageCleanupTest {
         dao.insertWorkItems(listOf(WorkItemEntity("void-work","void-visit",null,null,null,null,null,null,"Voided service",null,null,null,null,false,null,null,subjectType="SITE")))
         dao.insertFinalRecord(FinalRecordEntity("void-record","void-visit","void-revision",old,voided=true))
         dao.insertFinalRevision(FinalRecordRevisionEntity("void-revision","void-record",1,"V-VOID","2025-01-01",old,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null))
-        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("void-final","void-revision",1,"void-work",null,null,null,null,null,null,null,"Voided service",null,null,"DONE",null,null,false,null,null,null,null,null,null)))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("void-final","void-revision",1,"void-work",null,null,null,null,null,null,null,"Voided service",null,null,"DONE",null,null,false,null,null,null,null,null,null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         for (inactive in listOf(false, true)) {
             val archive = ExportCenterService(database, context.filesDir).export(ExportCenterSelection(ServiceLoopScopeFilter(customerId = "c"), ExportPreset.WORK_PERFORMED.families, includeInactive = inactive))
             ZipInputStream(archive.inputStream()).use { zip ->
@@ -323,7 +322,7 @@ class B049ImageCleanupTest {
             dao.insertWorkItems(listOf(WorkItemEntity("work-$id", id, null, null, null, null, null, null, "Inspect", null, null, null, null, false, null, null, subjectType = "SITE")))
             dao.insertFinalRecord(FinalRecordEntity("record-$id", id, "revision-$id", old))
             dao.insertFinalRevision(FinalRecordRevisionEntity("revision-$id", "record-$id", 1, id, "2025-01-02", old, "Customer", "Site", null, "Business", "Technician", null, null, null, "UTC", null))
-            dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-$id", "revision-$id", 1, "work-$id", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE")))
+            dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-$id", "revision-$id", 1, "work-$id", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         }
         addFinalVisit("second", "c", "s")
         dao.insertCustomers(listOf(CustomerEntity("other-c", "CU-2", "Other customer")))

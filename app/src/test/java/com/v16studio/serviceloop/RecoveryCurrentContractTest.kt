@@ -26,16 +26,15 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class RecoveryLegacyCompatibilityTest {
+class RecoveryCurrentContractTest {
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     private lateinit var database: ServiceLoopDatabase
     private lateinit var root: File
-    private val password = "synthetic legacy recovery".toCharArray()
+    private val password = "current recovery contract".toCharArray()
 
     @Before fun setup() = runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
-        ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         root = File(context.cacheDir, "legacy-recovery-${System.nanoTime()}").apply { mkdirs() }
         val dao = database.serviceLoopDao()
         dao.insertCustomers(listOf(CustomerEntity("legacy-customer", "CU-9", "Historical customer")))
@@ -46,25 +45,6 @@ class RecoveryLegacyCompatibilityTest {
     }
 
     @After fun teardown() { database.close(); root.deleteRecursively() }
-
-    @Test fun populatedRecoveryVersionsNineThroughNineteenRestoreExactBusinessValues() = runBlocking {
-        val recovery = RecoveryPackage(database, root)
-        val current = recovery.create(password, false).bytes
-        for (version in 9..19) {
-            val fixture = sourceFixture(recovery, current, version)
-            val inspection = recovery.inspect(fixture, password)
-            assertEquals(2, inspection.formatVersion)
-            database.serviceLoopDao().renameCustomer("legacy-customer", "Changed after backup")
-            recovery.restore(inspection)
-            val dao = database.serviceLoopDao()
-            assertEquals("Historical customer", dao.customer("legacy-customer")!!.name)
-            assertEquals("legacy-customer", dao.site("legacy-site")!!.customerId)
-            assertEquals("legacy-site", dao.equipment("legacy-equipment")!!.siteId)
-            assertEquals("legacy-equipment", dao.plan("legacy-plan")!!.equipmentId)
-            assertEquals("legacy-obligation", dao.plan("legacy-plan")!!.currentObligationId)
-            assertEquals("2026-09-01", dao.obligation("legacy-obligation")!!.dueDate)
-        }
-    }
 
     @Test fun replacementRemovesUnownedBytesAcrossAllSixRootsButKeepsExternalFiles() = runBlocking {
         val recovery = RecoveryPackage(database, root)
@@ -100,10 +80,10 @@ class RecoveryLegacyCompatibilityTest {
         assertEquals(bytes.toList(), File(root, path).readBytes().toList())
     }
 
-    @Test fun duplicateHistoricalTableFailsBeforeReplacingDurableRows() = runBlocking {
+    @Test fun duplicateCurrentTableFailsBeforeReplacingDurableRows() = runBlocking {
         val recovery = RecoveryPackage(database, root)
         val current = recovery.create(password, false).bytes
-        val malformed = sourceFixture(recovery, current, 14) { snapshot ->
+        val malformed = sourceFixture(recovery, current) { snapshot ->
             val tables = snapshot.getJSONArray("tables")
             tables.put(JSONObject(tables.getJSONObject(0).toString()))
         }
@@ -146,7 +126,7 @@ class RecoveryLegacyCompatibilityTest {
         }
     }
 
-    @Test fun malformedSourceVersionsFamiliesTypesAndAncestryRejectBeforeAdoption() = runBlocking {
+    @Test fun unsupportedVersionsAndMalformedCurrentRowsRejectBeforeAdoption() = runBlocking {
         val recovery = RecoveryPackage(database, root)
         val current = recovery.create(password, false).bytes
         fun table(snapshot: JSONObject, name: String): JSONObject {
@@ -154,17 +134,21 @@ class RecoveryLegacyCompatibilityTest {
             return (0 until tables.length()).map(tables::getJSONObject).first { it.getString("name") == name }
         }
         val malformed = listOf(
-            sourceFixture(recovery, current, 19) { snapshot -> snapshot.put("schemaVersion", 18) },
-            sourceFixture(recovery, current, 20),
-            sourceFixture(recovery, current, 19) { snapshot ->
+            sourceFixture(recovery, current) { snapshot -> snapshot.put("schemaVersion", 2) },
+            sourceFixture(recovery, current, alterManifest = { manifest -> manifest.put("formatVersion", 2) }),
+            sourceFixture(recovery, current) { snapshot ->
                 val tables = snapshot.getJSONArray("tables")
                 val index = (0 until tables.length()).first { tables.getJSONObject(it).getString("name") == "customer_contacts" }
                 tables.remove(index)
             },
-            sourceFixture(recovery, current, 19) { snapshot ->
+            sourceFixture(recovery, current) { snapshot ->
+                val columns = table(snapshot, "customers").getJSONArray("columns")
+                columns.remove(0)
+            },
+            sourceFixture(recovery, current) { snapshot ->
                 table(snapshot, "customers").getJSONArray("rows").getJSONObject(0).put("name", 7)
             },
-            sourceFixture(recovery, current, 19) { snapshot ->
+            sourceFixture(recovery, current) { snapshot ->
                 table(snapshot, "sites").getJSONArray("rows").getJSONObject(0).put("customerId", "missing-customer")
             },
         )
@@ -238,11 +222,11 @@ class RecoveryLegacyCompatibilityTest {
             (0 until tables.length()).map(tables::getJSONObject).first { it.getString("name") == name }
                 .getJSONArray("rows").put(row)
         }
-        val orphanSource = sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+        val orphanSource = sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "aggregate_report_sources",
             JSONObject().put("aggregateReportId", "missing-report").put("sourceOrder", 1)
                 .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "LOCAL")
                 .put("visitId", "missing-visit").put("sourceEntityId", "missing-revision")) }
-        val orphanPhoto = sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "remote_result_photos",
+        val orphanPhoto = sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "remote_result_photos",
             JSONObject().put("id", "orphan-photo").put("remoteFinalResultId", "missing-result")
                 .put("sourcePhotoId", "source-photo").put("relativePath", "remote-results/orphan.jpg")
                 .put("sha256", "a".repeat(64)).put("byteSize", 1).put("width", 1).put("height", 1)
@@ -265,15 +249,15 @@ class RecoveryLegacyCompatibilityTest {
                 .getJSONArray("rows").put(row)
         }
         val cases = listOf(
-            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+            sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "aggregate_report_sources",
                 JSONObject().put("aggregateReportId", "graph-report").put("sourceOrder", 1)
                     .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "REMOTE")
                     .put("visitId", "local-visit").put("sourceEntityId", "missing-remote")) } to "An aggregate source does not resolve to its exact final revision",
-            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+            sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "aggregate_report_sources",
                 JSONObject().put("aggregateReportId", "graph-report").put("sourceOrder", 1)
                     .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "TRANSFERRED")
                     .put("visitId", "TRANSFERRED:origin:visit").put("sourceEntityId", "missing-transfer")) } to "An aggregate source does not resolve to its exact final revision",
-            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "transferred_evidence",
+            sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "transferred_evidence",
                 JSONObject().put("id", "orphan-evidence").put("sourceIdentityKey", "origin:visit:item:revision:photo")
                     .put("originWorkspaceId", "origin").put("sourcePhotoId", "photo")
                     .put("sourceVisitId", "visit").put("sourceWorkItemId", "item")
@@ -285,7 +269,7 @@ class RecoveryLegacyCompatibilityTest {
                     .put("sha256", "a".repeat(64)).put("byteSize", 1).put("width", 1).put("height", 1)
                     .put("mimeType", "image/jpeg").put("caption", JSONObject.NULL).put("visibility", "PUBLIC")
                     .put("includedInCustomerReport", 1).put("importedAtEpochMillis", 1).put("provenanceJson", "{}")) } to "Transferred evidence is linked to another source execution",
-            sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_renditions",
+            sourceFixture(recovery, current) { snapshot -> addRow(snapshot, "aggregate_report_renditions",
                 JSONObject().put("id", "orphan-rendition").put("aggregateReportId", "missing-report")
                     .put("relativePath", JSONObject.NULL).put("sha256", JSONObject.NULL).put("byteSize", JSONObject.NULL)
                     .put("pageCount", JSONObject.NULL).put("generatedAtEpochMillis", 1)
@@ -298,31 +282,21 @@ class RecoveryLegacyCompatibilityTest {
         }
     }
 
-    private fun sourceFixture(recovery: RecoveryPackage, encrypted: ByteArray, version: Int, alter: (JSONObject) -> Unit = {}): ByteArray {
+    private fun sourceFixture(
+        recovery: RecoveryPackage,
+        encrypted: ByteArray,
+        alterManifest: (JSONObject) -> Unit = {},
+        alterSnapshot: (JSONObject) -> Unit = {},
+    ): ByteArray {
         val entries = unzip(invokeCrypt(recovery, "unprotect", encrypted))
         val snapshot = JSONObject(entries.getValue("database.json").toString(Charsets.UTF_8))
-        val sourceTables = JSONArray()
-        val currentTables = snapshot.getJSONArray("tables")
-        for (index in 0 until currentTables.length()) {
-            val table = currentTables.getJSONObject(index)
-            val name = table.getString("name")
-            val columns = runCatching { RecoverySourceShapes.columns(version, name) }.getOrNull() ?: continue
-            val sourceRows = JSONArray()
-            val currentRows = table.getJSONArray("rows")
-            for (rowIndex in 0 until currentRows.length()) {
-                val row = currentRows.getJSONObject(rowIndex)
-                val projected = JSONObject()
-                columns.forEach { column -> projected.put(column, row.get(column)) }
-                sourceRows.put(projected)
-            }
-            sourceTables.put(JSONObject().put("name", name).put("rows", sourceRows))
-        }
-        snapshot.put("schemaVersion", version).put("tables", sourceTables)
-        alter(snapshot)
+        alterSnapshot(snapshot)
         val bytes = snapshot.toString().toByteArray(Charsets.UTF_8)
         entries["database.json"] = bytes
         val manifest = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
-        manifest.put("schemaVersion", version).put("databaseSha256", sha256(bytes))
+            .put("schemaVersion", snapshot.getInt("schemaVersion"))
+            .put("databaseSha256", sha256(bytes))
+        alterManifest(manifest)
         entries["manifest.json"] = manifest.toString().toByteArray(Charsets.UTF_8)
         return invokeCrypt(recovery, "protect", zip(entries))
     }

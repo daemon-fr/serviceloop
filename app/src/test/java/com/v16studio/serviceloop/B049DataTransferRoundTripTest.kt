@@ -36,8 +36,8 @@ class B049DataTransferRoundTripTest {
     @Before fun setup() {
         a = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         b = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(a.openHelper.writableDatabase)
-        ServiceLoopDatabase.configureStage4Tracking(b.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(a.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(a.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(b.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(b.openHelper.writableDatabase)
         ServiceLoopDatabase.configureReminderDefaults(a.openHelper.writableDatabase)
         ServiceLoopDatabase.configureReminderDefaults(b.openHelper.writableDatabase)
         rootA = File(context.cacheDir, "b049-transfer-a-${System.nanoTime()}").apply { mkdirs() }
@@ -187,8 +187,8 @@ class B049DataTransferRoundTripTest {
         dao.insertFinalRecord(FinalRecordEntity("record", "visit", "revision", 2))
         dao.insertFinalRevision(FinalRecordRevisionEntity("revision", "record", 1, "V-2", "2026-09-24", 2, "Customer Two", "Site Two", null, "Business", "Technician A", null, null, null, "UTC", null, customerReference = "CU-2", siteReference = "ST-2"))
         dao.insertFinalWorkItems(listOf(
-            FinalWorkItemEntity("final-1", "revision", 1, "work-1", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Inspected", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "secret one"),
-            FinalWorkItemEntity("final-2", "revision", 2, "work-2", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Cleaned", null, false, null, null, null, null, null, "secret two"),
+            FinalWorkItemEntity("final-1", "revision", 1, "work-1", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Inspected", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "secret one", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList())),
+            FinalWorkItemEntity("final-2", "revision", 2, "work-2", "e", "Boiler", "EQ-2", "Serial", "Maker", "Model", "Serial", "Inspection", null, null, "PERFORMED", "Cleaned", null, false, null, null, null, null, null, "secret two", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList())),
         ))
         dao.insertFinalChecklistItems(listOf(FinalChecklistItemEntity("check", "final-1", 1, null, null, "Pressure", "NUMBER", "bar", true, "PASS", "2.0", null, null)))
         dao.insertFinalParts(listOf(FinalPartEntryEntity("part", "final-2", 1, "Filter", "1", "each")))
@@ -247,7 +247,7 @@ class B049DataTransferRoundTripTest {
         val workSelection = ExportCenterSelection(families = setOf(ExportFamily.VISITS, ExportFamily.SERVICE_RECORDS, ExportFamily.CHECKLIST, ExportFamily.PARTS, ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES), includePrivate = false)
         val bytes = DataTransferExportService(a, rootA).export(workSelection)
         val decoded = DataTransferCodec.decode(bytes)
-        assertEquals(2, decoded.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
+        assertEquals(1, decoded.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
         val evidencePhotos = JSONObject(decoded.families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8)).getJSONArray("photos")
         assertEquals(2, evidencePhotos.length())
         assertTrue((0 until evidencePhotos.length()).map { evidencePhotos.getJSONObject(it).getString("visibility") }.all { it == "PUBLIC" })
@@ -261,7 +261,8 @@ class B049DataTransferRoundTripTest {
         assertTrue(dao.allTransferredFinalResults().all {
             val snapshot = JSONObject(it.sourcePayloadJson!!)
             snapshot.getInt("snapshotFormatVersion") == 1 && snapshot.getString("sourcePurpose") == "PERFORMED_WORK" &&
-                snapshot.getInt("sourcePayloadVersion") == 2 && snapshot.getJSONObject("record").getString("sourceWorkItemId") == it.sourceWorkItemId
+                snapshot.getInt("sourcePayloadVersion") == 1 && snapshot.getInt("fingerprintVersion") == 1 &&
+                snapshot.getJSONObject("record").getString("sourceWorkItemId") == it.sourceWorkItemId
         })
         assertEquals(2, dao.allTransferredEvidence().size)
         assertTrue(dao.allTransferredEvidence().all { File(rootB, it.relativePath).isFile })
@@ -302,7 +303,7 @@ class B049DataTransferRoundTripTest {
 
         val relayBytes = DataTransferExportService(b, rootB).export(workSelection)
         val relay = DataTransferCodec.decode(relayBytes)
-        assertEquals(2, relay.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
+        assertEquals(1, relay.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
         val relayedRows = JSONObject(relay.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)).getJSONArray("visits").getJSONObject(0).getJSONArray("records")
         assertEquals(2, relayedRows.length())
         assertTrue((0 until relayedRows.length()).all { relayedRows.getJSONObject(it).getString("originWorkspaceId") == sourceId })
@@ -311,8 +312,7 @@ class B049DataTransferRoundTripTest {
         val comparison = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         val comparisonRoot = File(context.cacheDir, "b049-transfer-compare-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(comparison.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureReminderDefaults(comparison.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(comparison.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(comparison.openHelper.writableDatabase)
             ServiceLoopPeerTrustStore(comparison).add(sourceId, "Original workspace")
             ServiceLoopPeerTrustStore(comparison).add(relay.exporterId, "Relay workspace")
             val compareImporter = DataTransferImportService(comparison, comparisonRoot)
@@ -349,7 +349,7 @@ class B049DataTransferRoundTripTest {
         val standaloneB = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         val rootStandalone = File(context.cacheDir, "b049-transfer-img-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(standaloneB.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(standaloneB.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(standaloneB.openHelper.writableDatabase)
             ServiceLoopPeerTrustStore(standaloneB).add(sourceId, "Workspace A")
             val standaloneImport = DataTransferImportService(standaloneB, rootStandalone)
             standaloneImport.import(standaloneImport.preview(standalone))
@@ -357,27 +357,6 @@ class B049DataTransferRoundTripTest {
             assertEquals(2, standaloneB.serviceLoopDao().allTransferredEvidence().size)
             assertTrue(standaloneB.serviceLoopDao().allTransferredEvidence().all { File(rootStandalone, it.relativePath).isFile })
         } finally { standaloneB.close(); rootStandalone.deleteRecursively() }
-    }
-
-    @Test fun identicalV2ReplayRecoversMissingLegacySourceRepresentation() = runBlocking {
-        val sourceId = seedCompletedWorkWithEvidence()
-        trustedReceiver(sourceId)
-        val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(
-            families = setOf(ExportFamily.SERVICE_RECORDS, ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)))
-        val importer = DataTransferImportService(b, rootB)
-        importer.import(importer.preview(bytes))
-        val before = b.serviceLoopDao().allTransferredFinalResults()
-        assertTrue(before.isNotEmpty())
-        b.openHelper.writableDatabase.execSQL("UPDATE transferred_final_results SET sourcePayloadJson=NULL")
-        assertTrue(b.serviceLoopDao().allTransferredFinalResults().all { it.sourcePayloadJson == null })
-        val replay = importer.preview(bytes)
-        assertTrue(replay.items.filter { it.family == DataTransferFamily.PERFORMED_WORK }
-            .all { it.classification == DataTransferClassification.ALREADY_IMPORTED })
-        importer.import(replay)
-        val after = b.serviceLoopDao().allTransferredFinalResults()
-        assertEquals(before.map { it.id }, after.map { it.id })
-        assertTrue(after.all { JSONObject(it.sourcePayloadJson!!).getJSONObject("record")
-            .getString("originWorkspaceId") == sourceId })
     }
 
     @Test fun evidenceAndPerformedHistoryAssociateInEitherArrivalOrder() = runBlocking {
@@ -413,8 +392,7 @@ class B049DataTransferRoundTripTest {
         val reverse = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         val reverseRoot = File(context.cacheDir, "b049-reverse-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(reverse.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureReminderDefaults(reverse.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(reverse.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(reverse.openHelper.writableDatabase)
             ServiceLoopPeerTrustStore(reverse).add(sourceId, "Original workspace")
             importInto(reverse, reverseRoot, history)
             assertEquals(0, reverse.serviceLoopDao().allTransferredEvidence().size)
@@ -605,7 +583,7 @@ class B049DataTransferRoundTripTest {
         val conflictDb = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
         val conflictRoot = File(context.cacheDir, "b049-transfer-conflict-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(conflictDb.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(conflictDb.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(conflictDb.openHelper.writableDatabase)
             val conflictDao = conflictDb.serviceLoopDao()
             conflictDao.insertCustomers(listOf(CustomerEntity("local-c", "CU-OP", "Operational customer", "Mara Pop", "+40 721 999 999", "mara@example.test", "receiver private")))
             conflictDao.insertSites(listOf(SiteEntity("local-s", "local-c", "ST-OP", "Workshop", "42 Service Road", "receiver access notes", "Radu Ionescu", "+40 722 000 222", "site@example.test", true)))

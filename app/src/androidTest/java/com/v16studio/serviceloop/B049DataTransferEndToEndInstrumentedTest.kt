@@ -25,8 +25,8 @@ class B049DataTransferEndToEndInstrumentedTest {
         val rootA = File(context.cacheDir, "b049-transfer-a-device-${System.nanoTime()}").apply { mkdirs() }
         val rootB = File(context.cacheDir, "b049-transfer-b-device-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(workspaceA.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureStage4Tracking(workspaceB.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(workspaceA.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(workspaceA.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(workspaceB.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(workspaceB.openHelper.writableDatabase)
             val a = workspaceA.serviceLoopDao()
             a.insertCustomers(listOf(CustomerEntity("c", "CU-DEVICE", "Device customer", "Ana Client", "+40 700 111 222", "ana@device.test", "private customer note")))
             a.insertCustomerContacts(listOf(CustomerContactEntity("cc1", "c", "Office", "PHONE", "+400", 1, 1, position = 1), CustomerContactEntity("cc2", "c", "Dispatch", "EMAIL", "dispatch@device.test", 1, 1, position = 2)))
@@ -55,7 +55,7 @@ class B049DataTransferEndToEndInstrumentedTest {
             a.insertWorkItems(listOf(WorkItemEntity("work", "visit", "e", "plan", "obligation", null, "Boiler", "EQ-DEVICE", "Annual", "PL-DEVICE", "2027-09-24", 1, "YEARS", true, "PERFORMED", true, confirmedNextDueDate = "2027-09-24")))
             a.insertFinalRecord(FinalRecordEntity("record", "visit", "revision", 2))
             a.insertFinalRevision(FinalRecordRevisionEntity("revision", "record", 1, "V-DEVICE", "2026-09-24", 2, "Device customer", "Device site", null, "Device business", "Device technician", null, null, null, "UTC", null, customerReference = "CU-DEVICE", siteReference = "ST-DEVICE"))
-            a.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-work", "revision", 1, "work", "e", "Boiler", "EQ-DEVICE", "Serial", "Maker", "Model", "Serial", "Annual", "plan", "PL-DEVICE", "PERFORMED", "Serviced", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "private", subjectType = "EQUIPMENT")))
+            a.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-work", "revision", 1, "work", "e", "Boiler", "EQ-DEVICE", "Serial", "Maker", "Model", "Serial", "Annual", "plan", "PL-DEVICE", "PERFORMED", "Serviced", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "private", subjectType = "EQUIPMENT", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
             val photoBytes = ByteArrayOutputStream().also { Bitmap.createBitmap(24, 18, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
             val photo = File(rootA, "attachments/photo.jpg").apply { parentFile!!.mkdirs(); writeBytes(photoBytes) }
             val hash = WorkResultPackageCodec.sha256(photoBytes)
@@ -166,8 +166,7 @@ class B049DataTransferEndToEndInstrumentedTest {
             val workspaceC = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
             val rootC = File(context.cacheDir, "b049-transfer-c-device-${System.nanoTime()}").apply { mkdirs() }
             try {
-                ServiceLoopDatabase.configureStage4Tracking(workspaceC.openHelper.writableDatabase)
-                ServiceLoopDatabase.configureReminderDefaults(workspaceC.openHelper.writableDatabase)
+                ServiceLoopDatabase.configureStage4Tracking(workspaceC.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(workspaceC.openHelper.writableDatabase)
                 ServiceLoopPeerTrustStore(workspaceC).add(sourceId, "Workspace A")
                 val importerC = DataTransferImportService(workspaceC, rootC)
                 val evidenceFirst = subset(setOf(DataTransferFamily.REGISTER, DataTransferFamily.EVIDENCE))
@@ -196,8 +195,7 @@ class B049DataTransferEndToEndInstrumentedTest {
             val workspaceD = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
             val rootD = File(context.cacheDir, "b049-transfer-d-device-${System.nanoTime()}").apply { mkdirs() }
             try {
-                ServiceLoopDatabase.configureStage4Tracking(workspaceD.openHelper.writableDatabase)
-                ServiceLoopDatabase.configureReminderDefaults(workspaceD.openHelper.writableDatabase)
+                ServiceLoopDatabase.configureStage4Tracking(workspaceD.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(workspaceD.openHelper.writableDatabase)
                 ServiceLoopPeerTrustStore(workspaceD).add(sourceId, "Workspace A")
                 val importerD = DataTransferImportService(workspaceD, rootD)
                 val historyFirst = subset(setOf(DataTransferFamily.REGISTER, DataTransferFamily.PERFORMED_WORK))

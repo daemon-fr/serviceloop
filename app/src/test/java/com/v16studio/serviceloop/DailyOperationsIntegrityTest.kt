@@ -36,7 +36,7 @@ class DailyOperationsIntegrityTest {
     private val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
     private val repo get() = RoomServiceLoopRepository(db, time, attachmentRoot = root)
 
-    @Before fun setup() { db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build(); ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase); root = File(context.cacheDir, "sl3-${System.nanoTime()}").apply { mkdirs() } }
+    @Before fun setup() { db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build(); ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(db.openHelper.writableDatabase); root = File(context.cacheDir, "sl3-${System.nanoTime()}").apply { mkdirs() } }
     @After fun close() { db.close(); root.deleteRecursively() }
 
     @Test fun directoryCreationAndEditRetainStableIdentityAndPlanCreatesExactlyOneObligation() = runTest {

@@ -26,7 +26,6 @@ internal fun importErrorPresentation(failure: Throwable, route: ImportRouteKind)
             "FULL_WORKSPACE" -> "a ServiceLoop workspace file" to "Open Import shared data"
             "DATA_TRANSFER" -> "a ServiceLoop shared-data file" to "Open Import shared data"
             "WORK_RESULT" -> "a ServiceLoop final-results file" to "Open Import shared data"
-            "TEMPLATE_SHARE" -> "a ServiceLoop inspection-template file" to "Open Import shared data"
             else -> "a different kind of ServiceLoop file" to "Open Import shared data"
         }
         return ImportErrorPresentation(

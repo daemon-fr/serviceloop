@@ -73,12 +73,12 @@ object TechnicianIdentityCodec {
     fun encode(value: TechnicianIdentity): ByteArray {
         require(value.name.trim().isNotEmpty()) { "Technician name is required" }
         require(value.name.length <= 200 && value.designation.orEmpty().length <= 200) { "Technician identity text is too long" }
-        return JSONObject().put("format", "ServiceLoopTechnician").put("formatVersion", 2).put("technicianId", value.technicianId).put("name", value.name.trim()).put("designation", value.designation?.trim()?.takeIf(String::isNotEmpty) ?: JSONObject.NULL).toString(2).toByteArray()
+        return JSONObject().put("format", "ServiceLoopTechnician").put("formatVersion", 1).put("technicianId", value.technicianId).put("name", value.name.trim()).put("designation", value.designation?.trim()?.takeIf(String::isNotEmpty) ?: JSONObject.NULL).toString(2).toByteArray()
     }
     fun decode(bytes: ByteArray): TechnicianIdentity {
         require(bytes.size in 1..MAX_BYTES) { "Invalid technician identity file size" }
         val root = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrElse { throw IllegalArgumentException("Malformed technician identity file") }
-        require(root.optString("format") == "ServiceLoopTechnician" && root.optInt("formatVersion") == 2) { "Unsupported technician identity file" }
+        require(root.optString("format") == "ServiceLoopTechnician" && root.optInt("formatVersion") == 1) { "Unsupported technician identity file" }
         val id = root.getString("technicianId").trim(); val name = root.getString("name").trim(); val designation = if (root.isNull("designation")) null else root.getString("designation").trim().takeIf(String::isNotEmpty)
         require(id.length in 16..200 && name.length in 1..200 && designation.orEmpty().length <= 200) { "Invalid technician identity" }
         return TechnicianIdentity(id, name, designation)
@@ -89,7 +89,7 @@ object DispatchPackageCodec {
     const val MAX_BYTES = 1_048_576
     private const val MAX_DIRECTORY = 500
     const val MAX_VISITS = 100
-    const val CURRENT_VERSION = 5
+    const val CURRENT_VERSION = 1
     private const val MAX_WORK = 500
     private const val MAX_STRING = 4_000
 

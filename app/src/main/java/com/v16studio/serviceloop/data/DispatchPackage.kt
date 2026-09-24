@@ -359,7 +359,7 @@ class DispatchPackageService(
     }
 
     fun resolveDuplicate(preview:DispatchPreview,reference:String,decision:DispatchDuplicateDecision)=preview.copy(directory=preview.directory.map{if(it.reference==reference&&it.classification==DispatchClassification.POSSIBLE_DUPLICATE)it.copy(duplicateDecision=decision)else it})
-    suspend fun import(p:DispatchPreview, exporterId:String?):DispatchImportResult {
+    suspend fun import(p:DispatchPreview, exporterId:String):DispatchImportResult {
         require(p.canImport||p.idempotentNoOp);val created=mutableListOf<String>();val updated=mutableListOf<String>();val unchanged=mutableListOf<String>();val withdrawn=mutableListOf<String>();val canceled=mutableListOf<String>()
         database.withTransaction {
             ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(exporterId)
@@ -452,7 +452,7 @@ class DispatchPackageService(
             // A later Coordinator package records provenance, but does not replace the first cause.
             dao.updateVisit(visit.copy(modifiedAtEpochMillis=now))
         }else{
-            // COMPLETED is not a cancellation transition; preserve its null/legacy cause.
+            // COMPLETED is not a cancellation transition; preserve its null cause.
             dao.updateVisit(visit.copy(modifiedAtEpochMillis=now))
         }
         dispatch.updateVisitBinding(binding.copy(appliedGeneration=v.generation,packageId=p.packageId,senderLabel=p.senderLabel,managerReference=v.managerReference,instructionsSnapshot=v.instructions,participantSnapshotJson=techJson(v.participants),leaderIdsJson=idsJson(v.leaderTechnicianIds),teamSnapshotJson=teamsJson(v.teams),appliedMaterialHash=DispatchPackageCodec.materialHash(v),controlledFingerprint="coordinator-canceled",updatedAtEpochMillis=now))

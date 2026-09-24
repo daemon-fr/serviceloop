@@ -25,15 +25,15 @@ import java.time.ZoneId
 
 @RunWith(AndroidJUnit4::class)
 class B049WorkResultEndToEndInstrumentedTest {
-    @Test fun exporterProducedV2PhotoResultIsAppliedAndReplayedWithoutEffects() = runBlocking {
+    @Test fun exporterProducedV1PhotoResultIsAppliedAndReplayedWithoutEffects() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val source = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
         val receiver = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
-        val sourceRoot = File(context.cacheDir, "v2-source-${System.nanoTime()}").apply { mkdirs() }
-        val receiverRoot = File(context.cacheDir, "v2-receiver-${System.nanoTime()}").apply { mkdirs() }
+        val sourceRoot = File(context.cacheDir, "v1-source-${System.nanoTime()}").apply { mkdirs() }
+        val receiverRoot = File(context.cacheDir, "v1-receiver-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(source.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(source.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(source.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(receiver.openHelper.writableDatabase)
             val technician = TechnicianIdCodec.generate()
             val issuer = TechnicianIdCodec.generate()
             val material = "a".repeat(64)
@@ -47,7 +47,7 @@ class B049WorkResultEndToEndInstrumentedTest {
                 "Customer", "Site", null, "Business", "Field technician", null, null, null, "Europe/Bucharest", null))
             a.insertFinalWorkItems(listOf(FinalWorkItemEntity("source-final", "source-r", 1, "source-w", null, null, null, null,
                 null, null, null, "Inspect site", null, null, "PERFORMED", "Inspected", null, false, null, null,
-                null, null, null, null, subjectType = "SITE")))
+                null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
             File(sourceRoot, "attachments").mkdirs()
             val photos = (1..12).map { position ->
                 val bitmap = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
@@ -122,7 +122,7 @@ class B049WorkResultEndToEndInstrumentedTest {
         val database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
         val root = File(context.cacheDir, "b049-result-device-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
             val dao = database.serviceLoopDao()
             val dispatch = database.dispatchDao()
             val issuer = TechnicianIdCodec.generate()
@@ -152,7 +152,7 @@ class B049WorkResultEndToEndInstrumentedTest {
                     .put("sourceWorkItemId", "source-w$item").put("sourceWorkItemPosition", item)
                     .put("sourceFinalRevisionNumber", 1).put("supersedesSourceFinalRevisionId", JSONObject.NULL)
                     .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
-                    .put("followUpCaptureState", "UNAVAILABLE_LEGACY").put("sourcePhotos", JSONArray())
+                    .put("followUpCaptureState", "CAPTURED_AT_REVISION").put("followUps", JSONArray()).put("sourcePhotos", JSONArray())
                     .put("visitReference", "V-1").put("recordedAt", "2026-09-23T09:00:00Z")
                     .put("dispatchVisitId", "dispatch-v").put("dispatchItemId", "dispatch-$item")
                     .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1).put("assignmentMaterialHash", material)

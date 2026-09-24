@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class SourceCanonicalJsonTest {
     @Test fun resultAndPhotoCountLimitsRejectBeforePackagingBytes() {
-        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v1-record.json"))
             .use { it.readBytes().toString(Charsets.UTF_8) })
         val result = WorkResultPackageCodec.Result(record, emptyList())
         val base = WorkResultPackageCodec.Package("bounded", record.getString("technicianId"),
@@ -33,8 +33,8 @@ class SourceCanonicalJsonTest {
         }
     }
 
-    @Test fun v2RejectsContradictoryTypedChecklistPartsAndFollowUps() {
-        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+    @Test fun v1RejectsContradictoryTypedChecklistPartsAndFollowUps() {
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v1-record.json"))
             .use { it.readBytes().toString(Charsets.UTF_8) })
         fun rejects(change: (JSONObject) -> Unit) {
             val changed = JSONObject(record.toString()).also(change)
@@ -53,7 +53,7 @@ class SourceCanonicalJsonTest {
         rejects { it.getJSONObject("recurrence").put("nextDueDate", "2027-09-24") }
         rejects { it.getJSONObject("recurrence").put("nextDueDateCalculated", true) }
         rejects { it.getJSONObject("workSnapshot").put("nextDueOverrideReason", "Unmatched override") }
-        rejects { it.put("followUpCaptureState", "UNAVAILABLE_LEGACY").put("followUps", JSONArray().put(
+        rejects { it.put("followUpCaptureState", "UNCAPTURED").put("followUps", JSONArray().put(
             JSONObject().put("sourceId", "f").put("type", "CALL").put("title", "Call")
                 .put("dueDate", "2026-10-01").put("state", "OPEN"))) }
         rejects { it.put("followUps", JSONArray().put(JSONObject().put("sourceId", "f").put("type", "CALL")
@@ -62,8 +62,8 @@ class SourceCanonicalJsonTest {
                 .put("dueDate", "2026-10-02").put("state", "OPEN"))) }
     }
 
-    @Test fun v2SourcePhotoFactsRejectCoercedNumericAndBooleanTypes() {
-        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+    @Test fun v1SourcePhotoFactsRejectCoercedNumericAndBooleanTypes() {
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v1-record.json"))
             .use { it.readBytes().toString(Charsets.UTF_8) })
         val fact = JSONObject().put("sourcePhotoId", "p").put("sourceWorkItemId", record.getString("sourceWorkItemId"))
             .put("position", 1).put("originalByteSize", 1).put("originalSha256", "a".repeat(64))
@@ -86,11 +86,11 @@ class SourceCanonicalJsonTest {
         rejects("addedInCorrection", 0)
     }
 
-    @Test fun portableV2RecordFixtureMatchesLiteralBytesDigestAndAcceptedWireSemantics() {
+    @Test fun portableV1RecordFixtureMatchesLiteralBytesDigestAndAcceptedWireSemantics() {
         fun fixture(name: String) = requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/$name")).use { it.readBytes() }
-        val record = JSONObject(fixture("work-result-v2-record.json").toString(Charsets.UTF_8))
-        val canonical = fixture("work-result-v2-canonical.json")
-        val digest = fixture("work-result-v2.sha256").toString(Charsets.US_ASCII).trim()
+        val record = JSONObject(fixture("work-result-v1-record.json").toString(Charsets.UTF_8))
+        val canonical = fixture("work-result-v1-canonical.json")
+        val digest = fixture("work-result-v1.sha256").toString(Charsets.US_ASCII).trim()
         assertEquals(canonical.toList(), SourceCanonicalJson.bytes(record).toList())
         assertEquals(digest, WorkResultPackageCodec.sha256(canonical))
         assertEquals("SLT-0000-0000-0001-58", record.getString("technicianId"))

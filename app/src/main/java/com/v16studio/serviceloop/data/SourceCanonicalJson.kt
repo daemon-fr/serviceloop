@@ -5,7 +5,7 @@ import java.math.BigInteger
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Stable UTF-8 source-fact encoding for v2 immutable comparisons. */
+/** Stable UTF-8 source-fact encoding for current immutable comparisons. */
 internal object SourceCanonicalJson {
     fun bytes(value: Any?): ByteArray = text(value).toByteArray(Charsets.UTF_8)
 

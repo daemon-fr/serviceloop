@@ -20,8 +20,7 @@ class RecoveryJournalInstrumentedTest {
         val database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
         val root = File(context.cacheDir, "recovery-journal-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
             val dao = database.serviceLoopDao()
             dao.insertCustomers(listOf(CustomerEntity("customer", "CU-1", "Before")))
             val recovery = RecoveryPackage(database, root)

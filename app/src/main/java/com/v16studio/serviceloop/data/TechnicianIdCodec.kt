@@ -8,10 +8,6 @@ object TechnicianIdCodec {
     private const val PAYLOAD_LENGTH = 12
     private const val CHECKSUM_LENGTH = 2
     private const val ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-    private val canonical = Regex("^SLT-([0-9A-HJKMNP-TV-Z]{4})-([0-9A-HJKMNP-TV-Z]{4})-([0-9A-HJKMNP-TV-Z]{4})-([0-9A-HJKMNP-TV-Z]{2})$")
-    private val uuidLegacy = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
-    private val hexLegacy = Regex("^[0-9a-fA-F]{32}$")
-
     fun generate(random: SecureRandom = SecureRandom()): String {
         val payload = buildString(PAYLOAD_LENGTH) {
             repeat(PAYLOAD_LENGTH) { append(ALPHABET[random.nextInt(ALPHABET.length)]) }
@@ -29,7 +25,6 @@ object TechnicianIdCodec {
     }
 
     fun isValidCanonical(value: String) = normalize(value) != null
-    fun isSupportedLegacy(value: String) = uuidLegacy.matches(value) || hexLegacy.matches(value)
     fun display(value: String) = normalize(value) ?: value
 
     internal fun checksum(payload: String): String {

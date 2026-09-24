@@ -10,7 +10,7 @@ import java.util.UUID
 
 /** Transport-neutral WORK_RESULT contract. Every photo is a declared envelope entry. */
 internal object WorkResultPackageCodec {
-    const val VERSION = 2
+    const val VERSION = 1
     const val MAX_PHOTO_BYTES = 10 * 1024 * 1024
     const val MAX_RESULTS = 100
     const val MAX_PHOTOS = 120
@@ -33,15 +33,13 @@ internal object WorkResultPackageCodec {
         require(value.targetIssuerId.isNotBlank())
         Instant.parse(value.generatedAt)
         val sections = linkedMapOf<String, ByteArray>()
-        val hasV2Source = value.results.map { it.value.has("originWorkspaceId") }
-        require(hasV2Source.all { it } || hasV2Source.none { it }) { "Mixed work-result versions" }
-        val version = if (hasV2Source.all { it }) VERSION else 1
+        val version = VERSION
         val declarations = mutableListOf(resultSection(version))
         val results = JSONArray()
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         value.results.forEach { result ->
-            validateResultSafe(result.value, value.targetIssuerId, value.exporterId, version)
-            if (version == VERSION) validateSourcePhotos(result.value, result.photos)
+            validateResultSafe(result.value, value.targetIssuerId, value.exporterId)
+            validateSourcePhotos(result.value, result.photos)
             val json = JSONObject(result.value.toString())
             val photos = JSONArray()
             result.photos.forEach { photo ->
@@ -68,11 +66,11 @@ internal object WorkResultPackageCodec {
     fun decode(bytes: ByteArray): Package {
         val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes)
         val manifest = envelope.manifest
-        require(manifest.formatVersion == 2 && manifest.purpose == "WORK_RESULT") { "Choose a work-result ServiceLoop file" }
-        require(manifest.sections.firstOrNull()?.let { it == resultSection(1) || it == resultSection(VERSION) } == true) { "Unsupported work-result payload" }
+        require(manifest.formatVersion == 1 && manifest.purpose == "WORK_RESULT") { "Choose a work-result ServiceLoop file" }
+        require(manifest.sections.firstOrNull()?.let { it == resultSection(VERSION) } == true) { "Unsupported work-result payload" }
         val root = JSONObject(envelope.section("results").toString(Charsets.UTF_8))
         val version = root.getInt("version")
-        require(version in 1..VERSION && manifest.sections.first() == resultSection(version)) { "Unsupported work-result version" }
+        require(version == VERSION && manifest.sections.first() == resultSection(version)) { "Unsupported work-result version" }
         val issuerId = root.getString("targetIssuerId")
         require(TechnicianIdCodec.normalize(issuerId) == issuerId) { "Invalid assignment issuer" }
         val resultArray = root.getJSONArray("results")
@@ -82,7 +80,7 @@ internal object WorkResultPackageCodec {
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         val results = (0 until resultArray.length()).map { index ->
             val json = resultArray.getJSONObject(index)
-            validateResultSafe(json, issuerId, manifest.exporterId ?: error("Missing exporter identity"), version)
+            validateResultSafe(json, issuerId, manifest.exporterId)
             require(resultKeys.add(json.getString("resultId") to json.getString("sourceFinalRevisionId"))) { "Duplicate result revision" }
             val photoArray = json.getJSONArray("photos")
             require(photoArray.length() <= MAX_PHOTOS) { "Too many result photos" }
@@ -109,22 +107,22 @@ internal object WorkResultPackageCodec {
                 require(photo.getString("mimeType") == "image/jpeg") { "Unsupported result photo format" }
                 Photo(photoId, data, photo.optString("caption").takeIf { it.isNotBlank() }, photo.getBoolean("includeInReport"), photo.getString("visibility"), photo.getString("workItemId"), photo.getInt("width"), photo.getInt("height"))
             }
-            if (version == VERSION) validateSourcePhotos(json, photos)
+            validateSourcePhotos(json, photos)
             Result(json, photos)
         }
         require(results.sumOf { it.photos.size } <= MAX_PHOTOS && usedSections == manifest.sections.map { it.name }.toSet()) { "Work-result binary declarations do not match" }
         return Package(manifest.syncId, requireNotNull(manifest.exporterId), issuerId, manifest.generatedAt, results)
     }
 
-    private fun validateResultSafe(o: JSONObject, targetIssuerId: String, exporterId: String, version: Int) {
+    private fun validateResultSafe(o: JSONObject, targetIssuerId: String, exporterId: String) {
         try {
-            validateResult(o, targetIssuerId, exporterId, version)
+            validateResult(o, targetIssuerId, exporterId)
         } catch (failure: JSONException) {
             throw IllegalArgumentException("Malformed work-result semantics: ${failure.message}", failure)
         }
     }
 
-    private fun validateResult(o: JSONObject, targetIssuerId: String, exporterId: String, version: Int) {
+    private fun validateResult(o: JSONObject, targetIssuerId: String, exporterId: String) {
         listOf("resultId", "sourceFinalRevisionId", "dispatchVisitId", "dispatchItemId", "assignmentMaterialHash", "assignmentIssuerId", "technicianId", "technicianName", "serviceDate", "outcome", "customerSnapshot", "siteSnapshot", "subjectSnapshot", "workSnapshot", "checklist", "findings", "parts", "followUps", "recurrence").forEach { key ->
             require(o.has(key) && !o.isNull(key)) { "Missing result $key" }
         }
@@ -133,29 +131,27 @@ internal object WorkResultPackageCodec {
         }
         require(o.get("assignmentGeneration") is Number && o.get("assignmentGeneration").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid assignment generation" }
         require(o.getString("assignmentIssuerId") == targetIssuerId) { "Result issuer mismatch" }
-        if (version == VERSION) {
-            listOf("originWorkspaceId", "sourceVisitId", "sourceWorkItemId", "sourceFinalRevisionId", "visitReference", "recordedAt").forEach { key ->
-                require(o.get(key) is String && o.getString(key).isNotBlank()) { "Missing v2 source identity: $key" }
-            }
-            require(o.getString("originWorkspaceId") == exporterId) { "Result source origin differs from its author" }
-            Instant.parse(o.getString("recordedAt"))
-            require(o.get("sourceWorkItemPosition") is Number && o.get("sourceWorkItemPosition").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid source work position" }
-            require(o.get("sourceFinalRevisionNumber") is Number && o.get("sourceFinalRevisionNumber").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid source revision number" }
-            require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String) &&
-                o.has("correctionReason") && o.has("publicNote")) { "Invalid source correction lineage or note" }
-            require(o.has("followUpCaptureState") && o.getString("followUpCaptureState") in setOf("CAPTURED_AT_REVISION", "UNAVAILABLE_LEGACY")) { "Missing source follow-up capture state" }
-            listOf("sourceCustomerRef", "sourceSiteRef", "sourceEquipmentRef").forEach { key ->
-                if (o.has(key) && !o.isNull(key)) {
-                    val ref = o.getJSONObject(key)
-                    require(ref.get("originWorkspaceId") is String &&
-                        TechnicianIdCodec.normalize(ref.getString("originWorkspaceId")) == ref.getString("originWorkspaceId") &&
-                        ref.get("sourceEntityId") is String && ref.getString("sourceEntityId").isNotBlank()) {
-                        "Invalid $key source identity"
-                    }
+        listOf("originWorkspaceId", "sourceVisitId", "sourceWorkItemId", "sourceFinalRevisionId", "visitReference", "recordedAt").forEach { key ->
+            require(o.get(key) is String && o.getString(key).isNotBlank()) { "Missing source identity: $key" }
+        }
+        require(o.getString("originWorkspaceId") == exporterId) { "Result source origin differs from its author" }
+        Instant.parse(o.getString("recordedAt"))
+        require(o.get("sourceWorkItemPosition") is Number && o.get("sourceWorkItemPosition").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid source work position" }
+        require(o.get("sourceFinalRevisionNumber") is Number && o.get("sourceFinalRevisionNumber").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid source revision number" }
+        require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String) &&
+            o.has("correctionReason") && o.has("publicNote")) { "Invalid source correction lineage or note" }
+        require(o.has("followUpCaptureState") && o.getString("followUpCaptureState") == "CAPTURED_AT_REVISION") { "Missing source follow-up capture state" }
+        listOf("sourceCustomerRef", "sourceSiteRef", "sourceEquipmentRef").forEach { key ->
+            if (o.has(key) && !o.isNull(key)) {
+                val ref = o.getJSONObject(key)
+                require(ref.get("originWorkspaceId") is String &&
+                    TechnicianIdCodec.normalize(ref.getString("originWorkspaceId")) == ref.getString("originWorkspaceId") &&
+                    ref.get("sourceEntityId") is String && ref.getString("sourceEntityId").isNotBlank()) {
+                    "Invalid $key source identity"
                 }
             }
-            o.getJSONArray("sourcePhotos")
         }
+        o.getJSONArray("sourcePhotos")
         require(o.getInt("assignmentGeneration") > 0) { "Invalid assignment generation" }
         require(o.getString("resultId").isNotBlank() && o.getString("sourceFinalRevisionId").isNotBlank())
         require(o.getString("dispatchVisitId").isNotBlank() && o.getString("dispatchItemId").isNotBlank())
@@ -165,8 +161,7 @@ internal object WorkResultPackageCodec {
         java.time.LocalDate.parse(o.getString("serviceDate"))
         o.getJSONObject("customerSnapshot"); o.getJSONObject("siteSnapshot"); o.getJSONObject("subjectSnapshot")
         val subject = o.getJSONObject("subjectSnapshot")
-        require((!subject.has("type") && version != VERSION) ||
-            (subject.has("type") && subject.get("type") is String && subject.getString("type") in setOf("SITE", "EQUIPMENT"))) {
+        require(subject.has("type") && subject.get("type") is String && subject.getString("type") in setOf("SITE", "EQUIPMENT")) {
             "Invalid result subject"
         }
         val work = o.getJSONObject("workSnapshot")
@@ -176,7 +171,7 @@ internal object WorkResultPackageCodec {
         val findings = o.getJSONArray("findings")
         val parts = o.getJSONArray("parts")
         val followUps = o.getJSONArray("followUps")
-        if (version == VERSION) require(checklist.length() <= 1000) { "Too many checklist responses" }
+        require(checklist.length() <= 1000) { "Too many checklist responses" }
         val checklistPositions = mutableSetOf<Int>()
         for (index in 0 until checklist.length()) {
             val item = checklist.getJSONObject(index)
@@ -188,62 +183,55 @@ internal object WorkResultPackageCodec {
                 item.getString("disposition") in setOf("UNANSWERED", "NOT_CHECKED", "OK", "ISSUE_FOUND", "NOT_APPLICABLE", "VALUE")) {
                 "Invalid result checklist response"
             }
-            if (version == VERSION) {
-                fun nullableText(key: String) = !item.has(key) || item.isNull(key) || item.get(key) is String
-                require(nullableText("unit") && nullableText("textValue") && nullableText("numberValue") && nullableText("reason")) {
-                    "Invalid checklist answer type"
-                }
-                when (item.getString("disposition")) {
-                    "VALUE" -> require(when (item.getString("responseType")) {
-                        "TEXT" -> !item.isNull("textValue") && item.getString("textValue").isNotBlank()
-                        "NUMBER" -> !item.isNull("numberValue") && runCatching { BigDecimal(item.getString("numberValue")) }.isSuccess
-                        else -> false
-                    }) { "Checklist value does not match response type" }
-                    "ISSUE_FOUND" -> require(item.getString("responseType") == "STATUS") { "Invalid issue response type" }
-                    else -> Unit
-                }
+            fun nullableText(key: String) = !item.has(key) || item.isNull(key) || item.get(key) is String
+            require(nullableText("unit") && nullableText("textValue") && nullableText("numberValue") && nullableText("reason")) {
+                "Invalid checklist answer type"
+            }
+            when (item.getString("disposition")) {
+                "VALUE" -> require(when (item.getString("responseType")) {
+                    "TEXT" -> !item.isNull("textValue") && item.getString("textValue").isNotBlank()
+                    "NUMBER" -> !item.isNull("numberValue") && runCatching { BigDecimal(item.getString("numberValue")) }.isSuccess
+                    else -> false
+                }) { "Checklist value does not match response type" }
+                "ISSUE_FOUND" -> require(item.getString("responseType") == "STATUS") { "Invalid issue response type" }
+                else -> Unit
             }
         }
-        if (version == VERSION) {
-            require(findings.length() <= 1000 && parts.length() <= 1000 && followUps.length() <= 1000) { "Too many result facts" }
-            val issues = (0 until checklist.length()).map { checklist.getJSONObject(it) }
-                .filter { it.getString("disposition") == "ISSUE_FOUND" }
-            require(findings.length() == issues.size) { "Findings differ from checklist issues" }
-            for (index in 0 until findings.length()) {
-                val finding = findings.getJSONObject(index)
-                val issue = issues[index]
-                require(finding.get("position") is Number && finding.getInt("position") == issue.getInt("position") &&
-                    finding.get("label") is String && finding.getString("label") == issue.getString("label") &&
-                    (!finding.has("description") || finding.isNull("description") || finding.get("description") is String) &&
-                    (if (!issue.has("reason") || issue.isNull("reason")) !finding.has("description") || finding.isNull("description")
-                     else finding.getString("description") == issue.getString("reason"))) {
-                    "Finding differs from checklist issue"
-                }
+        require(findings.length() <= 1000 && parts.length() <= 1000 && followUps.length() <= 1000) { "Too many result facts" }
+        val issues = (0 until checklist.length()).map { checklist.getJSONObject(it) }
+            .filter { it.getString("disposition") == "ISSUE_FOUND" }
+        require(findings.length() == issues.size) { "Findings differ from checklist issues" }
+        for (index in 0 until findings.length()) {
+            val finding = findings.getJSONObject(index)
+            val issue = issues[index]
+            require(finding.get("position") is Number && finding.getInt("position") == issue.getInt("position") &&
+                finding.get("label") is String && finding.getString("label") == issue.getString("label") &&
+                (!finding.has("description") || finding.isNull("description") || finding.get("description") is String) &&
+                (if (!issue.has("reason") || issue.isNull("reason")) !finding.has("description") || finding.isNull("description")
+                 else finding.getString("description") == issue.getString("reason"))) {
+                "Finding differs from checklist issue"
             }
-            val partPositions = mutableSetOf<Int>()
-            for (index in 0 until parts.length()) {
-                val part = parts.getJSONObject(index)
-                require(part.get("position") is Number && part.get("position").toString().matches(Regex("[1-9][0-9]*")) &&
-                    partPositions.add(part.getInt("position")) && part.get("description") is String &&
-                    part.getString("description").isNotBlank() && part.get("quantity") is String &&
-                    runCatching { BigDecimal(part.getString("quantity")).signum() > 0 }.getOrDefault(false) &&
-                    part.get("unit") is String && part.getString("unit").isNotBlank()) { "Invalid result part" }
+        }
+        val partPositions = mutableSetOf<Int>()
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            require(part.get("position") is Number && part.get("position").toString().matches(Regex("[1-9][0-9]*")) &&
+                partPositions.add(part.getInt("position")) && part.get("description") is String &&
+                part.getString("description").isNotBlank() && part.get("quantity") is String &&
+                runCatching { BigDecimal(part.getString("quantity")).signum() > 0 }.getOrDefault(false) &&
+                part.get("unit") is String && part.getString("unit").isNotBlank()) { "Invalid result part" }
+        }
+        val followUpIds = mutableSetOf<String>()
+        for (index in 0 until followUps.length()) {
+            val followUp = followUps.getJSONObject(index)
+            require(followUp.get("sourceId") is String && followUpIds.add(followUp.getString("sourceId")) &&
+                followUp.getString("sourceId").isNotBlank() && followUp.get("type") is String &&
+                followUp.get("title") is String && followUp.getString("title").isNotBlank() &&
+                followUp.get("dueDate") is String && followUp.get("state") is String &&
+                (!followUp.has("privatePlanningNote") || followUp.isNull("privatePlanningNote") || followUp.get("privatePlanningNote") is String)) {
+                "Invalid captured follow-up"
             }
-            val followUpIds = mutableSetOf<String>()
-            require(o.getString("followUpCaptureState") != "UNAVAILABLE_LEGACY" || followUps.length() == 0) {
-                "Unavailable follow-ups cannot contain captured records"
-            }
-            for (index in 0 until followUps.length()) {
-                val followUp = followUps.getJSONObject(index)
-                require(followUp.get("sourceId") is String && followUpIds.add(followUp.getString("sourceId")) &&
-                    followUp.getString("sourceId").isNotBlank() && followUp.get("type") is String &&
-                    followUp.get("title") is String && followUp.getString("title").isNotBlank() &&
-                    followUp.get("dueDate") is String && followUp.get("state") is String &&
-                    (!followUp.has("privatePlanningNote") || followUp.isNull("privatePlanningNote") || followUp.get("privatePlanningNote") is String)) {
-                    "Invalid captured follow-up"
-                }
-                java.time.LocalDate.parse(followUp.getString("dueDate"))
-            }
+            java.time.LocalDate.parse(followUp.getString("dueDate"))
         }
         val outcome = o.getString("outcome")
         require(outcome in setOf("PERFORMED", "PARTLY_PERFORMED", "NOT_PERFORMED")) { "Unsupported result outcome" }
@@ -254,18 +242,11 @@ internal object WorkResultPackageCodec {
             require(work.get("publicWork") is String)
             require(work.getString("publicWork").isNotBlank()) { "Performed work needs a description" }
         }
-        val fulfilled = if (work.has("fulfilledObligation")) {
-            require(work.get("fulfilledObligation") is Boolean) { "Invalid fulfillment decision" }
-            work.getBoolean("fulfilledObligation")
-        } else {
-            require(version != VERSION && outcome != "PARTLY_PERFORMED") { "Result needs an explicit fulfillment decision" }
-            false
+        require(work.get("fulfilledObligation") is Boolean) { "Result needs an explicit fulfillment decision" }
+        val fulfilled = work.getBoolean("fulfilledObligation")
+        require(recurrence.get("fulfilledObligation") is Boolean && recurrence.getBoolean("fulfilledObligation") == fulfilled) {
+            "Result recurrence contradicts work"
         }
-        if (recurrence.has("fulfilledObligation")) {
-            require(recurrence.get("fulfilledObligation") is Boolean && recurrence.getBoolean("fulfilledObligation") == fulfilled) {
-                "Result recurrence contradicts work"
-            }
-        } else require(version != VERSION) { "Result recurrence needs a fulfillment decision" }
         if (recurrence.has("intervalCount") && !recurrence.isNull("intervalCount")) require(
             recurrence.get("intervalCount") is Number && recurrence.get("intervalCount").toString().matches(Regex("[1-9][0-9]*"))) {
             "Invalid result interval count"
@@ -286,31 +267,29 @@ internal object WorkResultPackageCodec {
         if (work.has("nextDueDate")) require(nullableDate(work, "nextDueDate") == nextDue) { "Captured next due date differs from recurrence" }
         if (fulfilled) require(oldDue != null && nextDue != null && nextDue > oldDue) { "Fulfilled result needs a later due date" }
         if (outcome == "NOT_PERFORMED") require(nextDue == null) { "Not performed result cannot advance recurrence" }
-        if (version == VERSION) {
-            fun nullableFact(value: JSONObject, key: String): Any? =
-                if (!value.has(key) || value.isNull(key)) null else value.get(key)
-            listOf("planId", "capturedObligationId", "nextDueDateCalculated", "nextDueOverrideReason").forEach { key ->
-                require(nullableFact(work, key) == nullableFact(recurrence, key)) { "Work and recurrence disagree on $key" }
+        fun nullableFact(value: JSONObject, key: String): Any? =
+            if (!value.has(key) || value.isNull(key)) null else value.get(key)
+        listOf("planId", "capturedObligationId", "nextDueDateCalculated", "nextDueOverrideReason").forEach { key ->
+            require(nullableFact(work, key) == nullableFact(recurrence, key)) { "Work and recurrence disagree on $key" }
+        }
+        val calculated = nullableFact(recurrence, "nextDueDateCalculated")
+        val overrideReason = nullableFact(recurrence, "nextDueOverrideReason")
+        require(calculated == null || calculated is Boolean) { "Invalid next due calculation choice" }
+        require(overrideReason == null || overrideReason is String) { "Invalid next due override reason" }
+        if (fulfilled) {
+            require(nullableFact(recurrence, "capturedObligationId") is String &&
+                (nullableFact(recurrence, "capturedObligationId") as String).isNotBlank() &&
+                recurrence.get("intervalCount") is Number && recurrence.get("intervalUnit") is String &&
+                calculated is Boolean) { "Fulfilled result lacks captured recurrence facts" }
+            val expected = com.v16studio.serviceloop.domain.RecurrenceCalculator.nextDate(
+                java.time.LocalDate.parse(o.getString("serviceDate")), recurrence.getInt("intervalCount"),
+                recurrence.getString("intervalUnit")).toString()
+            require(if (calculated) nextDue == expected && overrideReason == null
+                else overrideReason is String && overrideReason.isNotBlank()) {
+                "Next due date contradicts its calculation or override"
             }
-            val calculated = nullableFact(recurrence, "nextDueDateCalculated")
-            val overrideReason = nullableFact(recurrence, "nextDueOverrideReason")
-            require(calculated == null || calculated is Boolean) { "Invalid next due calculation choice" }
-            require(overrideReason == null || overrideReason is String) { "Invalid next due override reason" }
-            if (fulfilled) {
-                require(nullableFact(recurrence, "capturedObligationId") is String &&
-                    (nullableFact(recurrence, "capturedObligationId") as String).isNotBlank() &&
-                    recurrence.get("intervalCount") is Number && recurrence.get("intervalUnit") is String &&
-                    calculated is Boolean) { "Fulfilled result lacks captured recurrence facts" }
-                val expected = com.v16studio.serviceloop.domain.RecurrenceCalculator.nextDate(
-                    java.time.LocalDate.parse(o.getString("serviceDate")), recurrence.getInt("intervalCount"),
-                    recurrence.getString("intervalUnit")).toString()
-                require(if (calculated) nextDue == expected && overrideReason == null
-                    else overrideReason is String && overrideReason.isNotBlank()) {
-                    "Next due date contradicts its calculation or override"
-                }
-            } else require(calculated == null && overrideReason == null && nextDue == null) {
-                "Unfulfilled result cannot change recurrence"
-            }
+        } else require(calculated == null && overrideReason == null && nextDue == null) {
+            "Unfulfilled result cannot change recurrence"
         }
     }
 

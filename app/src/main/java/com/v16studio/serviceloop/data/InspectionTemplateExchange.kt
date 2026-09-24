@@ -71,6 +71,7 @@ object InspectionTemplateCodec {
         require(bytes.size in 1..MAX_BYTES) { "Invalid inspection template file size" }
         val root = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrElse { throw IllegalArgumentException("Malformed inspection template file") }
         require(root.optString("format") == FORMAT && root.optInt("formatVersion", -1) == CURRENT_VERSION) { "Unsupported inspection template file" }
+        require(root.getString("generatedWith") == "ServiceLoop") { "Unsupported inspection template generator" }
         val generatedAt = root.getString("generatedAt").also { Instant.parse(it) }
         val array = root.getJSONArray("templates")
         require(array.length() in 1..MAX_TEMPLATES) { "Invalid inspection template count" }
@@ -84,16 +85,14 @@ object InspectionTemplateCodec {
                 val item = items.getJSONObject(itemIndex)
                 DispatchInspectionItem(item.getInt("position"), item.text("label"), item.text("responseType", 20), item.nullable("unit", 100), item.getBoolean("required"), item.nullable("privateGuidance", 2_000))
             }
-            val origin = template.nullable("originWorkspaceId", 100)
-            val sourceId = template.nullable("sourceEntityId", 200)
-            require((origin == null) == (sourceId == null)) { "Inspection template origin is incomplete" }
-            require(origin == null || TechnicianIdCodec.normalize(origin) == origin) { "Invalid template origin workspace" }
+            val origin = template.text("originWorkspaceId", 100)
+            val sourceId = template.text("sourceEntityId", 200)
+            require(TechnicianIdCodec.normalize(origin) == origin) { "Invalid template origin workspace" }
             val entry = InspectionTemplateTransferEntry(template.text("reference", 200), template.text("name", 200), template.getInt("revision"), parsedItems,
-                originWorkspaceId = origin, sourceEntityId = sourceId, state = template.optString("state", "ACTIVE"))
+                originWorkspaceId = origin, sourceEntityId = sourceId, state = template.text("state"))
             require(entry.revision > 0 && entry.items.map { it.position } == (1..entry.items.size).toList()) { "Inspection items must be ordered" }
             require(entry.items.all { it.responseType in setOf("STATUS", "TEXT", "NUMBER") }) { "Unsupported inspection response type" }
-            val declared = template.optString("fingerprint").takeIf { it.isNotBlank() }
-            require(declared == null || declared == fingerprint(entry) || (!template.has("state") && declared == legacyFingerprint(entry))) { "Inspection template fingerprint does not match its content" }
+            require(template.text("fingerprint", 64) == fingerprint(entry)) { "Inspection template fingerprint does not match its content" }
             entry.copy(fingerprint = fingerprint(entry))
         }
         require(templates.map { it.reference }.distinct().size == templates.size) { "Duplicate inspection template reference" }
@@ -103,13 +102,6 @@ object InspectionTemplateCodec {
     fun fingerprint(value: InspectionTemplateTransferEntry): String = sha256(value.normalized().let { template ->
         buildString {
             append(template.reference).append('|').append(template.name).append('|').append(template.revision).append('|').append(template.state)
-            template.items.forEach { item -> append('|').append(item.position).append(':').append(item.label).append(':').append(item.responseType).append(':').append(item.unit.orEmpty()).append(':').append(item.required).append(':').append(item.privateGuidance.orEmpty()) }
-        }
-    })
-
-    private fun legacyFingerprint(value: InspectionTemplateTransferEntry): String = sha256(value.normalized().let { template ->
-        buildString {
-            append(template.reference).append('|').append(template.name).append('|').append(template.revision)
             template.items.forEach { item -> append('|').append(item.position).append(':').append(item.label).append(':').append(item.responseType).append(':').append(item.unit.orEmpty()).append(':').append(item.required).append(':').append(item.privateGuidance.orEmpty()) }
         }
     })
@@ -171,7 +163,7 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
         return InspectionTemplateImportPreview(transfer, entries)
     }
 
-    suspend fun import(preview: InspectionTemplateImportPreview, exporterId: String?, createSeparate: Set<String> = emptySet()): InspectionTemplateImportResult = database.withTransaction {
+    suspend fun import(preview: InspectionTemplateImportPreview, exporterId: String, createSeparate: Set<String> = emptySet()): InspectionTemplateImportResult = database.withTransaction {
         ServiceLoopPeerTrustStore(database).requireTrustedInCurrentTransaction(exporterId)
         require(preview.canImport(createSeparate)) { "Resolve inspection template conflicts before importing" }
         val existing = dao.reusableTemplates().associateBy { it.reference }.toMutableMap()

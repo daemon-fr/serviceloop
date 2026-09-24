@@ -32,23 +32,43 @@ class B049WorkResultCodecTest {
         .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1)
         .put("assignmentMaterialHash", "a".repeat(64))
         .put("technicianId", exporter).put("technicianName", "Field technician")
-        .put("serviceDate", "2026-09-23").put("outcome", "PERFORMED")
+        .put("serviceDate", "2026-09-23")
+        .put("originWorkspaceId", exporter).put("sourceVisitId", "source-visit").put("sourceWorkItemId", "source-work")
+        .put("sourceWorkItemPosition", 1).put("sourceFinalRevisionNumber", 1).put("visitReference", "SOURCE-VISIT")
+        .put("recordedAt", "2026-09-23T09:00:00Z").put("supersedesSourceFinalRevisionId", JSONObject.NULL)
+        .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
+        .put("followUpCaptureState", "CAPTURED_AT_REVISION").put("sourcePhotos", JSONArray())
+        .put("outcome", "PERFORMED")
         .put("customerSnapshot", JSONObject().put("name", "Customer"))
         .put("siteSnapshot", JSONObject().put("name", "Site"))
-        .put("subjectSnapshot", JSONObject().put("equipmentName", "Machine"))
-        .put("workSnapshot", JSONObject().put("serviceName", "Service").put("publicWork", "Serviced"))
+        .put("subjectSnapshot", JSONObject().put("type", "EQUIPMENT").put("equipmentName", "Machine"))
+        .put("workSnapshot", JSONObject().put("serviceName", "Service").put("publicWork", "Serviced").put("fulfilledObligation", false)
+            .put("planId", JSONObject.NULL).put("capturedObligationId", JSONObject.NULL)
+            .put("nextDueDateCalculated", JSONObject.NULL).put("nextDueOverrideReason", JSONObject.NULL))
         .put("checklist", JSONArray()).put("findings", JSONArray()).put("parts", JSONArray()).put("followUps", JSONArray())
-        .put("recurrence", JSONObject())
+        .put("recurrence", JSONObject().put("fulfilledObligation", false).put("oldDueDate", JSONObject.NULL).put("nextDueDate", JSONObject.NULL)
+            .put("planId", JSONObject.NULL).put("capturedObligationId", JSONObject.NULL).put("intervalCount", JSONObject.NULL)
+            .put("intervalUnit", JSONObject.NULL).put("nextDueDateCalculated", JSONObject.NULL).put("nextDueOverrideReason", JSONObject.NULL))
 
     private fun photo(): ByteArray {
         val image = Bitmap.createBitmap(16, 12, Bitmap.Config.ARGB_8888)
         return ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 75, it); image.recycle() }.toByteArray()
     }
 
-    private fun encoded(): ByteArray = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(
-        "package-1", exporter, issuer, "2026-09-23T10:00:00Z",
-        listOf(WorkResultPackageCodec.Result(result(), listOf(WorkResultPackageCodec.Photo("photo-1", photo(), "A public photo", true, "PUBLIC", "item-1", 16, 12)))),
-    ))
+    private fun sourcePhotoFacts(bytes: ByteArray, id: String = "photo-1", caption: String? = null) = JSONArray().put(JSONObject()
+        .put("sourcePhotoId", id).put("sourceWorkItemId", "source-work").put("position", 1)
+        .put("originalByteSize", bytes.size).put("originalSha256", WorkResultPackageCodec.sha256(bytes))
+        .put("originalMimeType", "image/jpeg").put("caption", caption).put("visibility", "PUBLIC")
+        .put("includeInReport", true).put("addedInCorrection", false).put("addedAtEpochMillis", JSONObject.NULL))
+
+    private fun encoded(): ByteArray {
+        val bytes = photo()
+        val record = result().put("sourcePhotos", sourcePhotoFacts(bytes, caption = "A public photo"))
+        return WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(
+            "package-1", exporter, issuer, "2026-09-23T10:00:00Z",
+            listOf(WorkResultPackageCodec.Result(record, listOf(WorkResultPackageCodec.Photo("photo-1", bytes, "A public photo", true, "PUBLIC", "item-1", 16, 12)))),
+        ))
+    }
 
     @Test fun roundTripPreservesStructuredResultAndPhotoIntegrity() {
         val bytes = encoded()
@@ -83,16 +103,21 @@ class B049WorkResultCodecTest {
         ))
         assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "DONE")) }
         assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "NOT_PERFORMED")
-            .put("workSnapshot", JSONObject().put("notPerformedReason", "Unavailable").put("fulfilledObligation", true))) }
-        assertThrows(IllegalArgumentException::class.java) { encode(result().put("outcome", "PARTLY_PERFORMED")) }
+            .put("workSnapshot", JSONObject().put("serviceName", "Service").put("notPerformedReason", "Unavailable").put("fulfilledObligation", true))) }
+        val partial = result().put("outcome", "PARTLY_PERFORMED")
+        assertEquals("PARTLY_PERFORMED", WorkResultPackageCodec.decode(encode(partial)).results.single().value.getString("outcome"))
     }
 
     @Test fun retainedSourcePhotoMayAppearInTwoDistinctFinalRevisions() {
-        val first = WorkResultPackageCodec.Result(result(), listOf(WorkResultPackageCodec.Photo("photo-1", photo(), "Kept", true, "PUBLIC", "item-1", 16, 12)))
-        val second = WorkResultPackageCodec.Result(JSONObject(result().toString()).put("sourceFinalRevisionId", "revision-2"), first.photos)
-        val bytes = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("corrections", exporter, issuer,
+        val bytes = photo()
+        val first = WorkResultPackageCodec.Result(result().put("sourcePhotos", sourcePhotoFacts(bytes, caption = "Kept")), listOf(WorkResultPackageCodec.Photo("photo-1", bytes, "Kept", true, "PUBLIC", "item-1", 16, 12)))
+        val secondRecord = JSONObject(first.value.toString()).put("sourceFinalRevisionId", "revision-2")
+            .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "revision-1")
+            .put("recordedAt", "2026-09-24T10:00:00Z")
+        val second = WorkResultPackageCodec.Result(secondRecord, first.photos)
+        val encodedPackage = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("corrections", exporter, issuer,
             "2026-09-23T10:00:00Z", listOf(first, second)))
-        assertEquals(2, WorkResultPackageCodec.decode(bytes).results.size)
+        assertEquals(2, WorkResultPackageCodec.decode(encodedPackage).results.size)
     }
 
     @Test fun photoDerivativeIsJpegWithinReportQualityBoundsAndSourceRemainsUnchanged() {
@@ -119,7 +144,15 @@ class B049WorkResultCodecTest {
         val source = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it); bitmap.recycle() }.toByteArray()
         val derivative = AppOwnedImageNormalizer.workResultDerivative(source)
         val photos = (1..12).map { index -> WorkResultPackageCodec.Photo("source-photo-$index", derivative.bytes, null, true, "PUBLIC", "item-1", derivative.width, derivative.height) }
-        val bytes = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("measured-package", exporter, issuer, "2026-09-23T10:00:00Z", listOf(WorkResultPackageCodec.Result(result(), photos))))
+        val facts = JSONArray().also { array -> photos.forEach { item ->
+            array.put(JSONObject().put("sourcePhotoId", item.sourcePhotoId).put("sourceWorkItemId", "source-work")
+                .put("position", array.length() + 1).put("originalByteSize", item.bytes.size)
+                .put("originalSha256", WorkResultPackageCodec.sha256(item.bytes)).put("originalMimeType", "image/jpeg")
+                .put("caption", JSONObject.NULL).put("visibility", "PUBLIC").put("includeInReport", true)
+                .put("addedInCorrection", false).put("addedAtEpochMillis", JSONObject.NULL))
+        } }
+        val record = result().put("sourcePhotos", facts)
+        val bytes = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("measured-package", exporter, issuer, "2026-09-23T10:00:00Z", listOf(WorkResultPackageCodec.Result(record, photos))))
         assertEquals(12, WorkResultPackageCodec.decode(bytes).results.single().photos.size)
         assertTrue(bytes.size <= ServiceLoopSyncEnvelopeCodec.MAX_PACKAGE_BYTES)
         println("B049_WORK_RESULT_FIXTURE source=${source.size} derivative=${derivative.bytes.size} compressedPackage=${bytes.size} photos=12 dimensions=${derivative.width}x${derivative.height}")

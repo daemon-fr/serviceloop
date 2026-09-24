@@ -57,9 +57,6 @@ class RecoveryPackage(
         }
         val databaseObject = JSONObject(rawSnapshot.toString(Charsets.UTF_8))
         failureInjector(FailurePoint.AFTER_BACKUP_SNAPSHOT)
-        // An unopened preference store can have no persisted singleton yet. Capture the
-        // product default as portable state so this backup passes the same restore contract.
-        if (tableRows(databaseObject, "reminder_preferences").isEmpty()) normalizeLegacyReminderState(databaseObject)
         val files = requiredFiles(databaseObject)
         val missing = files.filterNot(::matchesRequiredFile).map { it.path }
         if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing or corrupt")
@@ -105,7 +102,7 @@ class RecoveryPackage(
         val manifest = JSONObject(manifestBytes.toString(Charsets.UTF_8))
         val version = manifest.getInt("formatVersion")
         require(version <= FORMAT_VERSION) { "This backup needs a newer ServiceLoop version" }
-        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS) { "Unsupported backup format" }
+        require(version == FORMAT_VERSION && manifest.getInt("schemaVersion") == SCHEMA_VERSION) { "Unsupported backup format" }
         require(sha256(databaseBytes) == manifest.getString("databaseSha256")) { "Database snapshot integrity check failed" }
         val declaredFiles = manifest.getJSONArray("files")
         val paths = mutableSetOf<String>()
@@ -138,7 +135,7 @@ class RecoveryPackage(
         require(manifest.getInt("formatVersion") == FORMAT_VERSION &&
             manifest.getString("datasetId") == inspection.datasetId &&
             manifest.getLong("snapshotAtEpochMillis") == inspection.snapshotAtEpochMillis) { "Recovery inspection no longer matches the staged package" }
-        require(manifest.getInt("schemaVersion") == databaseObject.getInt("schemaVersion") && manifest.getInt("schemaVersion") in SUPPORTED_SCHEMA_VERSIONS)
+        require(manifest.getInt("schemaVersion") == databaseObject.getInt("schemaVersion") && manifest.getInt("schemaVersion") == SCHEMA_VERSION)
         require(sha256(entries.getValue("database.json")) == manifest.getString("databaseSha256")) { "Database snapshot integrity check failed" }
         require(tableRows(databaseObject, "recovery_metadata").single().getString("datasetId") == manifest.getString("datasetId")) { "Backup dataset identity disagrees" }
         validateDatabase(databaseObject)
@@ -268,9 +265,16 @@ class RecoveryPackage(
         val db = database.openHelper.writableDatabase
         val tables = JSONArray()
         TABLE_ORDER.forEach { table ->
+            val columns = JSONArray()
+            db.query("PRAGMA table_info(" + table + ")").use { cursor ->
+                while (cursor.moveToNext()) columns.put(JSONObject()
+                    .put("name", cursor.getString(1))
+                    .put("type", cursor.getString(2).uppercase()))
+            }
+            require(columns.length() > 0) { "Current database table is missing: $table" }
             val rows = JSONArray()
-            db.query("SELECT * FROM `$table`").use { cursor -> while (cursor.moveToNext()) rows.put(cursorRow(cursor)) }
-            tables.put(JSONObject().put("name", table).put("rows", rows))
+            db.query("SELECT * FROM " + table).use { cursor -> while (cursor.moveToNext()) rows.put(cursorRow(cursor)) }
+            tables.put(JSONObject().put("name", table).put("columns", columns).put("rows", rows))
         }
         return JSONObject().put("schemaVersion", SCHEMA_VERSION).put("tables", tables).toString().toByteArray(Charsets.UTF_8)
     }
@@ -289,56 +293,53 @@ class RecoveryPackage(
     }
 
     private fun validateDatabase(root: JSONObject) {
-        val sourceVersion = root.getInt("schemaVersion")
-        require(sourceVersion in SUPPORTED_SCHEMA_VERSIONS) { "Unsupported Recovery schema" }
-        val originalTables = root.getJSONArray("tables")
-        val declaredNames = (0 until originalTables.length()).map { originalTables.getJSONObject(it).getString("name") }
-        require(declaredNames == expectedTables(sourceVersion)) { "Recovery source table declarations are incomplete, duplicated, or out of order" }
-        originalTables.let { tables ->
-            for (index in 0 until tables.length()) {
-                val declaration = tables.getJSONObject(index)
-                val rows = declaration.getJSONArray("rows")
-                require(rows.length() <= MAX_ROWS_PER_TABLE) { "Backup contains too many records" }
-                val expectedColumns = RecoverySourceShapes.columns(sourceVersion, declaration.getString("name"))
-                val columnTypes = mutableMapOf<String, String>()
-                database.openHelper.readableDatabase.query("PRAGMA table_info(\"${declaration.getString("name")}\")").use { cursor ->
-                    while (cursor.moveToNext()) columnTypes[cursor.getString(1)] = cursor.getString(2).uppercase()
-                }
-                require(expectedColumns.all { it in columnTypes }) { "Recovery source has unknown column types" }
-                for (rowIndex in 0 until rows.length()) {
-                    val row = rows.getJSONObject(rowIndex)
-                    require(row.keys().asSequence().toSet() == expectedColumns) {
-                        "Recovery source row has missing or conflicting columns in ${declaration.getString("name")}"
-                    }
-                    expectedColumns.forEach { column ->
-                        val value = row.get(column)
-                        if (value != JSONObject.NULL) require(when (columnTypes.getValue(column)) {
-                            "TEXT" -> value is String
-                            "INTEGER" -> value is Number && value.toString().toLongOrNull() != null
-                            "REAL" -> value is Number
-                            "BLOB" -> value is JSONObject && value.has("blob") && value.get("blob") is String
-                            else -> false
-                        }) { "Recovery source column has an invalid type: ${declaration.getString("name")}.$column" }
-                    }
+        require(root.getInt("schemaVersion") == SCHEMA_VERSION) { "Unsupported Recovery schema" }
+        val tables = root.getJSONArray("tables")
+        require(tables.length() == TABLE_ORDER.size) { "Recovery table declarations are incomplete" }
+        val expectedTypesByTable = TABLE_ORDER.associateWith { table ->
+            buildMap {
+                database.openHelper.readableDatabase.query("PRAGMA table_info(" + table + ")").use { cursor ->
+                    while (cursor.moveToNext()) put(cursor.getString(1), cursor.getString(2).uppercase())
                 }
             }
         }
-        if (sourceVersion < 11) normalizeLegacyReminderState(root)
-        if (sourceVersion < 14) normalizeWorkingInputBuffers(root)
-        if (sourceVersion < 15) normalizeB026State(root)
-        if (sourceVersion < 16) normalizeCustomerContacts(root)
-        if (sourceVersion < 18) normalizeContactOrder(root)
-        if (sourceVersion < 17) normalizeTrustedServiceLoopIds(root)
-        if (sourceVersion < 18) normalizeB049Tables(root)
-        if (sourceVersion < 19) normalizeRepairColumns(root)
-        root.put("schemaVersion", SCHEMA_VERSION)
-        val tables = root.getJSONArray("tables")
-        require(tables.length() == TABLE_ORDER.size)
-        val names = mutableSetOf<String>()
-        for (index in 0 until tables.length()) {
-            val table = tables.getJSONObject(index)
-            require(table.getString("name") == TABLE_ORDER[index] && names.add(TABLE_ORDER[index])) { "Unexpected database table" }
-            require(table.getJSONArray("rows").length() <= MAX_ROWS_PER_TABLE) { "Backup contains too many records" }
+        TABLE_ORDER.forEachIndexed { index, tableName ->
+            val declaration = tables.getJSONObject(index)
+            require(declaration.keys().asSequence().toSet() == setOf("name", "columns", "rows") &&
+                declaration.getString("name") == tableName) {
+                "Recovery source table declarations are incomplete, duplicated, or out of order"
+            }
+            val rows = declaration.getJSONArray("rows")
+            require(rows.length() <= MAX_ROWS_PER_TABLE) { "Backup contains too many records" }
+            val expectedTypes = expectedTypesByTable.getValue(tableName)
+            val declaredColumns = declaration.getJSONArray("columns")
+            val declaredNames = (0 until declaredColumns.length()).map { columnIndex ->
+                val column = declaredColumns.getJSONObject(columnIndex)
+                require(column.keys().asSequence().toSet() == setOf("name", "type")) { "Recovery source column declaration is invalid" }
+                val name = column.getString("name")
+                require(column.getString("type").uppercase() == expectedTypes[name]) {
+                    "Recovery source declares an unknown or conflicting column: $tableName.$name"
+                }
+                name
+            }
+            require(declaredNames == expectedTypes.keys.toList()) { "Recovery source columns are incomplete, duplicated, or out of order in $tableName" }
+            val columns = declaredNames.toSet()
+            for (rowIndex in 0 until rows.length()) {
+                val row = rows.getJSONObject(rowIndex)
+                require(row.keys().asSequence().toSet() == columns) {
+                    "Recovery source row has missing or conflicting columns in $tableName"
+                }
+                columns.forEach { column ->
+                    val value = row.get(column)
+                    if (value != JSONObject.NULL) require(when (expectedTypes.getValue(column)) {
+                        "TEXT" -> value is String
+                        "INTEGER" -> value is Number && value.toString().toLongOrNull() != null
+                        "REAL" -> value is Number
+                        "BLOB" -> value is JSONObject && value.keys().asSequence().toSet() == setOf("blob") && value.get("blob") is String
+                        else -> false
+                    }) { "Recovery source column has an invalid type: $tableName.$column" }
+                }
+            }
         }
         fun ids(table: String, column: String = "id") = tableRows(root, table).map { it.getString(column) }.toSet()
         val customers = ids("customers"); val sites = ids("sites"); val equipment = ids("equipment"); val plans = ids("service_plans")
@@ -379,7 +380,8 @@ class RecoveryPackage(
         }
         val identity = tableRows(root, "technician_identity")
         require(identity.size == 1 && identity.single().getString("id") == "primary" && identity.single().getString("technicianId").isNotBlank()) { "Technician identity singleton is invalid" }
-        val ownId = TechnicianIdCodec.normalize(identity.single().getString("technicianId")) ?: identity.single().getString("technicianId")
+        val ownId = TechnicianIdCodec.normalize(identity.single().getString("technicianId"))
+            ?: throw IllegalArgumentException("Technician identity is invalid")
         val trustedRows = tableRows(root, "trusted_service_loop_ids")
         val trustedIds = trustedRows.map { it.getString("peerId") }
         require(trustedIds.size == trustedIds.toSet().size && trustedRows.all { row ->
@@ -408,29 +410,25 @@ class RecoveryPackage(
             owner != null && owner.getString("dispatchItemId") == row.getString("dispatchItemId")
         }) { "A received photo has the wrong result owner" }
         remote.forEach { row ->
-            if (!row.isNull("sourcePayloadJson")) {
-                val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "WORK_RESULT")
-                require(source.getString("resultId") == row.getString("resultId") &&
-                    source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
-                    source.getString("technicianId") == row.getString("technicianId") &&
-                    source.getString("dispatchVisitId") == row.getString("dispatchVisitId") &&
-                    source.getString("dispatchItemId") == row.getString("dispatchItemId") &&
-                    source.getString("serviceDate") == row.getString("serviceDate") &&
-                    source.getString("outcome") == row.getString("outcome")) { "Received result source snapshot disagrees with its indexed facts" }
-            }
+            val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "WORK_RESULT")
+            require(source.getString("resultId") == row.getString("resultId") &&
+                source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
+                source.getString("technicianId") == row.getString("technicianId") &&
+                source.getString("dispatchVisitId") == row.getString("dispatchVisitId") &&
+                source.getString("dispatchItemId") == row.getString("dispatchItemId") &&
+                source.getString("serviceDate") == row.getString("serviceDate") &&
+                source.getString("outcome") == row.getString("outcome")) { "Received result source snapshot disagrees with its indexed facts" }
         }
         val transfers = tableRows(root, "transferred_final_results")
         val transfersById = transfers.associateBy { it.getString("id") }
         transfers.forEach { row ->
-            if (!row.isNull("sourcePayloadJson")) {
-                val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "PERFORMED_WORK")
-                require(source.getString("originWorkspaceId") == row.getString("originWorkspaceId") &&
-                    source.getString("sourceVisitId") == row.getString("sourceVisitId") &&
-                    source.getString("sourceWorkItemId") == row.getString("sourceWorkItemId") &&
-                    source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
-                    source.getString("serviceDate") == row.getString("serviceDate") &&
-                    source.getString("outcome") == row.getString("outcome")) { "Transferred source snapshot disagrees with its indexed facts" }
-            }
+            val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "PERFORMED_WORK")
+            require(source.getString("originWorkspaceId") == row.getString("originWorkspaceId") &&
+                source.getString("sourceVisitId") == row.getString("sourceVisitId") &&
+                source.getString("sourceWorkItemId") == row.getString("sourceWorkItemId") &&
+                source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
+                source.getString("serviceDate") == row.getString("serviceDate") &&
+                source.getString("outcome") == row.getString("outcome")) { "Transferred source snapshot disagrees with its indexed facts" }
         }
         require(tableRows(root, "transferred_evidence").all { evidence ->
             if (evidence.isNull("transferredFinalResultId")) true else {
@@ -469,34 +467,6 @@ class RecoveryPackage(
         }) { "An aggregate source does not resolve to its exact final revision" }
         require(tableRows(root, "aggregate_report_renditions").all { it.getString("aggregateReportId") in aggregateIds }) {
             "An aggregate rendition has no report owner"
-        }
-    }
-
-    private fun expectedTables(version: Int): List<String> = TABLE_ORDER.filter { table ->
-        when (table) {
-            "reminder_preferences" -> version >= 11
-            "working_input_buffers" -> version >= 14
-            "customer_contacts" -> version >= 16
-            "trusted_service_loop_ids" -> version >= 17
-            "work_result_receipts", "remote_final_results", "remote_result_photos",
-            "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images",
-            "data_transfer_bindings", "transferred_final_results", "transferred_evidence",
-            "transferred_history_entries" -> version >= 18
-            else -> true
-        }
-    }
-
-    private fun normalizeRepairColumns(root: JSONObject) {
-        listOf(
-            "final_work_items" to "followUpsSnapshotJson",
-            "remote_final_results" to "sourcePayloadJson",
-            "transferred_final_results" to "sourcePayloadJson",
-            "retained_images" to "originalDeletionRequestedAtEpochMillis",
-        ).forEach { (table, column) ->
-            tableRows(root, table).forEach { row ->
-                require(!row.has(column)) { "Recovery source claims a newer column" }
-                row.put(column, JSONObject.NULL)
-            }
         }
     }
 
@@ -558,133 +528,6 @@ class RecoveryPackage(
             if (table.getString("name") == name) return table.getJSONArray("rows").let { rows -> List(rows.length()) { rows.getJSONObject(it) } }
         }
         error("Missing table $name")
-    }
-
-    /** v9/v10 backups predate portable reminder preferences; adopt exact product defaults. */
-    private fun normalizeLegacyReminderState(root: JSONObject) {
-        val tables = root.getJSONArray("tables")
-        for (index in 0 until tables.length()) {
-            val table = tables.getJSONObject(index)
-            if (table.getString("name") == "reminder_preferences") {
-                if (table.getJSONArray("rows").length() == 0) table.put("rows", JSONArray().put(defaultReminderRow()))
-                return
-            }
-        }
-        val normalized = JSONArray()
-        for (index in 0 until tables.length()) {
-            val table = tables.getJSONObject(index)
-            if (table.getString("name") == "recovery_metadata") {
-                normalized.put(JSONObject().put("name", "reminder_preferences").put("rows", JSONArray().put(defaultReminderRow())))
-            }
-            normalized.put(table)
-        }
-        root.put("tables", normalized)
-    }
-
-    /** v9-v13 backups predate durable raw Service edit buffers. Do not infer any rows. */
-    private fun normalizeWorkingInputBuffers(root: JSONObject) {
-        val tables = root.getJSONArray("tables")
-        if ((0 until tables.length()).any { tables.getJSONObject(it).getString("name") == "working_input_buffers" }) return
-        val normalized = JSONArray()
-        for (index in 0 until tables.length()) {
-            val table = tables.getJSONObject(index)
-            normalized.put(table)
-            if (table.getString("name") == "work_item_private_drafts") {
-                normalized.put(JSONObject().put("name", "working_input_buffers").put("rows", JSONArray()))
-            }
-        }
-        root.put("tables", normalized)
-    }
-
-    /** B026 backups predate typed customers and flexible work subjects. Legacy rows are known Equipment work. */
-    private fun normalizeB026State(root: JSONObject) {
-        tableRows(root, "customers").forEach { row -> if (!row.has("customerType") || row.isNull("customerType")) row.put("customerType", CustomerType.STANDARD.code) }
-        tableRows(root, "work_items").forEach { row ->
-            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
-            if (!row.has("equipmentDescriptionSnapshot")) row.put("equipmentDescriptionSnapshot", JSONObject.NULL)
-        }
-        tableRows(root, "final_work_items").forEach { row ->
-            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
-            if (!row.has("equipmentDescription")) row.put("equipmentDescription", JSONObject.NULL)
-        }
-        tableRows(root, "dispatch_outbox_items").forEach { row ->
-            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
-            if (!row.has("equipmentDescription")) row.put("equipmentDescription", JSONObject.NULL)
-        }
-        tableRows(root, "dispatch_item_bindings").forEach { row ->
-            if (!row.has("subjectType") || row.isNull("subjectType")) row.put("subjectType", WorkSubjectType.EQUIPMENT.code)
-            if (!row.has("equipmentDescriptionSnapshot")) row.put("equipmentDescriptionSnapshot", JSONObject.NULL)
-        }
-    }
-
-    private fun normalizeCustomerContacts(root: JSONObject) {
-        val tables = root.getJSONArray("tables")
-        if ((0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "customer_contacts" }) {
-            val contacts = JSONArray()
-            val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "customers" }?.plus(1) ?: 0
-            val normalized = JSONArray()
-            for (index in 0 until tables.length()) {
-                if (index == insertAt) normalized.put(JSONObject().put("name", "customer_contacts").put("rows", contacts))
-                normalized.put(tables.get(index))
-            }
-            root.put("tables", normalized)
-        }
-    }
-
-    private fun normalizeContactOrder(root: JSONObject) {
-        val rows = tableRows(root, "customer_contacts")
-        rows.groupBy { it.getString("customerId") }.values.forEach { contacts ->
-            val ordered = if (contacts.all { it.has("position") && it.optInt("position") > 0 } &&
-                contacts.map { it.optInt("position") }.toSet().size == contacts.size) {
-                contacts.sortedWith(compareBy<JSONObject> { it.getInt("position") }.thenBy { it.getString("id") })
-            } else {
-                contacts.sortedWith(compareByDescending<JSONObject> { it.optLong("modifiedAtEpochMillis") }.thenBy { it.getString("id") })
-            }
-            ordered.forEachIndexed { index, row ->
-                if (!row.has("notes")) row.put("notes", JSONObject.NULL)
-                row.put("position", index + 1)
-            }
-        }
-    }
-
-    /** Recovery schema v17 adds device-local peer trust without inventing entries in old backups. */
-    internal fun normalizeTrustedServiceLoopIds(root: JSONObject) {
-        val tables = root.getJSONArray("tables")
-        if ((0 until tables.length()).none { tables.getJSONObject(it).getString("name") == "trusted_service_loop_ids" }) {
-            val insertAt = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == "technician_identity" }?.plus(1) ?: tables.length()
-            for (index in tables.length() downTo insertAt + 1) tables.put(index, tables.get(index - 1))
-            tables.put(insertAt, JSONObject().put("name", "trusted_service_loop_ids").put("rows", JSONArray()))
-        }
-    }
-
-    private fun normalizeB049Tables(root: JSONObject) {
-        normalizeB049PhotoFlags(root)
-        tableRows(root, "dispatch_outbox_visits").forEach { if (!it.has("localVisitId")) it.put("localVisitId", JSONObject.NULL) }
-        tableRows(root, "dispatch_outbox_items").forEach { if (!it.has("localWorkItemId")) it.put("localWorkItemId", JSONObject.NULL) }
-        tableRows(root, "dispatch_visit_bindings").forEach { if (!it.has("assignmentIssuerId")) it.put("assignmentIssuerId", JSONObject.NULL) }
-        tableRows(root, "final_dispatch_visits").forEach {
-            if (!it.has("assignmentMaterialHash")) it.put("assignmentMaterialHash", JSONObject.NULL)
-            if (!it.has("assignmentIssuerId")) it.put("assignmentIssuerId", JSONObject.NULL)
-        }
-        val tables = root.getJSONArray("tables")
-        val present = (0 until tables.length()).map { tables.getJSONObject(it).getString("name") }.toSet()
-        require(present.all { it in TABLE_ORDER }) { "Unexpected database table" }
-        val newTables = setOf("work_result_receipts", "remote_final_results", "remote_result_photos", "aggregate_reports", "aggregate_report_sources", "aggregate_report_renditions", "retained_images", "data_transfer_bindings", "transferred_final_results", "transferred_evidence", "transferred_history_entries")
-        require(TABLE_ORDER.filterNot { it in newTables }.all { it in present }) { "Backup is missing an established business table" }
-        val normalized = JSONArray()
-        TABLE_ORDER.forEach { name ->
-            val existing = (0 until tables.length()).firstOrNull { tables.getJSONObject(it).getString("name") == name }
-            normalized.put(if (existing != null) tables.getJSONObject(existing) else JSONObject().put("name", name).put("rows", JSONArray()))
-        }
-        root.put("tables", normalized)
-    }
-
-    internal fun normalizeB049PhotoFlags(root: JSONObject) {
-        tableRows(root, "attachments").forEach { if (!it.has("visibility")) it.put("visibility", "PUBLIC") }
-        tableRows(root, "final_photo_entries").forEach {
-            if (!it.has("includedInCustomerReport")) it.put("includedInCustomerReport", 1)
-            if (!it.has("visibility")) it.put("visibility", "PUBLIC")
-        }
     }
 
     private fun validateB026Rows(root: JSONObject, equipmentIds: Set<String>, planIds: Set<String>) {
@@ -956,9 +799,8 @@ class RecoveryPackage(
             Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
             check(!source.exists() && target.isFile) { "Atomic business-file adoption failed" }
         }
-        internal const val SCHEMA_VERSION = 19
-        private val SUPPORTED_SCHEMA_VERSIONS = (9..SCHEMA_VERSION).toSet()
-        const val FORMAT_VERSION = 2
+        internal const val SCHEMA_VERSION = 1
+        const val FORMAT_VERSION = 1
         const val ITERATIONS = 310_000
         const val MAX_PACKAGE_BYTES = 512 * 1024 * 1024
         const val MAX_EXPANDED_BYTES = 1024L * 1024 * 1024

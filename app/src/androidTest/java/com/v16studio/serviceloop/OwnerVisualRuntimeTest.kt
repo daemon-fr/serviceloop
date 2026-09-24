@@ -85,7 +85,7 @@ class OwnerVisualRuntimeTest {
                 dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("w", "")))
                 dao.insertFinalRecord(FinalRecordEntity("r", "v", "rev", 2))
                 dao.insertFinalRevision(FinalRecordRevisionEntity("rev", "r", 1, "V-UI", "2026-09-05", 2, "Customer", "Site", "Address", "Business", "Technician", null, null, null, "Europe/Bucharest", null, "CU-1", "ST-1"))
-                dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("fw", "rev", 1, "w", "e", "Equipment", "EQ-1", "TECH-1", "Maker", "Model", "Serial", "Service", "p", "P-1", "NOT_PERFORMED", null, "Access unavailable", false, "2026-09-01", null, 3, "MONTHS", "o", null)))
+                dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("fw", "rev", 1, "w", "e", "Equipment", "EQ-1", "TECH-1", "Maker", "Model", "Serial", "Service", "p", "P-1", "NOT_PERFORMED", null, "Access unavailable", false, "2026-09-01", null, 3, "MONTHS", "o", null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
                 dao.finalizeVisit("v", 2)
             }
             val repository = RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)

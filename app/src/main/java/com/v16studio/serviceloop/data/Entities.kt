@@ -165,9 +165,9 @@ data class WorkingVisitEntity(
     val scheduleChangeReason: String? = null,
     val cancellationReason: String? = null,
     val cancelledAtEpochMillis: Long? = null,
-    /** Why a canceled Visit became canceled; null for non-canceled Visits and legacy rows. */
+    /** Why a canceled Visit became canceled; null for non-canceled Visits. */
     val cancellationOrigin: String? = null,
-    /** null uses the saved default; 0 disables this Visit; otherwise a supported lead, including legacy 120. */
+    /** null uses the saved default; 0 disables this Visit; otherwise a supported lead in minutes. */
     val appointmentReminderLeadMinutes: Int? = null,
 )
 
@@ -305,7 +305,7 @@ data class FinalWorkItemEntity(
     val nextDueOverrideReason: String? = null,
     @ColumnInfo(defaultValue = "'EQUIPMENT'") val subjectType: String = "EQUIPMENT",
     val equipmentDescription: String? = null,
-    val followUpsSnapshotJson: String? = null,
+    val followUpsSnapshotJson: String,
 )
 
 @Entity(

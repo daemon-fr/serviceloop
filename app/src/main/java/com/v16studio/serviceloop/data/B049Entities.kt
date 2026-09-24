@@ -62,7 +62,7 @@ data class RemoteFinalResultEntity(
     val provenanceJson: String,
     val importedAtEpochMillis: Long,
     val voidedAtEpochMillis: Long? = null,
-    val sourcePayloadJson: String? = null,
+    val sourcePayloadJson: String,
 )
 
 @Entity(tableName = "remote_result_photos", indices = [Index(value = ["remoteFinalResultId", "sourcePhotoId"], unique = true)])

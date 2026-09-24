@@ -29,15 +29,14 @@ data class DataTransferOptions(
 )
 
 object DataTransferCodec {
-    const val VERSION = 2
-    private val supportedFamilyVersions: Map<DataTransferFamily, Set<Int>> = DataTransferFamily.entries.associateWith {
-        if (it == DataTransferFamily.PERFORMED_WORK) setOf(1, 2) else setOf(1)
-    }
+    const val VERSION = 1
+    private val supportedFamilyVersions: Map<DataTransferFamily, Set<Int>> =
+        DataTransferFamily.entries.associateWith { setOf(1) }
 
     private fun familyVersion(family: DataTransferFamily, bytes: ByteArray): Int {
         val body = JSONObject(bytes.toString(Charsets.UTF_8))
-        val version = if (family == DataTransferFamily.INSPECTION_TEMPLATES) body.optInt("formatVersion", 1)
-            else body.optInt("version", 1)
+        val version = if (family == DataTransferFamily.INSPECTION_TEMPLATES) body.getInt("formatVersion")
+            else body.getInt("version")
         require(version in supportedFamilyVersions.getValue(family)) { "Unsupported ${family.name} family version" }
         return version
     }

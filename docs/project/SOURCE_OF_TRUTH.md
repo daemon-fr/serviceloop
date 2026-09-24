@@ -1,6 +1,6 @@
 # ServiceLoop — Source of Truth
 
-**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-24.
+**Status:** Adopted authority order from 2026-09-06; implementation-state pointers updated 2026-09-25.
 
 ## Authority order
 
@@ -31,7 +31,7 @@ A stronger implementation model is not a reason to reduce prompt detail. Prompts
 
 For the current branch/SHA/version/milestone pointer, read `IMPLEMENTATION_STATE.md` and verify Git state directly. Do not infer current implementation state from an older milestone paragraph in this file.
 
-The 2026-09-24 persistence repair candidate and its exact compatibility/evidence boundaries are summarized in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md) and [acceptance ledger](PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md). These describe implementation on the designated repair branch; they do not imply owner acceptance or protected-branch integration.
+The owner-authorized B050 clean-slate current-only persistence and exchange contract is summarized in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md) and [implementation state](IMPLEMENTATION_STATE.md). B049 and 2026-09-24 repair details elsewhere in this file are historical evidence for their named revisions; the B050 amendment in `BASELINE_DECISIONS.md` defines the current unreleased formats.
 
 ## Accepted baseline and active implementation line
 
@@ -60,17 +60,17 @@ B-015 remains the adopted asynchronous Dispatch boundary. B-016 records the opti
 - **SL-5C — final functional completion/hardening:** implemented and reviewed at `bf55b0bd027fa25c48fc2dfd930d257688088ecb`. No known ordinary-workflow functional placeholder remains before B-013.
 - **B-008 pilot:** still outstanding. Release preparation is not product-valid until a coherent finished-looking, Romanian-localized build is evaluated by at least one real technician/trade user.
 
-## SL-5A retained boundary
+## SL-5A historical boundary
 
-The current line retains:
+The following records the SL-5A checkpoint's adopted product meaning. B050 supersedes its pre-release schema, migration, and backup-compatibility statements; the current format pointer is above.
 
 - injectable business-time/date invalidation at the next business-local midnight and on foreground/time/zone changes, without polling;
 - one shared persisted Due-soon horizon for Home, Due services and reminders;
-- Room-v11 reminder preferences with device-local reminder-delivery intent separated from portable recovery;
+- at the SL-5A checkpoint, Room-v11 reminder preferences with device-local reminder-delivery intent separated from portable recovery;
 - approximate one-shot `AlarmManager.setWindow` scheduling, privacy-safe summaries/appointment alerts, duplicate/stale suppression and dataset-scoped PendingIntents;
 - reboot/package-replacement/time/timezone/process reconciliation;
 - restore semantics that preserve reminder preferences while resetting local delivery Off;
-- retained Room v1→v11 migration coverage and schema-9/10 backup compatibility.
+- that checkpoint's Room v1→v11 migration coverage and schema-9/10 backup readers were unreleased development compatibility and are removed under B050.
 
 Actual system notification delivery remains unclaimed on the preserved canonical dataset because notification permission/local delivery were deliberately left Off during validation.
 

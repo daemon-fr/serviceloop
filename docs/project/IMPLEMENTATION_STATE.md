@@ -1,30 +1,41 @@
 # ServiceLoop — Implementation State
 
-**Updated:** 2026-09-24
+**Updated:** 2026-09-25
 
 This file is the concise current-state summary. Detailed milestone evidence remains in Git history and focused coverage/tests; detailed Dispatch semantics remain in `docs/internal/DISPATCH_PACKAGES_PROTOTYPE.md`.
 
 ## Current working-state pointer
 
-This file is the maintained first-stop implementation pointer. A fresh AI should read this section before historical milestone detail, then verify Git directly.
+This file is the maintained first-stop implementation pointer. Verify the actual branch, revision, remotes, and worktree directly before relying on this candidate summary.
 
-Current persistence repair candidate:
+Owner-authorized B050 clean-slate implementation:
 
-- active candidate branch: `codex/persistence-web-foundation-audit`
-- reviewed B049 source/evidence base: `13552b917d62a453f1840a5a8121742c9b11e420`
-- R05/R07 implementation checkpoint: `546e2d50480c7ad2423def9ce985f5652746b56b`
+- branch: `codex/b050-legacy-data-cleanup`
+- authorized starting revision: `6760ea9c9c8b64d2dd5dc42fb7c111770af85de5`
 - protected `master`: `1fd51131b040ab62af3874c1106615b75f3008fe`
-- candidate versions: app `1.3.0`/code `5`, Room v20, Recovery schema v19, envelope/metadata v2, WORK_RESULT and PERFORMED_WORK v2, FULL_WORKSPACE register v3, Dispatch v5.
-- final shared gate: 579 JVM tests, debug and Android-test APK builds, and lint PASS; final R12 and WORK_RESULT canonical-AVD journeys PASS. Detailed source contracts and limits are in [the persistence data-contract baseline](PERSISTENCE_DATA_CONTRACT_BASELINE.md), with exact method/assertion evidence in [the acceptance ledger](PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md).
-- candidate state is implemented/tested for independent review. Owner acceptance, B-008 pilot, protected-branch integration, and release remain outstanding. Verify final Git tip and remote parity directly.
-
-The B049 milestone is the reviewed predecessor and its verification paragraphs below are historical evidence for their named checkpoint. Do not treat those paragraphs as the current repair-branch version or rewrite their result counts.
+- current product app version remains `1.3.0` / code `5`; B050 does not adopt a package-version change.
+- current unreleased persistence and exchange contracts: Room schema 1; Recovery container/schema 1; `.slsync` envelope 1 with mandatory exporter ID; FULL_WORKSPACE sections, DATA_TRANSFER families, WORK_RESULT, Dispatch WorkPackage, and `.sltech` current-only v1. Inspection templates use DATA_TRANSFER.
+- `PERSISTENCE_DATA_CONTRACT_BASELINE.md` records the complete contract and verification. The former `PERSISTENCE_REPAIR_ACCEPTANCE_LEDGER.md` is retired; B049 milestone documents preserve evidence for their historical source revisions.
+- the owner explicitly authorized clearing only `com.v16studio.serviceloop` app data on the existing, dynamically identified `Pixel 10a ServiceLoop` AVD before fresh-state validation. No AVD wipe/recreation is authorized.
+- B050 implementation and verification are recorded below. Owner acceptance, protected-branch integration, release, and B-008 pilot remain separate gates.
 
 For every new substantial Codex prompt, correction prompt, or fresh-thread handoff, first read and apply:
 
     docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
 
-Verify branch HEAD directly rather than treating the starting continuation SHA above as the current tip.
+Historical B049 implementation and verification paragraphs below remain attached to their named revisions. They do not define the B050 current-only version contract or its final verification result.
+
+## B050 pre-release clean-slate baseline — 2026-09-25
+
+**Status: IMPLEMENTED / VERIFIED FOR OWNER REVIEW** on `codex/b050-legacy-data-cleanup`, starting from `6760ea9c9c8b64d2dd5dc42fb7c111770af85de5`. Protected `master` remains `1fd51131b040ab62af3874c1106615b75f3008fe`; B049 remains its accepted historical revision. The app package remains `1.3.0` / code `5`.
+
+Current persisted and portable baselines are all v1: Room schema; Recovery encrypted container and schema; `.slsync`; FULL_WORKSPACE and its sections; DATA_TRANSFER metadata and all families; WORK_ASSIGNMENT / Dispatch WorkPackage; WORK_RESULT; PERFORMED_WORK; source snapshot and fingerprint; and technician `.sltech` identity. Room has no migration registration, fallback, or historical schema exports. Required final follow-up and imported-source snapshots are non-null in the fresh schema.
+
+Removed pre-release support includes Room migration code/schema exports, historical Recovery shape and normalization adapters, synthetic old-schema tests, old `.slsync` envelope state and TEMPLATE_SHARE purpose, old FULL_WORKSPACE/DATA_TRANSFER/WORK_RESULT/Dispatch versions, missing-snapshot replay backfills, unavailable legacy chronology/follow-up states, old inspection-template state/fingerprint acceptance, and legacy Technician ID recognition. Inspection-template exchange remains inside current DATA_TRANSFER.
+
+**Verification:** 572/572 JVM tests pass. One broad Gradle gate passed `:app:testDebugUnitTest`, `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug`, and `:app:assembleRelease`. Focused canonical-AVD instrumentation passed: fresh Room baseline 2/2, Recovery journal restore 1/1, DATA_TRANSFER relay 1/1, and WORK_RESULT application/replay/correction 2/2. The structural legacy sweep and `git diff --check` passed. Historical migration and backup compatibility tests are not applicable under the owner's pre-release clean-slate decision.
+
+The existing `Pixel 10a ServiceLoop` AVD was resolved dynamically for the device run. Only `com.v16studio.serviceloop` data was cleared before initial validation and again after instrumentation. The fresh Room v1 database opened without business rows; after the final launch the app process remained alive and no matching fatal startup log appeared in the sampled log buffer. No AVD wipe/recreation, demo seed, UI screenshot review, workload test, or system-handoff test was performed.
 
 ## Accepted baseline and active implementation line
 

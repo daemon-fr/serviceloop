@@ -45,7 +45,7 @@ class B029WorkAndFilterTest {
 
     @Before fun setup() {
         db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(db.openHelper.writableDatabase)
         root = File(context.cacheDir, "b029-${System.nanoTime()}").apply { mkdirs() }
         context.getSharedPreferences("serviceloop_ui_filter_preferences", Context.MODE_PRIVATE).edit().clear().commit()
     }

@@ -22,7 +22,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         val status: String, val reason: String?, val committedStatus: String? = null, val recurrenceAppliedNow: Boolean = false,
     )
     data class Preview(val packageId: String, val exporterId: String, val targetIssuerId: String, val items: List<ItemPreview>)
-    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String, val chronologyProvenance: String)
+    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String)
 
     suspend fun preview(bytes: ByteArray): Preview = preflight(bytes).first
 
@@ -69,7 +69,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     if (item.preview.status == "ALREADY_RECEIVED") {
                         val receipt = dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId)
                             ?: error("Received result disappeared before commit")
-                        recoverMissingSourceSnapshot(preview.exporterId, item, receipt)
+                        validateReceivedRevision(preview.exporterId, item, receipt)
                         outcomes += item.preview.copy(reason = receipt.conflictReason, committedStatus = receipt.status)
                         return@forEach
                     }
@@ -95,11 +95,9 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         json.getJSONObject("recurrence").toString(), JSONObject().put("packageId", preview.packageId).put("exporterId", preview.exporterId)
                         .put("serviceName", work.optString("serviceName"))
                             .put("recordedAt", item.sourceRecordedAt)
-                            .put("chronologyProvenance", item.chronologyProvenance)
                             .put("assignmentGeneration", json.getInt("assignmentGeneration")).put("assignmentMaterialHash", json.getString("assignmentMaterialHash"))
                             .put("assignmentIssuerId", preview.targetIssuerId).toString(), now,
-                        sourcePayloadJson = FinalSourceSnapshot.encode("WORK_RESULT", if (json.has("sourceVisitId")) 2 else 1,
-                            2, json),
+                        sourcePayloadJson = FinalSourceSnapshot.encode("WORK_RESULT", 1, 1, json),
                     ))
                     dao.insertRemoteResultPhotos(item.result.photos.mapIndexed { index, photo ->
                         RemoteResultPhotoEntity(stable("remote-photo", resultDbId, photo.sourcePhotoId), resultDbId, photo.sourcePhotoId,
@@ -202,8 +200,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             require(authorMayDocument(visitId, itemId, packageValue.exporterId)) { "Result author is not assigned to this work item" }
             val resultId = json.getString("resultId")
             val revisionId = json.getString("sourceFinalRevisionId")
-            val explicitRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
-            val sourceRecordedAt = explicitRecordedAt ?: packageValue.generatedAt
+            val sourceRecordedAt = Instant.parse(json.getString("recordedAt")).toString()
             val fingerprintObject = JSONObject(json.toString()).apply {
                 remove("photos")
                 put("photos", JSONArray().apply {
@@ -215,24 +212,11 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     }
                 })
             }
-            val content = if (json.has("originWorkspaceId")) SourceCanonicalJson.bytes(fingerprintObject)
-                else canonicalJson(fingerprintObject).toByteArray(Charsets.UTF_8)
+            val content = SourceCanonicalJson.bytes(fingerprintObject)
             val payloadHash = WorkResultPackageCodec.sha256(content)
             val prior = dao.workResultReceipt(packageValue.exporterId, resultId, revisionId)
-            if (prior != null && prior.payloadSha256 != payloadHash) {
-                val legacyBytes = canonicalJson(JSONObject(json.toString()).apply { remove("photos") }).toByteArray(Charsets.UTF_8) +
-                    result.photos.map { "${it.sourcePhotoId}:${WorkResultPackageCodec.sha256(it.bytes)}" }.sorted().joinToString("|").toByteArray(Charsets.UTF_8)
-                val remote = dao.remoteFinalResult(packageValue.exporterId, resultId, revisionId)
-                val storedPhotos = remote?.let { dao.remoteResultPhotos(it.id) }.orEmpty()
-                val exactLegacyPhotos = storedPhotos.size == result.photos.size && result.photos.all { photo ->
-                    storedPhotos.any { stored -> stored.sourcePhotoId == photo.sourcePhotoId && stored.dispatchItemId == photo.workItemId &&
-                        stored.sha256 == WorkResultPackageCodec.sha256(photo.bytes) && stored.byteSize == photo.bytes.size.toLong() &&
-                        stored.width == photo.width && stored.height == photo.height && stored.mimeType == "image/jpeg" &&
-                        stored.caption == photo.caption && stored.visibility == photo.visibility && stored.includeInReport == photo.includeInReport }
-                }
-                require(prior.payloadSha256 == WorkResultPackageCodec.sha256(legacyBytes) && exactLegacyPhotos) {
-                    "The same source revision has conflicting contents"
-                }
+            if (prior != null) require(prior.payloadSha256 == payloadHash) {
+                "The same source revision has conflicting contents"
             }
             val status = when {
                 prior != null -> "ALREADY_RECEIVED"
@@ -248,8 +232,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 status == "CONFLICT" -> "Assignment generation is newer than the issuing workspace"
                 else -> null
             }
-            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash,
-                sourceRecordedAt, if (explicitRecordedAt == null) "PACKAGE_GENERATED_AT_FALLBACK" else "SOURCE_RECORDED_AT")
+            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item,
+                item.localWorkItemId?.let { dao.workItem(it) }, payloadHash, sourceRecordedAt)
         }
         return Preview(packageValue.packageId, packageValue.exporterId, packageValue.targetIssuerId, prepared.map { it.preview }) to prepared
     }
@@ -267,11 +251,16 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         return DispatchPackageService(database).outboxParticipants(visitId).first.any { it.technicianId == authorId }
     }
 
-    private suspend fun recoverMissingSourceSnapshot(authorId: String, item: Prepared, receipt: WorkResultReceiptEntity) {
+    private suspend fun validateReceivedRevision(authorId: String, item: Prepared, receipt: WorkResultReceiptEntity) {
         val remote = dao.remoteFinalResult(authorId, item.preview.resultId, item.preview.sourceFinalRevisionId)
             ?: error("Received result has no durable source record")
-        if (remote.sourcePayloadJson != null) return
         val source = item.result.value
+        val stored = FinalSourceSnapshot.record(remote.sourcePayloadJson, "WORK_RESULT")
+        val storedFacts = JSONObject(stored.toString()).apply { remove("photos") }
+        val incomingFacts = JSONObject(source.toString()).apply { remove("photos") }
+        require(SourceCanonicalJson.text(storedFacts) == SourceCanonicalJson.text(incomingFacts)) {
+            "Previously received source revision differs from its durable snapshot"
+        }
         val work = source.getJSONObject("workSnapshot")
         fun same(saved: String, incoming: Any) = canonicalJson(JSONObject(saved)) == canonicalJson(incoming)
         fun sameArray(saved: String, incoming: Any) = canonicalJson(JSONArray(saved)) == canonicalJson(incoming)
@@ -295,18 +284,15 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         }
         val storedPhotos = dao.remoteResultPhotos(remote.id)
         require(storedPhotos.size == item.result.photos.size && item.result.photos.all { photo ->
-            storedPhotos.any { stored -> stored.sourcePhotoId == photo.sourcePhotoId && stored.dispatchItemId == photo.workItemId &&
-                stored.sha256 == WorkResultPackageCodec.sha256(photo.bytes) && stored.byteSize == photo.bytes.size.toLong() &&
-                stored.width == photo.width && stored.height == photo.height && stored.mimeType == "image/jpeg" &&
-                stored.caption == photo.caption && stored.visibility == photo.visibility && stored.includeInReport == photo.includeInReport }
+            storedPhotos.any { storedPhoto -> storedPhoto.sourcePhotoId == photo.sourcePhotoId && storedPhoto.dispatchItemId == photo.workItemId &&
+                storedPhoto.sha256 == WorkResultPackageCodec.sha256(photo.bytes) && storedPhoto.byteSize == photo.bytes.size.toLong() &&
+                storedPhoto.width == photo.width && storedPhoto.height == photo.height && storedPhoto.mimeType == "image/jpeg" &&
+                storedPhoto.caption == photo.caption && storedPhoto.visibility == photo.visibility && storedPhoto.includeInReport == photo.includeInReport }
         }) { "Previously received photo metadata changed" }
         require(receipt.exporterId == authorId && receipt.assignmentIssuerId == source.getString("assignmentIssuerId") &&
             receipt.assignmentGeneration == source.getInt("assignmentGeneration") &&
-            receipt.assignmentMaterialHash == source.getString("assignmentMaterialHash")) { "Previously received assignment facts changed" }
-        val comparisonVersion = if (receipt.payloadSha256 == item.payloadHash) 2 else 1
-        val snapshot = FinalSourceSnapshot.encode("WORK_RESULT", if (source.has("sourceVisitId")) 2 else 1,
-            comparisonVersion, source)
-        require(dao.recoverRemoteSourceSnapshot(remote.id, snapshot) == 1) { "Source snapshot recovery raced with another write" }
+            receipt.assignmentMaterialHash == source.getString("assignmentMaterialHash") &&
+            receipt.payloadSha256 == item.payloadHash) { "Previously received assignment facts changed" }
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(

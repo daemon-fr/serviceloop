@@ -47,8 +47,7 @@ class B045SlsyncTest {
 
     @Before fun setUp() {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
-        ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         kotlinx.coroutines.runBlocking { database.dispatchDao().insertTechnicianIdentity(TechnicianIdentityEntity("primary", exporterId, "Device technician", 1L, 1L)) }
         attachmentRoot = File(context.cacheDir, "b045-${System.nanoTime()}").apply { mkdirs() }
     }
@@ -62,9 +61,9 @@ class B045SlsyncTest {
         assertEquals(1, ServiceLoopSyncCodec.preview(decoded).counts.customers)
         assertEquals(exporterId, decoded.manifest.exporterId)
         val envelope = ServiceLoopSyncEnvelopeCodec.decode(ServiceLoopSyncCodec.encode(original))
-        assertEquals(2, envelope.manifest.formatVersion)
-        assertEquals(3, envelope.manifest.sections.single { it.name == "register" }.version)
-        assertEquals(2, envelope.manifest.sections.single { it.name == "team" }.version)
+        assertEquals(1, envelope.manifest.formatVersion)
+        assertEquals(1, envelope.manifest.sections.single { it.name == "register" }.version)
+        assertEquals(1, envelope.manifest.sections.single { it.name == "team" }.version)
         assertEquals("office contact", decoded.register.customerContacts.single().personName)
         assertEquals("Technician note", decoded.team.technicians.single().notes)
     }
@@ -172,7 +171,7 @@ class B045SlsyncTest {
         assertEquals(local.technicianId, store.localIdentity().technicianId)
     }
 
-    @Test fun recoveryV18RoundTripPreservesB049HistoryAndOwnedDerivative() = runTest {
+    @Test fun recoveryCurrentShapeRoundTripPreservesB049HistoryAndOwnedDerivative() = runTest {
         val dao = database.serviceLoopDao()
         dao.insertCustomers(listOf(CustomerEntity("b049-customer", "CU-B049", "B049 customer")))
         dao.insertCustomerContacts(listOf(
@@ -184,7 +183,7 @@ class B045SlsyncTest {
         dao.insertWorkItems(listOf(WorkItemEntity("b049-work", "b049-visit", null, null, null, null, null, null, "Inspect", null, null, null, null, false, null, null, subjectType = "SITE")))
         dao.insertFinalRecord(FinalRecordEntity("b049-final-record", "b049-visit", "b049-final-revision", 2))
         dao.insertFinalRevision(FinalRecordRevisionEntity("b049-final-revision", "b049-final-record", 1, "V-B049", "2026-09-22", 2, "B049 customer", "Site", null, "Business", "Technician", null, null, null, "UTC", null))
-        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("b049-final-work", "b049-final-revision", 1, "b049-work", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", null, null, false, null, null, null, null, null, null, subjectType = "SITE")))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("b049-final-work", "b049-final-revision", 1, "b049-work", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", null, null, false, null, null, null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         val photoBytes = "owned B049 private evidence".toByteArray()
         val photoPath = "attachments/b049-private.jpg"
         File(attachmentRoot, photoPath).apply { parentFile!!.mkdirs(); writeBytes(photoBytes) }
@@ -196,7 +195,7 @@ class B045SlsyncTest {
             localVisitId = "b049-visit", localWorkItemId = "b049-work", technicianId = exporterId, technicianName = "Ada", technicianDesignation = null,
             customerId = "b049-customer", customerSnapshotJson = "{}", siteSnapshotJson = "{}", subjectSnapshotJson = "{}",
             serviceDate = "2026-09-22", outcome = "PERFORMED", workPerformed = "Inspected", notPerformedReason = null,
-            checklistJson = "[]", findingsJson = "[]", partsJson = "[]", internalNotes = "Private history", followUpsJson = "[]", recurrenceJson = "{}", provenanceJson = "{}", importedAtEpochMillis = 3,
+            checklistJson = "[]", findingsJson = "[]", partsJson = "[]", internalNotes = "Private history", followUpsJson = "[]", recurrenceJson = "{}", provenanceJson = "{}", importedAtEpochMillis = 3, sourcePayloadJson = FinalSourceSnapshot.encode("WORK_RESULT", 1, 1, JSONObject().put("resultId", "b049-result").put("sourceFinalRevisionId", "b049-revision").put("technicianId", exporterId).put("dispatchVisitId", "b049-dispatch-visit").put("dispatchItemId", "b049-dispatch-item").put("serviceDate", "2026-09-22").put("outcome", "PERFORMED")),
         )
         dao.insertRemoteFinalResult(result)
         val receipt = WorkResultReceiptEntity("b049-receipt", "b049-package", "b049-result", "b049-revision", exporterId, exporterId, "b049-dispatch-visit", "b049-dispatch-item", 1, "material", 3, "payload", "APPLIED", null, 3, null)
@@ -234,50 +233,6 @@ class B045SlsyncTest {
         assertEquals("PRIVATE", dao.attachment("b049-photo")?.visibility)
         assertEquals(false, dao.finalPhotos("b049-final-work").single().includedInCustomerReport)
         assertEquals("PRIVATE", dao.finalPhotos("b049-final-work").single().visibility)
-    }
-
-    @Test fun legacyRecoveryPhotoRowsGainPublicDefaultsWithoutChangingCurrentFlags() {
-        val legacyAttachment = JSONObject().put("id", "old-attachment").put("includedInCustomerReport", 0)
-        val currentAttachment = JSONObject().put("id", "current-attachment").put("visibility", "INTERNAL")
-        val legacyFinal = JSONObject().put("id", "old-final")
-        val currentFinal = JSONObject().put("id", "current-final").put("includedInCustomerReport", 0).put("visibility", "PRIVATE")
-        val root = JSONObject().put("schemaVersion", 17).put("tables", JSONArray()
-            .put(JSONObject().put("name", "attachments").put("rows", JSONArray().put(legacyAttachment).put(currentAttachment)))
-            .put(JSONObject().put("name", "final_photo_entries").put("rows", JSONArray().put(legacyFinal).put(currentFinal))))
-        RecoveryPackage(database, attachmentRoot).normalizeB049PhotoFlags(root)
-        assertEquals("PUBLIC", legacyAttachment.getString("visibility"))
-        assertEquals(0, legacyAttachment.getInt("includedInCustomerReport"))
-        assertEquals("INTERNAL", currentAttachment.getString("visibility"))
-        assertEquals(1, legacyFinal.getInt("includedInCustomerReport"))
-        assertEquals("PUBLIC", legacyFinal.getString("visibility"))
-        assertEquals(0, currentFinal.getInt("includedInCustomerReport"))
-        assertEquals("PRIVATE", currentFinal.getString("visibility"))
-    }
-
-    @Test fun fullWorkspaceV1IsReadableButHasNoSourceId() {
-        val legacy = asLegacyV1(ServiceLoopSyncCodec.encode(packageValue()))
-        val decoded = ServiceLoopSyncCodec.decode(legacy)
-        assertEquals(1, decoded.manifest.formatVersion)
-        assertNull(decoded.manifest.exporterId)
-        assertTrue(decoded.register.customerContacts.isEmpty())
-        assertNull(decoded.team.technicians.single().notes)
-    }
-
-    @Test fun recoverySchema16AddsEmptyTrustedIdsTableAndPreservesLocalIdentity() {
-        val identityRow = JSONObject().put("id", "primary").put("technicianId", exporterId).put("displayName", "Device technician")
-        val root = JSONObject().put("schemaVersion", 16).put(
-            "tables",
-            JSONArray().put(JSONObject().put("name", "technician_identity").put("rows", JSONArray().put(identityRow))),
-        )
-
-        RecoveryPackage(database, attachmentRoot).normalizeTrustedServiceLoopIds(root)
-
-        val tables = root.getJSONArray("tables")
-        assertEquals(16, root.getInt("schemaVersion"))
-        assertEquals("technician_identity", tables.getJSONObject(0).getString("name"))
-        assertEquals(exporterId, tables.getJSONObject(0).getJSONArray("rows").getJSONObject(0).getString("technicianId"))
-        assertEquals("trusted_service_loop_ids", tables.getJSONObject(1).getString("name"))
-        assertEquals(0, tables.getJSONObject(1).getJSONArray("rows").length())
     }
 
     @Test fun initialImportReplacesBusinessRowsAndPreservesDeviceState() = runTest {
@@ -335,16 +290,31 @@ class B045SlsyncTest {
         assertEquals("old-dataset", dao.recoveryMetadata()?.datasetId)
     }
 
-    @Test fun universalEnvelopePreservesWorkAndAddsTemplateOriginMetadataForV2() {
+    @Test fun universalEnvelopePreservesWorkAndSharesTemplatesThroughCurrentDataTransfer() {
         val work = dispatchPackage()
-        val decodedWork = ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(work, exporterId))
+        val decodedWork = ServiceLoopSyncEnvelopeCodec.unwrapWorkAssignment(
+            ServiceLoopSyncEnvelopeCodec.wrapWorkAssignment(work, exporterId),
+        )
         assertEquals(work, decodedWork)
-        val transfer = InspectionTemplateTransfer("2026-09-22T10:00:00Z", listOf(InspectionTemplateTransferEntry("IT-1", "Safety", 1, listOf(DispatchInspectionItem(1, "Guard", "STATUS", null, true, null)))) )
-        val transferBytes = ServiceLoopSyncEnvelopeCodec.wrapTemplateShare(transfer, exporterId)
-        assertEquals("DATA_TRANSFER", ServiceLoopSyncEnvelopeCodec.decode(transferBytes).manifest.purpose)
-        val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(transferBytes)
-        assertEquals(transfer.generatedAt, decodedTemplates.generatedAt)
+
+        val transfer = InspectionTemplateTransfer(
+            "2026-09-22T10:00:00Z",
+            listOf(InspectionTemplateTransferEntry(
+                "IT-1", "Safety", 1,
+                listOf(DispatchInspectionItem(1, "Guard", "STATUS", null, true, null)),
+            )),
+        )
+        val transferBytes = ServiceLoopSyncEnvelopeCodec.wrapTemplateTransfer(transfer, exporterId)
+        val envelope = ServiceLoopSyncEnvelopeCodec.decode(transferBytes)
+        assertEquals(1, envelope.manifest.formatVersion)
+        assertEquals("DATA_TRANSFER", envelope.manifest.purpose)
+        val payload = DataTransferCodec.decode(transferBytes)
+        assertEquals(1, payload.familyVersions.getValue(DataTransferFamily.INSPECTION_TEMPLATES))
+        assertEquals(setOf(DataTransferFamily.INSPECTION_TEMPLATES), payload.families.keys)
+
+        val decodedTemplates = ServiceLoopSyncEnvelopeCodec.unwrapTemplateTransfer(transferBytes)
         val originalTemplate = transfer.templates.single()
+        assertEquals(transfer.generatedAt, decodedTemplates.generatedAt)
         assertEquals(
             originalTemplate.copy(
                 fingerprint = InspectionTemplateCodec.fingerprint(originalTemplate),
@@ -353,19 +323,6 @@ class B045SlsyncTest {
             ),
             decodedTemplates.templates.single(),
         )
-        val legacyBytes = ServiceLoopSyncEnvelopeCodec.encode(
-            ServiceLoopSyncManifest("legacy-template-share", "Legacy templates", "TEMPLATE_SHARE", transfer.generatedAt, sections = listOf(ServiceLoopSyncSectionDeclaration("inspections", InspectionTemplateCodec.CURRENT_VERSION, "inspections.json")), exporterId = exporterId),
-            mapOf("inspections" to InspectionTemplateCodec.encode(transfer)),
-        )
-        val legacyExpected = transfer.copy(templates = listOf(originalTemplate.copy(fingerprint = InspectionTemplateCodec.fingerprint(originalTemplate))))
-        assertEquals(legacyExpected, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(legacyBytes))
-        val oldTransfer = ServiceLoopSyncEnvelopeCodec.encode(
-            ServiceLoopSyncManifest("old-data-transfer", "Old templates", "DATA_TRANSFER", transfer.generatedAt,
-                sections = listOf(ServiceLoopSyncSectionDeclaration("transfer", 1, "transfer.json"), ServiceLoopSyncSectionDeclaration("inspections", 1, "inspections.json")), exporterId = exporterId),
-            mapOf("transfer" to org.json.JSONObject().put("contentFamily", "INSPECTION_TEMPLATES").put("version", 1).toString().toByteArray(),
-                "inspections" to InspectionTemplateCodec.encode(transfer)),
-        )
-        assertEquals(legacyExpected, ServiceLoopSyncEnvelopeCodec.unwrapTemplateShare(oldTransfer))
     }
 
     @Test fun purposeRoutingRejectsUnknownAndFamilyFilteringKeepsReferencesValid() {
@@ -430,26 +387,5 @@ class B045SlsyncTest {
         ),
     )
 
-    private fun asLegacyV1(bytes: ByteArray): ByteArray {
-        val entries = linkedMapOf<String, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                entries[entry.name] = zip.readBytes()
-            }
-        }
-        val manifest = JSONObject(entries.getValue("manifest.json").toString(Charsets.UTF_8))
-            .put("formatVersion", 1)
-            .also { it.remove("exporterId") }
-        val sections = manifest.getJSONArray("sections")
-        for (index in 0 until sections.length()) sections.getJSONObject(index).put("version", 1)
-        entries["manifest.json"] = manifest.toString().toByteArray(Charsets.UTF_8)
-        val register = JSONObject(entries.getValue("register.json").toString(Charsets.UTF_8)).also { it.remove("customerContacts") }
-        entries["register.json"] = register.toString().toByteArray(Charsets.UTF_8)
-        val team = JSONObject(entries.getValue("team.json").toString(Charsets.UTF_8))
-        val technicians = team.getJSONArray("technicians")
-        for (index in 0 until technicians.length()) technicians.getJSONObject(index).remove("notes")
-        entries["team.json"] = team.toString().toByteArray(Charsets.UTF_8)
-        return ByteArrayOutputStream().also { output -> ZipOutputStream(output).use { zip -> entries.forEach { (name, data) -> zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() } } }.toByteArray()
-    }
+
 }

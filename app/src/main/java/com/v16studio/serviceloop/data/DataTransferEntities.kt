@@ -57,7 +57,7 @@ data class TransferredFinalResultEntity(
     val payloadSha256: String,
     val provenanceJson: String,
     val voidedAtEpochMillis: Long? = null,
-    val sourcePayloadJson: String? = null,
+    val sourcePayloadJson: String,
 )
 
 /** Receiver-owned bytes and immutable context, including standalone Image Archive transfers. */

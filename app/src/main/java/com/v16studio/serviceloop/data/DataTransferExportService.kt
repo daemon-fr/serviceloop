@@ -311,10 +311,10 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                         .put("nextDueOverrideReason", item.nextDueOverrideReason)
                         .put("capturedObligationId", item.capturedObligationId)
                         .apply { if (selection.includePrivate) put("privateInternalNote", item.privateInternalNote) })
-                    payload.put("followUpCaptureState", if (item.followUpsSnapshotJson == null) "UNAVAILABLE_LEGACY" else "CAPTURED_AT_REVISION")
-                    payload.put("followUps", item.followUpsSnapshotJson?.let(FinalFollowUpSnapshot::records)?.let {
+                    payload.put("followUpCaptureState", "CAPTURED_AT_REVISION")
+                    payload.put("followUps", FinalFollowUpSnapshot.records(item.followUpsSnapshotJson).let {
                         if (selection.includePrivate) it else publicFollowUps(it)
-                    } ?: JSONArray())
+                    })
                     payload.put("sourcePhotos", JSONArray().also { array -> dao.finalPhotos(item.id).forEach { photo ->
                         if (selection.includePrivate || photo.visibility == "PUBLIC") array.put(JSONObject()
                             .put("sourcePhotoId", photo.sourceAttachmentId).put("sourceWorkItemId", item.sourceWorkItemId)
@@ -362,7 +362,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             addResult(service, originId, visitId, service.getString("visitReference"), date,
                 JSONObject(service.getString("customerSnapshot")), JSONObject(service.getString("siteSnapshot")))
         }
-        return JSONObject().put("version", 2).put("visits", JSONArray(groups.values.toList())).toString().toByteArray(Charsets.UTF_8)
+        return JSONObject().put("version", 1).put("visits", JSONArray(groups.values.toList())).toString().toByteArray(Charsets.UTF_8)
     }
 
     private suspend fun checklistJson(workItemId: String) = JSONArray().also { array -> dao.finalChecklistItems(workItemId).forEach { item ->
@@ -374,11 +374,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
 
     private suspend fun encodeRemoteResult(value: RemoteFinalResultEntity, includePrivate: Boolean, localWorkspaceId: String): JSONObject {
         val accepted = value.sourcePayloadJson
-            ?: throw IllegalStateException("This legacy work result needs its original package re-imported before a lossless native relay")
-        require(FinalSourceSnapshot.fingerprintVersion(accepted) == 2) { "This work result needs its original v2 package before native relay" }
+        require(FinalSourceSnapshot.fingerprintVersion(accepted) == 1) { "Unsupported work-result source fingerprint" }
         val source = FinalSourceSnapshot.record(accepted, "WORK_RESULT")
-        require(source.has("sourceVisitId") && source.has("sourceWorkItemId") && source.has("sourceFinalRevisionNumber")) {
-            "This legacy work result lacks source execution identity; re-import the original v2 package"
+        require(source.getString("sourceVisitId").isNotBlank() &&
+            source.getString("sourceWorkItemId").isNotBlank() && source.getInt("sourceFinalRevisionNumber") > 0) {
+            "Work-result source identity is incomplete"
         }
         val sourceWork = source.getJSONObject("workSnapshot")
         val localVisit = value.localVisitId?.let { dao.visit(it) }
@@ -446,8 +446,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
     }
 
     private fun encodeTransferredResult(value: TransferredFinalResultEntity, includePrivate: Boolean): JSONObject {
-        val source = value.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "PERFORMED_WORK") }
-            ?: throw IllegalStateException("This legacy performed record needs its original package re-imported before a lossless native relay")
+        val source = FinalSourceSnapshot.record(value.sourcePayloadJson, "PERFORMED_WORK")
         if (includePrivate) return source
         return JSONObject(source.toString()).apply {
             remove("internalNotes")
@@ -609,9 +608,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!selection.scope.matches(result.customerId.orEmpty(), siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@forEach
             val bytes = readImage(photo.relativePath, photo.sha256, photo.byteSize) ?: error("Imported result photo is missing")
-            val source = result.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
-            require(source != null && source.has("sourceVisitId") && source.has("sourceWorkItemId")) {
-                "This legacy result photo lacks source execution identity; re-import the original v2 package before native relay"
+            val source = FinalSourceSnapshot.record(result.sourcePayloadJson, "WORK_RESULT")
+            require(source.getString("sourceVisitId").isNotBlank() && source.getString("sourceWorkItemId").isNotBlank()) {
+                "Work-result photo source identity is incomplete"
             }
             val sourceCustomerRef = source.optJSONObject("sourceCustomerRef")
             val sourceSiteRef = source.optJSONObject("sourceSiteRef")

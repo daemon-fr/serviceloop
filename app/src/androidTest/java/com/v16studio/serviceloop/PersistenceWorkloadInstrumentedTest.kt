@@ -21,7 +21,7 @@ class PersistenceWorkloadInstrumentedTest {
         val database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
         val root = File(context.cacheDir, "persistence-workload-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
             val dao = database.serviceLoopDao()
             val start = SystemClock.elapsedRealtime()
             dao.insertCustomers((1..250).map { CustomerEntity("c$it", "CU-$it", "Customer $it") })

@@ -45,7 +45,7 @@ data class DataTransferImportPreview(
         conflicts.all { it.family == DataTransferFamily.INSPECTION_TEMPLATES && it.sourceKey in createSeparateTemplates }
 }
 
-/** Previews untrusted DATA_TRANSFER v2 and applies a trusted, additive, all-or-nothing merge. */
+/** Previews untrusted DATA_TRANSFER v1 and applies a trusted, additive, all-or-nothing merge. */
 class DataTransferImportService(private val database: ServiceLoopDatabase, private val filesRoot: File) {
     private val dao = database.serviceLoopDao()
     private val templateExchange = InspectionTemplateExchangeService(database)
@@ -339,28 +339,10 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             val evidence=row.optJSONArray("evidence")?:JSONArray()
             val entity=TransferredFinalResultEntity(UUID.randomUUID().toString(),row.getString("originWorkspaceId"),row.getString("sourceVisitId"),row.getString("sourceWorkItemId"),row.getString("sourceFinalRevisionId"),row.getString("logicalResultId"),payload.exporterId,now,refs.first,refs.second,refs.third,
                 row.getJSONObject("customerSnapshot").toString(),row.getJSONObject("siteSnapshot").toString(),subject.toString(),row.getString("visitReference"),row.getString("serviceDate"),row.getString("technicianId"),row.getString("technicianName"),row.optNullable("technicianDesignation"),row.getString("serviceName"),row.getString("outcome"),row.optNullable("workPerformed"),row.optNullable("notPerformedReason"),row.getJSONArray("checklist").toString(),row.getJSONArray("findings").toString(),row.getJSONArray("parts").toString(),row.optNullable("internalNotes"),recurrence.toString(),item.fingerprint,JSONObject().put("recordedAt",row.optString("recordedAt")).put("sourceWorkItemPosition",row.optInt("sourceWorkItemPosition",0)).put("relayExporterId",payload.exporterId).put("evidence",evidence).toString(),
-                sourcePayloadJson = if (payload.familyVersions[DataTransferFamily.PERFORMED_WORK] == 2)
-                    FinalSourceSnapshot.encode("PERFORMED_WORK", 2, 2, row) else null)
+                sourcePayloadJson = FinalSourceSnapshot.encode("PERFORMED_WORK", 1, 1, row))
             dao.insertTransferredFinalResults(listOf(entity))
         }
-        if (payload.familyVersions[DataTransferFamily.PERFORMED_WORK] == 2) {
-            history.filter { it.family == DataTransferFamily.PERFORMED_WORK &&
-                it.classification == DataTransferClassification.ALREADY_IMPORTED }.forEach { item ->
-                val row = item.source
-                val existing = dao.transferredFinalResult(row.getString("originWorkspaceId"),
-                    row.getString("sourceWorkItemId"), row.getString("sourceFinalRevisionId"))
-                    ?: error("Previously imported final result disappeared")
-                require(existing.payloadSha256 == item.fingerprint) {
-                    "Previously imported source facts changed"
-                }
-                if (existing.sourcePayloadJson == null) {
-                    val snapshot = FinalSourceSnapshot.encode("PERFORMED_WORK", 2, 2, row)
-                    require(dao.recoverTransferredSourceSnapshot(existing.id, snapshot) == 1) {
-                        "Source snapshot recovery raced with another write"
-                    }
-                }
-            }
-        }
+
     }
 
     private suspend fun applyEvidence(evidence: List<ParsedEvidence>, payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, staged: Map<String,File>, now: Long) {
@@ -409,7 +391,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     private suspend fun parsePerformed(payload: DataTransferPayload, mapping: Map<SourceEntityKey,String>, history: MutableList<ParsedHistory>, items: MutableList<DataTransferImportItem>) {
         val bytes=payload.families[DataTransferFamily.PERFORMED_WORK]?:return;val root=JSONObject(bytes.toString(Charsets.UTF_8))
         val version=payload.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK)
-        require(root.getInt("version")==version && version in 1..2)
+        require(root.getInt("version") == 1 && version == 1)
         val visits=root.getJSONArray("visits");val visitKeys=mutableSetOf<Pair<String,String>>();val resultKeys=mutableSetOf<Triple<String,String,String>>()
         for(i in 0 until visits.length()){
             val visit=visits.getJSONObject(i);val origin=validOrigin(visit.getString("originWorkspaceId"));val visitId=required(visit,"sourceVisitId")
@@ -421,12 +403,10 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                 require(recordOrigin==origin&&sourceVisit==visitId&&row.getString("visitReference")==visit.getString("visitReference")){"Performed record does not match its Visit"}
                 LocalDate.parse(row.getString("serviceDate"));require(row.getJSONArray("checklist").length()<=1000&&row.getJSONArray("parts").length()<=1000)
                 require(row.getString("outcome") in setOf("PERFORMED","PARTLY_PERFORMED","NOT_PERFORMED"))
-                if(version==2){
-                    validatePerformedV2(row,payload.options.includePrivate)
-                }
+                validatePerformedCurrent(row, payload.options.includePrivate)
                 require(resultKeys.add(Triple(recordOrigin,work,revision))){"Duplicate performed revision"}
                 validateHistoryMappings(row,mapping)
-                val key="${recordOrigin}:$work:$revision";val fp=if(version==2)fingerprintPerformedV2(row)else fingerprint(row)
+                val key="${recordOrigin}:$work:$revision";val fp = fingerprintPerformed(row)
                 val old=dao.transferredFinalResult(recordOrigin,work,revision)
                 val classification=when{old==null->DataTransferClassification.NEW_HISTORY;old.payloadSha256==fp->DataTransferClassification.ALREADY_IMPORTED;else->DataTransferClassification.CONFLICT}
                 val source=row
@@ -582,21 +562,21 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     private fun planJson(row:ServicePlanEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId")).put("equipmentOriginWorkspaceId",source.optString("equipmentOriginWorkspaceId")).put("equipmentSourceEntityId",source.optString("equipmentSourceEntityId")).put("templateOriginWorkspaceId",if(source.isNull("templateOriginWorkspaceId"))JSONObject.NULL else source.getString("templateOriginWorkspaceId")).put("templateSourceEntityId",if(source.isNull("templateSourceEntityId"))JSONObject.NULL else source.getString("templateSourceEntityId")).put("reference",row.reference).put("name",row.name).put("intervalCount",row.intervalCount).put("intervalUnit",row.intervalUnit).put("currentDueDate",row.currentDueDate).put("state",row.state)
     private fun normalizedContactMatch(local:CustomerContactEntity,incoming:JSONObject)=local.channel.trim().uppercase()==incoming.optString("channel").trim().uppercase()&&local.value.trim()==incoming.optString("value").trim()&&local.personName.orEmpty().trim()==incoming.optString("personName").trim()&&(!incoming.has("notes")||local.notes.orEmpty().trim()==incoming.optString("notes").trim())
     private fun fingerprint(value:JSONObject):String=sha256(canonical(value.copyForFingerprint()).toByteArray(Charsets.UTF_8))
-    private fun fingerprintPerformedV2(value:JSONObject):String {
+    private fun fingerprintPerformed(value:JSONObject):String {
         val immutable=JSONObject(value.toString())
         // Receiver register links and package transport choices are mutable hints, not source history.
         listOf("customer","site","equipment","localCustomerId","localSiteId","localEquipmentId",
             "logicalResultId","evidence","binaryName").forEach(immutable::remove)
         return sha256(SourceCanonicalJson.bytes(immutable))
     }
-    private fun validatePerformedV2(row:JSONObject, includePrivate:Boolean) {
+    private fun validatePerformedCurrent(row:JSONObject, includePrivate:Boolean) {
         require(row.getInt("sourceWorkItemPosition")>0 && row.getInt("sourceFinalRevisionNumber")>0)
         require(row.has("supersedesSourceFinalRevisionId") && row.has("correctionReason") && row.has("publicNote"))
         require(row.isNull("supersedesSourceFinalRevisionId") || row.getString("supersedesSourceFinalRevisionId") != row.getString("sourceFinalRevisionId"))
         require(row.getString("technicianId") == row.getString("originWorkspaceId")) { "Source author and origin differ" }
         Instant.parse(row.getString("recordedAt"))
         require(row.getJSONObject("subjectSnapshot").getString("type") in setOf("SITE","EQUIPMENT"))
-        if (row.has("sourceWorkSnapshot")) {
+        run {
             val sourceWork = row.getJSONObject("sourceWorkSnapshot")
             fun nullableFact(value: JSONObject, key: String): Any? = if (!value.has(key) || value.isNull(key)) null else value.get(key)
             require(sourceWork.get("serviceName") is String && sourceWork.getString("serviceName") == row.getString("serviceName") &&
@@ -619,10 +599,9 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             require(includePrivate || !sourceWork.has("privateInternalNote")) { "Private source work in public transfer" }
         }
-        val capture=row.getString("followUpCaptureState")
-        require(capture in setOf("CAPTURED_AT_REVISION","UNAVAILABLE_LEGACY"))
-        val followUps=row.getJSONArray("followUps")
-        require(followUps.length()<=1000 && (capture!="UNAVAILABLE_LEGACY" || followUps.length()==0))
+        require(row.getString("followUpCaptureState") == "CAPTURED_AT_REVISION")
+        val followUps = row.getJSONArray("followUps")
+        require(followUps.length() <= 1000)
         if(!includePrivate) {
             require(!row.has("internalNotes") && !row.has("finalInternalNote")) { "Private notes in public transfer" }
             for(index in 0 until followUps.length()) require(!followUps.getJSONObject(index).has("privatePlanningNote")) { "Private follow-up in public transfer" }
@@ -684,10 +663,18 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         customerWorkspaceId:String?,customerSourceId:String?,siteWorkspaceId:String?,siteSourceId:String?,
         equipmentWorkspaceId:String?,equipmentSourceId:String?,mimeType:String,width:Int,height:Int,
     ):String {
-        fun identity(workspace:String?,source:String?):Any = if(workspace==null&&source==null) JSONObject.NULL else JSONObject()
-            .put("originWorkspaceId",workspace?.let{TechnicianIdCodec.normalize(it) ?: it} ?: JSONObject.NULL)
-            .put("sourceEntityId",source ?: JSONObject.NULL)
-        val canonicalMetadata=JSONObject().put("originWorkspaceId",TechnicianIdCodec.normalize(originWorkspaceId) ?: originWorkspaceId)
+        fun identity(workspace:String?,source:String?):Any {
+            if (workspace == null && source == null) return JSONObject.NULL
+            require(workspace != null && source?.isNotBlank() == true) { "Incomplete evidence source identity" }
+            val normalizedWorkspace = TechnicianIdCodec.normalize(workspace)
+                ?: throw IllegalArgumentException("Invalid evidence source workspace ID")
+            require(normalizedWorkspace == workspace) { "Non-canonical evidence source workspace ID" }
+            return JSONObject().put("originWorkspaceId", normalizedWorkspace).put("sourceEntityId", source)
+        }
+        val normalizedOrigin = TechnicianIdCodec.normalize(originWorkspaceId)
+            ?: throw IllegalArgumentException("Invalid evidence origin workspace ID")
+        require(normalizedOrigin == originWorkspaceId) { "Non-canonical evidence origin workspace ID" }
+        val canonicalMetadata=JSONObject().put("originWorkspaceId", normalizedOrigin)
             .put("sourcePhotoId",sourcePhotoId).put("sourceVisitId",sourceVisitId).put("sourceWorkItemId",sourceWorkItemId)
             .put("sourceFinalRevisionId",sourceFinalRevisionId ?: JSONObject.NULL).put("serviceDate",serviceDate)
             .put("visitReference",visitReference).put("serviceName",serviceName).put("caption",caption ?: JSONObject.NULL)

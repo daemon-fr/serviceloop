@@ -89,6 +89,8 @@ Completion/finalization, recurrence advancement, PDF generation, correction, imp
 
 Do not use destructive Room migration fallback over real data.
 
+For the owner-authorized B050 pre-release clean-slate baseline, Room, Recovery, and current unreleased exchange formats are deliberately current-only version 1. Room ships schema `1` with no migration registrations or destructive fallback. Recovery validates only its current v1 container/schema and exact current table/column shapes. `.slsync`, FULL_WORKSPACE sections, DATA_TRANSFER families, WORK_RESULT, Dispatch WorkPackage, and `.sltech` emit and accept only their current v1 contract; template exchange travels as DATA_TRANSFER. Do not add pre-release compatibility readers or backfills. B050 authorizes clearing only the ServiceLoop package data on the canonical AVD before fresh-state validation and once after instrumentation to leave it clean; it does not authorize wiping or recreating the AVD.
+
 ## Verification
 
 Use truthful evidence. For relevant changes run the repository's established commands, normally including:

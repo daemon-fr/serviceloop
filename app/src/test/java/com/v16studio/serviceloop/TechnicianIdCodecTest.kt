@@ -30,12 +30,4 @@ class TechnicianIdCodecTest {
         assertNull(TechnicianIdCodec.normalize("${valid}0"))
     }
 
-    @Test fun legacyRecognitionDoesNotRewriteValues() {
-        val uuid = "123e4567-e89b-42d3-a456-426614174000"
-        val hex = "0123456789abcdef0123456789abcdef"
-        assertTrue(TechnicianIdCodec.isSupportedLegacy(uuid))
-        assertTrue(TechnicianIdCodec.isSupportedLegacy(hex))
-        assertEquals(uuid, TechnicianIdCodec.display(uuid))
-        assertEquals(hex, TechnicianIdCodec.display(hex))
-    }
 }

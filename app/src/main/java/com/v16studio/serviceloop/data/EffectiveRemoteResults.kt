@@ -3,27 +3,24 @@ package com.v16studio.serviceloop.data
 import org.json.JSONObject
 import java.time.Instant
 
-/** Effective imported truth is selected by source chronology, never Room row order. */
+/** Effective imported truth is selected by immutable source revision and chronology. */
 internal fun effectiveRemoteResults(
     results: List<RemoteFinalResultEntity>,
     includePreviousRevisions: Boolean = false,
 ): List<RemoteFinalResultEntity> {
-    val ordered = results.sortedWith(compareBy<RemoteFinalResultEntity> { result ->
-        runCatching { Instant.parse(JSONObject(result.provenanceJson).optString("recordedAt")).toEpochMilli() }
-            .getOrDefault(result.importedAtEpochMillis)
+    val ordered = results.sortedWith(compareBy<RemoteFinalResultEntity> {
+        Instant.parse(FinalSourceSnapshot.record(it.sourcePayloadJson, "WORK_RESULT").getString("recordedAt"))
     }.thenBy { it.importedAtEpochMillis }.thenBy { it.id })
     return if (includePreviousRevisions) ordered.filter { it.voidedAtEpochMillis == null }
     else ordered.groupBy { it.technicianId to it.resultId }.values.map { lineage ->
-        val numbered = lineage.mapNotNull { row ->
-            row.sourcePayloadJson?.let { raw -> runCatching { FinalSourceSnapshot.record(raw, "WORK_RESULT").getInt("sourceFinalRevisionNumber") }.getOrNull() }
-                ?.let { number -> row to number }
+        val numbered = lineage.map { row ->
+            row to FinalSourceSnapshot.record(row.sourcePayloadJson, "WORK_RESULT").getInt("sourceFinalRevisionNumber")
         }
-        if (numbered.size != lineage.size) lineage.last() else {
-            require(numbered.groupBy { it.second }.values.all { values -> values.map { it.first.sourceFinalRevisionId }.distinct().size == 1 }) {
-                "Conflicting source revision numbers in received work"
-            }
-            numbered.maxWith(compareBy<Pair<RemoteFinalResultEntity, Int>> { it.second }.thenBy { it.first.importedAtEpochMillis }).first
-        }
+        require(numbered.groupBy { it.second }.values.all { values ->
+            values.map { it.first.sourceFinalRevisionId }.distinct().size == 1
+        }) { "Conflicting source revision numbers in received work" }
+        numbered.maxWith(compareBy<Pair<RemoteFinalResultEntity, Int>> { it.second }
+            .thenBy { it.first.importedAtEpochMillis }).first
     }.filter { it.voidedAtEpochMillis == null }
 }
 
@@ -40,10 +37,8 @@ internal data class EffectiveImportedFinalResult(
     val chronologyEpochMillis: Long,
     val remote: RemoteFinalResultEntity? = null,
     val transferred: TransferredFinalResultEntity? = null,
-    val identityNamespace: String = "SOURCE",
     val voided: Boolean = false,
-    val sourceRevisionNumber: Int? = null,
-    val chronologyProvenance: String = "UNKNOWN",
+    val sourceRevisionNumber: Int,
 )
 
 internal fun effectiveImportedFinalResults(
@@ -52,39 +47,43 @@ internal fun effectiveImportedFinalResults(
     includePreviousRevisions: Boolean = false,
 ): List<EffectiveImportedFinalResult> {
     val remote = remoteResults.map { row ->
-        val provenance = runCatching { JSONObject(row.provenanceJson) }.getOrDefault(JSONObject())
-        val source = row.sourcePayloadJson?.let { runCatching { FinalSourceSnapshot.record(it, "WORK_RESULT") }.getOrNull() }
+        val source = FinalSourceSnapshot.record(row.sourcePayloadJson, "WORK_RESULT")
         EffectiveImportedFinalResult(
-            ImportedFinalKind.WORK_RESULT, row.resultId, row.technicianId,
-            source?.optString("sourceVisitId")?.takeIf(String::isNotBlank) ?: row.dispatchVisitId,
-            source?.optString("sourceWorkItemId")?.takeIf(String::isNotBlank) ?: row.dispatchItemId,
-            row.sourceFinalRevisionId, runCatching { Instant.parse(source?.optString("recordedAt")?.takeIf(String::isNotBlank)
-                ?: provenance.optString("recordedAt")).toEpochMilli() }.getOrDefault(row.importedAtEpochMillis), remote = row,
-            identityNamespace = if (source?.optString("sourceVisitId").isNullOrBlank() || source?.optString("sourceWorkItemId").isNullOrBlank()) "WORK_RESULT_LEGACY" else "SOURCE",
+            kind = ImportedFinalKind.WORK_RESULT,
+            logicalResultId = row.resultId,
+            originWorkspaceId = source.getString("originWorkspaceId"),
+            sourceVisitId = source.getString("sourceVisitId"),
+            sourceWorkItemId = source.getString("sourceWorkItemId"),
+            sourceFinalRevisionId = row.sourceFinalRevisionId,
+            chronologyEpochMillis = Instant.parse(source.getString("recordedAt")).toEpochMilli(),
+            remote = row,
             voided = row.voidedAtEpochMillis != null,
-            sourceRevisionNumber = source?.optInt("sourceFinalRevisionNumber")?.takeIf { it > 0 },
-            chronologyProvenance = provenance.optString("chronologyProvenance", "UNKNOWN"),
+            sourceRevisionNumber = source.getInt("sourceFinalRevisionNumber"),
         )
     }
     val transfer = transferredResults.map { row ->
-        val provenance = runCatching { JSONObject(row.provenanceJson) }.getOrDefault(JSONObject())
+        val source = FinalSourceSnapshot.record(row.sourcePayloadJson, "PERFORMED_WORK")
         EffectiveImportedFinalResult(
-            ImportedFinalKind.DATA_TRANSFER, row.logicalResultId, row.originWorkspaceId, row.sourceVisitId, row.sourceWorkItemId,
-            row.sourceFinalRevisionId, runCatching { Instant.parse(provenance.optString("recordedAt")).toEpochMilli() }.getOrDefault(row.importedAtEpochMillis), transferred = row,
-            identityNamespace = if (row.sourcePayloadJson == null) "TRANSFER_LEGACY" else "SOURCE",
+            kind = ImportedFinalKind.DATA_TRANSFER,
+            logicalResultId = row.logicalResultId,
+            originWorkspaceId = source.getString("originWorkspaceId"),
+            sourceVisitId = source.getString("sourceVisitId"),
+            sourceWorkItemId = source.getString("sourceWorkItemId"),
+            sourceFinalRevisionId = row.sourceFinalRevisionId,
+            chronologyEpochMillis = Instant.parse(source.getString("recordedAt")).toEpochMilli(),
+            transferred = row,
             voided = row.voidedAtEpochMillis != null,
-            sourceRevisionNumber = row.sourcePayloadJson?.let { raw -> runCatching { FinalSourceSnapshot.record(raw, "PERFORMED_WORK").getInt("sourceFinalRevisionNumber") }.getOrNull() },
-            chronologyProvenance = if (row.sourcePayloadJson == null) "UNKNOWN" else "SOURCE_RECORDED_AT",
+            sourceRevisionNumber = source.getInt("sourceFinalRevisionNumber"),
         )
     }
     val ordered = (remote + transfer).sortedWith(compareBy<EffectiveImportedFinalResult> { it.chronologyEpochMillis }
         .thenBy { it.originWorkspaceId }.thenBy { it.sourceVisitId }.thenBy { it.sourceWorkItemId }
         .thenBy { it.sourceFinalRevisionId }.thenBy { it.kind.name })
     val revisions = ordered.groupBy {
-        listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId)
+        listOf(it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId)
     }.values.map { matching ->
-        if (matching.size > 1 && matching.all { it.identityNamespace == "SOURCE" }) {
-            val projections = matching.map(FinalSourceProjectionV2::of)
+        if (matching.size > 1) {
+            val projections = matching.map(FinalSourceProjection::of)
             require(projections.map { it.publicFacts }.distinct().size == 1 &&
                 projections.filter { it.privateFacts != null }.map { it.privateFacts }.distinct().size <= 1) {
                 "Conflicting representations of the same source revision"
@@ -93,37 +92,27 @@ internal fun effectiveImportedFinalResults(
         matching.lastOrNull { it.voided } ?: matching.firstOrNull { it.remote != null } ?: matching.first()
     }
     return if (includePreviousRevisions) revisions.filterNot { it.voided } else revisions.groupBy {
-        listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId)
+        listOf(it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId)
     }.values.map { lineage ->
-        val numbered = lineage.filter { it.sourceRevisionNumber != null }
-        require(numbered.groupBy { it.sourceRevisionNumber }.values.all { revisionsAtNumber ->
+        require(lineage.groupBy { it.sourceRevisionNumber }.values.all { revisionsAtNumber ->
             revisionsAtNumber.map { it.sourceFinalRevisionId }.distinct().size == 1
         }) { "Conflicting source revision numbers in imported work" }
-        if (numbered.isEmpty()) {
-            val known = lineage.filter { it.chronologyProvenance == "SOURCE_RECORDED_AT" }
-            val newestKnown = known.maxWithOrNull(compareBy<EffectiveImportedFinalResult> { it.chronologyEpochMillis }.thenBy { it.sourceFinalRevisionId })
-            val uncertain = lineage.filter { it.chronologyProvenance != "SOURCE_RECORDED_AT" }
-            require(lineage.size == 1 || (newestKnown != null && uncertain.all { it.chronologyEpochMillis < newestKnown.chronologyEpochMillis } &&
-                known.count { it.chronologyEpochMillis == newestKnown.chronologyEpochMillis } == 1)) {
-                "Legacy final revisions have ambiguous chronology; review source history before reporting"
-            }
-            newestKnown ?: lineage.single()
-        } else numbered.maxWith(compareBy<EffectiveImportedFinalResult> { it.sourceRevisionNumber!! }
+        lineage.maxWith(compareBy<EffectiveImportedFinalResult> { it.sourceRevisionNumber }
             .thenBy { it.chronologyEpochMillis }.thenBy { it.sourceFinalRevisionId })
     }.filterNot { it.voided }
 }
 
 /** Compare common frozen source facts across direct WORK_RESULT and native relay transports. */
-internal data class FinalSourceProjectionV2(val publicFacts: String, val privateFacts: String?) {
+internal data class FinalSourceProjection(val publicFacts: String, val privateFacts: String?) {
     companion object {
-        const val VERSION = 2
+        const val VERSION = 1
 
-        fun of(value: EffectiveImportedFinalResult): FinalSourceProjectionV2 = projectFinalSourceV2(value)
+        fun of(value: EffectiveImportedFinalResult): FinalSourceProjection = projectFinalSource(value)
     }
 }
 
 /** Versioned common facts: public relays may omit private facts, while two full copies must agree. */
-private fun projectFinalSourceV2(value: EffectiveImportedFinalResult): FinalSourceProjectionV2 {
+private fun projectFinalSource(value: EffectiveImportedFinalResult): FinalSourceProjection {
     val remote = value.remote
     val transferred = value.transferred
     val result = remote?.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
@@ -207,7 +196,7 @@ private fun projectFinalSourceV2(value: EffectiveImportedFinalResult): FinalSour
     }
     val hasPrivateFacts = result != null || native?.let { it.has("internalNotes") && it.has("finalInternalNote") } == true
     val privateFacts = if (hasPrivateFacts) SourceCanonicalJson.text(JSONObject()
-        .put("version", FinalSourceProjectionV2.VERSION)
+        .put("version", FinalSourceProjection.VERSION)
         .put("workNote", facts.remove("privateWorkNote") ?: JSONObject.NULL)
         .put("revisionNote", facts.remove("privateRevisionNote") ?: JSONObject.NULL)
         .put("followUps", facts.remove("privateFollowUps") ?: JSONObject.NULL)
@@ -215,8 +204,8 @@ private fun projectFinalSourceV2(value: EffectiveImportedFinalResult): FinalSour
         listOf("privateWorkNote", "privateRevisionNote", "privateFollowUps", "privateSourcePhotos").forEach(facts::remove)
         null
     }
-    return FinalSourceProjectionV2(SourceCanonicalJson.text(JSONObject()
-        .put("version", FinalSourceProjectionV2.VERSION).put("facts", facts)), privateFacts)
+    return FinalSourceProjection(SourceCanonicalJson.text(JSONObject()
+        .put("version", FinalSourceProjection.VERSION).put("facts", facts)), privateFacts)
 }
 
 private fun comparableWorkFacts(work: JSONObject): JSONObject = JSONObject().also { facts ->

@@ -44,7 +44,7 @@ class VisitWorkFilterScheduleTruthTest {
         db = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(db.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(db.openHelper.writableDatabase)
         root = File(context.cacheDir, "work-filter-schedule-${System.nanoTime()}").apply { mkdirs() }
         time = MutableTestBusinessTime(Instant.parse("2026-09-06T10:00:00Z"))
         repo = RoomServiceLoopRepository(db, time, attachmentRoot = root)

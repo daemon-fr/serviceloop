@@ -52,7 +52,7 @@ class B049WorkResultImportTest {
 
     @Before fun setup() = kotlinx.coroutines.runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         root = File(context.cacheDir, "b049-result-${System.nanoTime()}").apply { mkdirs() }
         val dao = database.serviceLoopDao(); val dispatch = database.dispatchDao()
         dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
@@ -82,29 +82,43 @@ class B049WorkResultImportTest {
             .put("dispatchVisitId", "dispatch-v").put("dispatchItemId", "dispatch-$item")
             .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1).put("assignmentMaterialHash", materialHash)
             .put("technicianId", exporter).put("technicianName", "Field technician").put("serviceDate", "2026-09-23")
+            .put("originWorkspaceId", exporter).put("sourceVisitId", "source-visit").put("sourceWorkItemId", "source-work-$item")
+            .put("sourceWorkItemPosition", item).put("sourceFinalRevisionNumber", 1).put("visitReference", "SOURCE-VISIT")
+            .put("recordedAt", "2026-09-23T09:00:00Z").put("supersedesSourceFinalRevisionId", JSONObject.NULL)
+            .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
+            .put("followUpCaptureState", "CAPTURED_AT_REVISION").put("sourcePhotos", JSONArray())
             .put("outcome", "PERFORMED").put("customerSnapshot", JSONObject().put("name", "Customer"))
             .put("siteSnapshot", JSONObject().put("name", "Site"))
             .put("subjectSnapshot", JSONObject().put("type", if(first) "EQUIPMENT" else "SITE"))
             .put("workSnapshot", JSONObject().put("serviceName", if(first) "Annual" else "Inspect site")
-                .put("planReference", if(first) "PL-1" else JSONObject.NULL).put("fulfilledObligation", first).put("publicWork", "Completed"))
+                .put("planReference", if(first) "PL-1" else JSONObject.NULL).put("fulfilledObligation", first).put("publicWork", "Completed")
+                .put("planId", if(first) "source-plan" else JSONObject.NULL)
+                .put("capturedObligationId", if(first) "source-obligation" else JSONObject.NULL)
+                .put("nextDueDateCalculated", if(first) false else JSONObject.NULL)
+                .put("nextDueOverrideReason", if(first) "Existing plan cycle retained" else JSONObject.NULL))
             .put("checklist", JSONArray()).put("findings", JSONArray()).put("parts", JSONArray()).put("followUps", JSONArray())
             .put("recurrence", JSONObject().put("fulfilledObligation", first).put("oldDueDate", if(first) "2026-09-01" else JSONObject.NULL)
-                .put("nextDueDate", if(first) "2027-09-01" else JSONObject.NULL))
+                .put("nextDueDate", if(first) "2027-09-01" else JSONObject.NULL)
+                .put("planId", if(first) "source-plan" else JSONObject.NULL)
+                .put("capturedObligationId", if(first) "source-obligation" else JSONObject.NULL)
+                .put("intervalCount", if(first) 1 else JSONObject.NULL).put("intervalUnit", if(first) "YEARS" else JSONObject.NULL)
+                .put("nextDueDateCalculated", if(first) false else JSONObject.NULL)
+                .put("nextDueOverrideReason", if(first) "Existing plan cycle retained" else JSONObject.NULL))
         return WorkResultPackageCodec.Result(json, emptyList())
     }
 
     private fun packageBytes(id: String, vararg results: WorkResultPackageCodec.Result) = WorkResultPackageCodec.encode(
         WorkResultPackageCodec.Package(id, exporter, issuer, "2026-09-23T10:00:00Z", results.toList()))
 
-    @Test fun twoLegacyRevisionsWithOnlyPackageTimeCannotChooseCurrentReportTruth() = runTest {
+    @Test fun conflictingCurrentRevisionNumbersCannotChooseReportTruth() = runTest {
         val service = WorkResultImportService(database, root)
-        service.import(packageBytes("legacy-first", result(2)))
+        service.import(packageBytes("current-first", result(2)))
         val second = result(2).let { it.copy(value = JSONObject(it.value.toString())
-            .put("sourceFinalRevisionId", "revision-2-again").put("publicNote", "Different historical wording")) }
-        service.import(packageBytes("legacy-second", second))
+            .put("sourceFinalRevisionId", "revision-2-again").put("recordedAt", "2026-09-24T10:00:00Z")
+            .put("publicNote", "Different historical wording")) }
+        service.import(packageBytes("current-second", second))
         val rows = database.serviceLoopDao().appliedRemoteFinalResultsIncludingVoids()
         assertEquals(2, rows.size)
-        assertTrue(rows.all { JSONObject(it.provenanceJson).getString("chronologyProvenance") == "PACKAGE_GENERATED_AT_FALLBACK" })
         assertThrows(IllegalArgumentException::class.java) { effectiveImportedFinalResults(rows, emptyList()) }
         Unit
     }
@@ -125,7 +139,9 @@ class B049WorkResultImportTest {
         assertEquals(false, repeated.recurrenceAppliedNow)
         assertEquals("ALREADY_RECEIVED", service.import(packageBytes("package-retry", result(1))).items.single().status)
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
-        val correction = result(1).let { it.copy(value = JSONObject(it.value.toString()).put("sourceFinalRevisionId", "revision-1-corrected").put("recordedAt", "2026-09-24T10:00:00Z").put("publicNote", "Corrected wording")) }
+        val correction = result(1).let { it.copy(value = JSONObject(it.value.toString()).put("sourceFinalRevisionId", "revision-1-corrected")
+            .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "revision-1")
+            .put("recordedAt", "2026-09-24T10:00:00Z").put("publicNote", "Corrected wording")) }
         service.import(packageBytes("package-correction", correction))
         assertEquals("APPLIED", database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1-corrected")!!.status)
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
@@ -178,7 +194,8 @@ class B049WorkResultImportTest {
         dispatch.insertOutboxItemAssignees(listOf(DispatchOutboxItemAssigneeEntity("dispatch-2", secondAuthor)))
         val first = result(2)
         val second = result(2).let { item -> item.copy(value = JSONObject(item.value.toString())
-            .put("technicianId", secondAuthor).put("technicianName", "Second technician")) }
+            .put("technicianId", secondAuthor).put("technicianName", "Second technician")
+            .put("originWorkspaceId", secondAuthor)) }
         val service = WorkResultImportService(database, root)
         service.import(packageBytes("author-one", first))
         service.import(WorkResultPackageCodec.encode(WorkResultPackageCodec.Package(
@@ -192,7 +209,8 @@ class B049WorkResultImportTest {
         val service = WorkResultImportService(database, root)
         service.import(packageBytes("first", result(2)))
         val correction = result(2).let { item -> item.copy(value = JSONObject(item.value.toString())
-            .put("sourceFinalRevisionId", "revision-2-corrected").put("recordedAt", "2026-09-24T10:00:00Z")) }
+            .put("sourceFinalRevisionId", "revision-2-corrected").put("sourceFinalRevisionNumber", 2)
+            .put("supersedesSourceFinalRevisionId", "revision-2").put("recordedAt", "2026-09-24T10:00:00Z")) }
         service.import(packageBytes("correction", correction))
         val dao = database.serviceLoopDao()
         val latest = dao.remoteFinalResult(exporter, "result-2", "revision-2-corrected")!!
@@ -209,8 +227,10 @@ class B049WorkResultImportTest {
         val correction = result(1).let { source ->
             source.copy(value = JSONObject(source.value.toString())
                 .put("sourceFinalRevisionId", "revision-1-conflicting")
-                .put("recurrence", JSONObject().put("fulfilledObligation", true)
-                    .put("oldDueDate", "2026-09-01").put("nextDueDate", "2028-09-01")))
+                .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "revision-1")
+                .put("recordedAt", "2026-09-24T10:00:00Z")
+                .put("workSnapshot", JSONObject(source.value.getJSONObject("workSnapshot").toString()).put("nextDueDate", "2028-09-01"))
+                .put("recurrence", JSONObject(source.value.getJSONObject("recurrence").toString()).put("nextDueDate", "2028-09-01")))
         }
         val committed = service.import(packageBytes("correction", correction)).items.single()
         assertEquals("CONFLICT", committed.status)
@@ -237,23 +257,23 @@ class B049WorkResultImportTest {
         assertEquals("APPLIED", database.serviceLoopDao().workResultReceipt(exporter, "result-2", "revision-2")!!.status)
     }
 
-    @Test fun legacyResultWithoutSourceWorkIdentityCannotClaimLosslessNativeRelay() = runTest {
-        WorkResultImportService(database, root).import(packageBytes("legacy-v1", result(2)))
-        val failure = assertThrows(IllegalArgumentException::class.java) {
-            kotlinx.coroutines.runBlocking {
-                DataTransferExportService(database, root).export(ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS)))
+    @Test fun missingRecordedAtIsRejectedEvenWhenPackageHasGeneratedAt() = runTest {
+        val service = WorkResultImportService(database, root)
+        for (missing in listOf("recordedAt", "sourceVisitId", "sourceWorkItemId")) {
+            val incomplete = result(2).let { it.copy(value = JSONObject(it.value.toString()).apply { remove(missing) }) }
+            assertThrows(IllegalArgumentException::class.java) {
+                kotlinx.coroutines.runBlocking { service.preview(packageBytes("missing-$missing", incomplete)) }
             }
         }
-        assertEquals(true, failure.message.orEmpty().contains("source execution identity"))
-        assertEquals(1, database.serviceLoopDao().reportableRemoteFinalResults().size)
+        assertNull(database.serviceLoopDao().workResultReceipt(exporter, "result-2", "revision-2"))
     }
 
-    @Test fun v2SourceExecutionIdentityIsStoredWithoutCoordinatorSubstitution() = runTest {
+    @Test fun v1SourceExecutionIdentityIsStoredWithoutCoordinatorSubstitution() = runTest {
         val source = result(2).let { original ->
             original.copy(value = JSONObject(original.value.toString())
                 .put("originWorkspaceId", exporter).put("sourceVisitId", "technician-visit")
                 .put("sourceWorkItemId", "technician-work").put("sourceWorkItemPosition", 3)
-                .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "earlier-revision")
+                .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "revision-2")
                 .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
                 .put("visitReference", "TECH-1").put("recordedAt", "2026-09-23T09:00:00Z")
                 .put("privateInternalNote", "private revision")
@@ -263,21 +283,21 @@ class B049WorkResultImportTest {
                     .put("privatePlanningNote", "private follow-up")))
                 .put("followUpCaptureState", "CAPTURED_AT_REVISION").put("sourcePhotos", JSONArray()))
         }
-        val bytes = packageBytes("v2-source", source)
-        assertEquals(2, ServiceLoopSyncEnvelopeCodec.decode(bytes).manifest.sections.first().version)
+        val bytes = packageBytes("v1-source", source)
+        assertEquals(1, ServiceLoopSyncEnvelopeCodec.decode(bytes).manifest.sections.first().version)
         val service = WorkResultImportService(database, root)
         assertEquals("APPLIED", service.import(bytes).items.single().status)
         val stored = database.serviceLoopDao().remoteFinalResult(exporter, "result-2", "revision-2")!!
         val wrapper = JSONObject(stored.sourcePayloadJson!!)
         assertEquals(1, wrapper.getInt("snapshotFormatVersion"))
         assertEquals("WORK_RESULT", wrapper.getString("sourcePurpose"))
-        assertEquals(2, wrapper.getInt("sourcePayloadVersion"))
-        assertEquals(2, wrapper.getInt("fingerprintVersion"))
+        assertEquals(1, wrapper.getInt("sourcePayloadVersion"))
+        assertEquals(1, wrapper.getInt("fingerprintVersion"))
         val payload = FinalSourceSnapshot.record(stored.sourcePayloadJson, "WORK_RESULT")
         assertEquals("technician-visit", payload.getString("sourceVisitId"))
         assertEquals("technician-work", payload.getString("sourceWorkItemId"))
         assertEquals(3, payload.getInt("sourceWorkItemPosition"))
-        assertEquals("ALREADY_RECEIVED", service.import(packageBytes("v2-retry", source)).items.single().status)
+        assertEquals("ALREADY_RECEIVED", service.import(packageBytes("v1-retry", source)).items.single().status)
         val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
             ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false)))
         val performed = transfer.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)
@@ -286,36 +306,6 @@ class B049WorkResultImportTest {
         assertEquals("technician-work", relayed.getString("sourceWorkItemId"))
         assertEquals(3, relayed.getInt("sourceWorkItemPosition"))
         assertEquals(false, performed.contains("private revision") || performed.contains("private work") || performed.contains("private follow-up"))
-    }
-
-    @Test fun exactReplayRecoversMissingV2SnapshotWithoutRepeatingBusinessEffects() = runTest {
-        val source = result(1).let { original ->
-            original.copy(value = JSONObject(original.value.toString())
-                .put("originWorkspaceId", exporter).put("sourceVisitId", "source-visit")
-                .put("sourceWorkItemId", "source-work").put("sourceWorkItemPosition", 1)
-                .put("sourceFinalRevisionNumber", 1).put("supersedesSourceFinalRevisionId", JSONObject.NULL)
-                .put("recordedAt", "2026-09-23T09:00:00Z").put("sourcePhotos", JSONArray())
-                .put("visitReference", "TECH-1").put("correctionReason", JSONObject.NULL)
-                .put("publicNote", JSONObject.NULL).put("followUpCaptureState", "CAPTURED_AT_REVISION")
-                .also { value ->
-                    listOf(value.getJSONObject("workSnapshot"), value.getJSONObject("recurrence")).forEach { facts ->
-                        facts.put("planId", "source-plan").put("capturedObligationId", "source-obligation")
-                            .put("nextDueDateCalculated", false).put("nextDueOverrideReason", "Owner retained original cycle")
-                    }
-                    value.getJSONObject("recurrence").put("intervalCount", 1).put("intervalUnit", "YEARS")
-                })
-        }
-        val service = WorkResultImportService(database, root)
-        service.import(packageBytes("first", source))
-        val remote = database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!
-        database.openHelper.writableDatabase.execSQL(
-            "UPDATE remote_final_results SET sourcePayloadJson=NULL WHERE id=?", arrayOf(remote.id))
-        assertNull(database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!.sourcePayloadJson)
-        assertEquals("ALREADY_RECEIVED", service.import(packageBytes("retry", source)).items.single().status)
-        val restored = database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!
-        assertEquals("source-visit", FinalSourceSnapshot.record(restored.sourcePayloadJson!!, "WORK_RESULT").getString("sourceVisitId"))
-        assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
-        assertEquals(1, database.serviceLoopDao().appliedWorkResultReceipts("dispatch-v").size)
     }
 
     @Test fun contradictoryResultSemanticsRejectBeforeAnyReceiptOrObligationEffect() = runTest {
@@ -404,12 +394,13 @@ class B049WorkResultImportTest {
         dao.insertWorkItems(listOf(WorkItemEntity("local-work", "local", null, null, null, null, null, null, "Local inspection", null, null, null, null, false, null, null, subjectType = "SITE")))
         dao.insertFinalRecord(FinalRecordEntity("local-record", "local", "local-revision", 2))
         dao.insertFinalRevision(FinalRecordRevisionEntity("local-revision", "local-record", 1, "V-L", "2026-09-23", 2, "Customer", "Site", null, "Business", "Local technician", null, null, null, "UTC", null))
-        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("local-final-work", "local-revision", 1, "local-work", null, null, null, null, null, null, null, "Local inspection", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE")))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("local-final-work", "local-revision", 1, "local-work", null, null, null, null, null, null, null, "Local inspection", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         val importer = WorkResultImportService(database, root)
         importer.import(packageBytes("first", result(1)))
         importer.import(packageBytes("second", result(2)))
         val corrected = result(1).let { it.copy(value = JSONObject(it.value.toString())
-            .put("sourceFinalRevisionId", "revision-1-corrected").put("recordedAt", "2026-09-24T10:00:00Z")) }
+            .put("sourceFinalRevisionId", "revision-1-corrected").put("sourceFinalRevisionNumber", 2)
+            .put("supersedesSourceFinalRevisionId", "revision-1").put("recordedAt", "2026-09-24T10:00:00Z")) }
         importer.import(packageBytes("corrected", corrected))
         val exporter = ExportCenterService(database, root)
         suspend fun csv(previous: Boolean, name: String): String {
@@ -463,7 +454,8 @@ class B049WorkResultImportTest {
         assertEquals(2, renderedLines)
         assertEquals(setOf("revision-1", "revision-2"), dao.aggregateSources(generated.reportId).map { it.sourceFinalRevisionId }.toSet())
         val corrected = result(1).let { it.copy(value = JSONObject(it.value.toString())
-            .put("sourceFinalRevisionId", "revision-1-corrected").put("recordedAt", "2026-09-24T10:00:00Z")) }
+            .put("sourceFinalRevisionId", "revision-1-corrected").put("sourceFinalRevisionNumber", 2)
+            .put("supersedesSourceFinalRevisionId", "revision-1").put("recordedAt", "2026-09-24T10:00:00Z")) }
         importer.import(packageBytes("corrected", corrected))
         assertEquals(setOf("revision-1-corrected", "revision-2"), service.reportable(scope).single().sources.map { it.revisionId }.toSet())
         assertEquals(setOf("revision-1", "revision-2"), dao.aggregateSources(generated.reportId).map { it.sourceFinalRevisionId }.toSet())

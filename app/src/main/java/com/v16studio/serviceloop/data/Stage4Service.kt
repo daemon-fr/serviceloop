@@ -180,6 +180,7 @@ class Stage4Service(
         require(!record.voided && record.currentRevisionId == draft.baseRevisionId) { "The current record changed; review the correction again" }
         require(draft.reason.isNotBlank()) { "Correction reason is required" }
         val base = dao.finalRevision(draft.baseRevisionId) ?: error("Base revision is missing")
+        val visit = dao.visit(record.visitId) ?: error("Source visit is missing")
         val sourceItems = dao.finalWorkItems(base.id).associateBy { it.id }
         val proposedItems = dao.correctionWorkItems(draft.id)
         require(proposedItems.size == sourceItems.size)
@@ -218,19 +219,6 @@ class Stage4Service(
                 check(dao.advancePlan(plan.id, old.id, next, nextId, draft.actualServiceDate, revisionId) == 1) { "The service plan changed; review the correction again" }
             }
         }
-        dao.insertFinalRevision(base.copy(id = revisionId, revisionNumber = revisionNumber, actualServiceDate = draft.actualServiceDate, recordedAtEpochMillis = now, customerName = draft.customerName, siteName = draft.siteName, siteAddress = draft.siteAddress, businessName = draft.businessName, technicianName = draft.technicianName, privateInternalNote = draft.privateNote, supersedesRevisionId = base.id, correctionReason = draft.reason, publicNote = draft.publicNote))
-        dispatchDao.finalDispatchVisit(base.id)?.let { dispatchDao.insertFinalDispatchVisit(it.copy(revisionId = revisionId)) }
-        proposedItems.forEach { proposed ->
-            val source = sourceItems.getValue(proposed.sourceFinalWorkItemId); val newItemId = stable("correction-work", revisionId, source.id)
-            dao.insertFinalWorkItems(listOf(source.copy(id = newItemId, revisionId = revisionId, outcome = proposed.outcome, publicWorkNote = proposed.publicWorkNote, notPerformedReason = proposed.notPerformedReason, fulfilledObligation = proposed.fulfilledObligation, nextDueDate = proposed.proposedNextDueDate, nextDueDateCalculated = proposed.nextDueDateCalculated, nextDueOverrideReason = proposed.nextDueOverrideReason, followUpsSnapshotJson = null)))
-            dispatchDao.finalDispatchItems(base.id).find { it.finalWorkItemId == source.id }?.let { dispatchDao.insertFinalDispatchItems(listOf(it.copy(finalWorkItemId = newItemId))) }
-            dao.insertFinalChecklistItems(decodeChecklist(proposed.checklistJson).map { item -> FinalChecklistItemEntity(stable("correction-check", newItemId, item.sourceId), newItemId, item.position, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateSnapshotId, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateRevision, item.label, item.responseType, item.unit, item.required, item.disposition, item.textValue, item.numberValue, item.reason) })
-            dao.insertFinalParts(decodeParts(proposed.partsJson).mapIndexed { index, item -> FinalPartEntryEntity(stable("correction-part", newItemId, item.sourceId ?: index.toString()), newItemId, index + 1, item.description, item.quantity, item.unit) })
-            dao.insertFinalPhotos(decodePhotos(proposed.photosJson).filter { it.selected || it.addedInCorrection }.mapIndexed { index, item -> FinalPhotoEntryEntity(stable("correction-photo", newItemId, item.sourceId ?: item.sha256), newItemId, index + 1, item.sourceId ?: stable("correction-evidence", revisionId, item.sha256), item.storedRelativePath, item.sha256, item.byteSize, item.mimeType, item.caption, item.addedInCorrection, item.addedAtEpochMillis, item.selected && item.includedInCustomerReport, item.visibility) })
-        }
-        check(dao.advanceRecordRevision(record.id, base.id, revisionId) == 1) { "The current record changed; review the correction again" }
-        val visit = dao.visit(record.visitId)!!
-        dao.insertChangeEntry(change("FINAL_RECORD", record.id, "CORRECTION", draft.actualServiceDate, now, draft.reason, "Revision ${base.revisionNumber}", "Revision $revisionNumber", visit.customerId, visit.siteId, null, record.id, draft.customerName, draft.siteName, null))
         decodeFollowUps(draft.followUpEffectsJson).filter { it.action == "CANCEL" }.forEach { effect ->
             val existing = dao.followUp(effect.id) ?: error("Affected follow-up no longer exists")
             require(existing.state == "OPEN") { "A closed follow-up cannot be cancelled by a correction" }
@@ -244,10 +232,18 @@ class Stage4Service(
             dao.insertFollowUp(FollowUpEntity(followUpId, "FU-${dao.followUpCount() + 1}", "CORRECTIVE", requested.title.trim(), requested.dueDate, "OPEN", visit.customerId, visit.siteId, firstWork?.equipmentId, requested.privatePlanningNote.trim().ifBlank { null }, visit.id, firstWork?.sourceWorkItemId, now))
             dao.insertFollowUpEvent(FollowUpEventEntity(UUID.randomUUID().toString(), followUpId, "CREATED_BY_CORRECTION", now, draft.reason, requested.dueDate))
         }
-        dao.finalWorkItems(revisionId).forEach { item ->
-            val snapshot = FinalFollowUpSnapshot.capture(now, dao.followUpsForSourceWorkItem(item.sourceWorkItemId))
-            check(dao.setFinalFollowUpSnapshot(item.id, snapshot) == 1)
+        dao.insertFinalRevision(base.copy(id = revisionId, revisionNumber = revisionNumber, actualServiceDate = draft.actualServiceDate, recordedAtEpochMillis = now, customerName = draft.customerName, siteName = draft.siteName, siteAddress = draft.siteAddress, businessName = draft.businessName, technicianName = draft.technicianName, privateInternalNote = draft.privateNote, supersedesRevisionId = base.id, correctionReason = draft.reason, publicNote = draft.publicNote))
+        dispatchDao.finalDispatchVisit(base.id)?.let { dispatchDao.insertFinalDispatchVisit(it.copy(revisionId = revisionId)) }
+        proposedItems.forEach { proposed ->
+            val source = sourceItems.getValue(proposed.sourceFinalWorkItemId); val newItemId = stable("correction-work", revisionId, source.id)
+            dao.insertFinalWorkItems(listOf(source.copy(id = newItemId, revisionId = revisionId, outcome = proposed.outcome, publicWorkNote = proposed.publicWorkNote, notPerformedReason = proposed.notPerformedReason, fulfilledObligation = proposed.fulfilledObligation, nextDueDate = proposed.proposedNextDueDate, nextDueDateCalculated = proposed.nextDueDateCalculated, nextDueOverrideReason = proposed.nextDueOverrideReason, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(now, dao.followUpsForSourceWorkItem(source.sourceWorkItemId)))))
+            dispatchDao.finalDispatchItems(base.id).find { it.finalWorkItemId == source.id }?.let { dispatchDao.insertFinalDispatchItems(listOf(it.copy(finalWorkItemId = newItemId))) }
+            dao.insertFinalChecklistItems(decodeChecklist(proposed.checklistJson).map { item -> FinalChecklistItemEntity(stable("correction-check", newItemId, item.sourceId), newItemId, item.position, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateSnapshotId, dao.finalChecklistItems(source.id).firstOrNull { it.id == item.sourceId }?.templateRevision, item.label, item.responseType, item.unit, item.required, item.disposition, item.textValue, item.numberValue, item.reason) })
+            dao.insertFinalParts(decodeParts(proposed.partsJson).mapIndexed { index, item -> FinalPartEntryEntity(stable("correction-part", newItemId, item.sourceId ?: index.toString()), newItemId, index + 1, item.description, item.quantity, item.unit) })
+            dao.insertFinalPhotos(decodePhotos(proposed.photosJson).filter { it.selected || it.addedInCorrection }.mapIndexed { index, item -> FinalPhotoEntryEntity(stable("correction-photo", newItemId, item.sourceId ?: item.sha256), newItemId, index + 1, item.sourceId ?: stable("correction-evidence", revisionId, item.sha256), item.storedRelativePath, item.sha256, item.byteSize, item.mimeType, item.caption, item.addedInCorrection, item.addedAtEpochMillis, item.selected && item.includedInCustomerReport, item.visibility) })
         }
+        check(dao.advanceRecordRevision(record.id, base.id, revisionId) == 1) { "The current record changed; review the correction again" }
+        dao.insertChangeEntry(change("FINAL_RECORD", record.id, "CORRECTION", draft.actualServiceDate, now, draft.reason, "Revision ${base.revisionNumber}", "Revision $revisionNumber", visit.customerId, visit.siteId, null, record.id, draft.customerName, draft.siteName, null))
         val selectedEvidenceIds = proposedItems.flatMap { decodePhotos(it.photosJson) }.filter { it.selected && it.addedInCorrection }.mapNotNull { it.sourceId }.toSet()
         dao.attachmentsForOwner("CORRECTION_DRAFT", draft.id).forEach { attachment ->
             check(dao.reparentAttachment(attachment.id, "CORRECTION_DRAFT", draft.id, "FINAL_REVISION", revisionId, attachment.id in selectedEvidenceIds) == 1) { "Correction evidence ownership could not be committed" }

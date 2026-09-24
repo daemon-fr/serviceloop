@@ -2,10 +2,10 @@ package com.v16studio.serviceloop.data
 
 import androidx.room.withTransaction
 
-enum class ServiceLoopSourceTrust { TRUSTED, NOT_TRUSTED, OLDER_FILE }
+enum class ServiceLoopSourceTrust { TRUSTED, NOT_TRUSTED }
 
 data class ServiceLoopTrustDecision(
-    val sourceId: String?,
+    val sourceId: String,
     val friendlyName: String?,
     val trust: ServiceLoopSourceTrust,
 ) {
@@ -32,12 +32,11 @@ class ServiceLoopPeerTrustStore(private val database: ServiceLoopDatabase) {
 
     suspend fun trustedIds(): List<TrustedServiceLoopIdEntity> = dispatch.trustedServiceLoopIds()
 
-    suspend fun assess(exporterId: String?): ServiceLoopTrustDecision {
-        if (exporterId == null) return ServiceLoopTrustDecision(null, null, ServiceLoopSourceTrust.OLDER_FILE)
+    suspend fun assess(exporterId: String): ServiceLoopTrustDecision {
         val normalized = TechnicianIdCodec.normalize(exporterId)
             ?: throw IllegalArgumentException("ServiceLoop file source ID is invalid")
         val own = localIdentity().technicianId
-        val ownCanonical = TechnicianIdCodec.normalize(own) ?: own
+        val ownCanonical = TechnicianIdCodec.normalize(own) ?: error("Local technician identity is invalid")
         val trusted = dispatch.trustedServiceLoopId(normalized)
         return when {
             normalized == ownCanonical -> ServiceLoopTrustDecision(normalized, "This device", ServiceLoopSourceTrust.TRUSTED)
@@ -46,20 +45,13 @@ class ServiceLoopPeerTrustStore(private val database: ServiceLoopDatabase) {
         }
     }
 
-    suspend fun requireTrusted(exporterId: String?) {
+    suspend fun requireTrusted(exporterId: String) {
         val decision = assess(exporterId)
-        require(decision.canImport) {
-            if (decision.trust == ServiceLoopSourceTrust.OLDER_FILE) {
-                "This older ServiceLoop file has no source ID. Re-export it from a newer ServiceLoop version."
-            } else "Add this ServiceLoop source ID to Trusted IDs before importing."
-        }
+        require(decision.canImport) { "Add this ServiceLoop source ID to Trusted IDs before importing." }
     }
 
     /** Caller owns a Room transaction so the final import decision and first mutation share one boundary. */
-    suspend fun requireTrustedInCurrentTransaction(exporterId: String?) {
-        if (exporterId == null) {
-            throw IllegalArgumentException("This older ServiceLoop file has no source ID. Re-export it from a newer ServiceLoop version.")
-        }
+    suspend fun requireTrustedInCurrentTransaction(exporterId: String) {
         val normalized = TechnicianIdCodec.normalize(exporterId)
             ?: throw IllegalArgumentException("ServiceLoop file source ID is invalid")
         val ownId = dispatch.technicianIdentity()?.technicianId ?: run {
@@ -67,7 +59,7 @@ class ServiceLoopPeerTrustStore(private val database: ServiceLoopDatabase) {
             TechnicianIdentityEntity(technicianId = TechnicianIdCodec.generate(), displayName = "Technician", createdAtEpochMillis = now, modifiedAtEpochMillis = now)
                 .also { dispatch.insertTechnicianIdentity(it) }.technicianId
         }
-        val ownCanonical = TechnicianIdCodec.normalize(ownId) ?: ownId
+        val ownCanonical = TechnicianIdCodec.normalize(ownId) ?: error("Local technician identity is invalid")
         require(normalized == ownCanonical || dispatch.trustedServiceLoopId(normalized) != null) {
             "Add this ServiceLoop source ID to Trusted IDs before importing."
         }
@@ -80,7 +72,8 @@ class ServiceLoopPeerTrustStore(private val database: ServiceLoopDatabase) {
         require(name.isNotEmpty()) { "Friendly name is required" }
         require(name.length <= 80) { "Friendly name must be 80 characters or fewer" }
         val own = localIdentity().technicianId
-        require(peerId != (TechnicianIdCodec.normalize(own) ?: own)) { "This device's own ID is already trusted" }
+        val ownCanonical = TechnicianIdCodec.normalize(own) ?: error("Local technician identity is invalid")
+        require(peerId != ownCanonical) { "This device's own ID is already trusted" }
         require(dispatch.trustedServiceLoopId(peerId) == null) { "This ID is already trusted" }
         val now = System.currentTimeMillis()
         val entity = TrustedServiceLoopIdEntity(peerId, name, now, now)

@@ -31,7 +31,7 @@ class B049WorkResultExportTest {
     @Before fun setUp() = kotlinx.coroutines.runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
-        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase)
+        ServiceLoopDatabase.configureStage4Tracking(database.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
         root = File(context.cacheDir, "b049-result-export-${System.nanoTime()}").apply { mkdirs() }
         val dao = database.serviceLoopDao()
         dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
@@ -40,7 +40,7 @@ class B049WorkResultExportTest {
         dao.insertWorkItems(listOf(WorkItemEntity("w", "v", null, null, null, null, null, null, "Site inspection", null, null, null, null, false, null, null, subjectType = "SITE")))
         dao.insertFinalRecord(FinalRecordEntity("record", "v", "revision", 2))
         dao.insertFinalRevision(FinalRecordRevisionEntity("revision", "record", 1, "V-1", "2026-09-23", 2, "Customer", "Site", null, "Business", "Tech", null, null, null, "Europe/Bucharest", null, "CU-1", "ST-1"))
-        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-work", "revision", 1, "w", null, null, null, null, null, null, null, "Site inspection", null, null, "PERFORMED", "Inspected site", null, false, null, null, null, null, null, null, subjectType = "SITE")))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-work", "revision", 1, "w", null, null, null, null, null, null, null, "Site inspection", null, null, "PERFORMED", "Inspected site", null, false, null, null, null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
         val dispatch = database.dispatchDao()
         dispatch.insertTechnicianIdentity(TechnicianIdentityEntity("primary", technician, "Tech", 1, 1))
         dispatch.insertFinalDispatchVisit(FinalDispatchVisitEntity("revision", "dispatch-v", 1, null, "Coordinator", technician, "Tech", "a".repeat(64), issuer))
@@ -54,7 +54,7 @@ class B049WorkResultExportTest {
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { exchange.exportFinalRevisions(listOf("revision")) } }
         ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
         val firstBytes = exchange.exportFinalRevisions(listOf("revision"))
-        assertEquals(2, ServiceLoopSyncEnvelopeCodec.decode(firstBytes).manifest.sections.first().version)
+        assertEquals(1, ServiceLoopSyncEnvelopeCodec.decode(firstBytes).manifest.sections.first().version)
         val first = WorkResultPackageCodec.decode(firstBytes)
         val second = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision")))
         assertEquals(issuer, first.targetIssuerId)
@@ -77,7 +77,9 @@ class B049WorkResultExportTest {
             "c", "s", null, "Private plan", "v", "w", 2)
         dao.insertFollowUp(original)
         val snapshot = FinalFollowUpSnapshot.capture(2, listOf(original))
-        assertEquals(1, dao.setFinalFollowUpSnapshot("final-work", snapshot))
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE final_work_items SET followUpsSnapshotJson=? WHERE id=?", arrayOf(snapshot, "final-work"))
+        assertEquals(snapshot, dao.finalWorkItems("revision").single().followUpsSnapshotJson)
         val exchange = WorkResultExchangeService(database, root)
         val first = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().value
         dao.updateFollowUp(original.copy(title = "Changed today", state = "CANCELLED", privatePlanningNote = "New plan", updatedAtEpochMillis = 10))
@@ -213,9 +215,8 @@ class B049WorkResultExportTest {
         val coordinatorRoot = File(context.cacheDir, "b049-bridge-b-${System.nanoTime()}").apply { mkdirs() }
         val receiverRoot = File(context.cacheDir, "b049-bridge-c-${System.nanoTime()}").apply { mkdirs() }
         try {
-            ServiceLoopDatabase.configureStage4Tracking(coordinator.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase)
-            ServiceLoopDatabase.configureReminderDefaults(receiver.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(coordinator.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(coordinator.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase); ServiceLoopDatabase.configureReminderDefaults(receiver.openHelper.writableDatabase)
             val b = coordinator.serviceLoopDao()
             val dispatch = coordinator.dispatchDao()
             b.insertCustomers(listOf(CustomerEntity("bc", "CU-1", "Customer")))

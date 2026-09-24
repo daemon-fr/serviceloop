@@ -29,9 +29,9 @@ class B049DataTransferCodecTest {
         }
     }
 
-    @Test fun v2DeclaresFamiliesAndChecksEvidenceIntegrity() {
-        val register = "{\"customers\":[]}".toByteArray()
-        val evidence = "{\"photos\":[]}".toByteArray()
+    @Test fun v1DeclaresFamiliesAndChecksEvidenceIntegrity() {
+        val register = "{\"version\":1,\"customers\":[]}".toByteArray()
+        val evidence = "{\"version\":1,\"photos\":[]}".toByteArray()
         val image = byteArrayOf(1, 2, 3)
         val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to register, DataTransferFamily.EVIDENCE to evidence), binaries = mapOf("binary-photo" to image), sourceWorkspaceId = exporter, options = DataTransferOptions(true, true, true))
         val decoded = DataTransferCodec.decode(bytes)
@@ -43,14 +43,14 @@ class B049DataTransferCodecTest {
         assertEquals(DataTransferOptions(true, true, true), decoded.options)
         val entries = unzip(bytes)
         val metadata = JSONObject(entries.getValue("transfer.json").toString(Charsets.UTF_8))
-        assertEquals(2, metadata.getInt("version"))
+        assertEquals(1, metadata.getInt("version"))
         metadata.getJSONArray("binaries").getJSONObject(0).put("sha256", "bad")
         entries["transfer.json"] = metadata.toString().toByteArray()
         assertThrows(IllegalArgumentException::class.java) { DataTransferCodec.decode(zip(entries)) }
     }
 
     @Test fun rejectsDuplicateAndUnsupportedFamilyDeclarations() {
-        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to "{}".toByteArray()), sourceWorkspaceId = exporter)
+        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to "{\"version\":1}".toByteArray()), sourceWorkspaceId = exporter)
         val entries = unzip(bytes)
         val metadata = JSONObject(entries.getValue("transfer.json").toString(Charsets.UTF_8))
         val families = metadata.getJSONArray("families")
@@ -64,21 +64,21 @@ class B049DataTransferCodecTest {
     }
 
     @Test fun rejectsUndeclaredAndMissingSectionsAndUnsafeBinaryName() {
-        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to "{}".toByteArray()), sourceWorkspaceId = exporter)
+        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to "{\"version\":1}".toByteArray()), sourceWorkspaceId = exporter)
         val original = ServiceLoopSyncEnvelopeCodec.decode(bytes)
         val added = original.manifest.copy(sections = original.manifest.sections + ServiceLoopSyncSectionDeclaration("extra", 1, "extra.json"))
-        val withExtra = ServiceLoopSyncEnvelopeCodec.encode(added, original.sections + ("extra" to "{}".toByteArray()))
+        val withExtra = ServiceLoopSyncEnvelopeCodec.encode(added, original.sections + ("extra" to "{\"version\":1}".toByteArray()))
         assertThrows(IllegalArgumentException::class.java) { DataTransferCodec.decode(withExtra) }
         val missing = original.manifest.copy(sections = original.manifest.sections.filterNot { it.name == "register" })
         val withoutRegister = ServiceLoopSyncEnvelopeCodec.encode(missing, original.sections - "register")
         assertThrows(IllegalStateException::class.java) { DataTransferCodec.decode(withoutRegister) }
         assertThrows(IllegalArgumentException::class.java) {
-            DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.EVIDENCE to "{}".toByteArray()), binaries = mapOf("../unsafe" to byteArrayOf(1)), sourceWorkspaceId = exporter)
+            DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.EVIDENCE to "{\"version\":1}".toByteArray()), binaries = mapOf("../unsafe" to byteArrayOf(1)), sourceWorkspaceId = exporter)
         }
     }
 
     @Test fun rejectsUnsupportedTransferVersionSourceIdentityAndBinaryMetadataDrift() {
-        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.EVIDENCE to "{\"photos\":[]}".toByteArray()), binaries = mapOf("binary-photo" to byteArrayOf(1, 2)), sourceWorkspaceId = exporter)
+        val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.EVIDENCE to "{\"version\":1,\"photos\":[]}".toByteArray()), binaries = mapOf("binary-photo" to byteArrayOf(1, 2)), sourceWorkspaceId = exporter)
         fun malformed(change: (JSONObject) -> Unit) {
             val entries = unzip(bytes)
             val metadata = JSONObject(entries.getValue("transfer.json").toString(Charsets.UTF_8))

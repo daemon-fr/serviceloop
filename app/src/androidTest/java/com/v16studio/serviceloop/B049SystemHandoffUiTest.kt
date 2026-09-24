@@ -71,7 +71,7 @@ class B049SystemHandoffUiTest {
         assertTrue(automation.rootInActiveWindow.packageName.toString().contains("serviceloop", ignoreCase = true))
     }
 
-    @Test fun nativeCustomerExportAndGeneratedV2ImportUseRealAndroidSystemSurfaces() {
+    @Test fun nativeCustomerExportAndGeneratedV1ImportUseRealAndroidSystemSurfaces() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val automation = instrumentation.uiAutomation
         val target = instrumentation.targetContext
@@ -137,7 +137,7 @@ class B049SystemHandoffUiTest {
             families = mapOf(DataTransferFamily.REGISTER to register.toString().toByteArray()),
             sourceWorkspaceId = exporter,
         )
-        val filename = "b049-generated-v2-${reference.lowercase()}.slsync"
+        val filename = "b049-generated-v1-${reference.lowercase()}.slsync"
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, SERVICE_LOOP_SYNC_MIME)
