@@ -157,6 +157,37 @@ class B049DataTransferEndToEndInstrumentedTest {
             val visit = JSONObject(relay.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)).getJSONArray("visits").getJSONObject(0)
             assertEquals("visit", visit.getString("sourceVisitId"))
             assertEquals(sourceId, visit.getString("originWorkspaceId"))
+
+            val workspaceC = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+            val rootC = File(context.cacheDir, "b049-transfer-c-device-${System.nanoTime()}").apply { mkdirs() }
+            try {
+                ServiceLoopDatabase.configureStage4Tracking(workspaceC.openHelper.writableDatabase)
+                ServiceLoopDatabase.configureReminderDefaults(workspaceC.openHelper.writableDatabase)
+                ServiceLoopPeerTrustStore(workspaceC).add(sourceId, "Workspace A")
+                val importerC = DataTransferImportService(workspaceC, rootC)
+                fun subset(families: Set<DataTransferFamily>) = DataTransferCodec.encode(
+                    exporterId = decodedPackage.exporterId, sourceWorkspaceId = decodedPackage.sourceWorkspaceId,
+                    families = decodedPackage.families.filterKeys { it in families },
+                    binaries = if (DataTransferFamily.EVIDENCE in families) decodedPackage.binaries else emptyMap(),
+                    options = decodedPackage.options)
+                val evidenceFirst = subset(setOf(DataTransferFamily.REGISTER, DataTransferFamily.EVIDENCE))
+                importerC.import(importerC.preview(evidenceFirst))
+                assertNull(workspaceC.serviceLoopDao().allTransferredEvidence().single().transferredFinalResultId)
+                val historySecond = subset(setOf(DataTransferFamily.PERFORMED_WORK))
+                importerC.import(importerC.preview(historySecond))
+                val c = workspaceC.serviceLoopDao()
+                assertEquals(c.allTransferredFinalResults().single().id,
+                    c.allTransferredEvidence().single().transferredFinalResultId)
+                c.upsertBusinessProfile(BusinessProfileEntity(businessName = "Receiver", technicianName = "Coordinator",
+                    phone = null, email = null, postalAddress = null, zoneId = "UTC", modifiedAtEpochMillis = 1))
+                var rendered: List<com.v16studio.serviceloop.domain.PublicReportModel> = emptyList()
+                val aggregate = AggregateReportService(workspaceC,
+                    RoomServiceLoopRepository(workspaceC, ClockBusinessTime(zoneId = ZoneId.of("UTC")), attachmentRoot = rootC), rootC,
+                    AggregateReportWriter { models, _, _, _, target, _ -> rendered = models; target.writeBytes(byteArrayOf(1)); 1 })
+                val selected = aggregate.reportable(ServiceLoopScopeFilter(customerId = c.allCustomers().single { it.reference == "CU-DEVICE" }.id))
+                aggregate.generate(ServiceLoopScopeFilter(customerId = selected.single().customerId), listOf(selected.single().key))
+                assertEquals(1, rendered.single().lines.sumOf { it.photos.size })
+            } finally { workspaceC.close(); rootC.deleteRecursively() }
         } finally {
             workspaceA.close(); workspaceB.close(); rootA.deleteRecursively(); rootB.deleteRecursively()
         }

@@ -66,6 +66,40 @@ class RecoveryLegacyCompatibilityTest {
         }
     }
 
+    @Test fun replacementRemovesUnownedBytesAcrossAllSixRootsButKeepsExternalFiles() = runBlocking {
+        val recovery = RecoveryPackage(database, root)
+        val backup = recovery.create(password, false)
+        val replaced = OwnedBusinessFiles.roots.map { ownedRoot ->
+            File(root, "$ownedRoot/stale/unreferenced.bin").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(7)) }
+        }
+        val external = File(root, "recovery-not-owned.bin").apply { writeBytes(byteArrayOf(9)) }
+        database.serviceLoopDao().renameCustomer("legacy-customer", "Changed after backup")
+        recovery.restore(recovery.inspect(backup.bytes, password))
+        assertEquals("Historical customer", database.serviceLoopDao().customer("legacy-customer")!!.name)
+        replaced.forEach { assertEquals(false, it.exists()) }
+        assertEquals(true, external.isFile)
+        assertEquals(listOf(9.toByte()), external.readBytes().toList())
+    }
+
+    @Test fun sharedRenditionPathCoalescesOnlyWhenEveryDescriptorAgrees() = runBlocking {
+        val dao = database.serviceLoopDao()
+        dao.insertAggregateReport(AggregateReportEntity("shared-report", "legacy-customer", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
+        val path = "aggregate-reports/shared/rendition.pdf"
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        File(root, path).apply { parentFile!!.mkdirs(); writeBytes(bytes) }
+        val descriptor = AggregateReportRenditionEntity("shared-rendition-a", "shared-report", path,
+            sha256(bytes), bytes.size.toLong(), 1, 1, "READY", null)
+        dao.insertAggregateRendition(descriptor)
+        dao.insertAggregateRendition(descriptor.copy(id = "shared-rendition-b"))
+        val recovery = RecoveryPackage(database, root)
+        val backup = recovery.create(password, false)
+        assertEquals(1, recovery.inspect(backup.bytes, password).files)
+        dao.insertAggregateRendition(descriptor.copy(id = "shared-rendition-c", sha256 = "a".repeat(64)))
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { recovery.create(password, false) } }
+        assertEquals(3, dao.aggregateRenditions("shared-report").size)
+        assertEquals(bytes.toList(), File(root, path).readBytes().toList())
+    }
+
     @Test fun duplicateHistoricalTableFailsBeforeReplacingDurableRows() = runBlocking {
         val recovery = RecoveryPackage(database, root)
         val current = recovery.create(password, false).bytes

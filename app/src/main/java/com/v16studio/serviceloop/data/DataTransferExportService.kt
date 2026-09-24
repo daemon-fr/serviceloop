@@ -416,6 +416,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return JSONObject(source.toString()).apply {
             remove("internalNotes")
             remove("finalInternalNote")
+            if (has("sourceWorkSnapshot")) put("sourceWorkSnapshot", publicWorkSnapshot(getJSONObject("sourceWorkSnapshot")))
             put("followUps", publicFollowUps(source.getJSONArray("followUps")))
             put("sourcePhotos", publicSourcePhotos(source.getJSONArray("sourcePhotos")))
         }

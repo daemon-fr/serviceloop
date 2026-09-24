@@ -579,6 +579,17 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
                 nullableFact(sourceWork, "notPerformedReason") == nullableFact(row, "notPerformedReason")) {
                 "Source work snapshot disagrees with performed record"
             }
+            listOf("planId", "capturedObligationId", "oldDueDate", "nextDueDate",
+                "nextDueDateCalculated", "nextDueOverrideReason").forEach { key ->
+                require(nullableFact(sourceWork, key) == nullableFact(row.getJSONObject("recurrence"), key)) {
+                    "Source work snapshot disagrees with recurrence: $key"
+                }
+            }
+            if (includePrivate && row.has("internalNotes")) {
+                require(nullableFact(sourceWork, "privateInternalNote") == nullableFact(row, "internalNotes")) {
+                    "Source work private note disagrees with performed record"
+                }
+            }
             require(includePrivate || !sourceWork.has("privateInternalNote")) { "Private source work in public transfer" }
         }
         val capture=row.getString("followUpCaptureState")

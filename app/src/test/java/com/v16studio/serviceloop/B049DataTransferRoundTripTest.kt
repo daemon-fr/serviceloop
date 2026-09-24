@@ -211,6 +211,35 @@ class B049DataTransferRoundTripTest {
         return ServiceLoopPeerTrustStore(a).localIdentity().technicianId
     }
 
+    @Test fun publicRelayOfPreviouslyPrivatePerformedWorkRedactsNestedWorkAndPhotos() = runBlocking {
+        val sourceId = seedCompletedWorkWithEvidence()
+        trustedReceiver(sourceId)
+        val families = setOf(ExportFamily.SERVICE_RECORDS, ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)
+        val privatePackage = DataTransferExportService(a, rootA).export(
+            ExportCenterSelection(families = families, includePrivate = true))
+        val importer = DataTransferImportService(b, rootB)
+        importer.import(importer.preview(privatePackage))
+        val publicPackage = DataTransferCodec.decode(DataTransferExportService(b, rootB).export(
+            ExportCenterSelection(families = families, includePrivate = false)))
+        val rows = JSONObject(publicPackage.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8))
+            .getJSONArray("visits").getJSONObject(0).getJSONArray("records")
+        assertEquals(2, rows.length())
+        for (index in 0 until rows.length()) {
+            val row = rows.getJSONObject(index)
+            assertFalse(row.has("internalNotes"))
+            assertFalse(row.has("finalInternalNote"))
+            assertFalse(row.getJSONObject("sourceWorkSnapshot").has("privateInternalNote"))
+            val photos = row.getJSONArray("sourcePhotos")
+            assertTrue((0 until photos.length()).all { photos.getJSONObject(it).getString("visibility") == "PUBLIC" })
+        }
+        val evidence = JSONObject(publicPackage.families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8))
+            .getJSONArray("photos")
+        assertEquals(2, evidence.length())
+        assertTrue((0 until evidence.length()).all { evidence.getJSONObject(it).getString("visibility") == "PUBLIC" })
+        assertFalse(publicPackage.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)
+            .contains("secret one"))
+    }
+
     @Test fun performedWorkAndStandaloneImageArchiveStayImmutableAndRelayOriginalOrigin() = runBlocking {
         val sourceId = seedCompletedWorkWithEvidence()
         trustedReceiver(sourceId)
@@ -307,6 +336,13 @@ class B049DataTransferRoundTripTest {
             assertTrue(compareImporter.preview(alteredPackage).items.any {
                 it.family == DataTransferFamily.PERFORMED_WORK && it.classification == DataTransferClassification.CONFLICT
             })
+            val contradictory = JSONObject(decoded.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8))
+            contradictory.getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)
+                .getJSONObject("sourceWorkSnapshot").put("nextDueDate", "2099-01-01")
+            val contradictoryBytes = DataTransferCodec.encode(sourceId,
+                families = decoded.families + (DataTransferFamily.PERFORMED_WORK to contradictory.toString().toByteArray(Charsets.UTF_8)),
+                binaries = decoded.binaries, sourceWorkspaceId = decoded.sourceWorkspaceId, options = decoded.options)
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { compareImporter.preview(contradictoryBytes) } }
         } finally { comparison.close(); comparisonRoot.deleteRecursively() }
 
         val standalone = DataTransferExportService(a, rootA).export(ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)))
