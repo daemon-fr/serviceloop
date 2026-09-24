@@ -12,7 +12,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,7 +55,7 @@ class ReminderDeviceBindingTest {
             dao.upsertRecoveryMetadata(original)
             assertFalse(coordinator.deliveryRequested())
         } finally {
-            scope.cancel()
+            scope.coroutineContext[Job]!!.cancelAndJoin()
             database.close()
             preferences.edit().clear().commit()
         }
