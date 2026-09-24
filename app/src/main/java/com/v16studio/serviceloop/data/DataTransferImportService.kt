@@ -124,7 +124,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         if (register != null) {
             val customers = register.getJSONArray("customers")
             for (i in 0 until customers.length()) {
-                val row = customers.getJSONObject(i); val id = sourceKey(row); val fp = fingerprint(row)
+                val row = withNullableFields(customers.getJSONObject(i), "contactName", "phone", "email"); val id = sourceKey(row); val fp = fingerprint(row)
                 val bound = dao.dataTransferBinding(id.first, "CUSTOMER", id.second)
                 val target = bound?.localEntityId?.let { dao.customer(it) }
                 val same = target?.let { fingerprint(customerJson(it, row)) == bound?.appliedSourceFingerprint && bound.appliedSourceFingerprint == fp } == true
@@ -137,7 +137,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             val sites = register.getJSONArray("sites")
             for (i in 0 until sites.length()) {
-                val row = sites.getJSONObject(i); val id = sourceKey(row); val customerKey = parentKey(row, "customer")
+                val row = withNullableFields(sites.getJSONObject(i), "address", "contactName", "phone", "email"); val id = sourceKey(row); val customerKey = parentKey(row, "customer")
                 val customerId = mapping[customerKey] ?: resolveBinding(customerKey, "CUSTOMER")
                 if (customerId == null) { current += conflictPlan(DataTransferFamily.REGISTER,"SITE",row,"Site has no resolvable Customer dependency"); items += display(current.last(),"Site ${row.optString("reference")}"); continue }
                 val bound = dao.dataTransferBinding(id.first, "SITE", id.second); val target = bound?.localEntityId?.let { dao.site(it) }
@@ -152,7 +152,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             }
             val equipment = register.getJSONArray("equipment")
             for (i in 0 until equipment.length()) {
-                val row = equipment.getJSONObject(i); val id = sourceKey(row); val siteKey = parentKey(row,"site")
+                val row = withNullableFields(equipment.getJSONObject(i), "technicianIdentifier", "make", "model", "serialNumber"); val id = sourceKey(row); val siteKey = parentKey(row,"site")
                 val siteId = mapping[siteKey] ?: resolveBinding(siteKey,"SITE")
                 if (siteId == null) { current += conflictPlan(DataTransferFamily.REGISTER,"EQUIPMENT",row,"Equipment has no resolvable Site dependency"); items += display(current.last(),"Equipment ${row.optString("reference")}"); continue }
                 val bound=dao.dataTransferBinding(id.first,"EQUIPMENT",id.second); val target=bound?.localEntityId?.let{dao.equipment(it)}
@@ -242,7 +242,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         inserted.filter { it.type == "SITE" }.forEach { item -> val row=item.json;dao.insertSites(listOf(SiteEntity(item.localId,item.parentLocalId!!,row.getString("reference"),row.getString("name"),row.optNullable("address"),row.optNullable("privateAccessNotes"),row.optNullable("contactName"),row.optNullable("phone"),row.optNullable("email"),row.optBoolean("isDefault",false),row.optString("state","ACTIVE")))) }
         inserted.filter { it.type == "EQUIPMENT" }.forEach { item -> val row=item.json;dao.insertEquipment(listOf(EquipmentEntity(item.localId,item.parentLocalId!!,row.getString("reference"),row.optNullable("technicianIdentifier"),row.getString("name"),row.optNullable("make"),row.optNullable("model"),row.optNullable("serialNumber"),row.optNullable("privateNotes"),row.optString("state","ACTIVE")))) }
         inserted.filter { it.type == "CUSTOMER_CONTACT" }.groupBy { it.parentLocalId!! }.forEach { (customerId, contacts) ->
-            val existing=dao.customerContacts(customerId);val next=existing.size
+            val existing=dao.customerContacts(customerId);val next=(existing.maxOfOrNull { it.position } ?: 0).coerceAtLeast(0) + 1
             val ordered=contacts.sortedWith(compareBy<CurrentPlan>{it.json.optInt("position",Int.MAX_VALUE)}.thenBy{it.sourceId})
             dao.insertCustomerContacts(ordered.mapIndexed { index,item -> val row=item.json;CustomerContactEntity(item.localId,customerId,row.optNullable("personName"),row.getString("channel"),row.getString("value"),now,now,row.optNullable("notes"),next+index) })
         }
@@ -371,8 +371,13 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             require(row.getString("mimeType")=="image/jpeg"&&row.getInt("width") in 1..1200&&row.getInt("height") in 1..1200&&maxOf(row.getInt("width"),row.getInt("height"))<=1200&&content.size>=4&&content[0]==0xFF.toByte()&&content[1]==0xD8.toByte()){"Transferred evidence is not a bounded JPEG derivative"}
             val bounds=BitmapFactory.Options().apply{inJustDecodeBounds=true};BitmapFactory.decodeByteArray(content,0,content.size,bounds);require(bounds.outWidth==row.getInt("width")&&bounds.outHeight==row.getInt("height")){"Transferred evidence dimensions do not match"}
             validateHistoryMappings(row,mapping)
-            val existing=dao.transferredEvidenceBySourceKey(key);val classification=when{existing==null->DataTransferClassification.NEW_HISTORY;existing.sha256==hash&&existing.byteSize==content.size.toLong()->DataTransferClassification.ALREADY_IMPORTED;else->DataTransferClassification.CONFLICT}
-            result+=ParsedEvidence(row,content,key,hash,classification);items+=DataTransferImportItem(DataTransferFamily.EVIDENCE,key,classification,"Photo · ${row.optString("visitReference")}",if(classification==DataTransferClassification.CONFLICT)"The same photo revision has different bytes or metadata."else null)
+            val metadataFingerprint=evidenceMetadataFingerprint(row)
+            val existing=dao.transferredEvidenceBySourceKey(key);val classification=when{
+                existing==null->DataTransferClassification.NEW_HISTORY
+                existing.sha256==hash&&existing.byteSize==content.size.toLong()&&evidenceMetadataFingerprint(existing)==metadataFingerprint->DataTransferClassification.ALREADY_IMPORTED
+                else->DataTransferClassification.CONFLICT
+            }
+            result+=ParsedEvidence(row,content,key,hash,classification);items+=DataTransferImportItem(DataTransferFamily.EVIDENCE,key,classification,"Photo · ${row.optString("visitReference")}",if(classification==DataTransferClassification.CONFLICT)"The same photo revision has different bytes or immutable metadata."else null)
         }
         return result
     }
@@ -380,7 +385,7 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
     private fun validateRegister(root:JSONObject?) {
         if(root==null)return;require(root.getInt("version")==1)
         val seen=mutableMapOf<String,MutableSet<String>>();val arrays=mapOf("CUSTOMER" to "customers","CUSTOMER_CONTACT" to "contacts","SITE" to "sites","EQUIPMENT" to "equipment")
-        arrays.forEach{(type,name)->val array=root.getJSONArray(name);val set=mutableSetOf<String>();seen[type]=set;for(i in 0 until array.length()){val row=array.getJSONObject(i);val key=sourceKey(row);require(set.add("${key.first}:${key.second}")){"Duplicate $type source"};when(type){"CUSTOMER"->{required(row,"reference");required(row,"name");require(row.optString("customerType","STANDARD") in setOf("STANDARD","ONE_TIME"))};"CUSTOMER_CONTACT"->{required(row,"value");require(row.getString("channel") in setOf("PHONE","SMS","WHATSAPP","EMAIL","OTHER"));require(row.has("position")&&row.optInt("position")>=0){"Invalid Customer contact position"}};else->required(row,"reference")}}}
+        arrays.forEach{(type,name)->val array=root.getJSONArray(name);val set=mutableSetOf<String>();seen[type]=set;for(i in 0 until array.length()){val row=array.getJSONObject(i);val key=sourceKey(row);require(set.add("${key.first}:${key.second}")){"Duplicate $type source"};when(type){"CUSTOMER"->{required(row,"reference");required(row,"name");require(row.optString("customerType","STANDARD") in setOf("STANDARD","ONE_TIME"))};"CUSTOMER_CONTACT"->{required(row,"value");require(row.getString("channel") in setOf("PHONE","SMS","WHATSAPP","EMAIL","OTHER"));require(row.has("position")&&row.optInt("position")>0){"Invalid Customer contact position"}};else->required(row,"reference")}}}
         root.getJSONArray("sites").forEachJson{row->parentKey(row,"customer")};root.getJSONArray("equipment").forEachJson{row->parentKey(row,"site")};root.getJSONArray("contacts").forEachJson{row->parentKey(row,"customer")}
     }
 
@@ -411,16 +416,93 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         for(customer in dao.allCustomers()) { val found=dao.customerContacts(customer.id).firstOrNull{it.id==id};if(found!=null)return found }
         return null
     }
-    private suspend fun templateContentEquals(template:ReusableTemplateEntity,entry:InspectionTemplateTransferEntry):Boolean{val rev=dao.reusableTemplateRevision(template.currentRevisionId)?:return false;val items=dao.reusableTemplateItems(rev.id).map{DispatchInspectionItem(it.position,it.label,it.responseType,it.unit,it.required,it.privateGuidance)};return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference,rev.nameSnapshot,rev.revisionNumber,items))==InspectionTemplateCodec.contentFingerprint(entry)}
-    private suspend fun templateContentFingerprint(template:ReusableTemplateEntity):String?{val rev=dao.reusableTemplateRevision(template.currentRevisionId)?:return null;val items=dao.reusableTemplateItems(rev.id).map{DispatchInspectionItem(it.position,it.label,it.responseType,it.unit,it.required,it.privateGuidance)};return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference,rev.nameSnapshot,rev.revisionNumber,items))}
+    private suspend fun templateContentEquals(template:ReusableTemplateEntity,entry:InspectionTemplateTransferEntry):Boolean{val rev=dao.reusableTemplateRevision(template.currentRevisionId)?:return false;val items=dao.reusableTemplateItems(rev.id).map{DispatchInspectionItem(it.position,it.label,it.responseType,it.unit,it.required,it.privateGuidance)};return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference,rev.nameSnapshot,rev.revisionNumber,items,state=template.state))==InspectionTemplateCodec.contentFingerprint(entry)}
+    private suspend fun templateContentFingerprint(template:ReusableTemplateEntity):String?{val rev=dao.reusableTemplateRevision(template.currentRevisionId)?:return null;val items=dao.reusableTemplateItems(rev.id).map{DispatchInspectionItem(it.position,it.label,it.responseType,it.unit,it.required,it.privateGuidance)};return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference,rev.nameSnapshot,rev.revisionNumber,items,state=template.state))}
 
-    private fun customerJson(row:CustomerEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("reference",row.reference).put("name",row.name).put("customerType",row.customerType).put("state",row.state).apply{if(source.has("privateFieldsIncluded"))put("privateFieldsIncluded",true).put("contactName",row.contactName).put("phone",row.phone).put("email",row.email).put("privateNote",row.privateNote)}
-    private fun siteJson(row:SiteEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("reference",row.reference).put("name",row.name).put("isDefault",row.isDefault).put("state",row.state).apply{if(source.has("privateFieldsIncluded"))put("privateFieldsIncluded",true).put("address",row.address).put("privateAccessNotes",row.privateAccessNotes).put("contactName",row.contactName).put("phone",row.phone).put("email",row.email)}
-    private fun equipmentJson(row:EquipmentEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId")).put("reference",row.reference).put("name",row.name).put("state",row.state).apply{if(source.has("privateFieldsIncluded"))put("privateFieldsIncluded",true).put("technicianIdentifier",row.technicianIdentifier).put("make",row.make).put("model",row.model).put("serialNumber",row.serialNumber).put("privateNotes",row.privateNotes)}
-    private fun contactJson(row:CustomerContactEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("position",source.optInt("position")).put("personName",row.personName).put("channel",row.channel).put("value",row.value).apply{if(source.has("notes"))put("notes",row.notes)}
+    private fun customerJson(row:CustomerEntity,source:JSONObject)=JSONObject()
+        .put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId"))
+        .put("reference",row.reference).put("name",row.name).put("customerType",row.customerType).put("state",row.state)
+        .put("contactName",row.contactName ?: JSONObject.NULL).put("phone",row.phone ?: JSONObject.NULL).put("email",row.email ?: JSONObject.NULL)
+        .apply { if(source.has("privateFieldsIncluded")){put("privateFieldsIncluded",true);if(source.has("privateNote"))put("privateNote",row.privateNote ?: JSONObject.NULL)} }
+    private fun siteJson(row:SiteEntity,source:JSONObject)=JSONObject()
+        .put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId"))
+        .put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId"))
+        .put("reference",row.reference).put("name",row.name).put("isDefault",row.isDefault).put("state",row.state)
+        .put("address",row.address ?: JSONObject.NULL).put("contactName",row.contactName ?: JSONObject.NULL).put("phone",row.phone ?: JSONObject.NULL).put("email",row.email ?: JSONObject.NULL)
+        .apply { if(source.has("privateFieldsIncluded")){put("privateFieldsIncluded",true);if(source.has("privateAccessNotes"))put("privateAccessNotes",row.privateAccessNotes ?: JSONObject.NULL)} }
+    private fun equipmentJson(row:EquipmentEntity,source:JSONObject)=JSONObject()
+        .put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId"))
+        .put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId"))
+        .put("reference",row.reference).put("name",row.name).put("state",row.state)
+        .put("technicianIdentifier",row.technicianIdentifier ?: JSONObject.NULL).put("make",row.make ?: JSONObject.NULL).put("model",row.model ?: JSONObject.NULL).put("serialNumber",row.serialNumber ?: JSONObject.NULL)
+        .apply { if(source.has("privateFieldsIncluded")){put("privateFieldsIncluded",true);if(source.has("privateNotes"))put("privateNotes",row.privateNotes ?: JSONObject.NULL)} }
+    private fun contactJson(row:CustomerContactEntity,source:JSONObject)=JSONObject()
+        .put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId"))
+        .put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId"))
+        .put("position",source.optInt("position")).put("personName",row.personName ?: JSONObject.NULL).put("channel",row.channel).put("value",row.value)
+        .apply { if(source.has("notes"))put("notes",row.notes ?: JSONObject.NULL) }
     private fun planJson(row:ServicePlanEntity,source:JSONObject)=JSONObject().put("originWorkspaceId",source.optString("originWorkspaceId")).put("sourceEntityId",source.optString("sourceEntityId")).put("customerOriginWorkspaceId",source.optString("customerOriginWorkspaceId")).put("customerSourceEntityId",source.optString("customerSourceEntityId")).put("siteOriginWorkspaceId",source.optString("siteOriginWorkspaceId")).put("siteSourceEntityId",source.optString("siteSourceEntityId")).put("equipmentOriginWorkspaceId",source.optString("equipmentOriginWorkspaceId")).put("equipmentSourceEntityId",source.optString("equipmentSourceEntityId")).put("templateOriginWorkspaceId",source.optString("templateOriginWorkspaceId")).put("templateSourceEntityId",source.optString("templateSourceEntityId")).put("reference",row.reference).put("name",row.name).put("intervalCount",row.intervalCount).put("intervalUnit",row.intervalUnit).put("currentDueDate",row.currentDueDate).put("state",row.state)
     private fun normalizedContactMatch(local:CustomerContactEntity,incoming:JSONObject)=local.channel.trim().uppercase()==incoming.optString("channel").trim().uppercase()&&local.value.trim()==incoming.optString("value").trim()&&local.personName.orEmpty().trim()==incoming.optString("personName").trim()&&(!incoming.has("notes")||local.notes.orEmpty().trim()==incoming.optString("notes").trim())
     private fun fingerprint(value:JSONObject):String=sha256(canonical(value.copyForFingerprint()).toByteArray(Charsets.UTF_8))
+    private fun evidenceMetadataFingerprint(row:JSONObject):String = evidenceMetadataFingerprint(
+        originWorkspaceId = row.getString("originWorkspaceId"),
+        sourcePhotoId = row.getString("sourcePhotoId"),
+        sourceVisitId = row.getString("sourceVisitId"),
+        sourceWorkItemId = row.getString("sourceWorkItemId"),
+        sourceFinalRevisionId = row.optNullable("sourceFinalRevisionId"),
+        serviceDate = row.getString("serviceDate"),
+        visitReference = row.getString("visitReference"),
+        serviceName = row.getString("serviceName"),
+        caption = row.optNullable("caption"),
+        visibility = row.getString("visibility"),
+        includedInCustomerReport = row.getBoolean("includedInCustomerReport"),
+        customerWorkspaceId = row.optNullable("originCustomerWorkspaceId"),
+        customerSourceId = row.optNullable("originCustomerSourceId"),
+        siteWorkspaceId = row.optNullable("originSiteWorkspaceId"),
+        siteSourceId = row.optNullable("originSiteSourceId"),
+        equipmentWorkspaceId = row.optNullable("originEquipmentWorkspaceId"),
+        equipmentSourceId = row.optNullable("originEquipmentSourceId"),
+        mimeType = row.getString("mimeType"), width = row.getInt("width"), height = row.getInt("height"),
+    )
+
+    private fun evidenceMetadataFingerprint(value:TransferredEvidenceEntity):String {
+        val provenance=JSONObject(value.provenanceJson)
+        return evidenceMetadataFingerprint(
+            originWorkspaceId=value.originWorkspaceId,sourcePhotoId=value.sourcePhotoId,sourceVisitId=value.sourceVisitId,
+            sourceWorkItemId=value.sourceWorkItemId,sourceFinalRevisionId=value.sourceFinalRevisionId,serviceDate=value.serviceDate,
+            visitReference=value.visitReference,serviceName=value.serviceName,caption=value.caption,visibility=value.visibility,
+            includedInCustomerReport=value.includedInCustomerReport,
+            customerWorkspaceId=provenance.optNullable("customerOriginWorkspaceId"),customerSourceId=provenance.optNullable("customerSourceEntityId"),
+            siteWorkspaceId=provenance.optNullable("siteOriginWorkspaceId"),siteSourceId=provenance.optNullable("siteSourceEntityId"),
+            equipmentWorkspaceId=provenance.optNullable("equipmentOriginWorkspaceId"),equipmentSourceId=provenance.optNullable("equipmentSourceEntityId"),
+            mimeType=value.mimeType,width=value.width,height=value.height,
+        )
+    }
+
+    private fun evidenceMetadataFingerprint(
+        originWorkspaceId:String,sourcePhotoId:String,sourceVisitId:String,sourceWorkItemId:String,sourceFinalRevisionId:String?,
+        serviceDate:String,visitReference:String,serviceName:String,caption:String?,visibility:String,includedInCustomerReport:Boolean,
+        customerWorkspaceId:String?,customerSourceId:String?,siteWorkspaceId:String?,siteSourceId:String?,
+        equipmentWorkspaceId:String?,equipmentSourceId:String?,mimeType:String,width:Int,height:Int,
+    ):String {
+        fun identity(workspace:String?,source:String?):Any = if(workspace==null&&source==null) JSONObject.NULL else JSONObject()
+            .put("originWorkspaceId",workspace?.let{TechnicianIdCodec.normalize(it) ?: it} ?: JSONObject.NULL)
+            .put("sourceEntityId",source ?: JSONObject.NULL)
+        val canonicalMetadata=JSONObject().put("originWorkspaceId",TechnicianIdCodec.normalize(originWorkspaceId) ?: originWorkspaceId)
+            .put("sourcePhotoId",sourcePhotoId).put("sourceVisitId",sourceVisitId).put("sourceWorkItemId",sourceWorkItemId)
+            .put("sourceFinalRevisionId",sourceFinalRevisionId ?: JSONObject.NULL).put("serviceDate",serviceDate)
+            .put("visitReference",visitReference).put("serviceName",serviceName).put("caption",caption ?: JSONObject.NULL)
+            .put("visibility",visibility).put("includedInCustomerReport",includedInCustomerReport)
+            // The origin* pairs are immutable source identities; receiver-local convenience IDs are deliberately absent.
+            .put("customerIdentity",identity(customerWorkspaceId,customerSourceId))
+            .put("siteIdentity",identity(siteWorkspaceId,siteSourceId)).put("equipmentIdentity",identity(equipmentWorkspaceId,equipmentSourceId))
+            .put("mimeType",mimeType).put("width",width).put("height",height)
+        return sha256(canonical(canonicalMetadata).toByteArray(Charsets.UTF_8))
+    }
+
+    private fun withNullableFields(value:JSONObject,vararg fields:String):JSONObject = JSONObject(value.toString()).apply {
+        fields.forEach { key -> if(!has(key))put(key,JSONObject.NULL) }
+    }
     private fun JSONObject.copyForFingerprint():JSONObject=JSONObject(toString()).apply{remove("originWorkspaceId");remove("sourceEntityId");remove("sourceRevisionId");remove("binaryName");remove("sha256");remove("byteSize");remove("width");remove("height");remove("mimeType")}
     private fun canonical(value:Any?):String=when(value){is JSONObject->value.keys().asSequence().toList().sorted().joinToString(",","{","}"){key->"${JSONObject.quote(key)}:${canonical(value.get(key))}"};is JSONArray->(0 until value.length()).joinToString(",","[","]"){canonical(value.get(it))};JSONObject.NULL,null->"null";is String->JSONObject.quote(value);else->value.toString()}
     private fun sourceKey(row:JSONObject):Pair<String,String> = validOrigin(row.getString("originWorkspaceId")) to required(row,"sourceEntityId")

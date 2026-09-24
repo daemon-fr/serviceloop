@@ -28,15 +28,29 @@ class B049DataTransferEndToEndInstrumentedTest {
             ServiceLoopDatabase.configureStage4Tracking(workspaceA.openHelper.writableDatabase)
             ServiceLoopDatabase.configureStage4Tracking(workspaceB.openHelper.writableDatabase)
             val a = workspaceA.serviceLoopDao()
-            a.insertCustomers(listOf(CustomerEntity("c", "CU-DEVICE", "Device customer")))
-            a.insertCustomerContacts(listOf(CustomerContactEntity("cc1", "c", "Office", "PHONE", "+400", 1, 1, position = 0), CustomerContactEntity("cc2", "c", "Dispatch", "EMAIL", "dispatch@device.test", 1, 1, position = 1)))
-            a.insertSites(listOf(SiteEntity("s", "c", "ST-DEVICE", "Device site", null, null)))
-            a.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-DEVICE", null, "Boiler", "Maker", "Model", "Serial", null)))
+            a.insertCustomers(listOf(CustomerEntity("c", "CU-DEVICE", "Device customer", "Ana Client", "+40 700 111 222", "ana@device.test", "private customer note")))
+            a.insertCustomerContacts(listOf(CustomerContactEntity("cc1", "c", "Office", "PHONE", "+400", 1, 1, position = 1), CustomerContactEntity("cc2", "c", "Dispatch", "EMAIL", "dispatch@device.test", 1, 1, position = 2)))
+            a.insertSites(listOf(SiteEntity("s", "c", "ST-DEVICE", "Device site", "1 Device Road", "private gate code", "Site contact", "+40 700 333 444", "site@device.test")))
+            a.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-DEVICE", "ASSET-17", "Boiler", "Maker", "Model", "Serial", "private equipment notes")))
             a.insertReusableTemplate(ReusableTemplateEntity("template", "IT-DEVICE", "Safety", "template-revision", modifiedAtEpochMillis = 1))
             a.insertReusableTemplateRevision(ReusableTemplateRevisionEntity("template-revision", "template", 1, "Safety", 1))
             a.insertReusableTemplateItems(listOf(ReusableTemplateItemEntity("template-item", "template-revision", 1, "Pressure", "NUMBER", "bar", true, null)))
             a.insertPlans(listOf(ServicePlanEntity("plan", "e", "PL-DEVICE", "Annual", 1, "YEARS", "2027-09-24", "ACTIVE", "obligation", reusableTemplateId = "template")))
             a.insertObligations(listOf(ServiceObligationEntity("obligation", "plan", 1, "2027-09-24", 1)))
+            assertEquals(1, a.updateTemplateState("template", "ACTIVE", "DISABLED", 2))
+            a.insertCustomers(listOf(
+                CustomerEntity("inactive-c", "CU-INACTIVE", "Historical customer", state = "ARCHIVED"),
+                CustomerEntity("unrelated-c", "CU-UNRELATED", "Unrelated inactive", state = "ARCHIVED"),
+            ))
+            a.insertSites(listOf(
+                SiteEntity("inactive-s", "inactive-c", "ST-INACTIVE", "Historical site", null, null, state = "ARCHIVED"),
+                SiteEntity("unrelated-s", "unrelated-c", "ST-UNRELATED", "Unrelated inactive", null, null, state = "ARCHIVED"),
+            ))
+            a.insertEquipment(listOf(
+                EquipmentEntity("inactive-e", "inactive-s", "EQ-INACTIVE", null, "Historical equipment", null, null, null, null, "RETIRED"),
+                EquipmentEntity("unrelated-e", "unrelated-s", "EQ-UNRELATED", null, "Unrelated inactive", null, null, null, null, "RETIRED"),
+            ))
+            a.insertContactNote(ContactNoteEntity("inactive-note", "CN-INACTIVE", "inactive-c", "inactive-s", "inactive-e", "PHONE", 1_790_208_000_000, "Historical note", "private note", 1))
             a.insertVisits(listOf(WorkingVisitEntity("visit", "V-DEVICE", "c", "s", "2026-09-24", "Device customer", "Device site", null, "COMPLETED", 1)))
             a.insertWorkItems(listOf(WorkItemEntity("work", "visit", "e", "plan", "obligation", null, "Boiler", "EQ-DEVICE", "Annual", "PL-DEVICE", "2027-09-24", 1, "YEARS", true, "PERFORMED", true, confirmedNextDueDate = "2027-09-24")))
             a.insertFinalRecord(FinalRecordEntity("record", "visit", "revision", 2))
@@ -52,15 +66,56 @@ class B049DataTransferEndToEndInstrumentedTest {
 
             val selection = ExportCenterSelection(families = ExportPreset.CUSTOMER_DATA.families + ExportPreset.WORK_PERFORMED.families + ExportPreset.IMAGE_ARCHIVE.families)
             val packageBytes = DataTransferExportService(workspaceA, rootA).export(selection)
-            assertEquals(sourceId, DataTransferCodec.decode(packageBytes).sourceWorkspaceId)
+            val decodedPackage = DataTransferCodec.decode(packageBytes)
+            assertEquals(sourceId, decodedPackage.sourceWorkspaceId)
+            val register = JSONObject(decodedPackage.families.getValue(DataTransferFamily.REGISTER).toString(Charsets.UTF_8))
+            val customerRow = (0 until register.getJSONArray("customers").length()).map { register.getJSONArray("customers").getJSONObject(it) }.single { it.getString("reference") == "CU-DEVICE" }
+            assertEquals("Ana Client", customerRow.getString("contactName"))
+            assertEquals("+40 700 111 222", customerRow.getString("phone"))
+            assertEquals("ana@device.test", customerRow.getString("email"))
+            assertFalse(customerRow.has("privateNote"))
+            val siteRow = (0 until register.getJSONArray("sites").length()).map { register.getJSONArray("sites").getJSONObject(it) }.single { it.getString("reference") == "ST-DEVICE" }
+            assertEquals("1 Device Road", siteRow.getString("address"))
+            assertFalse(siteRow.has("privateAccessNotes"))
+            val equipmentRow = (0 until register.getJSONArray("equipment").length()).map { register.getJSONArray("equipment").getJSONObject(it) }.single { it.getString("reference") == "EQ-DEVICE" }
+            assertEquals("ASSET-17", equipmentRow.getString("technicianIdentifier"))
+            assertEquals("Serial", equipmentRow.getString("serialNumber"))
+            assertFalse(equipmentRow.has("privateNotes"))
+            val contactRows = register.getJSONArray("contacts")
+            assertEquals(listOf(1, 2), (0 until contactRows.length()).map { contactRows.getJSONObject(it).getInt("position") })
+            assertFalse(contactRows.getJSONObject(0).has("notes"))
+            val includedCustomers = (0 until register.getJSONArray("customers").length()).map { register.getJSONArray("customers").getJSONObject(it).getString("reference") }.toSet()
+            assertTrue(includedCustomers.contains("CU-INACTIVE"))
+            assertFalse(includedCustomers.contains("CU-UNRELATED"))
+            assertEquals("DISABLED", InspectionTemplateCodec.decode(decodedPackage.families.getValue(DataTransferFamily.INSPECTION_TEMPLATES)).templates.single().state)
             val importer = DataTransferImportService(workspaceB, rootB)
             val preview = importer.preview(packageBytes)
             assertTrue(preview.canImport())
             importer.import(preview)
 
             val b = workspaceB.serviceLoopDao()
-            assertEquals(2, b.customerContacts(b.allCustomers().single().id).size)
+            val importedCustomer = b.allCustomers().single { it.reference == "CU-DEVICE" }
+            val importedSite = b.allSites().single { it.reference == "ST-DEVICE" }
+            val importedEquipment = b.allEquipment().single { it.reference == "EQ-DEVICE" }
+            assertEquals("Ana Client", importedCustomer.contactName)
+            assertEquals("+40 700 111 222", importedCustomer.phone)
+            assertEquals("ana@device.test", importedCustomer.email)
+            assertNull(importedCustomer.privateNote)
+            assertEquals("1 Device Road", importedSite.address)
+            assertEquals("Site contact", importedSite.contactName)
+            assertEquals("+40 700 333 444", importedSite.phone)
+            assertEquals("site@device.test", importedSite.email)
+            assertNull(importedSite.privateAccessNotes)
+            assertEquals("ASSET-17", importedEquipment.technicianIdentifier)
+            assertEquals("Maker", importedEquipment.make)
+            assertEquals("Model", importedEquipment.model)
+            assertEquals("Serial", importedEquipment.serialNumber)
+            assertNull(importedEquipment.privateNotes)
+            assertEquals(2, b.customerContacts(importedCustomer.id).size)
+            assertEquals(listOf(1, 2), b.customerContacts(importedCustomer.id).map { it.position })
+            assertTrue(b.customerContacts(importedCustomer.id).all { it.notes == null })
             assertEquals("IT-DEVICE", b.reusableTemplate(b.allPlans().single().reusableTemplateId!!)?.reference)
+            assertEquals("DISABLED", b.reusableTemplate(b.allPlans().single().reusableTemplateId!!)?.state)
             assertEquals("2027-09-24", b.plan(b.allPlans().single().id)?.currentDueDate)
             assertEquals(1, b.obligationCount(b.allPlans().single().id))
             assertEquals(0, b.allVisits().size)
@@ -70,7 +125,7 @@ class B049DataTransferEndToEndInstrumentedTest {
             assertTrue(File(rootB, evidence.relativePath).isFile)
             assertEquals(sourceId, evidence.originWorkspaceId)
             val report = AggregateReportService(workspaceB, RoomServiceLoopRepository(workspaceB, ClockBusinessTime(zoneId = ZoneId.of("UTC")), attachmentRoot = rootB), rootB)
-                .reportable(ServiceLoopScopeFilter(customerId = b.allCustomers().single().id)).single()
+                .reportable(ServiceLoopScopeFilter(customerId = importedCustomer.id)).single()
             assertEquals(1, report.sources.size)
 
             val retry = importer.preview(packageBytes)
@@ -79,6 +134,24 @@ class B049DataTransferEndToEndInstrumentedTest {
             assertEquals(1, b.allTransferredFinalResults().size)
             assertEquals(1, b.allTransferredEvidence().size)
             assertEquals(1, b.obligationCount(b.allPlans().single().id))
+
+            val evidenceCountBeforeConflict = b.allTransferredEvidence().size
+            val evidenceEntityBeforeConflict = b.allTransferredEvidence().single()
+            val evidenceJson = JSONObject(decodedPackage.families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8))
+            evidenceJson.getJSONArray("photos").getJSONObject(0).put("caption", "Changed immutable caption")
+            val conflictFamilies = decodedPackage.families + (DataTransferFamily.EVIDENCE to evidenceJson.toString().toByteArray(Charsets.UTF_8))
+            val metadataConflictBytes = DataTransferCodec.encode(
+                exporterId = decodedPackage.exporterId,
+                sourceWorkspaceId = decodedPackage.sourceWorkspaceId,
+                families = conflictFamilies,
+                binaries = decodedPackage.binaries,
+                options = decodedPackage.options,
+            )
+            val metadataConflict = importer.preview(metadataConflictBytes)
+            assertEquals(DataTransferClassification.CONFLICT, metadataConflict.items.single { it.family == DataTransferFamily.EVIDENCE }.classification)
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { importer.import(metadataConflict) } }
+            assertEquals(evidenceCountBeforeConflict, b.allTransferredEvidence().size)
+            assertEquals(evidenceEntityBeforeConflict, b.allTransferredEvidence().single())
 
             val relay = DataTransferCodec.decode(DataTransferExportService(workspaceB, rootB).export(selection))
             val visit = JSONObject(relay.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)).getJSONArray("visits").getJSONObject(0)

@@ -13,6 +13,12 @@ import java.time.LocalDate
 class DataTransferExportService(private val database: ServiceLoopDatabase, private val filesRoot: File) {
     private val dao = database.serviceLoopDao()
 
+    private data class DirectoryDependencies(
+        val customers: MutableSet<String> = linkedSetOf(),
+        val sites: MutableSet<String> = linkedSetOf(),
+        val equipment: MutableSet<String> = linkedSetOf(),
+    )
+
     suspend fun export(selection: ExportCenterSelection): ByteArray {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val identity = ServiceLoopPeerTrustStore(database).localIdentity().technicianId
@@ -26,39 +32,75 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val wantsEvidence = requested.any { it in setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES) }
 
         val customers = dao.allCustomers()
-        val scopedCustomers = customers.filter { selection.scope.customerId == null || it.id == selection.scope.customerId }
-        require(selection.scope.customerId == null || scopedCustomers.size == 1) { "Selected customer is unavailable" }
-        val customerIds = scopedCustomers.map { it.id }.toSet()
-        val sites = dao.allSites().filter { it.customerId in customerIds && (selection.scope.siteId == null || it.id == selection.scope.siteId) }
+        val selectedCustomer = selection.scope.customerId?.let { dao.customer(it) ?: error("Selected customer is unavailable") }
+        val selectedSite = selection.scope.siteId?.let { dao.site(it) ?: error("Selected site is unavailable") }
+        val selectedEquipment = selection.scope.equipmentId?.let { dao.equipment(it) ?: error("Selected equipment is unavailable") }
+        require(selectedCustomer == null || selectedSite == null || selectedSite.customerId == selectedCustomer.id) { "Selected Site is outside the Customer scope" }
+        require(selectedSite == null || selectedEquipment == null || selectedEquipment.siteId == selectedSite.id) { "Selected Equipment is outside the Site scope" }
+        require(selectedCustomer == null || selectedEquipment == null || dao.site(selectedEquipment.siteId)?.customerId == selectedCustomer.id) { "Selected Equipment is outside the Customer scope" }
+        val scopedCustomerId = selectedCustomer?.id ?: selectedSite?.customerId ?: selectedEquipment?.let { dao.site(it.siteId)?.customerId }
+        val scopedSiteId = selectedSite?.id ?: selectedEquipment?.siteId
+        val scopedCustomers = customers.filter { scopedCustomerId == null || it.id == scopedCustomerId }
+        val scopedCustomerIds = scopedCustomers.map { it.id }.toSet()
+        val sites = dao.allSites().filter { it.customerId in scopedCustomerIds && (scopedSiteId == null || it.id == scopedSiteId) }
         require(selection.scope.siteId == null || sites.size == 1) { "Selected site is unavailable" }
-        val siteIds = sites.map { it.id }.toSet()
-        val equipment = dao.allEquipment().filter { it.siteId in siteIds && (selection.scope.equipmentId == null || it.id == selection.scope.equipmentId) }
+        val scopedSiteIds = sites.map { it.id }.toSet()
+        val equipment = dao.allEquipment().filter { it.siteId in scopedSiteIds && (selection.scope.equipmentId == null || it.id == selection.scope.equipmentId) }
         require(selection.scope.equipmentId == null || equipment.size == 1) { "Selected equipment is unavailable" }
-        val equipmentIds = equipment.map { it.id }.toSet()
+        val scopedEquipmentIds = equipment.map { it.id }.toSet()
+
+        val dependencies = DirectoryDependencies()
+        val explicitlySelectedCustomers = if (ExportFamily.CUSTOMERS in requested) {
+            scopedCustomers.filter { selection.includeInactive || it.state == "ACTIVE" }.map { it.id }.toSet()
+        } else emptySet()
+        val explicitlySelectedSites = if (ExportFamily.SITES in requested) {
+            sites.filter { selection.includeInactive || it.state == "ACTIVE" }.map { it.id }.toSet()
+        } else emptySet()
+        val explicitlySelectedEquipment = if (ExportFamily.EQUIPMENT in requested) {
+            equipment.filter { selection.includeInactive || it.state == "ACTIVE" }.map { it.id }.toSet()
+        } else emptySet()
+        explicitlySelectedCustomers.forEach { addDirectoryDependencies(dependencies, customerId = it) }
+        explicitlySelectedSites.forEach { addDirectoryDependencies(dependencies, siteId = it) }
+        explicitlySelectedEquipment.forEach { addDirectoryDependencies(dependencies, equipmentId = it) }
+
+        val contactCustomerIds = if (ExportFamily.CONTACTS in requested) {
+            scopedCustomers.filter { dao.customerContacts(it.id).isNotEmpty() }.map { it.id }.toSet()
+        } else emptySet()
+        contactCustomerIds.forEach { addDirectoryDependencies(dependencies, customerId = it) }
+
+        val selectedPlans = if (wantsPlans) dao.allPlans().filter {
+            it.equipmentId in scopedEquipmentIds && (selection.includeInactive || it.state == "ACTIVE")
+        } else emptyList()
+        selectedPlans.forEach { addDirectoryDependencies(dependencies, equipmentId = it.equipmentId) }
 
         val families = linkedMapOf<DataTransferFamily, ByteArray>()
-        if (hasRegisterContent(requested) || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence) {
-            val register = encodeRegister(selection, identity, scopedCustomers, sites, equipment,
-                includeCustomers = ExportFamily.CUSTOMERS in requested || requested.any { it in setOf(ExportFamily.CONTACTS, ExportFamily.SITES, ExportFamily.EQUIPMENT, ExportFamily.PLANS) } || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence,
-                includeContacts = ExportFamily.CONTACTS in requested,
-                includeSites = ExportFamily.SITES in requested || ExportFamily.EQUIPMENT in requested || wantsPlans || wantsPerformed || wantsEvidence,
-                includeEquipment = ExportFamily.EQUIPMENT in requested || wantsPlans || wantsPerformed || wantsEvidence)
-            families[DataTransferFamily.REGISTER] = register
-        }
-        val localTemplates = dao.reusableTemplates().filter { selection.includeInactive || it.state == "ACTIVE" }
+        val localTemplates = dao.reusableTemplates()
         if (wantsTemplates || wantsPlans) {
-            val usedTemplateIds = if (wantsPlans) dao.allPlans().filter { it.equipmentId in equipmentIds && (selection.includeInactive || it.state == "ACTIVE") }.mapNotNull { it.reusableTemplateId }.toSet() else emptySet()
-            val selectedTemplateIds = if (wantsTemplates) localTemplates.map { it.id }.toSet() + usedTemplateIds else usedTemplateIds
+            val usedTemplateIds = selectedPlans.mapNotNull { it.reusableTemplateId }.toSet()
+            val selectedTemplateIds = (if (wantsTemplates) localTemplates.filter { it.state != "DELETED" && (selection.includeInactive || it.state == "ACTIVE") }.map { it.id }.toSet() else emptySet()) + usedTemplateIds
             if (selectedTemplateIds.isNotEmpty()) families[DataTransferFamily.INSPECTION_TEMPLATES] = encodeTemplates(selectedTemplateIds, identity, selection.includePrivate)
         }
-        if (wantsPlans) families[DataTransferFamily.SERVICE_PLANS] = encodePlans(selection, identity, equipmentIds)
-        if (wantsPerformed) families[DataTransferFamily.PERFORMED_WORK] = encodePerformed(selection, identity, customerIds, siteIds)
-        if (wantsFollowUps) families[DataTransferFamily.FOLLOW_UPS] = encodeTransferredContext(selection, identity, "FOLLOW_UPS")
-        if (wantsContactNotes) families[DataTransferFamily.CONTACT_NOTES] = encodeTransferredContext(selection, identity, "CONTACT_NOTES")
-        if (wantsChanges) families[DataTransferFamily.CHANGE_HISTORY] = encodeTransferredContext(selection, identity, "CHANGE_HISTORY")
-        val evidence = if (wantsEvidence) encodeEvidence(selection, identity, customerIds, siteIds) else null
+        if (wantsPlans) families[DataTransferFamily.SERVICE_PLANS] = encodePlans(identity, selectedPlans)
+        if (wantsPerformed) families[DataTransferFamily.PERFORMED_WORK] = encodePerformed(selection, identity, dependencies)
+        if (wantsFollowUps) families[DataTransferFamily.FOLLOW_UPS] = encodeTransferredContext(selection, identity, "FOLLOW_UPS", dependencies)
+        if (wantsContactNotes) families[DataTransferFamily.CONTACT_NOTES] = encodeTransferredContext(selection, identity, "CONTACT_NOTES", dependencies)
+        if (wantsChanges) families[DataTransferFamily.CHANGE_HISTORY] = encodeTransferredContext(selection, identity, "CHANGE_HISTORY", dependencies)
+        val evidence = if (wantsEvidence) encodeEvidence(selection, identity, dependencies) else null
         val binaries = evidence?.binaries.orEmpty()
         if (evidence != null) families[DataTransferFamily.EVIDENCE] = evidence.metadata
+        if (hasRegisterContent(requested) || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence) {
+            families[DataTransferFamily.REGISTER] = encodeRegister(
+                selection, identity, customers, sites, equipment,
+                customerIds = explicitlySelectedCustomers + dependencies.customers,
+                contactCustomerIds = contactCustomerIds,
+                siteIds = explicitlySelectedSites + dependencies.sites,
+                equipmentIds = explicitlySelectedEquipment + dependencies.equipment,
+                includeCustomers = ExportFamily.CUSTOMERS in requested || requested.any { it in setOf(ExportFamily.CONTACTS, ExportFamily.SITES, ExportFamily.EQUIPMENT, ExportFamily.PLANS) } || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence,
+                includeContacts = ExportFamily.CONTACTS in requested,
+                includeSites = ExportFamily.SITES in requested || ExportFamily.EQUIPMENT in requested || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence,
+                includeEquipment = ExportFamily.EQUIPMENT in requested || wantsPlans || wantsPerformed || wantsFollowUps || wantsContactNotes || wantsChanges || wantsEvidence,
+            )
+        }
         return DataTransferCodec.encode(
             exporterId = identity,
             generatedAt = Instant.now().toString(),
@@ -73,38 +115,65 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
 
     private fun hasRegisterContent(families: Set<ExportFamily>) = families.any { it in setOf(ExportFamily.CUSTOMERS, ExportFamily.CONTACTS, ExportFamily.SITES, ExportFamily.EQUIPMENT) }
 
-    private suspend fun encodeRegister(selection: ExportCenterSelection, origin: String, customers: List<CustomerEntity>, sites: List<SiteEntity>, equipment: List<EquipmentEntity>,
-        includeCustomers: Boolean, includeContacts: Boolean, includeSites: Boolean, includeEquipment: Boolean): ByteArray {
-        val selectedCustomerIds = customers.map { it.id }.toSet()
-        val selectedSiteIds = sites.map { it.id }.toSet()
-        val selectedEquipmentIds = equipment.map { it.id }.toSet()
-        val root = JSONObject().put("version", 1).put("customers", JSONArray()).put("contacts", JSONArray()).put("sites", JSONArray()).put("equipment", JSONArray())
-        if (includeCustomers) customers.filter { selection.includeInactive || it.state == "ACTIVE" }.forEach { row ->
-            val json = JSONObject().put("originWorkspaceId", originOf("CUSTOMER", row.id, origin)).put("sourceEntityId", sourceOf("CUSTOMER", row.id))
-                .put("reference", row.reference).put("name", row.name).put("customerType", row.customerType).put("state", row.state)
-            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("contactName", row.contactName).put("phone", row.phone).put("email", row.email).put("privateNote", row.privateNote)
-            root.getJSONArray("customers").put(json)
-        }
-        if (includeContacts) customers.filter { it.id in selectedCustomerIds && (selection.includeInactive || it.state == "ACTIVE") }.forEach { customer ->
-            dao.customerContacts(customer.id).forEach { row ->
-                root.getJSONArray("contacts").put(JSONObject().put("originWorkspaceId", originOf("CUSTOMER_CONTACT", row.id, origin))
-                    .put("sourceEntityId", sourceOf("CUSTOMER_CONTACT", row.id)).put("customerOriginWorkspaceId", originOf("CUSTOMER", row.customerId, origin))
-                    .put("customerSourceEntityId", sourceOf("CUSTOMER", row.customerId)).put("position", row.position).put("personName", row.personName)
-                    .put("channel", row.channel).put("value", row.value).apply { if (selection.includePrivate) put("notes", row.notes) })
+    private suspend fun addDirectoryDependencies(
+        target: DirectoryDependencies,
+        customerId: String? = null,
+        siteId: String? = null,
+        equipmentId: String? = null,
+    ) {
+        customerId?.takeIf { dao.customer(it) != null }?.let(target.customers::add)
+        siteId?.let { id ->
+            dao.site(id)?.let { site ->
+                target.sites += site.id
+                dao.customer(site.customerId)?.let { target.customers += it.id }
             }
         }
-        if (includeSites) sites.filter { (selection.includeInactive || it.state == "ACTIVE") && it.customerId in selectedCustomerIds }.forEach { row ->
+        equipmentId?.let { id ->
+            dao.equipment(id)?.let { item ->
+                target.equipment += item.id
+                dao.site(item.siteId)?.let { site ->
+                    target.sites += site.id
+                    dao.customer(site.customerId)?.let { target.customers += it.id }
+                }
+            }
+        }
+    }
+
+    private suspend fun encodeRegister(selection: ExportCenterSelection, origin: String, customers: List<CustomerEntity>, sites: List<SiteEntity>, equipment: List<EquipmentEntity>,
+        customerIds: Set<String>, contactCustomerIds: Set<String>, siteIds: Set<String>, equipmentIds: Set<String>,
+        includeCustomers: Boolean, includeContacts: Boolean, includeSites: Boolean, includeEquipment: Boolean): ByteArray {
+        val root = JSONObject().put("version", 1).put("customers", JSONArray()).put("contacts", JSONArray()).put("sites", JSONArray()).put("equipment", JSONArray())
+        if (includeCustomers) customers.filter { it.id in customerIds }.forEach { row ->
+            val json = JSONObject().put("originWorkspaceId", originOf("CUSTOMER", row.id, origin)).put("sourceEntityId", sourceOf("CUSTOMER", row.id))
+                .put("reference", row.reference).put("name", row.name).put("customerType", row.customerType).put("state", row.state)
+                .put("contactName", row.contactName ?: JSONObject.NULL).put("phone", row.phone ?: JSONObject.NULL).put("email", row.email ?: JSONObject.NULL)
+            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("privateNote", row.privateNote ?: JSONObject.NULL)
+            root.getJSONArray("customers").put(json)
+        }
+        if (includeContacts) customers.filter { it.id in contactCustomerIds }.forEach { customer ->
+            dao.customerContacts(customer.id).sortedWith(compareBy<CustomerContactEntity> { it.position }.thenBy { it.id }).forEachIndexed { index, row ->
+                root.getJSONArray("contacts").put(JSONObject().put("originWorkspaceId", originOf("CUSTOMER_CONTACT", row.id, origin))
+                    .put("sourceEntityId", sourceOf("CUSTOMER_CONTACT", row.id)).put("customerOriginWorkspaceId", originOf("CUSTOMER", row.customerId, origin))
+                    .put("customerSourceEntityId", sourceOf("CUSTOMER", row.customerId)).put("position", index + 1).put("personName", row.personName ?: JSONObject.NULL)
+                    .put("channel", row.channel).put("value", row.value).apply { if (selection.includePrivate) put("notes", row.notes ?: JSONObject.NULL) })
+            }
+        }
+        if (includeSites) sites.filter { it.id in siteIds }.forEach { row ->
             val json = JSONObject().put("originWorkspaceId", originOf("SITE", row.id, origin)).put("sourceEntityId", sourceOf("SITE", row.id))
                 .put("customerOriginWorkspaceId", originOf("CUSTOMER", row.customerId, origin)).put("customerSourceEntityId", sourceOf("CUSTOMER", row.customerId))
                 .put("reference", row.reference).put("name", row.name).put("isDefault", row.isDefault).put("state", row.state)
-            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("address", row.address).put("privateAccessNotes", row.privateAccessNotes).put("contactName", row.contactName).put("phone", row.phone).put("email", row.email)
+                .put("address", row.address ?: JSONObject.NULL).put("contactName", row.contactName ?: JSONObject.NULL)
+                .put("phone", row.phone ?: JSONObject.NULL).put("email", row.email ?: JSONObject.NULL)
+            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("privateAccessNotes", row.privateAccessNotes ?: JSONObject.NULL)
             root.getJSONArray("sites").put(json)
         }
-        if (includeEquipment) equipment.filter { (selection.includeInactive || it.state == "ACTIVE") && it.siteId in selectedSiteIds }.forEach { row ->
+        if (includeEquipment) equipment.filter { it.id in equipmentIds }.forEach { row ->
             val json = JSONObject().put("originWorkspaceId", originOf("EQUIPMENT", row.id, origin)).put("sourceEntityId", sourceOf("EQUIPMENT", row.id))
                 .put("siteOriginWorkspaceId", originOf("SITE", row.siteId, origin)).put("siteSourceEntityId", sourceOf("SITE", row.siteId))
                 .put("reference", row.reference).put("name", row.name).put("state", row.state)
-            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("technicianIdentifier", row.technicianIdentifier).put("make", row.make).put("model", row.model).put("serialNumber", row.serialNumber).put("privateNotes", row.privateNotes)
+                .put("technicianIdentifier", row.technicianIdentifier ?: JSONObject.NULL).put("make", row.make ?: JSONObject.NULL)
+                .put("model", row.model ?: JSONObject.NULL).put("serialNumber", row.serialNumber ?: JSONObject.NULL)
+            if (selection.includePrivate) json.put("privateFieldsIncluded", true).put("privateNotes", row.privateNotes ?: JSONObject.NULL)
             root.getJSONArray("equipment").put(json)
         }
         return root.toString().toByteArray(Charsets.UTF_8)
@@ -118,14 +187,15 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber,
                 dao.reusableTemplateItems(revision.id).map { DispatchInspectionItem(it.position, it.label, it.responseType, it.unit, it.required, if (includePrivate) it.privateGuidance else null) },
                 originWorkspaceId = binding?.originWorkspaceId ?: origin,
-                sourceEntityId = binding?.sourceEntityId ?: template.id)
+                sourceEntityId = binding?.sourceEntityId ?: template.id,
+                state = template.state)
         }
         return InspectionTemplateCodec.encode(InspectionTemplateTransfer(Instant.now().toString(), entries))
     }
 
-    private suspend fun encodePlans(selection: ExportCenterSelection, origin: String, equipmentIds: Set<String>): ByteArray {
+    private suspend fun encodePlans(origin: String, plans: List<ServicePlanEntity>): ByteArray {
         val rows = JSONArray()
-        dao.allPlans().filter { it.equipmentId in equipmentIds && (selection.includeInactive || it.state == "ACTIVE") }.forEach { row ->
+        plans.forEach { row ->
             val equipment = dao.equipment(row.equipmentId) ?: return@forEach
             val site = dao.site(equipment.siteId) ?: return@forEach
             val customer = dao.customer(site.customerId) ?: return@forEach
@@ -143,7 +213,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return JSONObject().put("version", 1).put("plans", rows).toString().toByteArray(Charsets.UTF_8)
     }
 
-    private suspend fun encodePerformed(selection: ExportCenterSelection, origin: String, customerIds: Set<String>, siteIds: Set<String>): ByteArray {
+    private suspend fun encodePerformed(selection: ExportCenterSelection, origin: String, dependencies: DirectoryDependencies): ByteArray {
         val groups = linkedMapOf<Pair<String, String>, JSONObject>()
         fun addResult(row: JSONObject, sourceOrigin: String, sourceVisit: String, visitReference: String, serviceDate: String, customer: JSONObject, site: JSONObject) {
             val key = sourceOrigin to sourceVisit
@@ -154,7 +224,6 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         }
         dao.allFinalRecords().filterNot { it.voided }.forEach { record ->
             val visit = dao.visit(record.visitId) ?: return@forEach
-            if (visit.customerId !in customerIds || visit.siteId !in siteIds) return@forEach
             val revisions = if (selection.includePreviousRevisions) dao.finalRevisions(record.id) else listOfNotNull(dao.finalRevision(record.currentRevisionId))
             revisions.forEach { revision ->
                 val customer = JSONObject().put("name", revision.customerName).put("reference", revision.customerReference)
@@ -162,6 +231,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 dao.finalWorkItems(revision.id).forEach { item ->
                     if (selection.scope.equipmentId != null && item.equipmentId != selection.scope.equipmentId) return@forEach
                     if (!selection.scope.matches(visit.customerId, visit.siteId, item.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@forEach
+                    addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, item.equipmentId)
                     val payload = JSONObject().put("originWorkspaceId", origin).put("sourceVisitId", visit.id).put("sourceWorkItemId", item.sourceWorkItemId).put("sourceWorkItemPosition", item.position)
                         .put("sourceFinalRevisionId", revision.id).put("logicalResultId", "$origin:${visit.id}:${item.sourceWorkItemId}")
                         .put("technicianId", origin).put("technicianName", revision.technicianName).put("technicianDesignation", revision.technicianDesignation)
@@ -194,9 +264,10 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             } ?: return@forEach
             val customerId = service.optString("localCustomerId").takeIf { it.isNotBlank() }
             val siteId = service.optString("localSiteId").takeIf { it.isNotBlank() }
-            if ((customerId != null && customerId !in customerIds) || (siteId != null && siteId !in siteIds)) return@forEach
+            val equipmentId = service.optString("localEquipmentId").takeIf { it.isNotBlank() }
             val date = service.getString("serviceDate")
-            if (!selection.scope.matches(customerId ?: "", siteId, service.optString("localEquipmentId").takeIf { it.isNotBlank() }, LocalDate.parse(date))) return@forEach
+            if (!selection.scope.matches(customerId ?: "", siteId, equipmentId, LocalDate.parse(date))) return@forEach
+            addDirectoryDependencies(dependencies, customerId, siteId, equipmentId)
             val originId = service.getString("originWorkspaceId")
             val visitId = service.getString("sourceVisitId")
             addResult(service, originId, visitId, service.getString("visitReference"), date,
@@ -249,10 +320,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return result
     }
 
-    private suspend fun encodeTransferredContext(selection: ExportCenterSelection, origin: String, family: String): ByteArray {
+    private suspend fun encodeTransferredContext(selection: ExportCenterSelection, origin: String, family: String, dependencies: DirectoryDependencies): ByteArray {
         val records = JSONArray()
         if (family == "FOLLOW_UPS") dao.allFollowUps().forEach { row ->
             if (!scopeMatches(selection.scope, row.customerId, row.siteId, row.equipmentId, row.dueDate)) return@forEach
+            addDirectoryDependencies(dependencies, row.customerId, row.siteId, row.equipmentId)
             val customer = row.customerId
             val value = JSONObject().put("originWorkspaceId", originOf(family, row.id, origin)).put("sourceEntityId", sourceOf(family, row.id))
                 .put("eventDateTime", row.dueDate).put("customer", entityRef("CUSTOMER", customer, origin))
@@ -265,6 +337,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         }
         if (family == "CONTACT_NOTES") dao.allContactNotes().forEach { row ->
             if (!scopeMatches(selection.scope, row.customerId, row.siteId, row.equipmentId, LocalDate.parse(Instant.ofEpochMilli(row.occurredAtEpochMillis).toString().take(10)).toString())) return@forEach
+            addDirectoryDependencies(dependencies, row.customerId, row.siteId, row.equipmentId)
             val value = JSONObject().put("originWorkspaceId", originOf(family, row.id, origin)).put("sourceEntityId", sourceOf(family, row.id))
                 .put("eventDateTime", Instant.ofEpochMilli(row.occurredAtEpochMillis).toString())
                 .put("customer", entityRef("CUSTOMER", row.customerId, origin)).put("site", row.siteId?.let { entityRef("SITE", it, origin) })
@@ -277,6 +350,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         }
         if (family == "CHANGE_HISTORY") dao.allChangeEntries().forEach { row ->
             if (!scopeMatches(selection.scope, row.customerId.orEmpty(), row.siteId, row.equipmentId, row.eventDate)) return@forEach
+            addDirectoryDependencies(dependencies, row.customerId, row.siteId, row.equipmentId)
             val value = JSONObject().put("originWorkspaceId", originOf(family, row.id, origin)).put("sourceEntityId", sourceOf(family, row.id))
                 .put("eventDateTime", row.eventDate).put("customer", row.customerId?.let { entityRef("CUSTOMER", it, origin) })
                 .put("site", row.siteId?.let { entityRef("SITE", it, origin) }).put("equipment", row.equipmentId?.let { entityRef("EQUIPMENT", it, origin) })
@@ -290,6 +364,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             scopeMatches(selection.scope, row.localCustomerId.orEmpty(), row.localSiteId, row.localEquipmentId, row.eventDateTime?.take(10))
         }
         imported.forEach { row ->
+            addDirectoryDependencies(dependencies, row.localCustomerId, row.localSiteId, row.localEquipmentId)
             val payload = JSONObject(row.payloadJson)
             if (!selection.includePrivate) when (family) {
                 "FOLLOW_UPS" -> payload.remove("privatePlanningNote")
@@ -305,27 +380,29 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return JSONObject().put("version", 1).put("records", records).toString().toByteArray(Charsets.UTF_8)
     }
 
-    private suspend fun encodeEvidence(selection: ExportCenterSelection, origin: String, customerIds: Set<String>, siteIds: Set<String>): EncodedEvidence {
+    private suspend fun encodeEvidence(selection: ExportCenterSelection, origin: String, dependencies: DirectoryDependencies): EncodedEvidence {
         val binaries = linkedMapOf<String, ByteArray>()
         val photos = JSONArray()
         val already = mutableSetOf<String>()
-        fun add(row: JSONObject, bytes: ByteArray) {
+        fun add(row: JSONObject, bytes: ByteArray): Boolean {
             val sourceKey = transferEvidenceSourceKey(row.getString("originWorkspaceId"), row.getString("sourcePhotoId"), row.optNullable("sourceFinalRevisionId"))
-            if (!already.add(sourceKey)) return
-            if (!selection.includePrivate && row.getString("visibility") != "PUBLIC") return
+            if (!selection.includePrivate && row.getString("visibility") != "PUBLIC") return false
+            if (!already.add(sourceKey)) return false
             val derivative = AppOwnedImageNormalizer.workResultDerivative(bytes)
             val name = "binary-${sha256(sourceKey.toByteArray()).take(24)}"
             row.put("binaryName", name).put("sha256", sha256(derivative.bytes)).put("byteSize", derivative.bytes.size)
                 .put("width", derivative.width).put("height", derivative.height).put("mimeType", "image/jpeg")
             binaries[name] = derivative.bytes
             photos.put(row)
+            return true
         }
         // Finalized local photos are revision-frozen and remain distinct across corrections.
         dao.allFinalRecords().filterNot { it.voided }.forEach { record ->
             val visit = dao.visit(record.visitId) ?: return@forEach
-            if (visit.customerId !in customerIds || visit.siteId !in siteIds) return@forEach
             val revisions = if (selection.includePreviousRevisions) dao.finalRevisions(record.id) else listOfNotNull(dao.finalRevision(record.currentRevisionId))
-            revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach { work -> dao.finalPhotos(work.id).forEach { photo ->
+            revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach workLoop@{ work ->
+                if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@workLoop
+                dao.finalPhotos(work.id).forEach { photo ->
                 val source = readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
                     ?: dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
                     ?: dao.retainedImage("FINAL_PHOTO", photo.id)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
@@ -340,8 +417,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                     .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                     .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-                add(row, source)
-            } } }
+                if (add(row, source)) addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
+            } }
+            }
         }
         // Standalone current/working evidence not already frozen into a final revision.
         val frozenSourceIds = dao.allFinalRecords().flatMap { record -> dao.finalRevisions(record.id).flatMap { revision -> dao.finalWorkItems(revision.id).flatMap { work -> dao.finalPhotos(work.id).map { it.sourceAttachmentId } } } }.toSet()
@@ -349,7 +427,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         dao.allAttachments().filter { it.ownerType == "WORK_ITEM" && it.id !in frozenSourceIds }.forEach { photo ->
             val work = dao.workItem(photo.ownerId) ?: return@forEach
             val visit = allVisits[work.visitId] ?: return@forEach
-            if (visit.customerId !in customerIds || visit.siteId !in siteIds || (selection.scope.equipmentId != null && work.equipmentId != selection.scope.equipmentId) || !selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(visit.actualServiceDate))) return@forEach
+            if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(visit.actualServiceDate))) return@forEach
             val source = readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
                 ?: dao.retainedImage("ATTACHMENT", photo.id)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
                 ?: error("Photo ${photo.id} has no verified owned copy")
@@ -362,11 +440,13 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                 .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                 .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-            add(row, source)
+            if (add(row, source)) addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
         }
         // Imported WORK_RESULT evidence already owns bounded JPEG derivatives.
         dao.reportableRemoteFinalResults().forEach { result -> dao.remoteResultPhotos(result.id).forEach { photo ->
-            if (!selection.scope.matches(result.customerId.orEmpty(), result.localVisitId?.let { dao.visit(it)?.siteId }, result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }, LocalDate.parse(result.serviceDate))) return@forEach
+            val siteId = result.localVisitId?.let { dao.visit(it)?.siteId }
+            val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
+            if (!selection.scope.matches(result.customerId.orEmpty(), siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@forEach
             val bytes = readImage(photo.relativePath, photo.sha256, photo.byteSize) ?: error("Imported result photo is missing")
             val provenance = JSONObject(result.provenanceJson)
             val row = JSONObject().put("originWorkspaceId", result.technicianId).put("sourcePhotoId", photo.sourcePhotoId).put("sourceVisitId", result.dispatchVisitId)
@@ -381,7 +461,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             result.customerId?.let{row.put("customer",entityRef("CUSTOMER",it,origin))}
             result.localVisitId?.let{dao.visit(it)?.let{visit->row.put("site",entityRef("SITE",visit.siteId,origin))}}
             result.localWorkItemId?.let{dao.workItem(it)?.equipmentId?.let{equipmentId->row.put("equipment",entityRef("EQUIPMENT",equipmentId,origin))}}
-            add(row, bytes)
+            if (add(row, bytes)) addDirectoryDependencies(dependencies, result.customerId, siteId, equipmentId)
         } }
         dao.allTransferredEvidence().forEach { photo ->
             if (!selection.scope.matches(photo.localCustomerId.orEmpty(), photo.localSiteId, photo.localEquipmentId, LocalDate.parse(photo.serviceDate))) return@forEach
@@ -400,7 +480,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             photo.localCustomerId?.let{row.put("customer",entityRef("CUSTOMER",it,origin))}
             photo.localSiteId?.let{row.put("site",entityRef("SITE",it,origin))}
             photo.localEquipmentId?.let{row.put("equipment",entityRef("EQUIPMENT",it,origin))}
-            add(row, bytes)
+            if (add(row, bytes)) addDirectoryDependencies(dependencies, photo.localCustomerId, photo.localSiteId, photo.localEquipmentId)
         }
         return EncodedEvidence(JSONObject().put("version", 1).put("photos", photos).toString().toByteArray(Charsets.UTF_8), binaries)
     }

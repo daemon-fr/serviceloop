@@ -19,6 +19,7 @@ data class InspectionTemplateTransferEntry(
     val fingerprint: String = "",
     val originWorkspaceId: String? = null,
     val sourceEntityId: String? = null,
+    val state: String = "ACTIVE",
 )
 
 enum class InspectionTemplateImportClassification { NEW, EXACT_EXISTING, CONFLICT }
@@ -58,6 +59,7 @@ object InspectionTemplateCodec {
             JSONObject().put("reference", template.reference).put("name", template.name).put("revision", template.revision)
                 .put("originWorkspaceId", template.originWorkspaceId ?: JSONObject.NULL)
                 .put("sourceEntityId", template.sourceEntityId ?: JSONObject.NULL)
+                .put("state", template.state)
                 .put("fingerprint", fingerprint(template)).put("items", JSONArray(template.items.map { item ->
                 JSONObject().put("position", item.position).put("label", item.label).put("responseType", item.responseType).put("unit", item.unit ?: JSONObject.NULL).put("required", item.required).put("privateGuidance", item.privateGuidance ?: JSONObject.NULL)
             }))
@@ -87,11 +89,11 @@ object InspectionTemplateCodec {
             require((origin == null) == (sourceId == null)) { "Inspection template origin is incomplete" }
             require(origin == null || TechnicianIdCodec.normalize(origin) == origin) { "Invalid template origin workspace" }
             val entry = InspectionTemplateTransferEntry(template.text("reference", 200), template.text("name", 200), template.getInt("revision"), parsedItems,
-                originWorkspaceId = origin, sourceEntityId = sourceId)
+                originWorkspaceId = origin, sourceEntityId = sourceId, state = template.optString("state", "ACTIVE"))
             require(entry.revision > 0 && entry.items.map { it.position } == (1..entry.items.size).toList()) { "Inspection items must be ordered" }
             require(entry.items.all { it.responseType in setOf("STATUS", "TEXT", "NUMBER") }) { "Unsupported inspection response type" }
             val declared = template.optString("fingerprint").takeIf { it.isNotBlank() }
-            require(declared == null || declared == fingerprint(entry)) { "Inspection template fingerprint does not match its content" }
+            require(declared == null || declared == fingerprint(entry) || (!template.has("state") && declared == legacyFingerprint(entry))) { "Inspection template fingerprint does not match its content" }
             entry.copy(fingerprint = fingerprint(entry))
         }
         require(templates.map { it.reference }.distinct().size == templates.size) { "Duplicate inspection template reference" }
@@ -99,6 +101,13 @@ object InspectionTemplateCodec {
     }
 
     fun fingerprint(value: InspectionTemplateTransferEntry): String = sha256(value.normalized().let { template ->
+        buildString {
+            append(template.reference).append('|').append(template.name).append('|').append(template.revision).append('|').append(template.state)
+            template.items.forEach { item -> append('|').append(item.position).append(':').append(item.label).append(':').append(item.responseType).append(':').append(item.unit.orEmpty()).append(':').append(item.required).append(':').append(item.privateGuidance.orEmpty()) }
+        }
+    })
+
+    private fun legacyFingerprint(value: InspectionTemplateTransferEntry): String = sha256(value.normalized().let { template ->
         buildString {
             append(template.reference).append('|').append(template.name).append('|').append(template.revision)
             template.items.forEach { item -> append('|').append(item.position).append(':').append(item.label).append(':').append(item.responseType).append(':').append(item.unit.orEmpty()).append(':').append(item.required).append(':').append(item.privateGuidance.orEmpty()) }
@@ -113,6 +122,7 @@ object InspectionTemplateCodec {
         items = items.map { it.copy(label = it.label.trim(), unit = it.unit?.trim()?.takeIf(String::isNotEmpty), privateGuidance = it.privateGuidance?.trim()?.takeIf(String::isNotEmpty)) },
     ).also { template ->
         require(template.reference.isNotEmpty() && template.name.isNotEmpty() && template.revision > 0 && template.items.isNotEmpty() && template.items.size <= MAX_ITEMS)
+        require(template.state in setOf("ACTIVE", "DISABLED")) { "Unsupported inspection template state" }
         require(template.items.map { it.position } == (1..template.items.size).toList())
         require(template.items.all { it.label.isNotEmpty() && it.responseType in setOf("STATUS", "TEXT", "NUMBER") })
     }
@@ -132,7 +142,8 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
             InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber,
                 dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) },
                 originWorkspaceId = binding?.originWorkspaceId ?: localWorkspaceId,
-                sourceEntityId = binding?.sourceEntityId ?: template.id)
+                sourceEntityId = binding?.sourceEntityId ?: template.id,
+                state = template.state)
         }
         return InspectionTemplateTransfer(Instant.now().toString(), templates)
     }
@@ -173,10 +184,10 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
                 uniqueReference(incoming.reference, incoming.fingerprint, existing.keys)
             } else incoming.reference
             val templateId = UUID.randomUUID().toString(); val revisionId = UUID.randomUUID().toString(); val now = System.currentTimeMillis()
-            dao.insertReusableTemplate(ReusableTemplateEntity(templateId, targetReference, incoming.name, revisionId, modifiedAtEpochMillis = now))
+            dao.insertReusableTemplate(ReusableTemplateEntity(templateId, targetReference, incoming.name, revisionId, incoming.state, now))
             dao.insertReusableTemplateRevision(ReusableTemplateRevisionEntity(revisionId, templateId, incoming.revision, incoming.name, now))
             dao.insertReusableTemplateItems(incoming.items.map { item -> ReusableTemplateItemEntity(UUID.randomUUID().toString(), revisionId, item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) })
-            existing[targetReference] = ReusableTemplateEntity(templateId, targetReference, incoming.name, revisionId, modifiedAtEpochMillis = now)
+            existing[targetReference] = ReusableTemplateEntity(templateId, targetReference, incoming.name, revisionId, incoming.state, now)
             imported += targetReference
             if (entry.classification == InspectionTemplateImportClassification.CONFLICT) separate += targetReference
         }
@@ -185,12 +196,12 @@ class InspectionTemplateExchangeService(private val database: ServiceLoopDatabas
 
     private suspend fun currentFingerprint(template: ReusableTemplateEntity): String {
         val revision = dao.reusableTemplateRevision(template.currentRevisionId) ?: return "missing"
-        return InspectionTemplateCodec.fingerprint(InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) }))
+        return InspectionTemplateCodec.fingerprint(InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) }, state = template.state))
     }
 
     private suspend fun currentContentFingerprint(template: ReusableTemplateEntity): String {
         val revision = dao.reusableTemplateRevision(template.currentRevisionId) ?: return "missing"
-        return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) }))
+        return InspectionTemplateCodec.contentFingerprint(InspectionTemplateTransferEntry(template.reference, revision.nameSnapshot, revision.revisionNumber, dao.reusableTemplateItems(revision.id).map { item -> DispatchInspectionItem(item.position, item.label, item.responseType, item.unit, item.required, item.privateGuidance) }, state = template.state))
     }
 
     private fun uniqueReference(reference: String, fingerprint: String, occupied: Set<String>): String {
