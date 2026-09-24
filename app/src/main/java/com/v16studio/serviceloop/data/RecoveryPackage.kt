@@ -39,7 +39,7 @@ class RecoveryPackage(
     private val fileRoot: File,
     private val failureInjector: (FailurePoint) -> Unit = {},
 ) {
-    enum class FailurePoint { BEFORE_FILE_ADOPTION, DURING_FILE_ADOPTION, BEFORE_DB_TRANSACTION, DURING_DB_TRANSACTION, AFTER_DB_COMMIT, AFTER_COMMITTED_JOURNAL, DURING_ERASE_FILES }
+    enum class FailurePoint { AFTER_BACKUP_SNAPSHOT, BEFORE_FILE_ADOPTION, DURING_FILE_ADOPTION, BEFORE_DB_TRANSACTION, DURING_DB_TRANSACTION, AFTER_DB_COMMIT, AFTER_COMMITTED_JOURNAL, DURING_ERASE_FILES }
     enum class RecoveryResult { NONE, CANDIDATE_COMMITTED, ORIGINAL_RESTORED, RESTRICTED }
 
     suspend fun create(passphrase: CharArray, allowIncomplete: Boolean): BackupResult = BusinessFileCoordinator.mutex.withLock { createUnlocked(passphrase, allowIncomplete) }
@@ -56,12 +56,13 @@ class RecoveryPackage(
             exportDatabase()
         }
         val databaseObject = JSONObject(rawSnapshot.toString(Charsets.UTF_8))
+        failureInjector(FailurePoint.AFTER_BACKUP_SNAPSHOT)
         // An unopened preference store can have no persisted singleton yet. Capture the
         // product default as portable state so this backup passes the same restore contract.
         if (tableRows(databaseObject, "reminder_preferences").isEmpty()) normalizeLegacyReminderState(databaseObject)
         val files = requiredFiles(databaseObject)
-        val missing = files.filterNot { File(fileRoot, it.path).isFile }.map { it.path }
-        if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing")
+        val missing = files.filterNot(::matchesRequiredFile).map { it.path }
+        if (missing.isNotEmpty() && !allowIncomplete) error("Complete backup is unavailable because ${missing.size} saved file(s) are missing or corrupt")
         normalizeMissingAvailability(databaseObject, missing.toSet())
         val databaseJson = databaseObject.toString().toByteArray(Charsets.UTF_8)
         val manifest = JSONObject()
@@ -224,6 +225,20 @@ class RecoveryPackage(
     }
 
     private data class RequiredFile(val path: String, val size: Long, val hash: String, val kind: String)
+    private fun matchesRequiredFile(expected: RequiredFile): Boolean = runCatching {
+        val file = OwnedBusinessFiles.resolve(fileRoot, expected.path)
+        if (!file.isFile || file.length() != expected.size) return@runCatching false
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) } == expected.hash
+    }.getOrDefault(false)
     private fun requiredFiles(root: JSONObject): List<RequiredFile> {
         val deletedOriginals = tableRows(root, "retained_images")
             .filter { !it.isNull("originalDeletedAtEpochMillis") }

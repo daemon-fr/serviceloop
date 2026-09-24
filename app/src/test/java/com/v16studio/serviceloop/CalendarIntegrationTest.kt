@@ -86,6 +86,19 @@ class CalendarIntegrationTest {
         assertFalse(coordinator.runtimeState().enabled);assertEquals(1,gateway.events.size);assertEquals(0,gateway.deletes)
     }
 
+    @Test fun sameDatasetAdoptionDropsCalendarBindingButRollbackKeepsIt()=runBlocking{
+        coordinator.setEnabled(true);coordinator.select(gateway.calendar)
+        val before=db.serviceLoopDao().recoveryMetadata()!!
+        coordinator.reconcile() // a failed replacement leaves the durable adoption token unchanged
+        assertTrue(coordinator.runtimeState().enabled)
+        assertEquals(1, gateway.events.size)
+        db.serviceLoopDao().upsertRecoveryMetadata(before.copy(adoptionToken="restored-copy"))
+        coordinator.reconcile()
+        assertFalse(coordinator.runtimeState().enabled)
+        assertEquals(1, gateway.events.size)
+        assertEquals(0, gateway.deletes)
+    }
+
     @Test fun disableRetainsEventAndReenableUpdatesWithoutDuplicate()=runBlocking{
         coordinator.setEnabled(true);coordinator.select(gateway.calendar);val eventId=gateway.events.keys.single();coordinator.setEnabled(false)
         val visit=db.serviceLoopDao().visit("visit")!!;db.serviceLoopDao().updateVisit(visit.copy(scheduledAtEpochMillis=visit.scheduledAtEpochMillis!!+60_000,modifiedAtEpochMillis=2));coordinator.reconcile()

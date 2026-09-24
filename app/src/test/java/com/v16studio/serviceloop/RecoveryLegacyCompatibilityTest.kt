@@ -165,6 +165,37 @@ class RecoveryLegacyCompatibilityTest {
         assertEquals("MISSING", dao.aggregateRenditions("aggregate").single().status)
     }
 
+    @Test fun corruptAggregateBytesAreQuarantinedAsIncompleteAcrossRepeatedBackup() = runBlocking {
+        val dao = database.serviceLoopDao()
+        dao.insertAggregateReport(AggregateReportEntity("corrupt-aggregate", "legacy-customer", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
+        val path = "aggregate-reports/corrupt-aggregate/rendition.pdf"
+        val file = File(root, path).apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(1, 2, 3)) }
+        dao.insertAggregateRendition(AggregateReportRenditionEntity("corrupt-rendition", "corrupt-aggregate", path,
+            sha256(file.readBytes()), file.length(), 1, 1, "READY", null))
+        file.writeBytes(byteArrayOf(3, 2, 1)) // same length, wrong authenticated content
+        val recovery = RecoveryPackage(database, root)
+        assertThrows(IllegalStateException::class.java) { runBlocking { recovery.create(password, false) } }
+        val backup = recovery.create(password, true)
+        assertEquals(listOf(path), backup.missingFiles)
+        recovery.restore(recovery.inspect(backup.bytes, password))
+        assertEquals("MISSING", dao.aggregateRenditions("corrupt-aggregate").single().status)
+        assertEquals(false, file.exists())
+        assertEquals(listOf(path), recovery.create(password, true).missingFiles)
+    }
+
+    @Test fun concurrentBusinessWriteAfterBackupSnapshotRejectsMixedArchive() = runBlocking {
+        val racing = RecoveryPackage(database, root) { point ->
+            if (point == RecoveryPackage.FailurePoint.AFTER_BACKUP_SNAPSHOT) {
+                database.openHelper.writableDatabase.execSQL(
+                    "UPDATE customers SET name='Updated during backup' WHERE id='legacy-customer'")
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { racing.create(password, false) } }
+        assertEquals("Updated during backup", database.serviceLoopDao().customer("legacy-customer")!!.name)
+        val stable = RecoveryPackage(database, root).create(password, false)
+        assertEquals(true, stable.complete)
+    }
+
     @Test fun orphanAggregateSourceAndRemotePhotoRejectBeforeReplacement() = runBlocking {
         val recovery = RecoveryPackage(database, root)
         val current = recovery.create(password, false).bytes
