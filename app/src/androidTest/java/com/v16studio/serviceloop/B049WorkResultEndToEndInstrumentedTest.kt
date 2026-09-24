@@ -165,6 +165,11 @@ class B049WorkResultEndToEndInstrumentedTest {
                     .put("checklist", JSONArray()).put("findings", JSONArray()).put("parts", JSONArray()).put("followUps", JSONArray())
                     .put("recurrence", JSONObject().put("fulfilledObligation", first).put("oldDueDate", if (first) "2026-09-01" else JSONObject.NULL)
                         .put("nextDueDate", if (first) "2027-09-01" else JSONObject.NULL))
+                if (first) listOf(json.getJSONObject("workSnapshot"), json.getJSONObject("recurrence")).forEach { facts ->
+                    facts.put("planId", "source-plan").put("capturedObligationId", "source-obligation")
+                        .put("nextDueDateCalculated", false).put("nextDueOverrideReason", "Owner retained original cycle")
+                }
+                if (first) json.getJSONObject("recurrence").put("intervalCount", 1).put("intervalUnit", "YEARS")
                 return WorkResultPackageCodec.Result(json, emptyList())
             }
             fun bytes(item: Int) = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("package-$item", exporter, issuer, "2026-09-23T10:00:00Z", listOf(result(item))))

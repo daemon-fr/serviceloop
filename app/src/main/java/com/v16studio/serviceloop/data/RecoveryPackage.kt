@@ -861,6 +861,7 @@ class RecoveryPackage(
 
     private fun derive(passphrase: CharArray, salt: ByteArray, iterations: Int) = SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(passphrase, salt, iterations, 256)).encoded, "AES")
     private fun unzip(bytes: ByteArray): Map<String, ByteArray> {
+        validateZipDirectory(bytes)
         val result = linkedMapOf<String, ByteArray>(); var expanded = 0L
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
@@ -872,6 +873,28 @@ class RecoveryPackage(
             }
         }
         return result
+    }
+    private fun validateZipDirectory(bytes: ByteArray) {
+        // ZipInputStream only reads local headers. A truncated central directory can
+        // otherwise leave all visible entries apparently valid after decryption.
+        val earliest = (bytes.size - 22 - 65535).coerceAtLeast(0)
+        val eocd = (bytes.size - 22 downTo earliest).firstOrNull { offset ->
+            bytes[offset] == 0x50.toByte() && bytes[offset + 1] == 0x4b.toByte() &&
+                bytes[offset + 2] == 0x05.toByte() && bytes[offset + 3] == 0x06.toByte() &&
+                ByteBuffer.wrap(bytes, offset + 20, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt().and(0xffff) == bytes.size - offset - 22
+        } ?: throw IllegalArgumentException("Backup ZIP directory is missing or truncated")
+        val footer = ByteBuffer.wrap(bytes, eocd, 22).slice().order(ByteOrder.LITTLE_ENDIAN)
+        footer.position(4)
+        val disk = footer.short.toInt().and(0xffff)
+        val directoryDisk = footer.short.toInt().and(0xffff)
+        val diskCount = footer.short.toInt().and(0xffff)
+        val totalCount = footer.short.toInt().and(0xffff)
+        val directorySize = footer.int.toLong().and(0xffffffffL)
+        val directoryOffset = footer.int.toLong().and(0xffffffffL)
+        require(disk == 0 && directoryDisk == 0 && diskCount == totalCount && totalCount in 2..MAX_ENTRIES &&
+            directorySize > 0 && directoryOffset + directorySize == eocd.toLong()) {
+            "Backup ZIP directory is invalid"
+        }
     }
     private fun put(zip: ZipOutputStream, name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
     private fun safeArchiveEntry(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') && path.split('/', '\\').none { it.isBlank() || it == "." || it == ".." }

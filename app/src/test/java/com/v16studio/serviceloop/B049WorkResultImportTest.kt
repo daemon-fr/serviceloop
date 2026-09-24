@@ -281,7 +281,14 @@ class B049WorkResultImportTest {
                 .put("sourceFinalRevisionNumber", 1).put("supersedesSourceFinalRevisionId", JSONObject.NULL)
                 .put("recordedAt", "2026-09-23T09:00:00Z").put("sourcePhotos", JSONArray())
                 .put("visitReference", "TECH-1").put("correctionReason", JSONObject.NULL)
-                .put("publicNote", JSONObject.NULL).put("followUpCaptureState", "CAPTURED_AT_REVISION"))
+                .put("publicNote", JSONObject.NULL).put("followUpCaptureState", "CAPTURED_AT_REVISION")
+                .also { value ->
+                    listOf(value.getJSONObject("workSnapshot"), value.getJSONObject("recurrence")).forEach { facts ->
+                        facts.put("planId", "source-plan").put("capturedObligationId", "source-obligation")
+                            .put("nextDueDateCalculated", false).put("nextDueOverrideReason", "Owner retained original cycle")
+                    }
+                    value.getJSONObject("recurrence").put("intervalCount", 1).put("intervalUnit", "YEARS")
+                })
         }
         val service = WorkResultImportService(database, root)
         service.import(packageBytes("first", source))

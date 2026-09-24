@@ -11,6 +11,7 @@ import java.time.ZoneId
 import org.json.JSONObject
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.sync.withLock
 
 enum class ExportFamily(val title: String) {
     CUSTOMERS("Customers"), CONTACTS("Customer contacts"), SITES("Sites"), EQUIPMENT("Equipment"), PLANS("Service Plans"),
@@ -38,7 +39,11 @@ data class ExportCenterSelection(
 class ExportCenterService(private val database: ServiceLoopDatabase, private val filesRoot: File) {
     private val dao = database.serviceLoopDao()
 
-    suspend fun export(selection: ExportCenterSelection): ByteArray {
+    suspend fun export(selection: ExportCenterSelection): ByteArray = BusinessFileCoordinator.mutex.withLock {
+        exportLocked(selection)
+    }
+
+    private suspend fun exportLocked(selection: ExportCenterSelection): ByteArray {
         require(selection.families.isNotEmpty()) { "Choose at least one content family" }
         val scope = selection.scope
         val businessZone = dao.businessProfile()?.zoneId?.let(ZoneId::of) ?: ZoneId.systemDefault()

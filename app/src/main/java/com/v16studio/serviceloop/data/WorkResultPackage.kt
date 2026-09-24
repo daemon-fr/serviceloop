@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONException
 import java.security.MessageDigest
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -156,15 +157,76 @@ internal object WorkResultPackageCodec {
         require(work.get("serviceName") is String && work.getString("serviceName").isNotBlank()) { "Result service is missing" }
         val recurrence = o.getJSONObject("recurrence")
         val checklist = o.getJSONArray("checklist")
-        o.getJSONArray("findings"); o.getJSONArray("parts"); o.getJSONArray("followUps")
+        val findings = o.getJSONArray("findings")
+        val parts = o.getJSONArray("parts")
+        val followUps = o.getJSONArray("followUps")
+        if (version == VERSION) require(checklist.length() <= 1000) { "Too many checklist responses" }
+        val checklistPositions = mutableSetOf<Int>()
         for (index in 0 until checklist.length()) {
             val item = checklist.getJSONObject(index)
-            require(item.get("position").toString().toIntOrNull()?.let { it > 0 } == true &&
+            require(item.get("position") is Number && item.get("position").toString().matches(Regex("[1-9][0-9]*")) &&
+                checklistPositions.add(item.getInt("position")) &&
                 item.get("label") is String && item.getString("label").isNotBlank() &&
                 item.get("responseType") is String && item.getString("responseType") in setOf("STATUS", "TEXT", "NUMBER") &&
                 item.get("required") is Boolean && item.get("disposition") is String &&
                 item.getString("disposition") in setOf("UNANSWERED", "NOT_CHECKED", "OK", "ISSUE_FOUND", "NOT_APPLICABLE", "VALUE")) {
                 "Invalid result checklist response"
+            }
+            if (version == VERSION) {
+                fun nullableText(key: String) = !item.has(key) || item.isNull(key) || item.get(key) is String
+                require(nullableText("unit") && nullableText("textValue") && nullableText("numberValue") && nullableText("reason")) {
+                    "Invalid checklist answer type"
+                }
+                when (item.getString("disposition")) {
+                    "VALUE" -> require(when (item.getString("responseType")) {
+                        "TEXT" -> !item.isNull("textValue") && item.getString("textValue").isNotBlank()
+                        "NUMBER" -> !item.isNull("numberValue") && runCatching { BigDecimal(item.getString("numberValue")) }.isSuccess
+                        else -> false
+                    }) { "Checklist value does not match response type" }
+                    "ISSUE_FOUND" -> require(item.getString("responseType") == "STATUS") { "Invalid issue response type" }
+                    else -> Unit
+                }
+            }
+        }
+        if (version == VERSION) {
+            require(findings.length() <= 1000 && parts.length() <= 1000 && followUps.length() <= 1000) { "Too many result facts" }
+            val issues = (0 until checklist.length()).map { checklist.getJSONObject(it) }
+                .filter { it.getString("disposition") == "ISSUE_FOUND" }
+            require(findings.length() == issues.size) { "Findings differ from checklist issues" }
+            for (index in 0 until findings.length()) {
+                val finding = findings.getJSONObject(index)
+                val issue = issues[index]
+                require(finding.get("position") is Number && finding.getInt("position") == issue.getInt("position") &&
+                    finding.get("label") is String && finding.getString("label") == issue.getString("label") &&
+                    (!finding.has("description") || finding.isNull("description") || finding.get("description") is String) &&
+                    (if (!issue.has("reason") || issue.isNull("reason")) !finding.has("description") || finding.isNull("description")
+                     else finding.getString("description") == issue.getString("reason"))) {
+                    "Finding differs from checklist issue"
+                }
+            }
+            val partPositions = mutableSetOf<Int>()
+            for (index in 0 until parts.length()) {
+                val part = parts.getJSONObject(index)
+                require(part.get("position") is Number && part.get("position").toString().matches(Regex("[1-9][0-9]*")) &&
+                    partPositions.add(part.getInt("position")) && part.get("description") is String &&
+                    part.getString("description").isNotBlank() && part.get("quantity") is String &&
+                    runCatching { BigDecimal(part.getString("quantity")).signum() > 0 }.getOrDefault(false) &&
+                    part.get("unit") is String && part.getString("unit").isNotBlank()) { "Invalid result part" }
+            }
+            val followUpIds = mutableSetOf<String>()
+            require(o.getString("followUpCaptureState") != "UNAVAILABLE_LEGACY" || followUps.length() == 0) {
+                "Unavailable follow-ups cannot contain captured records"
+            }
+            for (index in 0 until followUps.length()) {
+                val followUp = followUps.getJSONObject(index)
+                require(followUp.get("sourceId") is String && followUpIds.add(followUp.getString("sourceId")) &&
+                    followUp.getString("sourceId").isNotBlank() && followUp.get("type") is String &&
+                    followUp.get("title") is String && followUp.getString("title").isNotBlank() &&
+                    followUp.get("dueDate") is String && followUp.get("state") is String &&
+                    (!followUp.has("privatePlanningNote") || followUp.isNull("privatePlanningNote") || followUp.get("privatePlanningNote") is String)) {
+                    "Invalid captured follow-up"
+                }
+                java.time.LocalDate.parse(followUp.getString("dueDate"))
             }
         }
         val outcome = o.getString("outcome")
@@ -208,6 +270,32 @@ internal object WorkResultPackageCodec {
         if (work.has("nextDueDate")) require(nullableDate(work, "nextDueDate") == nextDue) { "Captured next due date differs from recurrence" }
         if (fulfilled) require(oldDue != null && nextDue != null && nextDue > oldDue) { "Fulfilled result needs a later due date" }
         if (outcome == "NOT_PERFORMED") require(nextDue == null) { "Not performed result cannot advance recurrence" }
+        if (version == VERSION) {
+            fun nullableFact(value: JSONObject, key: String): Any? =
+                if (!value.has(key) || value.isNull(key)) null else value.get(key)
+            listOf("planId", "capturedObligationId", "nextDueDateCalculated", "nextDueOverrideReason").forEach { key ->
+                require(nullableFact(work, key) == nullableFact(recurrence, key)) { "Work and recurrence disagree on $key" }
+            }
+            val calculated = nullableFact(recurrence, "nextDueDateCalculated")
+            val overrideReason = nullableFact(recurrence, "nextDueOverrideReason")
+            require(calculated == null || calculated is Boolean) { "Invalid next due calculation choice" }
+            require(overrideReason == null || overrideReason is String) { "Invalid next due override reason" }
+            if (fulfilled) {
+                require(nullableFact(recurrence, "capturedObligationId") is String &&
+                    (nullableFact(recurrence, "capturedObligationId") as String).isNotBlank() &&
+                    recurrence.get("intervalCount") is Number && recurrence.get("intervalUnit") is String &&
+                    calculated is Boolean) { "Fulfilled result lacks captured recurrence facts" }
+                val expected = com.v16studio.serviceloop.domain.RecurrenceCalculator.nextDate(
+                    java.time.LocalDate.parse(o.getString("serviceDate")), recurrence.getInt("intervalCount"),
+                    recurrence.getString("intervalUnit")).toString()
+                require(if (calculated) nextDue == expected && overrideReason == null
+                    else overrideReason is String && overrideReason.isNotBlank()) {
+                    "Next due date contradicts its calculation or override"
+                }
+            } else require(calculated == null && overrideReason == null && nextDue == null) {
+                "Unfulfilled result cannot change recurrence"
+            }
+        }
     }
 
     private fun validateSourcePhotos(result: JSONObject, photos: List<Photo>) {

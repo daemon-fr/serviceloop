@@ -16,6 +16,35 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SourceCanonicalJsonTest {
+    @Test fun v2RejectsContradictoryTypedChecklistPartsAndFollowUps() {
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+            .use { it.readBytes().toString(Charsets.UTF_8) })
+        fun rejects(change: (JSONObject) -> Unit) {
+            val changed = JSONObject(record.toString()).also(change)
+            val value = WorkResultPackageCodec.Package("semantic-negative", changed.getString("technicianId"),
+                changed.getString("assignmentIssuerId"), "2026-09-24T10:00:00Z",
+                listOf(WorkResultPackageCodec.Result(changed, emptyList())))
+            assertThrows(IllegalArgumentException::class.java) { WorkResultPackageCodec.encode(value) }
+        }
+        rejects { it.getJSONArray("checklist").getJSONObject(0).put("position", "1") }
+        rejects { it.getJSONArray("checklist").getJSONObject(0).put("disposition", "VALUE") }
+        rejects { it.getJSONArray("checklist").getJSONObject(0).put("disposition", "ISSUE_FOUND") }
+        rejects { it.getJSONArray("parts").getJSONObject(0).put("quantity", "0") }
+        rejects { it.getJSONArray("parts").getJSONObject(0).put("quantity", "1.2.3") }
+        rejects { it.getJSONArray("parts").getJSONObject(0).put("quantity", 1.25) }
+        rejects { it.getJSONObject("workSnapshot").put("fulfilledObligation", true) }
+        rejects { it.getJSONObject("recurrence").put("nextDueDate", "2027-09-24") }
+        rejects { it.getJSONObject("recurrence").put("nextDueDateCalculated", true) }
+        rejects { it.getJSONObject("workSnapshot").put("nextDueOverrideReason", "Unmatched override") }
+        rejects { it.put("followUpCaptureState", "UNAVAILABLE_LEGACY").put("followUps", JSONArray().put(
+            JSONObject().put("sourceId", "f").put("type", "CALL").put("title", "Call")
+                .put("dueDate", "2026-10-01").put("state", "OPEN"))) }
+        rejects { it.put("followUps", JSONArray().put(JSONObject().put("sourceId", "f").put("type", "CALL")
+            .put("title", "Call").put("dueDate", "2026-10-01").put("state", "OPEN"))
+            .put(JSONObject().put("sourceId", "f").put("type", "CALL").put("title", "Call again")
+                .put("dueDate", "2026-10-02").put("state", "OPEN"))) }
+    }
+
     @Test fun portableV2RecordFixtureMatchesLiteralBytesDigestAndAcceptedWireSemantics() {
         fun fixture(name: String) = requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/$name")).use { it.readBytes() }
         val record = JSONObject(fixture("work-result-v2-record.json").toString(Charsets.UTF_8))

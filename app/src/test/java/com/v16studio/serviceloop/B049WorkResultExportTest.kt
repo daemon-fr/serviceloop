@@ -186,7 +186,17 @@ class B049WorkResultExportTest {
         val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
             ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES))))
         assertTrue(first.contentEquals(transfer.binaries.values.single()))
-        assertTrue(RecoveryPackage(database, root).create("canonical derivative backup".toCharArray(), false).complete)
+        val recovery = RecoveryPackage(database, root)
+        val passphrase = "canonical derivative backup".toCharArray()
+        val backup = recovery.create(passphrase, false)
+        assertTrue(backup.complete)
+        assertTrue(File(root, retained.derivativeRelativePath).delete())
+        recovery.restore(recovery.inspect(backup.bytes, passphrase))
+        val afterRestore = photo(WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision")))
+        assertTrue(first.contentEquals(afterRestore))
+        val relayAfterRestore = DataTransferCodec.decode(DataTransferExportService(database, root).export(
+            ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES))))
+        assertTrue(first.contentEquals(relayAfterRestore.binaries.values.single()))
     }
 
     @Test fun directPerformedAndWorkResultRelayHaveOneSourceFingerprint() = runTest {

@@ -78,6 +78,34 @@ class RecoveryLegacyCompatibilityTest {
         assertNull(database.serviceLoopDao().customer("unexpected"))
     }
 
+    @Test fun authenticatedZipTamperingAndTruncationRejectWithoutAdoption() = runBlocking {
+        val recovery = RecoveryPackage(database, root)
+        val current = recovery.create(password, false).bytes
+        val plain = invokeCrypt(recovery, "unprotect", current)
+        val entries = unzip(plain)
+        val malformed = mutableListOf<ByteArray>()
+        malformed += current.copyOf(current.size - 1) // invalid GCM tag
+        malformed += invokeCrypt(recovery, "protect", plain.copyOf(plain.size - 22)) // missing ZIP directory
+        malformed += invokeCrypt(recovery, "protect", zip(entries - "manifest.json"))
+        malformed += invokeCrypt(recovery, "protect", ByteArrayOutputStream().also { output ->
+            ZipOutputStream(output).use { stream ->
+                entries.forEach { (name, bytes) ->
+                    stream.putNextEntry(ZipEntry(name)); stream.write(bytes); stream.closeEntry()
+                }
+                stream.putNextEntry(ZipEntry("../outside")); stream.write(byteArrayOf(1)); stream.closeEntry()
+            }
+        }.toByteArray())
+        val wrongPath = entries.toMutableMap()
+        val manifest = JSONObject(wrongPath.getValue("manifest.json").toString(Charsets.UTF_8))
+            .put("missingFiles", JSONArray().put("../outside")).put("complete", false)
+        wrongPath["manifest.json"] = manifest.toString().toByteArray(Charsets.UTF_8)
+        malformed += invokeCrypt(recovery, "protect", zip(wrongPath))
+        malformed.forEachIndexed { index, bytes ->
+            assertThrows("Bad authenticated ZIP variant $index", Exception::class.java) { recovery.inspect(bytes, password) }
+            assertEquals("Historical customer", database.serviceLoopDao().customer("legacy-customer")!!.name)
+        }
+    }
+
     @Test fun malformedSourceVersionsFamiliesTypesAndAncestryRejectBeforeAdoption() = runBlocking {
         val recovery = RecoveryPackage(database, root)
         val current = recovery.create(password, false).bytes
