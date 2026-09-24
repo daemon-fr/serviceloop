@@ -465,6 +465,10 @@ class B049WorkResultImportTest {
         }
         val good = pending("prior-good", "good-rendition", "%PDF-verified".toByteArray(), true)
         val incomplete = pending("prior-bad", "bad-rendition", null, false)
+        val stagedBytes = "%PDF-staged".toByteArray()
+        val stagedTarget = pending("prior-staged", "staged-rendition", stagedBytes, true)
+        stagedTarget.writeBytes("corrupt target".toByteArray())
+        val stagedTemp = File(stagedTarget.parentFile, "staged-rendition.tmp").apply { writeBytes(stagedBytes) }
         val time = object : BusinessTime {
             override val zoneId = ZoneId.of("UTC")
             override fun instant(): Instant = Instant.parse("2026-09-23T12:00:00Z")
@@ -479,5 +483,8 @@ class B049WorkResultImportTest {
         assertEquals(true, good.isFile)
         assertEquals("FAILED", dao.aggregateRenditions("prior-bad").single().status)
         assertEquals(false, incomplete.exists())
+        assertEquals("READY", dao.aggregateRenditions("prior-staged").single().status)
+        assertEquals(WorkResultPackageCodec.sha256(stagedBytes), WorkResultPackageCodec.sha256(stagedTarget.readBytes()))
+        assertEquals(false, stagedTemp.exists())
     }
 }

@@ -193,7 +193,7 @@ class B045SlsyncTest {
         dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("b049-final-photo", "b049-final-work", 1, "b049-photo", photoPath, photoHash, photoBytes.size.toLong(), "image/jpeg", "Private proof", includedInCustomerReport = false, visibility = "PRIVATE")))
         val result = RemoteFinalResultEntity(
             id = "b049-remote", resultId = "b049-result", sourceFinalRevisionId = "b049-revision", dispatchVisitId = "b049-dispatch-visit", dispatchItemId = "b049-dispatch-item",
-            localVisitId = null, localWorkItemId = null, technicianId = exporterId, technicianName = "Ada", technicianDesignation = null,
+            localVisitId = "b049-visit", localWorkItemId = "b049-work", technicianId = exporterId, technicianName = "Ada", technicianDesignation = null,
             customerId = "b049-customer", customerSnapshotJson = "{}", siteSnapshotJson = "{}", subjectSnapshotJson = "{}",
             serviceDate = "2026-09-22", outcome = "PERFORMED", workPerformed = "Inspected", notPerformedReason = null,
             checklistJson = "[]", findingsJson = "[]", partsJson = "[]", internalNotes = "Private history", followUpsJson = "[]", recurrenceJson = "{}", provenanceJson = "{}", importedAtEpochMillis = 3,
@@ -203,7 +203,7 @@ class B045SlsyncTest {
         dao.insertWorkResultReceipt(receipt)
         val report = AggregateReportEntity("b049-aggregate", "b049-customer", "{}", null, null, null, null, "{}", 4, "READY")
         dao.insertAggregateReport(report)
-        val source = AggregateReportSourceEntity("b049-aggregate", 1, "b049-revision", "REMOTE", "b049-dispatch-visit", "b049-remote")
+        val source = AggregateReportSourceEntity("b049-aggregate", 1, "b049-revision", "REMOTE", "b049-visit", "b049-remote")
         dao.insertAggregateSources(listOf(source))
         dao.insertAggregateRendition(AggregateReportRenditionEntity("b049-rendition", "b049-aggregate", null, null, null, null, 4, "PENDING", null))
         val derivativeBytes = "retained B049 evidence".toByteArray()

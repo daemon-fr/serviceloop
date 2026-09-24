@@ -311,6 +311,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM attachments ORDER BY id") suspend fun allAttachments(): List<AttachmentEntity>
     @Query("SELECT * FROM retained_images WHERE sourceKind=:kind AND sourceId=:sourceId") suspend fun retainedImage(kind: String, sourceId: String): RetainedImageEntity?
     @Query("SELECT * FROM retained_images WHERE originalRelativePath=:path LIMIT 1") suspend fun retainedImageByOriginalPath(path: String): RetainedImageEntity?
+    @Query("SELECT * FROM retained_images WHERE originalDeletionRequestedAtEpochMillis IS NOT NULL AND originalDeletedAtEpochMillis IS NULL ORDER BY id") suspend fun pendingRetainedImageDeletions(): List<RetainedImageEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRetainedImage(value: RetainedImageEntity)
     @Update suspend fun updateRetainedImage(value: RetainedImageEntity)
     @Query("SELECT * FROM remote_final_results WHERE voidedAtEpochMillis IS NULL ORDER BY serviceDate, id") suspend fun activeRemoteFinalResults(): List<RemoteFinalResultEntity>

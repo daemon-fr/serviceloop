@@ -53,6 +53,11 @@ fun interface AggregateReportWriter { fun render(models: List<PublicReportModel>
 class AggregateReportService(private val database: ServiceLoopDatabase, private val repository: ServiceLoopRepository, private val filesRoot: File,
     private val writer: AggregateReportWriter = AggregateReportWriter { models, name, contact, id, target, root -> AggregateReportPdf.render(models, name, contact, id, target, root) }) {
     private val dao = database.serviceLoopDao()
+    private data class CapturedReport(
+        val selected: List<ReportableVisitSource>, val customer: CustomerEntity,
+        val businessName: String, val businessContact: String, val models: List<PublicReportModel>,
+        val datasetId: String?, val adoptionToken: String?,
+    )
 
     suspend fun reportable(scope: ServiceLoopScopeFilter): List<ReportableVisitSource> {
         val local = dao.allFinalRecords().filterNot { it.voided }.flatMap { record ->
@@ -106,12 +111,13 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
     private suspend fun generateLocked(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
         val customerId = requireNotNull(scope.customerId) { "Choose one Customer" }
         require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 Visits" }
-        val candidates = reportable(scope).associateBy { it.key }
-        val selected = selectedKeys.map { candidates[it] ?: error("A selected Visit changed; review the selection") }
-        require(selected.all { it.customerId == customerId }) { "Aggregate reports cannot mix Customers" }
-        val customer = dao.customer(customerId) ?: error("Customer is missing")
-        val business = dao.businessProfile() ?: error("Business identity is missing")
-        val models = selected.map { visitSource ->
+        val captured = database.withTransaction {
+          val candidates = reportable(scope).associateBy { it.key }
+          val selected = selectedKeys.map { candidates[it] ?: error("A selected Visit changed; review the selection") }
+          require(selected.all { it.customerId == customerId }) { "Aggregate reports cannot mix Customers" }
+          val customer = dao.customer(customerId) ?: error("Customer is missing")
+          val business = dao.businessProfile() ?: error("Business identity is missing")
+          val models = selected.map { visitSource ->
             val parts = visitSource.sources.map { source -> when (source.kind) {
                 "LOCAL" -> {
                     val record = dao.finalRecordForVisit(source.visitId) ?: error("Final record is missing")
@@ -128,9 +134,15 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
                 .mapIndexed { index, line -> line.copy(position = index + 1) }
             parts.first().copy(recordId = visitSource.visitId, visitReference = visitSource.visitReference,
                 technicianName = visitSource.technicians.joinToString(", "), lines = lines)
+          }
+          val businessContact = listOfNotNull(business.phone, business.email, business.postalAddress).filter { it.isNotBlank() }.joinToString(" · ")
+          val binding = dao.recoveryMetadata()
+          CapturedReport(selected, customer, business.businessName, businessContact,
+              models.map { it.copy(businessName = business.businessName, businessContact = businessContact) },
+              binding?.datasetId, binding?.adoptionToken)
         }
-        val businessContact = listOfNotNull(business.phone, business.email, business.postalAddress).filter { it.isNotBlank() }.joinToString(" · ")
-        val frozen = models.map { it.copy(businessName = business.businessName, businessContact = businessContact) }
+        val selected = captured.selected
+        val frozen = captured.models
         frozen.flatMap { it.lines }.flatMap { it.photos }.forEach { photo ->
             val file = ownedFile(photo.relativePath)
             require(file.length() == photo.byteSize && WorkResultPackageCodec.sha256(file.readBytes()) == photo.sha256) { "A selected customer-report photo is missing or changed" }
@@ -141,22 +153,33 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
         val relative = "aggregate-reports/$reportId/$renditionId.pdf"
         val generating = AggregateReportRenditionEntity(renditionId, reportId, relative, null, null, null, now, "GENERATING", null)
         database.withTransaction {
+            val currentBinding = dao.recoveryMetadata()
+            require(currentBinding?.datasetId == captured.datasetId && currentBinding?.adoptionToken == captured.adoptionToken) {
+                "The workspace changed while preparing this report"
+            }
+            val current = reportable(scope).associateBy { it.key }
+            require(selectedKeys.map { current[it] } == selected) { "A selected final source changed while preparing this report" }
             dao.insertAggregateReport(AggregateReportEntity(reportId, customerId,
-                JSONObject().put("reference", customer.reference).put("name", customer.name).toString(), scope.siteId, scope.equipmentId,
-                scope.fromDate?.toString(), scope.toDate?.toString(), JSONObject().put("name", business.businessName).put("contact", businessContact).toString(), now, "ACTIVE"))
+                JSONObject().put("reference", captured.customer.reference).put("name", captured.customer.name).toString(), scope.siteId, scope.equipmentId,
+                scope.fromDate?.toString(), scope.toDate?.toString(), JSONObject().put("name", captured.businessName).put("contact", captured.businessContact).toString(), now, "ACTIVE"))
             dao.insertAggregateSources(selected.flatMap { it.sources }.mapIndexed { index, source -> AggregateReportSourceEntity(reportId, index + 1, source.revisionId, source.kind, source.visitId, source.key.substringAfter(':')) })
             dao.insertAggregateRendition(generating)
         }
         val target = File(filesRoot, relative)
-        require(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
         val temp = File(target.parentFile, "$renditionId.tmp")
+        var tempOwned = false
+        var targetOwned = false
         try {
-            val count = writer.render(frozen, business.businessName, businessContact, reportId, temp, filesRoot)
+            require(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
+            require(!target.exists() && !temp.exists()) { "Aggregate report destination is already in use" }
+            tempOwned = true
+            val count = writer.render(frozen, captured.businessName, captured.businessContact, reportId, temp, filesRoot)
             require(count > 0 && temp.length() > 0) { "Aggregate report is empty" }
             val rendered = temp.readBytes()
             val digest = WorkResultPackageCodec.sha256(rendered)
             dao.updateAggregateRendition(generating.copy(sha256 = digest, byteSize = rendered.size.toLong(), pageCount = count))
             check(temp.renameTo(target)) { "Could not store aggregate report" }
+            targetOwned = true
             require(target.length() == rendered.size.toLong() && WorkResultPackageCodec.sha256(target.readBytes()) == digest) {
                 "Stored aggregate report failed verification"
             }
@@ -166,8 +189,8 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             val committed = withContext(NonCancellable) {
                 val current = dao.aggregateRenditions(reportId).firstOrNull { it.id == renditionId }
                 if (current?.status == "READY") AggregateReportResult(reportId, relative, requireNotNull(current.pageCount)) else {
-                    check(temp.delete() || !temp.exists())
-                    if (target.exists()) check(target.delete())
+                    if (tempOwned) check(temp.delete() || !temp.exists())
+                    if (targetOwned) check(target.delete() || !target.exists())
                     dao.updateAggregateRendition(generating.copy(status = "FAILED", failureReason = failure.message?.take(500)))
                     null
                 }
@@ -182,17 +205,15 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             val relative = pending.relativePath ?: error("Generating aggregate rendition has no file intent")
             val target = OwnedBusinessFiles.resolve(filesRoot, relative)
             val temp = File(target.parentFile, "${pending.id}.tmp")
-            val candidate = when {
-                target.isFile -> target
-                temp.isFile -> temp
-                else -> null
-            }
             val bound = dao.aggregateReport(pending.aggregateReportId) != null && dao.aggregateSources(pending.aggregateReportId).isNotEmpty()
-            val valid = bound && candidate != null && pending.sha256 != null && pending.byteSize != null &&
-                pending.pageCount?.let { it > 0 } == true && candidate.length() == pending.byteSize &&
-                WorkResultPackageCodec.sha256(candidate.readBytes()) == pending.sha256
-            if (valid) {
-                if (candidate == temp) check(temp.renameTo(target)) { "Could not adopt interrupted aggregate report" }
+            val candidate = if (bound && pending.sha256 != null && pending.byteSize != null && pending.pageCount?.let { it > 0 } == true)
+                listOf(target, temp).firstOrNull { file -> file.isFile && file.length() == pending.byteSize &&
+                    WorkResultPackageCodec.sha256(file.readBytes()) == pending.sha256 } else null
+            if (candidate != null) {
+                if (candidate == temp) {
+                    if (target.exists()) check(target.delete())
+                    check(temp.renameTo(target)) { "Could not adopt interrupted aggregate report" }
+                } else if (temp.exists()) check(temp.delete())
                 dao.updateAggregateRendition(pending.copy(status = "READY"))
             } else {
                 if (temp.exists()) check(temp.delete())

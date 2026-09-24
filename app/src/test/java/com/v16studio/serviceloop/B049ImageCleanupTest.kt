@@ -224,6 +224,34 @@ class B049ImageCleanupTest {
         file.delete()
     }
 
+    @Test fun interruptedDeletionReconcilesWithNeverPolicyAndBeforeCompleteBackup() = runTest {
+        val dao = database.serviceLoopDao()
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        cleanup.runNow(now)
+        val retained = dao.retainedImage("ATTACHMENT", "final-photo")!!
+        dao.updateRetainedImage(retained.copy(originalDeletedAtEpochMillis = null))
+        cleanup.savePreference(ImageRetention.NEVER)
+        assertEquals(null, cleanup.runIfDue(now + 1))
+        assertNotNull(dao.retainedImage("ATTACHMENT", "final-photo")!!.originalDeletedAtEpochMillis)
+
+        val second = dao.retainedImage("ATTACHMENT", "excluded-photo")!!
+        dao.updateRetainedImage(second.copy(originalDeletedAtEpochMillis = null))
+        assertTrue(RecoveryPackage(database, context.filesDir).create("pending retained copy".toCharArray(), false).complete)
+        assertNotNull(dao.retainedImage("ATTACHMENT", "excluded-photo")!!.originalDeletedAtEpochMillis)
+    }
+
+    @Test fun cleanupPreservesOriginalSharedWithWorkingEvidence() = runTest {
+        val dao = database.serviceLoopDao()
+        val working = dao.attachment("working-photo")!!
+        dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("working-photo-entry", "final-item", 3,
+            working.id, working.storedRelativePath, working.sha256, working.byteSize, working.mimeType, "Shared image")))
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        val result = cleanup.runNow(now)
+        assertTrue(File(directory, "working.jpg").isFile)
+        assertEquals(null, dao.retainedImage("FINAL_PHOTO", "working-photo-entry"))
+        assertEquals(2, result.originalsRemoved)
+    }
+
     @Test fun aggregateKeepsDistinctSameNameSiteWorkLines() = runTest {
         val dao = database.serviceLoopDao()
         dao.insertWorkItems(listOf(dao.workItem("final-work")!!.copy(id = "second-work")))

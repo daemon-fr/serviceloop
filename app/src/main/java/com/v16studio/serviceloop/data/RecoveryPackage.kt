@@ -44,6 +44,7 @@ class RecoveryPackage(
 
     private suspend fun createUnlocked(passphrase: CharArray, allowIncomplete: Boolean): BackupResult {
         require(passphrase.size >= 12) { "Passphrase must contain at least 12 characters" }
+        reconcilePendingOriginalDeletions(database, fileRoot, System.currentTimeMillis())
         val snapshotAt = System.currentTimeMillis()
         val databaseObject = database.withTransaction {
             database.openHelper.writableDatabase.execSQL(

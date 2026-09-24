@@ -31,7 +31,8 @@ internal object OwnedBusinessFiles {
             require(root.isDirectory)
             val found = mutableListOf<String>()
             fun visit(directory: File) {
-                directory.listFiles()?.forEach { child ->
+                val children = requireNotNull(directory.listFiles()) { "Cannot enumerate owned business files" }
+                children.forEach { child ->
                     require(!Files.isSymbolicLink(child.toPath())) { "Business root contains a link" }
                     if (child.isDirectory) visit(child) else if (child.isFile) {
                         val relative = child.relativeTo(base).invariantSeparatorsPath

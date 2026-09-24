@@ -41,6 +41,7 @@ class ImageCleanupService(private val context: Context, private val database: Se
     }
 
     suspend fun runIfDue(now: Long = System.currentTimeMillis()): ImageCleanupResult? {
+        BusinessFileCoordinator.mutex.withLock { reconcilePendingOriginalDeletions(database, root, now) }
         if (preference() == ImageRetention.NEVER) return null
         if (now - prefs.getLong("lastRun", 0) < 86_400_000L) return null
         return runNow(now).also { check(prefs.edit().putLong("lastRun", now).commit()) }
@@ -51,12 +52,33 @@ class ImageCleanupService(private val context: Context, private val database: Se
     }
 
     private suspend fun runNowLocked(now: Long): ImageCleanupResult {
+        reconcilePendingOriginalDeletions(database, root, now)
         val choice = preference()
         if (choice == ImageRetention.NEVER) return ImageCleanupResult(0, 0, 0, 0)
-        val cutoff = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).minusMonths(choice.months.toLong()).toInstant().toEpochMilli()
+        val businessZone = ZoneId.of(dao.businessProfile()?.zoneId ?: "UTC")
+        val cutoff = Instant.ofEpochMilli(now).atZone(businessZone).minusMonths(choice.months.toLong()).toInstant().toEpochMilli()
         var inspected = 0; var created = 0; var removed = 0; var errors = 0
         val seen = mutableSetOf<String>()
-        dao.allFinalRecords().filterNot { it.voided }.forEach { record ->
+        val records = dao.allFinalRecords()
+        val activeFinalVisits = records.filterNot { it.voided }.map { it.visitId }.toSet()
+        val attachmentsByPath = dao.allAttachments().groupBy { it.storedRelativePath }
+        val ownersByPath = attachmentsByPath.mapValues { (_, references) -> references.map { "ATTACHMENT:${it.id}" }.toMutableSet() }.toMutableMap()
+        val protectedPaths = mutableSetOf<String>()
+        attachmentsByPath.forEach { (path, references) ->
+            if (references.any { it.ownerType != "WORK_ITEM" || dao.workItem(it.ownerId)?.visitId !in activeFinalVisits })
+                protectedPaths += path
+        }
+        records.forEach { record ->
+            dao.finalRevisions(record.id).forEach { revision ->
+                dao.finalWorkItems(revision.id).flatMap { dao.finalPhotos(it.id) }.forEach { photo ->
+                    val owner = if (attachmentsByPath[photo.storedRelativePath]?.any { it.id == photo.sourceAttachmentId } == true)
+                        "ATTACHMENT:${photo.sourceAttachmentId}" else "FINAL_PHOTO:${photo.id}"
+                    ownersByPath.getOrPut(photo.storedRelativePath) { mutableSetOf() } += owner
+                }
+            }
+        }
+        ownersByPath.filterValues { it.size > 1 }.keys.forEach(protectedPaths::add)
+        records.filterNot { it.voided }.forEach { record ->
             val revisions = dao.finalRevisions(record.id)
             val workIds = dao.visitWorkItems(record.visitId).map { it.id }
             val attachments = workIds.flatMap { dao.workItemAttachments(it) }
@@ -64,7 +86,7 @@ class ImageCleanupService(private val context: Context, private val database: Se
                 val key = "ATTACHMENT:${attachment.id}"
                 if (seen.add(key)) {
                     inspected++
-                    runCatching { process("ATTACHMENT", attachment.id, attachment.storedRelativePath, attachment.sha256, attachment.byteSize, maxOf(record.createdAtEpochMillis, ownedFile(attachment.storedRelativePath).lastModified()), cutoff, now) }
+                    runCatching { if (attachment.storedRelativePath in protectedPaths) false to false else process("ATTACHMENT", attachment.id, attachment.storedRelativePath, attachment.sha256, attachment.byteSize, maxOf(record.createdAtEpochMillis, ownedFile(attachment.storedRelativePath).lastModified()), cutoff, now) }
                         .onSuccess { (didCreate, didRemove) -> if (didCreate) created++; if (didRemove) removed++ }
                         .onFailure { errors++ }
                 }
@@ -74,7 +96,7 @@ class ImageCleanupService(private val context: Context, private val database: Se
                 val key = "FINAL_PHOTO:${photo.id}"
                 if (seen.add(key)) {
                     inspected++
-                    runCatching { process("FINAL_PHOTO", photo.id, photo.storedRelativePath, photo.sha256, photo.byteSize, maxOf(record.createdAtEpochMillis, ownedFile(photo.storedRelativePath).lastModified()), cutoff, now) }
+                    runCatching { if (photo.storedRelativePath in protectedPaths) false to false else process("FINAL_PHOTO", photo.id, photo.storedRelativePath, photo.sha256, photo.byteSize, maxOf(record.createdAtEpochMillis, ownedFile(photo.storedRelativePath).lastModified()), cutoff, now) }
                         .onSuccess { (didCreate, didRemove) -> if (didCreate) created++; if (didRemove) removed++ }
                         .onFailure { errors++ }
                 }
@@ -84,18 +106,11 @@ class ImageCleanupService(private val context: Context, private val database: Se
     }
 
     private suspend fun process(kind: String, id: String, path: String, hash: String, size: Long, eligibleAt: Long, cutoff: Long, now: Long): Pair<Boolean, Boolean> {
-        if (eligibleAt > cutoff) return false to false
         val original = ownedFile(path)
         if (!original.isFile) {
-            val pending = dao.retainedImage(kind, id)
-            if (pending?.originalDeletionRequestedAtEpochMillis != null && pending.originalDeletedAtEpochMillis == null) {
-                val derivativeFile = ownedFile(pending.derivativeRelativePath)
-                require(derivativeFile.isFile && derivativeFile.length() == pending.derivativeByteSize &&
-                    WorkResultPackageCodec.sha256(derivativeFile.readBytes()) == pending.derivativeSha256) { "Retained photo is unreadable" }
-                dao.updateRetainedImage(pending.copy(originalDeletedAtEpochMillis = now))
-            }
             return false to false
         }
+        if (eligibleAt > cutoff) return false to false
         require(original.length() == size && WorkResultPackageCodec.sha256(original.readBytes()) == hash) { "Original photo failed integrity check" }
         var retained = dao.retainedImage(kind, id)
         var created = false
@@ -112,6 +127,7 @@ class ImageCleanupService(private val context: Context, private val database: Se
         }
         val derivativeFile = ownedFile(retained.derivativeRelativePath)
         require(derivativeFile.isFile && derivativeFile.length() == retained.derivativeByteSize && WorkResultPackageCodec.sha256(derivativeFile.readBytes()) == retained.derivativeSha256) { "Retained photo is unreadable" }
+        if (preference() == ImageRetention.NEVER) return created to false
         if (retained.originalDeletionRequestedAtEpochMillis == null) {
             retained = retained.copy(originalDeletionRequestedAtEpochMillis = now)
             dao.updateRetainedImage(retained)
@@ -122,9 +138,21 @@ class ImageCleanupService(private val context: Context, private val database: Se
     }
 
     private fun ownedFile(path: String): File {
-        val base = root.canonicalFile
-        val file = File(base, path).canonicalFile
-        require(file.path.startsWith(base.path + File.separator)) { "Unsafe owned image path" }
-        return file
+        return OwnedBusinessFiles.resolve(root, path)
+    }
+}
+
+/** Called with the business-file mutex. A missing original is completed only for a durable intent. */
+internal suspend fun reconcilePendingOriginalDeletions(database: ServiceLoopDatabase, root: File, now: Long) {
+    val dao = database.serviceLoopDao()
+    dao.pendingRetainedImageDeletions().forEach { pending ->
+        val original = OwnedBusinessFiles.resolve(root, requireNotNull(pending.originalRelativePath) { "Deletion intent has no original path" })
+        if (!original.exists()) {
+            val derivative = OwnedBusinessFiles.resolve(root, pending.derivativeRelativePath)
+            if (derivative.isFile && derivative.length() == pending.derivativeByteSize &&
+                WorkResultPackageCodec.sha256(derivative.readBytes()) == pending.derivativeSha256) {
+                dao.updateRetainedImage(pending.copy(originalDeletedAtEpochMillis = now))
+            }
+        }
     }
 }
