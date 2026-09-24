@@ -138,6 +138,16 @@ internal object WorkResultPackageCodec {
             require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String) &&
                 o.has("correctionReason") && o.has("publicNote")) { "Invalid source correction lineage or note" }
             require(o.has("followUpCaptureState") && o.getString("followUpCaptureState") in setOf("CAPTURED_AT_REVISION", "UNAVAILABLE_LEGACY")) { "Missing source follow-up capture state" }
+            listOf("sourceCustomerRef", "sourceSiteRef", "sourceEquipmentRef").forEach { key ->
+                if (o.has(key) && !o.isNull(key)) {
+                    val ref = o.getJSONObject(key)
+                    require(ref.get("originWorkspaceId") is String &&
+                        TechnicianIdCodec.normalize(ref.getString("originWorkspaceId")) == ref.getString("originWorkspaceId") &&
+                        ref.get("sourceEntityId") is String && ref.getString("sourceEntityId").isNotBlank()) {
+                        "Invalid $key source identity"
+                    }
+                }
+            }
             o.getJSONArray("sourcePhotos")
         }
         require(o.getInt("assignmentGeneration") > 0) { "Invalid assignment generation" }

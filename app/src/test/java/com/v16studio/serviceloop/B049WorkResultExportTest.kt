@@ -230,7 +230,8 @@ class B049WorkResultExportTest {
             ServiceLoopPeerTrustStore(coordinator).add(technician, "Technician")
             val returned = WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision"))
             assertEquals("APPLIED", WorkResultImportService(coordinator, coordinatorRoot).import(returned).items.single().status)
-            val selection = ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false)
+            val selection = ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS,
+                ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES), includePrivate = false)
             val direct = DataTransferExportService(database, root).export(selection)
             val relay = DataTransferExportService(coordinator, coordinatorRoot).export(selection)
             val coordinatorNative = DataTransferImportService(coordinator, coordinatorRoot)
@@ -249,6 +250,21 @@ class B049WorkResultExportTest {
                 .getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)
             val directSource = firstSource(direct)
             val relaySource = firstSource(relay)
+            val directEvidence = JSONObject(DataTransferCodec.decode(direct).families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8))
+            val relayEvidence = JSONObject(DataTransferCodec.decode(relay).families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8))
+            val directPhoto = directEvidence.getJSONArray("photos").getJSONObject(0)
+            val relayPhoto = relayEvidence.getJSONArray("photos").getJSONObject(0)
+            listOf("originCustomerWorkspaceId", "originCustomerSourceId", "originSiteWorkspaceId", "originSiteSourceId",
+                "originEquipmentWorkspaceId", "originEquipmentSourceId").forEach { key ->
+                assertEquals("Source reference $key", directPhoto.opt(key), relayPhoto.opt(key))
+            }
+            val photoHints = setOf("binaryName", "customer", "site", "equipment", "localCustomerId", "localSiteId", "localEquipmentId")
+            val photoDifferences = (directPhoto.keys().asSequence().toSet() + relayPhoto.keys().asSequence().toSet() - photoHints)
+                .filter { key -> directPhoto.opt(key).toString() != relayPhoto.opt(key).toString() }
+            assertEquals(emptyList<String>(), photoDifferences)
+            assertEquals("Site inspection", directSource.getJSONObject("sourceWorkSnapshot").getString("serviceName"))
+            assertEquals(false, directSource.getJSONObject("sourceWorkSnapshot").has("privateInternalNote"))
+            assertEquals(false, relaySource.getJSONObject("sourceWorkSnapshot").has("privateInternalNote"))
             val transportHints = setOf("customer", "site", "equipment", "localCustomerId", "localSiteId", "localEquipmentId", "logicalResultId", "evidence", "binaryName")
             val fields = (directSource.keys().asSequence().toSet() + relaySource.keys().asSequence().toSet()) - transportHints
             val differences = fields.filter { key ->
@@ -259,11 +275,23 @@ class B049WorkResultExportTest {
             ServiceLoopPeerTrustStore(receiver).add(technician, "Technician")
             ServiceLoopPeerTrustStore(receiver).add(issuer, "Coordinator")
             val importer = DataTransferImportService(receiver, receiverRoot)
-            importer.import(importer.preview(direct))
-            val preview = importer.preview(relay)
+            importer.import(importer.preview(relay))
+            val preview = importer.preview(direct)
             assertTrue(preview.items.toString(), preview.canImport())
             assertEquals(DataTransferClassification.ALREADY_IMPORTED,
                 preview.items.single { it.family == DataTransferFamily.PERFORMED_WORK }.classification)
+            val secondRelay = DataTransferExportService(receiver, receiverRoot).export(selection)
+            val secondPhoto = JSONObject(DataTransferCodec.decode(secondRelay).families
+                .getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8)).getJSONArray("photos").getJSONObject(0)
+            val secondDifferences = (directPhoto.keys().asSequence().toSet() + secondPhoto.keys().asSequence().toSet() - photoHints)
+                .filter { key -> directPhoto.opt(key).toString() != secondPhoto.opt(key).toString() }
+            assertEquals(emptyList<String>(), secondDifferences)
+            assertEquals(emptyList<String>(), fields.filter { key ->
+                val secondSource = firstSource(secondRelay)
+                !secondSource.has(key) || SourceCanonicalJson.text(directSource.get(key)) != SourceCanonicalJson.text(secondSource.get(key))
+            })
+            assertTrue(DataTransferCodec.decode(direct).binaries.values.single().contentEquals(
+                DataTransferCodec.decode(secondRelay).binaries.values.single()))
         } finally {
             coordinator.close(); receiver.close(); coordinatorRoot.deleteRecursively(); receiverRoot.deleteRecursively()
         }

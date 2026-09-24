@@ -16,6 +16,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SourceCanonicalJsonTest {
+    @Test fun resultAndPhotoCountLimitsRejectBeforePackagingBytes() {
+        val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
+            .use { it.readBytes().toString(Charsets.UTF_8) })
+        val result = WorkResultPackageCodec.Result(record, emptyList())
+        val base = WorkResultPackageCodec.Package("bounded", record.getString("technicianId"),
+            record.getString("assignmentIssuerId"), "2026-09-24T10:00:00Z", listOf(result))
+        assertThrows(IllegalArgumentException::class.java) {
+            WorkResultPackageCodec.encode(base.copy(results = List(WorkResultPackageCodec.MAX_RESULTS + 1) { result }))
+        }
+        val photos = List(WorkResultPackageCodec.MAX_PHOTOS + 1) { index ->
+            WorkResultPackageCodec.Photo("source-$index", byteArrayOf(1), null, true, "PUBLIC", "dispatch:item", 1, 1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            WorkResultPackageCodec.encode(base.copy(results = listOf(result.copy(photos = photos))))
+        }
+    }
+
     @Test fun v2RejectsContradictoryTypedChecklistPartsAndFollowUps() {
         val record = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("contracts/work-result-v2-record.json"))
             .use { it.readBytes().toString(Charsets.UTF_8) })

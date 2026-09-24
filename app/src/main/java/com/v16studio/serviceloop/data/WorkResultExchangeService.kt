@@ -36,6 +36,9 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                 val value = JSONObject()
                     .put("resultId", stable("work-result", issuer, provenance.dispatchVisitId, itemProvenance.dispatchItemId))
                     .put("originWorkspaceId", exporterId)
+                    .put("sourceCustomerRef", sourceRef("CUSTOMER", visit.customerId, exporterId))
+                    .put("sourceSiteRef", sourceRef("SITE", visit.siteId, exporterId))
+                    .put("sourceEquipmentRef", item.equipmentId?.let { sourceRef("EQUIPMENT", it, exporterId) } ?: JSONObject.NULL)
                     .put("sourceVisitId", visit.id)
                     .put("sourceWorkItemId", item.sourceWorkItemId)
                     .put("sourceWorkItemPosition", item.position)
@@ -105,4 +108,15 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(parts.joinToString("|").toByteArray(Charsets.UTF_8)).toString()
+
+    private suspend fun sourceRef(type: String, localId: String, localWorkspaceId: String): JSONObject {
+        val aliases = dao.dataTransferBindingsForLocal(type, localId)
+            .sortedWith(compareBy<DataTransferBindingEntity> { it.originWorkspaceId }.thenBy { it.sourceEntityId })
+        require(aliases.map { it.originWorkspaceId }.distinct().size <= 1) {
+            "Several source origins map to this $type; choose an unambiguous source before result export"
+        }
+        val binding = aliases.firstOrNull()
+        return JSONObject().put("originWorkspaceId", binding?.originWorkspaceId ?: localWorkspaceId)
+            .put("sourceEntityId", binding?.sourceEntityId ?: localId)
+    }
 }

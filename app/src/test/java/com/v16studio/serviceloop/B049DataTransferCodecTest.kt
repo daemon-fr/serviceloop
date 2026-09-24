@@ -21,6 +21,14 @@ import java.util.zip.ZipOutputStream
 class B049DataTransferCodecTest {
     private val exporter = TechnicianIdCodec.generate()
 
+    @Test fun evidenceEntryCountRejectsBeforeConstructingLargeArchive() {
+        val binaries = (1..126).associate { "binary-$it" to byteArrayOf(1) }
+        assertThrows(IllegalArgumentException::class.java) {
+            DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.EVIDENCE to "{\"version\":1,\"photos\":[]}".toByteArray()),
+                binaries = binaries, sourceWorkspaceId = exporter)
+        }
+    }
+
     @Test fun v2DeclaresFamiliesAndChecksEvidenceIntegrity() {
         val register = "{\"customers\":[]}".toByteArray()
         val evidence = "{\"photos\":[]}".toByteArray()

@@ -242,6 +242,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     if (!selection.scope.matches(visit.customerId, visit.siteId, item.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@forEach
                     addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, item.equipmentId)
                     val payload = JSONObject().put("originWorkspaceId", origin).put("sourceVisitId", visit.id).put("sourceWorkItemId", item.sourceWorkItemId).put("sourceWorkItemPosition", item.position)
+                        .put("sourceCustomerRef", entityRef("CUSTOMER", visit.customerId, origin))
+                        .put("sourceSiteRef", entityRef("SITE", visit.siteId, origin))
+                        .put("sourceEquipmentRef", item.equipmentId?.let { entityRef("EQUIPMENT", it, origin) } ?: JSONObject.NULL)
                         .put("sourceFinalRevisionId", revision.id).put("logicalResultId", "$origin:${visit.id}:${item.sourceWorkItemId}")
                         .put("sourceFinalRevisionNumber", revision.revisionNumber)
                         .put("supersedesSourceFinalRevisionId", revision.supersedesRevisionId ?: JSONObject.NULL)
@@ -264,6 +267,14 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                             .put("intervalCount", item.intervalCount).put("intervalUnit", item.intervalUnit)
                             .put("nextDueDateCalculated", item.nextDueDateCalculated).put("nextDueOverrideReason", item.nextDueOverrideReason))
                         .put("recordedAt", Instant.ofEpochMilli(revision.recordedAtEpochMillis).toString())
+                    payload.put("sourceWorkSnapshot", JSONObject().put("serviceName", item.serviceName)
+                        .put("planId", item.planId).put("planReference", item.planReference)
+                        .put("publicWork", item.publicWorkNote).put("notPerformedReason", item.notPerformedReason)
+                        .put("fulfilledObligation", item.fulfilledObligation).put("oldDueDate", item.oldDueDate)
+                        .put("nextDueDate", item.nextDueDate).put("nextDueDateCalculated", item.nextDueDateCalculated)
+                        .put("nextDueOverrideReason", item.nextDueOverrideReason)
+                        .put("capturedObligationId", item.capturedObligationId)
+                        .apply { if (selection.includePrivate) put("privateInternalNote", item.privateInternalNote) })
                     payload.put("followUpCaptureState", if (item.followUpsSnapshotJson == null) "UNAVAILABLE_LEGACY" else "CAPTURED_AT_REVISION")
                     payload.put("followUps", item.followUpsSnapshotJson?.let(FinalFollowUpSnapshot::records)?.let {
                         if (selection.includePrivate) it else publicFollowUps(it)
@@ -337,6 +348,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val localVisit = value.localVisitId?.let { dao.visit(it) }
         val localWork = value.localWorkItemId?.let { dao.workItem(it) }
         val work = JSONObject().put("originWorkspaceId", source.getString("originWorkspaceId")).put("sourceVisitId", source.getString("sourceVisitId"))
+            .put("sourceCustomerRef", source.opt("sourceCustomerRef") ?: JSONObject.NULL)
+            .put("sourceSiteRef", source.opt("sourceSiteRef") ?: JSONObject.NULL)
+            .put("sourceEquipmentRef", source.opt("sourceEquipmentRef") ?: JSONObject.NULL)
             .put("sourceWorkItemId", source.getString("sourceWorkItemId")).put("sourceWorkItemPosition", source.getInt("sourceWorkItemPosition"))
             .put("sourceFinalRevisionId", source.getString("sourceFinalRevisionId"))
             .put("sourceFinalRevisionNumber", source.getInt("sourceFinalRevisionNumber"))
@@ -358,6 +372,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             .put("followUpCaptureState", source.getString("followUpCaptureState"))
             .put("followUps", if (includePrivate) source.getJSONArray("followUps") else publicFollowUps(source.getJSONArray("followUps")))
             .put("sourcePhotos", if (includePrivate) source.getJSONArray("sourcePhotos") else publicSourcePhotos(source.getJSONArray("sourcePhotos")))
+            .put("sourceWorkSnapshot", if (includePrivate) JSONObject(sourceWork.toString()) else publicWorkSnapshot(sourceWork))
             .put("assignmentProvenance", JSONObject().put("issuerId", source.getString("assignmentIssuerId"))
                 .put("dispatchVisitId", source.getString("dispatchVisitId")).put("dispatchItemId", source.getString("dispatchItemId"))
                 .put("generation", source.getInt("assignmentGeneration")).put("materialHash", source.getString("assignmentMaterialHash")))
@@ -376,6 +391,14 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             public.put(JSONObject().put("sourceId", row.opt("sourceId") ?: JSONObject.NULL)
                 .put("type", row.getString("type")).put("title", row.getString("title"))
                 .put("dueDate", row.opt("dueDate") ?: JSONObject.NULL).put("state", row.getString("state")))
+        }
+    }
+
+    private fun publicWorkSnapshot(source: JSONObject) = JSONObject().also { public ->
+        listOf("serviceName", "planId", "planReference", "publicWork", "notPerformedReason",
+            "fulfilledObligation", "oldDueDate", "nextDueDate", "nextDueDateCalculated",
+            "nextDueOverrideReason", "capturedObligationId").forEach { key ->
+            if (source.has(key)) public.put(key, source.get(key))
         }
     }
 
@@ -548,12 +571,18 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             require(source != null && source.has("sourceVisitId") && source.has("sourceWorkItemId")) {
                 "This legacy result photo lacks source execution identity; re-import the original v2 package before native relay"
             }
+            val sourceCustomerRef = source.optJSONObject("sourceCustomerRef")
+            val sourceSiteRef = source.optJSONObject("sourceSiteRef")
+            val sourceEquipmentRef = source.optJSONObject("sourceEquipmentRef")
             val row = JSONObject().put("originWorkspaceId", source.getString("originWorkspaceId")).put("sourcePhotoId", photo.sourcePhotoId)
                 .put("sourceVisitId", source.getString("sourceVisitId")).put("sourceWorkItemId", source.getString("sourceWorkItemId"))
                 .put("sourceFinalRevisionId", source.getString("sourceFinalRevisionId"))
-                .put("originCustomerSourceId", JSONObject.NULL).put("originCustomerWorkspaceId", JSONObject.NULL)
-                .put("originSiteSourceId", JSONObject.NULL).put("originSiteWorkspaceId", JSONObject.NULL)
-                .put("originEquipmentSourceId", JSONObject.NULL).put("originEquipmentWorkspaceId", JSONObject.NULL)
+                .put("originCustomerSourceId", sourceCustomerRef?.getString("sourceEntityId") ?: JSONObject.NULL)
+                .put("originCustomerWorkspaceId", sourceCustomerRef?.getString("originWorkspaceId") ?: JSONObject.NULL)
+                .put("originSiteSourceId", sourceSiteRef?.getString("sourceEntityId") ?: JSONObject.NULL)
+                .put("originSiteWorkspaceId", sourceSiteRef?.getString("originWorkspaceId") ?: JSONObject.NULL)
+                .put("originEquipmentSourceId", sourceEquipmentRef?.getString("sourceEntityId") ?: JSONObject.NULL)
+                .put("originEquipmentWorkspaceId", sourceEquipmentRef?.getString("originWorkspaceId") ?: JSONObject.NULL)
                 .put("serviceDate", source.getString("serviceDate")).put("visitReference", source.getString("visitReference"))
                 .put("serviceName", source.getJSONObject("workSnapshot").getString("serviceName"))
                 .put("caption", photo.caption).put("visibility", photo.visibility)
@@ -569,12 +598,12 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val bytes = readImage(photo.relativePath, photo.sha256, photo.byteSize) ?: error("Transferred evidence is missing")
             val row = JSONObject().put("originWorkspaceId", photo.originWorkspaceId).put("sourcePhotoId", photo.sourcePhotoId).put("sourceVisitId", photo.sourceVisitId)
                 .put("sourceWorkItemId", photo.sourceWorkItemId).put("sourceFinalRevisionId", photo.sourceFinalRevisionId ?: JSONObject.NULL)
-                .put("originCustomerSourceId", photo.provenanceJson.toJsonObject().optString("customerSourceEntityId"))
-                .put("originCustomerWorkspaceId", photo.provenanceJson.toJsonObject().optString("customerOriginWorkspaceId"))
-                .put("originSiteSourceId", photo.provenanceJson.toJsonObject().optString("siteSourceEntityId"))
-                .put("originSiteWorkspaceId", photo.provenanceJson.toJsonObject().optString("siteOriginWorkspaceId"))
-                .put("originEquipmentSourceId", photo.provenanceJson.toJsonObject().optString("equipmentSourceEntityId"))
-                .put("originEquipmentWorkspaceId", photo.provenanceJson.toJsonObject().optString("equipmentOriginWorkspaceId"))
+                .put("originCustomerSourceId", photo.provenanceJson.toJsonObject().optNullable("customerSourceEntityId") ?: JSONObject.NULL)
+                .put("originCustomerWorkspaceId", photo.provenanceJson.toJsonObject().optNullable("customerOriginWorkspaceId") ?: JSONObject.NULL)
+                .put("originSiteSourceId", photo.provenanceJson.toJsonObject().optNullable("siteSourceEntityId") ?: JSONObject.NULL)
+                .put("originSiteWorkspaceId", photo.provenanceJson.toJsonObject().optNullable("siteOriginWorkspaceId") ?: JSONObject.NULL)
+                .put("originEquipmentSourceId", photo.provenanceJson.toJsonObject().optNullable("equipmentSourceEntityId") ?: JSONObject.NULL)
+                .put("originEquipmentWorkspaceId", photo.provenanceJson.toJsonObject().optNullable("equipmentOriginWorkspaceId") ?: JSONObject.NULL)
                 .put("serviceDate", photo.serviceDate).put("visitReference", photo.visitReference).put("serviceName", photo.serviceName)
                 .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
                 .put("localCustomerId", photo.localCustomerId).put("localSiteId", photo.localSiteId).put("localEquipmentId", photo.localEquipmentId)

@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
 import com.v16studio.serviceloop.domain.BusinessTime
 import com.v16studio.serviceloop.domain.ServiceLoopScopeFilter
+import com.v16studio.serviceloop.ui.workResultCommitMessage
 import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,6 +29,20 @@ import java.util.zip.ZipInputStream
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class B049WorkResultImportTest {
+    @Test fun mixedCommittedFeedbackUsesDurableStatusAndDoesNotCountReplayAsNewEffect() {
+        fun item(id: String, preflight: String, committed: String, advanced: Boolean = false) =
+            WorkResultImportService.ItemPreview(id, "revision-$id", "visit", id, preflight,
+                if (committed == "CONFLICT") "Obligation changed" else null, committed, advanced)
+        val result = WorkResultImportService.Preview("package", exporter, issuer, listOf(
+            item("applied", "APPLICABLE", "APPLIED", true),
+            item("stale", "APPLICABLE", "STALE"),
+            item("conflict", "APPLICABLE", "CONFLICT"),
+            item("replay", "ALREADY_RECEIVED", "APPLIED")))
+        val message = workResultCommitMessage(result)
+        assertTrue(message.contains("Applied 1; stale 1; conflicts 1; already received 1; service plans advanced 1"))
+        assertTrue(message.contains("conflict: Obligation changed"))
+    }
+
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     private lateinit var database: ServiceLoopDatabase
     private lateinit var root: File

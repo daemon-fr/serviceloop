@@ -57,10 +57,10 @@ class B049DataTransferEndToEndInstrumentedTest {
             a.insertFinalRevision(FinalRecordRevisionEntity("revision", "record", 1, "V-DEVICE", "2026-09-24", 2, "Device customer", "Device site", null, "Device business", "Device technician", null, null, null, "UTC", null, customerReference = "CU-DEVICE", siteReference = "ST-DEVICE"))
             a.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-work", "revision", 1, "work", "e", "Boiler", "EQ-DEVICE", "Serial", "Maker", "Model", "Serial", "Annual", "plan", "PL-DEVICE", "PERFORMED", "Serviced", null, true, "2026-09-24", "2027-09-24", 1, "YEARS", "obligation", "private", subjectType = "EQUIPMENT")))
             val photoBytes = ByteArrayOutputStream().also { Bitmap.createBitmap(24, 18, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
-            val photo = File(rootA, "photo.jpg").apply { writeBytes(photoBytes) }
+            val photo = File(rootA, "attachments/photo.jpg").apply { parentFile!!.mkdirs(); writeBytes(photoBytes) }
             val hash = WorkResultPackageCodec.sha256(photoBytes)
-            a.insertAttachments(listOf(AttachmentEntity("attachment", "WORK_ITEM", "work", "photo.jpg", hash, "public.jpg", "image/jpeg", true, "PRESENT", photoBytes.size.toLong(), "Public evidence", "PUBLIC")))
-            a.insertFinalPhotos(listOf(FinalPhotoEntryEntity("photo", "final-work", 1, "attachment", "photo.jpg", hash, photoBytes.size.toLong(), "image/jpeg", "Public evidence", includedInCustomerReport = true, visibility = "PUBLIC")))
+            a.insertAttachments(listOf(AttachmentEntity("attachment", "WORK_ITEM", "work", "attachments/photo.jpg", hash, "public.jpg", "image/jpeg", true, "PRESENT", photoBytes.size.toLong(), "Public evidence", "PUBLIC")))
+            a.insertFinalPhotos(listOf(FinalPhotoEntryEntity("photo", "final-work", 1, "attachment", "attachments/photo.jpg", hash, photoBytes.size.toLong(), "image/jpeg", "Public evidence", includedInCustomerReport = true, visibility = "PUBLIC")))
             val sourceId = ServiceLoopPeerTrustStore(workspaceA).localIdentity().technicianId
             ServiceLoopPeerTrustStore(workspaceB).add(sourceId, "Workspace A")
 

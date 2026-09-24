@@ -337,6 +337,14 @@ class B049DataTransferRoundTripTest {
         importInto(b, rootB, evidence)
         assertEquals(2, b.serviceLoopDao().allTransferredEvidence().size)
         assertTrue(b.serviceLoopDao().allTransferredEvidence().all { it.transferredFinalResultId == null })
+        val evidencePassphrase = "evidence first recovery boundary".toCharArray()
+        val evidenceRecovery = RecoveryPackage(b, rootB)
+        val evidenceBackup = evidenceRecovery.create(evidencePassphrase, false)
+        evidenceRecovery.restore(evidenceRecovery.inspect(evidenceBackup.bytes, evidencePassphrase))
+        assertTrue(b.serviceLoopDao().allTransferredEvidence().all { row ->
+            val bytes = File(rootB, row.relativePath).readBytes()
+            bytes.size.toLong() == row.byteSize && WorkResultPackageCodec.sha256(bytes) == row.sha256
+        })
         importInto(b, rootB, history)
         val linked = b.serviceLoopDao().allTransferredEvidence()
         assertEquals(2, b.serviceLoopDao().allTransferredFinalResults().size)
@@ -353,12 +361,24 @@ class B049DataTransferRoundTripTest {
             ServiceLoopPeerTrustStore(reverse).add(sourceId, "Original workspace")
             importInto(reverse, reverseRoot, history)
             assertEquals(0, reverse.serviceLoopDao().allTransferredEvidence().size)
+            val historyPassphrase = "history first recovery boundary".toCharArray()
+            val historyRecovery = RecoveryPackage(reverse, reverseRoot)
+            val historyBackup = historyRecovery.create(historyPassphrase, false)
+            historyRecovery.restore(historyRecovery.inspect(historyBackup.bytes, historyPassphrase))
             importInto(reverse, reverseRoot, evidence)
             val reverseEvidence = reverse.serviceLoopDao().allTransferredEvidence()
             assertEquals(2, reverseEvidence.size)
             assertTrue(reverseEvidence.all { it.transferredFinalResultId != null })
             assertEquals(linked.map { it.sourceIdentityKey }.toSet(), reverseEvidence.map { it.sourceIdentityKey }.toSet())
         } finally { reverse.close(); reverseRoot.deleteRecursively() }
+        val firstEvidence = linked.first()
+        val wrongResult = b.serviceLoopDao().allTransferredFinalResults().first { it.id != firstEvidence.transferredFinalResultId }
+        b.openHelper.writableDatabase.execSQL(
+            "UPDATE transferred_evidence SET transferredFinalResultId=? WHERE id=?",
+            arrayOf(wrongResult.id, firstEvidence.id))
+        val importer = DataTransferImportService(b, rootB)
+        assertThrows(IllegalStateException::class.java) { runBlocking { importer.import(importer.preview(history)) } }
+        assertEquals(wrongResult.id, b.serviceLoopDao().allTransferredEvidence().first { it.id == firstEvidence.id }.transferredFinalResultId)
     }
 
     @Test fun nativePlanCannotAttachToStagedOneTimeCustomer() = runBlocking {

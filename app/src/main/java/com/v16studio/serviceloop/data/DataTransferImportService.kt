@@ -343,7 +343,13 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             val result=dao.transferredFinalResult(row.getString("originWorkspaceId"),row.getString("sourceWorkItemId"),row.optString("sourceFinalRevisionId"))
             val target=staged.getValue(item.key)
             dao.insertTransferredEvidence(listOf(TransferredEvidenceEntity(UUID.randomUUID().toString(),item.key,row.getString("originWorkspaceId"),row.getString("sourcePhotoId"),row.getString("sourceVisitId"),row.getString("sourceWorkItemId"),row.optNullable("sourceFinalRevisionId"),result?.id,payload.exporterId,customerId,siteId,equipmentId,row.getString("serviceDate"),row.getString("visitReference"),row.getString("serviceName"),relative(target),item.hash,item.bytes.size.toLong(),row.getInt("width"),row.getInt("height"),row.optString("mimeType","image/jpeg"),row.optNullable("caption"),row.getString("visibility"),row.optBoolean("includedInCustomerReport"),now,
-                JSONObject().put("customerOriginWorkspaceId",row.optString("originCustomerWorkspaceId")).put("customerSourceEntityId",row.optString("originCustomerSourceId")).put("siteOriginWorkspaceId",row.optString("originSiteWorkspaceId")).put("siteSourceEntityId",row.optString("originSiteSourceId")).put("equipmentOriginWorkspaceId",row.optString("originEquipmentWorkspaceId")).put("equipmentSourceEntityId",row.optString("originEquipmentSourceId")).put("relayExporterId",payload.exporterId).toString())))
+                JSONObject().put("customerOriginWorkspaceId",row.optNullable("originCustomerWorkspaceId") ?: JSONObject.NULL)
+                    .put("customerSourceEntityId",row.optNullable("originCustomerSourceId") ?: JSONObject.NULL)
+                    .put("siteOriginWorkspaceId",row.optNullable("originSiteWorkspaceId") ?: JSONObject.NULL)
+                    .put("siteSourceEntityId",row.optNullable("originSiteSourceId") ?: JSONObject.NULL)
+                    .put("equipmentOriginWorkspaceId",row.optNullable("originEquipmentWorkspaceId") ?: JSONObject.NULL)
+                    .put("equipmentSourceEntityId",row.optNullable("originEquipmentSourceId") ?: JSONObject.NULL)
+                    .put("relayExporterId",payload.exporterId).toString())))
         }
     }
 
@@ -563,6 +569,18 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         require(row.getString("technicianId") == row.getString("originWorkspaceId")) { "Source author and origin differ" }
         Instant.parse(row.getString("recordedAt"))
         require(row.getJSONObject("subjectSnapshot").getString("type") in setOf("SITE","EQUIPMENT"))
+        if (row.has("sourceWorkSnapshot")) {
+            val sourceWork = row.getJSONObject("sourceWorkSnapshot")
+            fun nullableFact(value: JSONObject, key: String): Any? = if (!value.has(key) || value.isNull(key)) null else value.get(key)
+            require(sourceWork.get("serviceName") is String && sourceWork.getString("serviceName") == row.getString("serviceName") &&
+                sourceWork.get("fulfilledObligation") is Boolean &&
+                sourceWork.getBoolean("fulfilledObligation") == row.getJSONObject("recurrence").getBoolean("fulfilledObligation") &&
+                nullableFact(sourceWork, "publicWork") == nullableFact(row, "workPerformed") &&
+                nullableFact(sourceWork, "notPerformedReason") == nullableFact(row, "notPerformedReason")) {
+                "Source work snapshot disagrees with performed record"
+            }
+            require(includePrivate || !sourceWork.has("privateInternalNote")) { "Private source work in public transfer" }
+        }
         val capture=row.getString("followUpCaptureState")
         require(capture in setOf("CAPTURED_AT_REVISION","UNAVAILABLE_LEGACY"))
         val followUps=row.getJSONArray("followUps")
