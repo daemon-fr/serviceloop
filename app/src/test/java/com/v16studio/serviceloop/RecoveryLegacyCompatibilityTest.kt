@@ -78,6 +78,25 @@ class RecoveryLegacyCompatibilityTest {
         assertNull(database.serviceLoopDao().customer("unexpected"))
     }
 
+    @Test fun incompleteBackupMarksMissingAggregateRenditionWithoutClaimingReadyBytes() = runBlocking {
+        val dao = database.serviceLoopDao()
+        dao.insertAggregateReport(AggregateReportEntity("aggregate", "legacy-customer", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
+        val path = "aggregate-reports/aggregate/rendition.pdf"
+        val file = File(root, path).apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(1, 2, 3)) }
+        dao.insertAggregateRendition(AggregateReportRenditionEntity("rendition", "aggregate", path,
+            sha256(file.readBytes()), file.length(), 1, 1, "READY", null))
+        file.delete()
+        val recovery = RecoveryPackage(database, root)
+        val backup = recovery.create(password, true)
+        assertEquals(false, backup.complete)
+        assertEquals(listOf(path), backup.missingFiles)
+        recovery.restore(recovery.inspect(backup.bytes, password))
+        val restored = dao.aggregateRenditions("aggregate").single()
+        assertEquals("MISSING", restored.status)
+        assertEquals(true, restored.failureReason.orEmpty().contains("missing"))
+        assertEquals(false, File(root, path).exists())
+    }
+
     private fun sourceFixture(recovery: RecoveryPackage, encrypted: ByteArray, version: Int, alter: (JSONObject) -> Unit = {}): ByteArray {
         val entries = unzip(invokeCrypt(recovery, "unprotect", encrypted))
         val snapshot = JSONObject(entries.getValue("database.json").toString(Charsets.UTF_8))

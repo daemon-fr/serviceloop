@@ -229,6 +229,19 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         plansRoot?.getJSONArray("plans")?.let{rows->for(i in 0 until rows.length()){
             val row=rows.getJSONObject(i);val id=sourceKey(row,"SERVICE_PLAN");val equipmentKey=parentKey(row,"equipment");val equipmentId=mapping[equipmentKey]?:resolveBinding(equipmentKey,"EQUIPMENT")
             if(equipmentId==null){current+=conflictPlan(DataTransferFamily.SERVICE_PLANS,"SERVICE_PLAN",row,"Service Plan has no resolvable Equipment dependency");items+=display(current.last(),"Plan ${row.optString("reference")}");continue}
+            val stagedEquipment = current.firstOrNull { it.type == "EQUIPMENT" && it.localId == equipmentId }
+            val siteId = stagedEquipment?.parentLocalId ?: dao.equipment(equipmentId)?.siteId
+            val stagedSite = current.firstOrNull { it.type == "SITE" && it.localId == siteId }
+            val customerId = stagedSite?.parentLocalId ?: siteId?.let { dao.site(it)?.customerId }
+            val stagedCustomer = current.firstOrNull { it.type == "CUSTOMER" && it.localId == customerId }
+            val customerType = stagedCustomer?.json?.optString("customerType", "STANDARD") ?: customerId?.let { dao.customer(it)?.customerType }
+            if (listOfNotNull(stagedEquipment, stagedSite, stagedCustomer).any { it.classification == DataTransferClassification.CONFLICT } ||
+                customerType != "STANDARD") {
+                current += conflictPlan(DataTransferFamily.SERVICE_PLANS, "SERVICE_PLAN", row,
+                    if (customerType == "ONE_TIME") "Recurring Service Plans require a Standard Customer" else "Service Plan ancestry is unavailable or conflicted")
+                items += display(current.last(), "Plan ${row.optString("reference")}")
+                continue
+            }
             val templateId=if(row.isNull("templateSourceEntityId"))null else {
                 val key=SourceEntityKey(validOrigin(row.getString("templateOriginWorkspaceId")),SourceEntityType.INSPECTION_TEMPLATE,required(row,"templateSourceEntityId"))
                 mapping[key]?:resolveBinding(key,"INSPECTION_TEMPLATE")
@@ -425,14 +438,61 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         return result
     }
 
-    private fun validateRegister(root:JSONObject?) {
-        if(root==null)return;require(root.getInt("version")==1)
-        val seen=mutableMapOf<String,MutableSet<String>>();val arrays=mapOf("CUSTOMER" to "customers","CUSTOMER_CONTACT" to "contacts","SITE" to "sites","EQUIPMENT" to "equipment")
-        arrays.forEach{(type,name)->val array=root.getJSONArray(name);val set=mutableSetOf<SourceEntityKey>();for(i in 0 until array.length()){val row=array.getJSONObject(i);val key=sourceKey(row,type);require(set.add(key)){"Duplicate $type source"};when(type){"CUSTOMER"->{required(row,"reference");required(row,"name");require(row.optString("customerType","STANDARD") in setOf("STANDARD","ONE_TIME"))};"CUSTOMER_CONTACT"->{required(row,"value");require(row.getString("channel") in setOf("PHONE","SMS","WHATSAPP","EMAIL","OTHER"));require(row.has("position")&&row.optInt("position")>0){"Invalid Customer contact position"}};else->required(row,"reference")}}}
-        root.getJSONArray("sites").forEachJson{row->parentKey(row,"customer")};root.getJSONArray("equipment").forEachJson{row->parentKey(row,"site")};root.getJSONArray("contacts").forEachJson{row->parentKey(row,"customer")}
+    private fun validateRegister(root: JSONObject?) {
+        if (root == null) return
+        require(root.getInt("version") == 1)
+        val arrays = mapOf("CUSTOMER" to "customers", "CUSTOMER_CONTACT" to "contacts", "SITE" to "sites", "EQUIPMENT" to "equipment")
+        arrays.forEach { (type, name) ->
+            val array = root.getJSONArray(name)
+            val seen = mutableSetOf<SourceEntityKey>()
+            for (index in 0 until array.length()) {
+                val row = array.getJSONObject(index)
+                require(seen.add(sourceKey(row, type))) { "Duplicate $type source" }
+                if (type != "CUSTOMER_CONTACT") required(row, "reference", 100)
+                when (type) {
+                    "CUSTOMER" -> {
+                        required(row, "name", 200)
+                        require(row.optString("customerType", "STANDARD") in setOf("STANDARD", "ONE_TIME"))
+                        require(row.optString("state", "ACTIVE") in setOf("ACTIVE", "ARCHIVED"))
+                        optionalText(row, "contactName", 200); optionalText(row, "phone", 100)
+                        optionalText(row, "email", 320); optionalText(row, "privateNote", 5000)
+                    }
+                    "SITE" -> {
+                        required(row, "name", 200)
+                        require(row.optString("state", "ACTIVE") in setOf("ACTIVE", "ARCHIVED"))
+                        if (row.has("isDefault")) require(row.get("isDefault") is Boolean) { "Invalid Site default flag" }
+                        optionalText(row, "address", 500); optionalText(row, "contactName", 200)
+                        optionalText(row, "phone", 100); optionalText(row, "email", 320)
+                        optionalText(row, "privateAccessNotes", 5000)
+                    }
+                    "EQUIPMENT" -> {
+                        required(row, "name", 200)
+                        require(row.optString("state", "ACTIVE") in setOf("ACTIVE", "RETIRED"))
+                        optionalText(row, "technicianIdentifier", 100); optionalText(row, "make", 100)
+                        optionalText(row, "model", 100); optionalText(row, "serialNumber", 150)
+                        optionalText(row, "privateNotes", 5000)
+                    }
+                    "CUSTOMER_CONTACT" -> {
+                        required(row, "value", 300)
+                        require(row.getString("channel") in setOf("PHONE", "SMS", "WHATSAPP", "EMAIL", "OTHER"))
+                        require(row.get("position") is Number && row.getInt("position") > 0) { "Invalid Customer contact position" }
+                        optionalText(row, "personName", 200); optionalText(row, "notes", 2000)
+                    }
+                }
+            }
+        }
+        root.getJSONArray("sites").forEachJson { row -> parentKey(row, "customer") }
+        root.getJSONArray("equipment").forEachJson { row -> parentKey(row, "site") }
+        root.getJSONArray("contacts").forEachJson { row -> parentKey(row, "customer") }
     }
 
-    private fun validatePlans(root:JSONObject?) { if(root==null)return;require(root.getInt("version")==1);val a=root.getJSONArray("plans");val seen=mutableSetOf<SourceEntityKey>();for(i in 0 until a.length()){val row=a.getJSONObject(i);val id=sourceKey(row,"SERVICE_PLAN");require(seen.add(id));parentKey(row,"equipment");required(row,"reference");required(row,"name");require(row.getInt("intervalCount")>0&&row.getString("intervalUnit") in setOf("DAYS","WEEKS","MONTHS","YEARS"));LocalDate.parse(row.getString("currentDueDate"));require(row.getString("state") in setOf("ACTIVE","ARCHIVED","RETIRED","DISABLED"));val templateOrigin=row.has("templateOriginWorkspaceId")&&!row.isNull("templateOriginWorkspaceId");val templateSource=row.has("templateSourceEntityId")&&!row.isNull("templateSourceEntityId");require(templateOrigin==templateSource){"Template reference must be fully present or absent"};if(templateOrigin){validOrigin(required(row,"templateOriginWorkspaceId"));required(row,"templateSourceEntityId")}} }
+    private fun optionalText(row: JSONObject, key: String, max: Int) {
+        if (!row.has(key) || row.isNull(key)) return
+        val value = row.get(key)
+        require(value is String && value.length <= max) { "Invalid $key" }
+    }
+
+    private fun validatePlans(root:JSONObject?) { if(root==null)return;require(root.getInt("version")==1);val a=root.getJSONArray("plans");val seen=mutableSetOf<SourceEntityKey>();for(i in 0 until a.length()){val row=a.getJSONObject(i);val id=sourceKey(row,"SERVICE_PLAN");require(seen.add(id));parentKey(row,"equipment");required(row,"reference",100);required(row,"name",200);require(row.get("intervalCount") is Number && row.get("intervalCount").toString().matches(Regex("[1-9][0-9]*")) && row.getInt("intervalCount")>0 && row.getString("intervalUnit") in setOf("DAYS","WEEKS","MONTHS","YEARS"));LocalDate.parse(row.getString("currentDueDate"));require(row.getString("state") in setOf("ACTIVE","ARCHIVED","RETIRED","DISABLED"));val templateOrigin=row.has("templateOriginWorkspaceId")&&!row.isNull("templateOriginWorkspaceId");val templateSource=row.has("templateSourceEntityId")&&!row.isNull("templateSourceEntityId");require(templateOrigin==templateSource){"Template reference must be fully present or absent"};if(templateOrigin){validOrigin(required(row,"templateOriginWorkspaceId"));required(row,"templateSourceEntityId")}} }
 
     private fun familyCounts(payload:DataTransferPayload):Map<DataTransferFamily,Int> = payload.families.mapValues{(family,bytes)->runCatching{when(family){DataTransferFamily.REGISTER->{val j=JSONObject(bytes.toString(Charsets.UTF_8));listOf("customers","contacts","sites","equipment").sumOf{j.getJSONArray(it).length()}};DataTransferFamily.SERVICE_PLANS->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("plans").length();DataTransferFamily.INSPECTION_TEMPLATES->InspectionTemplateCodec.decode(bytes).templates.size;DataTransferFamily.PERFORMED_WORK->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("visits").let{v->(0 until v.length()).sumOf{v.getJSONObject(it).getJSONArray("records").length()}};DataTransferFamily.FOLLOW_UPS,DataTransferFamily.CONTACT_NOTES,DataTransferFamily.CHANGE_HISTORY->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("records").length();DataTransferFamily.EVIDENCE->JSONObject(bytes.toString(Charsets.UTF_8)).getJSONArray("photos").length()}}.getOrElse{0}}
 
@@ -605,7 +665,11 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
         require(value is String) { "Invalid $key type" }
         return value.trim().also { require(it.isNotEmpty()&&it.length<=max) { "Invalid $key" } }
     }
-    private fun JSONObject.optNullable(key:String):String?=if(!has(key)||isNull(key))null else optString(key).takeIf{it!="null"&&it.isNotBlank()}
+    private fun JSONObject.optNullable(key:String):String? = if (!has(key) || isNull(key)) null else {
+        val value = get(key)
+        require(value is String) { "Invalid $key type" }
+        value.takeIf(String::isNotBlank)
+    }
     private fun JSONArray.forEachJson(block:(JSONObject)->Unit){for(i in 0 until length())block(getJSONObject(i))}
     private suspend fun validateHistoryMappings(row:JSONObject,mapping:Map<SourceEntityKey,String>){listOf("customer","site","equipment").forEach{name->val key=optionalRef(row,name)?:return@forEach;if(key !in mapping){val type=name.uppercase();if(resolveBinding(key,type)==null)throw IllegalArgumentException("Transferred ${name} dependency is missing")}}}
     private suspend fun historyMappings(row:JSONObject,mapping:Map<SourceEntityKey,String>):Triple<String?,String?,String?>{

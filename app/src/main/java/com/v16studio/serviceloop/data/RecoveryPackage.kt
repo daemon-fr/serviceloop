@@ -673,6 +673,11 @@ class RecoveryPackage(
                 row.put("status", "MISSING").put("failureMessage", "File declared missing in incomplete recovery copy")
             }
         }
+        tableRows(root, "aggregate_report_renditions").forEach { row ->
+            if (!row.isNull("relativePath") && row.getString("relativePath") in missing && row.getString("status") == "READY") {
+                row.put("status", "MISSING").put("failureReason", "File declared missing in incomplete recovery copy")
+            }
+        }
         recoveryMetadata(root).put("restoredFromIncompleteCopy", if (missing.isEmpty()) 0 else 1)
     }
 
@@ -695,6 +700,10 @@ class RecoveryPackage(
         tableRows(root, "report_renditions").forEach { row ->
             val absent = row.getString("relativePath") in missing
             if (absent) require(row.getString("status") == "MISSING") { "Invalid report availability metadata" }
+        }
+        tableRows(root, "aggregate_report_renditions").forEach { row ->
+            val absent = !row.isNull("relativePath") && row.getString("relativePath") in missing
+            if (absent) require(row.getString("status") == "MISSING") { "Invalid aggregate report availability metadata" }
         }
     }
 

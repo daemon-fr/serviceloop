@@ -79,7 +79,13 @@ internal fun effectiveImportedFinalResults(
         .thenBy { it.sourceFinalRevisionId }.thenBy { it.kind.name })
     val revisions = ordered.groupBy {
         listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId)
-    }.values.map { matching -> matching.lastOrNull { it.voided } ?: matching.last() }
+    }.values.map { matching ->
+        if (matching.size > 1 && matching.all { it.identityNamespace == "SOURCE" }) {
+            val fingerprints = matching.map { importedPublicFacts(it) }.distinct()
+            require(fingerprints.size == 1) { "Conflicting representations of the same source revision" }
+        }
+        matching.lastOrNull { it.voided } ?: matching.firstOrNull { it.remote != null } ?: matching.first()
+    }
     return if (includePreviousRevisions) revisions.filterNot { it.voided } else revisions.groupBy {
         listOf(it.identityNamespace, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId)
     }.values.map { lineage ->
@@ -90,4 +96,41 @@ internal fun effectiveImportedFinalResults(
         if (numbered.isEmpty()) lineage.last() else numbered.maxWith(compareBy<EffectiveImportedFinalResult> { it.sourceRevisionNumber!! }
             .thenBy { it.chronologyEpochMillis }.thenBy { it.sourceFinalRevisionId })
     }.filterNot { it.voided }
+}
+
+/** Compare immutable public source facts across direct WORK_RESULT and native relay transports. */
+private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
+    val remote = value.remote
+    val transferred = value.transferred
+    val result = remote?.sourcePayloadJson?.let { JSONObject(it).getJSONObject("result") }
+    val facts = JSONObject()
+    if (result != null) {
+        val work = result.getJSONObject("workSnapshot")
+        facts.put("customer", result.getJSONObject("customerSnapshot"))
+            .put("site", result.getJSONObject("siteSnapshot"))
+            .put("subject", result.getJSONObject("subjectSnapshot"))
+            .put("serviceName", work.getString("serviceName"))
+            .put("outcome", result.getString("outcome"))
+            .put("workPerformed", work.opt("publicWork") ?: JSONObject.NULL)
+            .put("notPerformedReason", work.opt("notPerformedReason") ?: JSONObject.NULL)
+            .put("checklist", result.getJSONArray("checklist"))
+            .put("findings", result.getJSONArray("findings"))
+            .put("parts", result.getJSONArray("parts"))
+            .put("recurrence", result.getJSONObject("recurrence"))
+            .put("serviceDate", result.getString("serviceDate"))
+    } else if (transferred != null) {
+        facts.put("customer", JSONObject(transferred.customerSnapshotJson))
+            .put("site", JSONObject(transferred.siteSnapshotJson))
+            .put("subject", JSONObject(transferred.subjectSnapshotJson))
+            .put("serviceName", transferred.serviceName)
+            .put("outcome", transferred.outcome)
+            .put("workPerformed", transferred.workPerformed ?: JSONObject.NULL)
+            .put("notPerformedReason", transferred.notPerformedReason ?: JSONObject.NULL)
+            .put("checklist", org.json.JSONArray(transferred.checklistJson))
+            .put("findings", org.json.JSONArray(transferred.findingsJson))
+            .put("parts", org.json.JSONArray(transferred.partsJson))
+            .put("recurrence", JSONObject(transferred.recurrenceJson))
+            .put("serviceDate", transferred.serviceDate)
+    }
+    return SourceCanonicalJson.text(facts)
 }

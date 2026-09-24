@@ -427,4 +427,38 @@ class B049WorkResultImportTest {
         assertEquals(setOf("revision-1-corrected", "revision-2"), service.reportable(scope).single().sources.map { it.revisionId }.toSet())
         assertEquals(setOf("revision-1", "revision-2"), dao.aggregateSources(generated.reportId).map { it.sourceFinalRevisionId }.toSet())
     }
+
+    @Test fun aggregateGenerationReconcilesVerifiedAndIncompletePriorRenditions() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.upsertBusinessProfile(BusinessProfileEntity("primary", "Business", "Coordinator", null, null, null, "UTC", 1))
+        val importer = WorkResultImportService(database, root)
+        importer.import(packageBytes("one", result(1)))
+        importer.import(packageBytes("two", result(2)))
+        val remote = dao.remoteFinalResult(exporter, "result-2", "revision-2")!!
+        suspend fun pending(reportId: String, renditionId: String, bytes: ByteArray?, verified: Boolean): File {
+            dao.insertAggregateReport(AggregateReportEntity(reportId, "c", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
+            dao.insertAggregateSources(listOf(AggregateReportSourceEntity(reportId, 1, "revision-2", "REMOTE", "v", remote.id)))
+            dao.insertAggregateRendition(AggregateReportRenditionEntity(renditionId, reportId,
+                "aggregate-reports/$reportId/$renditionId.pdf", bytes?.let(WorkResultPackageCodec::sha256),
+                bytes?.size?.toLong(), if (verified) 1 else null, 1, "GENERATING", null))
+            return File(root, "aggregate-reports/$reportId/$renditionId.${if (verified) "pdf" else "tmp"}")
+                .apply { parentFile!!.mkdirs(); writeBytes(bytes ?: byteArrayOf(9)) }
+        }
+        val good = pending("prior-good", "good-rendition", "%PDF-verified".toByteArray(), true)
+        val incomplete = pending("prior-bad", "bad-rendition", null, false)
+        val time = object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant(): Instant = Instant.parse("2026-09-23T12:00:00Z")
+        }
+        val repository = RoomServiceLoopRepository(database, time, attachmentRoot = root)
+        val service = AggregateReportService(database, repository, root, AggregateReportWriter { _, _, _, _, target, _ ->
+            target.writeBytes("%PDF-new".toByteArray()); 1
+        })
+        val scope = ServiceLoopScopeFilter(customerId = "c")
+        service.generate(scope, listOf(service.reportable(scope).single().key))
+        assertEquals("READY", dao.aggregateRenditions("prior-good").single().status)
+        assertEquals(true, good.isFile)
+        assertEquals("FAILED", dao.aggregateRenditions("prior-bad").single().status)
+        assertEquals(false, incomplete.exists())
+    }
 }

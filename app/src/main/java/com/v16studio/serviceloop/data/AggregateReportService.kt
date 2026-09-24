@@ -13,6 +13,9 @@ import org.json.JSONObject
 import java.io.File
 import java.time.LocalDate
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 data class ReportableFinalSource(
     val key: String,
@@ -52,22 +55,25 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
     private val dao = database.serviceLoopDao()
 
     suspend fun reportable(scope: ServiceLoopScopeFilter): List<ReportableVisitSource> {
-        val local = dao.allFinalRecords().filterNot { it.voided }.mapNotNull { record ->
-            val visit = dao.visit(record.visitId) ?: return@mapNotNull null
-            val revision = dao.finalRevision(record.currentRevisionId) ?: return@mapNotNull null
-            val work = dao.finalWorkItems(revision.id)
-            val equipmentId = work.mapNotNull { it.equipmentId }.distinct().singleOrNull()
-            if (!scope.matches(visit.customerId, visit.siteId, equipmentId, LocalDate.parse(revision.actualServiceDate)) &&
-                !(scope.equipmentId != null && work.any { it.equipmentId == scope.equipmentId } && scope.copy(equipmentId = null).matches(visit.customerId, visit.siteId, null, LocalDate.parse(revision.actualServiceDate)))) return@mapNotNull null
-            ReportableFinalSource("LOCAL:${revision.id}", "LOCAL", revision.id, visit.id, visit.customerId, visit.siteId, equipmentId, revision.actualServiceDate, revision.visitReference, revision.technicianName)
+        val local = dao.allFinalRecords().filterNot { it.voided }.flatMap { record ->
+            val visit = dao.visit(record.visitId) ?: return@flatMap emptyList()
+            val revision = dao.finalRevision(record.currentRevisionId) ?: return@flatMap emptyList()
+            dao.finalWorkItems(revision.id).filter { work ->
+                scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(revision.actualServiceDate))
+            }.map { work ->
+                ReportableFinalSource("LOCAL:${revision.id}:${work.id}", "LOCAL", revision.id, visit.id, visit.customerId,
+                    visit.siteId, work.equipmentId, revision.actualServiceDate, revision.visitReference, revision.technicianName,
+                    work.id, work.position)
+            }
         }
-        val remote = effectiveRemoteResults(dao.appliedRemoteFinalResultsIncludingVoids()).mapNotNull { result ->
+        val imported = effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), dao.allTransferredFinalResults())
+        val remote = imported.mapNotNull { it.remote }.mapNotNull { result ->
             val visit = result.localVisitId?.let { dao.visit(it) } ?: return@mapNotNull null
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!scope.matches(visit.customerId, visit.siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@mapNotNull null
             ReportableFinalSource("REMOTE:${result.id}", "REMOTE", result.sourceFinalRevisionId, visit.id, visit.customerId, visit.siteId, equipmentId, result.serviceDate, visit.reference, result.technicianName, result.localWorkItemId)
         }
-        val transferred = effectiveImportedFinalResults(dao.appliedRemoteFinalResultsIncludingVoids(), dao.allTransferredFinalResults())
+        val transferred = imported
             .filter { it.kind == ImportedFinalKind.DATA_TRANSFER }
             .mapNotNull { effective ->
                 val row = effective.transferred ?: return@mapNotNull null
@@ -91,7 +97,13 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
         }.sortedWith(compareBy<ReportableVisitSource> { it.serviceDate }.thenBy { it.visitReference }.thenBy { it.key })
     }
 
-    suspend fun generate(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
+    suspend fun generate(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult =
+        BusinessFileCoordinator.mutex.withLock {
+            reconcileInterruptedRenditions()
+            generateLocked(scope, selectedKeys)
+        }
+
+    private suspend fun generateLocked(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
         val customerId = requireNotNull(scope.customerId) { "Choose one Customer" }
         require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 Visits" }
         val candidates = reportable(scope).associateBy { it.key }
@@ -103,15 +115,16 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             val parts = visitSource.sources.map { source -> when (source.kind) {
                 "LOCAL" -> {
                     val record = dao.finalRecordForVisit(source.visitId) ?: error("Final record is missing")
-                    repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
+                    val model = repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
+                    model.copy(lines = model.lines.filter { it.position == source.sourcePosition }.also {
+                        require(it.size == 1) { "Selected final work line changed" }
+                    })
                 }
                 "REMOTE" -> remoteModel(source)
                 "TRANSFERRED" -> transferredModel(source)
                 else -> error("Unknown final source")
             } }
-            val equipmentReference = scope.equipmentId?.let { dao.equipment(it)?.reference }
             val lines = parts.flatMap { model -> model.lines.map { it.copy(documentingTechnicianName = model.technicianName) } }
-                .filter { equipmentReference == null || it.equipmentReference == equipmentReference }
                 .mapIndexed { index, line -> line.copy(position = index + 1) }
             parts.first().copy(recordId = visitSource.visitId, visitReference = visitSource.visitReference,
                 technicianName = visitSource.technicians.joinToString(", "), lines = lines)
@@ -139,15 +152,53 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
         val temp = File(target.parentFile, "$renditionId.tmp")
         try {
             val count = writer.render(frozen, business.businessName, businessContact, reportId, temp, filesRoot)
-            require(temp.length() > 0) { "Aggregate report is empty" }
+            require(count > 0 && temp.length() > 0) { "Aggregate report is empty" }
+            val rendered = temp.readBytes()
+            val digest = WorkResultPackageCodec.sha256(rendered)
+            dao.updateAggregateRendition(generating.copy(sha256 = digest, byteSize = rendered.size.toLong(), pageCount = count))
             check(temp.renameTo(target)) { "Could not store aggregate report" }
-            val bytes = target.readBytes()
-            dao.updateAggregateRendition(generating.copy(sha256 = WorkResultPackageCodec.sha256(bytes), byteSize = bytes.size.toLong(), pageCount = count, status = "READY"))
+            require(target.length() == rendered.size.toLong() && WorkResultPackageCodec.sha256(target.readBytes()) == digest) {
+                "Stored aggregate report failed verification"
+            }
+            dao.updateAggregateRendition(generating.copy(sha256 = digest, byteSize = rendered.size.toLong(), pageCount = count, status = "READY"))
             return AggregateReportResult(reportId, relative, count)
         } catch (failure: Throwable) {
-            temp.delete()
-            dao.updateAggregateRendition(generating.copy(status = "FAILED", failureReason = failure.message?.take(500)))
+            val committed = withContext(NonCancellable) {
+                val current = dao.aggregateRenditions(reportId).firstOrNull { it.id == renditionId }
+                if (current?.status == "READY") AggregateReportResult(reportId, relative, requireNotNull(current.pageCount)) else {
+                    check(temp.delete() || !temp.exists())
+                    if (target.exists()) check(target.delete())
+                    dao.updateAggregateRendition(generating.copy(status = "FAILED", failureReason = failure.message?.take(500)))
+                    null
+                }
+            }
+            if (committed != null) return committed
             throw failure
+        }
+    }
+
+    private suspend fun reconcileInterruptedRenditions() {
+        dao.generatingAggregateRenditions().forEach { pending ->
+            val relative = pending.relativePath ?: error("Generating aggregate rendition has no file intent")
+            val target = OwnedBusinessFiles.resolve(filesRoot, relative)
+            val temp = File(target.parentFile, "${pending.id}.tmp")
+            val candidate = when {
+                target.isFile -> target
+                temp.isFile -> temp
+                else -> null
+            }
+            val bound = dao.aggregateReport(pending.aggregateReportId) != null && dao.aggregateSources(pending.aggregateReportId).isNotEmpty()
+            val valid = bound && candidate != null && pending.sha256 != null && pending.byteSize != null &&
+                pending.pageCount?.let { it > 0 } == true && candidate.length() == pending.byteSize &&
+                WorkResultPackageCodec.sha256(candidate.readBytes()) == pending.sha256
+            if (valid) {
+                if (candidate == temp) check(temp.renameTo(target)) { "Could not adopt interrupted aggregate report" }
+                dao.updateAggregateRendition(pending.copy(status = "READY"))
+            } else {
+                if (temp.exists()) check(temp.delete())
+                if (target.exists()) check(target.delete())
+                dao.updateAggregateRendition(pending.copy(status = "FAILED", failureReason = "Generation was interrupted before verified output"))
+            }
         }
     }
 

@@ -203,6 +203,11 @@ class B049WorkResultExportTest {
             coordinatorNative.import(coordinatorNative.preview(direct))
             val combined = effectiveImportedFinalResults(b.reportableRemoteFinalResults(), b.allTransferredFinalResults())
             assertEquals(combined.map { listOf(it.kind, it.logicalResultId, it.originWorkspaceId, it.sourceVisitId, it.sourceWorkItemId, it.sourceFinalRevisionId) }.toString(), 1, combined.size)
+            val conflictingRelay = b.allTransferredFinalResults().single().copy(serviceName = "Contradictory service")
+            val received = b.reportableRemoteFinalResults()
+            assertThrows(IllegalArgumentException::class.java) {
+                effectiveImportedFinalResults(received, listOf(conflictingRelay))
+            }
             assertEquals(1, effectiveImportedFinalResults(
                 b.reportableRemoteFinalResults(), b.allTransferredFinalResults(), includePreviousRevisions = true).size)
             fun firstSource(bytes: ByteArray): JSONObject = JSONObject(DataTransferCodec.decode(bytes).families

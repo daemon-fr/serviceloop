@@ -326,6 +326,7 @@ interface ServiceLoopDao {
     @Query("SELECT * FROM aggregate_reports WHERE id=:id") suspend fun aggregateReport(id: String): AggregateReportEntity?
     @Query("SELECT * FROM aggregate_report_sources WHERE aggregateReportId=:id ORDER BY sourceOrder") suspend fun aggregateSources(id: String): List<AggregateReportSourceEntity>
     @Query("SELECT * FROM aggregate_report_renditions WHERE aggregateReportId=:id ORDER BY generatedAtEpochMillis DESC") suspend fun aggregateRenditions(id: String): List<AggregateReportRenditionEntity>
+    @Query("SELECT * FROM aggregate_report_renditions WHERE status='GENERATING'") suspend fun generatingAggregateRenditions(): List<AggregateReportRenditionEntity>
     @Query("SELECT visitId FROM visit_claims WHERE obligationId=:obligationId LIMIT 1") suspend fun claimForObligation(obligationId: String): String?
     @Query("UPDATE service_plans SET currentObligationId=:obligationId WHERE id=:planId") suspend fun setCurrentObligationForTest(planId: String, obligationId: String): Int
     @Query("UPDATE service_obligations SET dueDate=:dueDate WHERE id=:id AND consumedAtEpochMillis IS NULL") suspend fun updateCurrentObligationDueDate(id: String, dueDate: String): Int

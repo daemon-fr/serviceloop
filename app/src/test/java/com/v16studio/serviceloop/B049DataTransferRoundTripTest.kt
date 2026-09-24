@@ -277,6 +277,63 @@ class B049DataTransferRoundTripTest {
         } finally { standaloneB.close(); rootStandalone.deleteRecursively() }
     }
 
+    @Test fun nativePlanCannotAttachToStagedOneTimeCustomer() = runBlocking {
+        seedDirectoryAndTemplate()
+        val sourceId = ServiceLoopPeerTrustStore(a).localIdentity().technicianId
+        val exported = DataTransferCodec.decode(DataTransferExportService(a, rootA).export(
+            ExportCenterSelection(families = ExportPreset.CUSTOMER_DATA.families)))
+        val register = JSONObject(exported.families.getValue(DataTransferFamily.REGISTER).toString(Charsets.UTF_8))
+        register.getJSONArray("customers").getJSONObject(0).put("customerType", "ONE_TIME")
+        val changed = DataTransferCodec.encode(sourceId,
+            families = exported.families + (DataTransferFamily.REGISTER to register.toString().toByteArray(Charsets.UTF_8)),
+            sourceWorkspaceId = sourceId)
+        trustedReceiver(sourceId)
+        val preview = DataTransferImportService(b, rootB).preview(changed)
+        assertEquals(DataTransferClassification.CONFLICT,
+            preview.items.single { it.family == DataTransferFamily.SERVICE_PLANS }.classification)
+        assertFalse(preview.canImport())
+        assertEquals(0, b.serviceLoopDao().allPlans().size)
+    }
+
+    @Test fun literalNullFreeTextRemainsTextThroughNativeImportAndRetry() = runBlocking {
+        a.serviceLoopDao().insertCustomers(listOf(CustomerEntity("literal", "CU-N", "Literal customer", privateNote = "null")))
+        val sourceId = ServiceLoopPeerTrustStore(a).localIdentity().technicianId
+        val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(
+            families = setOf(ExportFamily.CUSTOMERS), includePrivate = true))
+        trustedReceiver(sourceId)
+        val importer = DataTransferImportService(b, rootB)
+        importer.import(importer.preview(bytes))
+        assertEquals("null", b.serviceLoopDao().allCustomers().single().privateNote)
+        assertEquals(DataTransferClassification.ALREADY_CURRENT,
+            importer.preview(bytes).items.single { it.family == DataTransferFamily.REGISTER }.classification)
+    }
+
+    @Test fun malformedCurrentNativeRowsRejectBeforeRoomMutation() = runBlocking {
+        seedDirectoryAndTemplate()
+        val sourceId = ServiceLoopPeerTrustStore(a).localIdentity().technicianId
+        val payload = DataTransferCodec.decode(DataTransferExportService(a, rootA).export(
+            ExportCenterSelection(families = ExportPreset.CUSTOMER_DATA.families)))
+        trustedReceiver(sourceId)
+        val importer = DataTransferImportService(b, rootB)
+        fun changed(family: DataTransferFamily, mutate: (JSONObject) -> Unit): ByteArray {
+            val familyJson = JSONObject(payload.families.getValue(family).toString(Charsets.UTF_8))
+            mutate(familyJson)
+            return DataTransferCodec.encode(sourceId,
+                families = payload.families + (family to familyJson.toString().toByteArray(Charsets.UTF_8)),
+                sourceWorkspaceId = sourceId)
+        }
+        listOf(
+            changed(DataTransferFamily.REGISTER) { it.getJSONArray("customers").getJSONObject(0).put("name", " ") },
+            changed(DataTransferFamily.REGISTER) { it.getJSONArray("sites").getJSONObject(0).put("state", "UNKNOWN") },
+            changed(DataTransferFamily.REGISTER) { it.getJSONArray("contacts").getJSONObject(0).put("position", "1") },
+            changed(DataTransferFamily.SERVICE_PLANS) { it.getJSONArray("plans").getJSONObject(0).put("intervalCount", "1") },
+        ).forEach { bytes ->
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { importer.preview(bytes) } }
+            assertEquals(0, b.serviceLoopDao().allCustomers().size)
+            assertEquals(0, b.serviceLoopDao().allPlans().size)
+        }
+    }
+
     @Test fun evidenceImportedBeforeHistoryLinksToExactFinalRevisionOnLaterImport() = runBlocking {
         val sourceId = seedCompletedWorkWithEvidence()
         trustedReceiver(sourceId)

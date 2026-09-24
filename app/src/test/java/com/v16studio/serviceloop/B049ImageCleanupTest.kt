@@ -216,10 +216,35 @@ class B049ImageCleanupTest {
         assertEquals(file.length(), rendition.byteSize)
         assertEquals(WorkResultPackageCodec.sha256(file.readBytes()), rendition.sha256)
         database.serviceLoopDao().insertFinalRevision(FinalRecordRevisionEntity("revision-2","record",2,"V-1","2025-01-01",now,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null,supersedesRevisionId="revision"))
+        val revisedWork = database.serviceLoopDao().finalWorkItems("revision").single().copy(id = "final-work-2", revisionId = "revision-2")
+        database.serviceLoopDao().insertFinalWorkItems(listOf(revisedWork))
         database.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId='revision-2' WHERE id='record'")
         assertEquals("revision-2", service.reportable(filter).single().revisionId)
         assertEquals("revision", database.serviceLoopDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
         file.delete()
+    }
+
+    @Test fun aggregateKeepsDistinctSameNameSiteWorkLines() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.insertWorkItems(listOf(dao.workItem("final-work")!!.copy(id = "second-work")))
+        dao.insertFinalWorkItems(listOf(dao.finalWorkItems("revision").single().copy(
+            id = "second-final-item", position = 2, sourceWorkItemId = "second-work")))
+        val repository = RoomServiceLoopRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        val service = AggregateReportService(database, repository, context.filesDir,
+            AggregateReportWriter { models, _, _, _, target, _ ->
+                assertEquals(2, models.single().lines.size)
+                assertEquals(listOf("Inspect", "Inspect"), models.single().lines.map { it.serviceName })
+                target.writeBytes("%PDF-two-lines".toByteArray())
+                1
+            })
+        val scope = ServiceLoopScopeFilter(customerId = "c")
+        val selected = service.reportable(scope).single()
+        assertEquals(2, selected.sources.size)
+        assertEquals(2, selected.sources.map { it.key }.distinct().size)
+        assertEquals(2, dao.aggregateSources(service.generate(scope, listOf(selected.key)).reportId).size)
     }
 
     @Test fun aggregateAcceptsTwoVisitsForOneCustomerAndRejectsCrossCustomerSelection() = runTest {
