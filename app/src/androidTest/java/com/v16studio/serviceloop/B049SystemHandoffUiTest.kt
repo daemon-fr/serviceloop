@@ -59,6 +59,7 @@ class B049SystemHandoffUiTest {
 
     @Test fun directImportOpensAndroidPickerOnceAndCancelReturnsToReview() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-tab-TEAM").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("home-tab-TEAM").performClick()
         compose.onNodeWithTag("team-import-work").performClick()
         compose.waitUntil(10_000) { automation.rootInActiveWindow?.packageName?.toString()?.contains("documentsui", ignoreCase = true) == true }
@@ -78,6 +79,7 @@ class B049SystemHandoffUiTest {
         val database = app.container.database
         compose.runOnUiThread { compose.activity.setTeamRole(TeamRole.COORDINATOR) }
 
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-tab-TEAM").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("home-tab-TEAM").performClick()
         compose.onNodeWithTag("home-team").assertIsDisplayed()
         compose.onNodeWithTag("home-team").performScrollToNode(hasTestTag("team-export"))
@@ -86,9 +88,11 @@ class B049SystemHandoffUiTest {
         if (compose.onAllNodesWithTag("export-center").fetchSemanticsNodes().isEmpty()) {
             throw AssertionError("Team export did not reach Export Center. Current Compose tree:\n${compose.onRoot(useUnmergedTree = true).printToString()}")
         }
-        compose.onNodeWithTag("export-format").assertTextContains("ServiceLoop file (.slsync)")
+        compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-format-native"))
+        compose.onNodeWithTag("export-format-native").assertTextContains("ServiceLoop file (.slsync)", substring = true)
         val customer = runBlocking { database.serviceLoopDao().allCustomers().firstOrNull() }
         if (customer != null) {
+            compose.onNodeWithTag("export-center").performScrollToNode(hasTestTag("export-customer"))
             compose.onNodeWithTag("export-customer").performClick()
             val customerOption = "${customer.reference} · ${customer.name}"
             compose.onNodeWithTag("export-customer-option-${customerOption.filter(Char::isLetterOrDigit).lowercase()}").performClick()

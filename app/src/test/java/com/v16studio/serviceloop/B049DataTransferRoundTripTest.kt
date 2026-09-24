@@ -116,6 +116,9 @@ class B049DataTransferRoundTripTest {
             Instant.parse("2026-09-24T01:00:00Z").toEpochMilli(), "Reached", null, 1))
         dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Business", technicianName = "Technician",
             phone = null, email = null, postalAddress = null, zoneId = "Pacific/Honolulu", modifiedAtEpochMillis = 1))
+        dao.insertTransferredHistoryEntries(listOf(TransferredHistoryEntryEntity("received-note", TechnicianIdCodec.generate(),
+            "CONTACT_NOTES", "source-note", null, "", "relay", "c", null, null,
+            "2026-09-24T01:00:00Z", JSONObject().put("outcome", "Reached").toString(), "a".repeat(64), 1)))
         suspend fun count(date: String): Int {
             val scope = ServiceLoopScopeFilter(customerId = "c", fromDate = LocalDate.parse(date), toDate = LocalDate.parse(date))
             val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(scope,
@@ -123,7 +126,7 @@ class B049DataTransferRoundTripTest {
             return JSONObject(DataTransferCodec.decode(bytes).families.getValue(DataTransferFamily.CONTACT_NOTES)
                 .toString(Charsets.UTF_8)).getJSONArray("records").length()
         }
-        assertEquals(1, count("2026-09-23"))
+        assertEquals(2, count("2026-09-23"))
         assertEquals(0, count("2026-09-24"))
     }
 

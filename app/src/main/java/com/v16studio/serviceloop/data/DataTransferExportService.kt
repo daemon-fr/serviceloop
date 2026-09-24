@@ -442,8 +442,14 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             if (!selection.includePrivate) { value.getJSONObject("payload").remove("oldValue"); value.getJSONObject("payload").remove("newValue") }
             records.put(value)
         }
+        val importedZone = java.time.ZoneId.of(dao.businessProfile()?.zoneId ?: "UTC")
         val imported = dao.allTransferredHistoryEntries().filter { it.family == family }.filter { row ->
-            scopeMatches(selection.scope, row.localCustomerId.orEmpty(), row.localSiteId, row.localEquipmentId, row.eventDateTime?.take(10))
+            val scopedDate = if (family == "CONTACT_NOTES") row.eventDateTime?.let { text ->
+                runCatching { Instant.parse(text) }.getOrElse {
+                    java.time.OffsetDateTime.parse(text).toInstant()
+                }.atZone(importedZone).toLocalDate().toString()
+            } else row.eventDateTime?.take(10)
+            scopeMatches(selection.scope, row.localCustomerId.orEmpty(), row.localSiteId, row.localEquipmentId, scopedDate)
         }
         imported.forEach { row ->
             addDirectoryDependencies(dependencies, row.localCustomerId, row.localSiteId, row.localEquipmentId)

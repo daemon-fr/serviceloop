@@ -193,7 +193,7 @@ class ExportCenterService(private val database: ServiceLoopDatabase, private val
             appendLine("Families: ${selection.families.joinToString { it.title }}")
             appendLine("Customer: ${scope.customerId ?: "All"}; Site: ${scope.siteId ?: "All"}; Equipment: ${scope.equipmentId ?: "All"}")
             appendLine("Service dates: ${scope.fromDate ?: "Any"} through ${scope.toDate ?: "Any"}")
-            appendLine("Date filters apply to work and photo history. Current directory, templates, follow-ups, and contact notes use the hierarchy only.")
+            appendLine("Date filters apply to work/photo history, follow-up due dates, contact-note dates, and change dates. Current directory and templates use the hierarchy only.")
             appendLine("Private: ${selection.includePrivate}; inactive: ${selection.includeInactive}; previous revisions: ${selection.includePreviousRevisions}")
         }.toByteArray(Charsets.UTF_8)
         entries["README.txt"] = readme

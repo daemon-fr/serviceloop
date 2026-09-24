@@ -86,6 +86,12 @@ class RecoveryLegacyCompatibilityTest {
         val malformed = mutableListOf<ByteArray>()
         malformed += current.copyOf(current.size - 1) // invalid GCM tag
         malformed += invokeCrypt(recovery, "protect", plain.copyOf(plain.size - 22)) // missing ZIP directory
+        val wrongDirectory = plain.copyOf()
+        val footer = wrongDirectory.size - 22
+        val firstCentral = java.nio.ByteBuffer.wrap(wrongDirectory, footer + 16, 4)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+        wrongDirectory[firstCentral + 46] = (wrongDirectory[firstCentral + 46].toInt() xor 1).toByte()
+        malformed += invokeCrypt(recovery, "protect", wrongDirectory) // local entry and central name disagree
         malformed += invokeCrypt(recovery, "protect", zip(entries - "manifest.json"))
         malformed += invokeCrypt(recovery, "protect", ByteArrayOutputStream().also { output ->
             ZipOutputStream(output).use { stream ->

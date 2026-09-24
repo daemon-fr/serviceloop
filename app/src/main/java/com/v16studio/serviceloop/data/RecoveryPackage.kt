@@ -48,13 +48,14 @@ class RecoveryPackage(
         require(passphrase.size >= 12) { "Passphrase must contain at least 12 characters" }
         reconcilePendingOriginalDeletions(database, fileRoot, System.currentTimeMillis())
         val snapshotAt = System.currentTimeMillis()
-        val databaseObject = database.withTransaction {
+        val rawSnapshot = database.withTransaction {
             database.openHelper.writableDatabase.execSQL(
                 "INSERT OR IGNORE INTO technician_identity(id,technicianId,displayName,createdAtEpochMillis,modifiedAtEpochMillis) SELECT 'primary', ?, COALESCE(NULLIF(TRIM((SELECT technicianName FROM business_profiles WHERE id='primary')),''), 'Technician'), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)",
                 arrayOf(TechnicianIdCodec.generate()),
             )
-            JSONObject(exportDatabase().toString(Charsets.UTF_8))
+            exportDatabase()
         }
+        val databaseObject = JSONObject(rawSnapshot.toString(Charsets.UTF_8))
         // An unopened preference store can have no persisted singleton yet. Capture the
         // product default as portable state so this backup passes the same restore contract.
         if (tableRows(databaseObject, "reminder_preferences").isEmpty()) normalizeLegacyReminderState(databaseObject)
@@ -86,6 +87,11 @@ class RecoveryPackage(
                 put(zip, "manifest.json", manifest.toString().toByteArray(Charsets.UTF_8))
             }
         }.toByteArray()
+        // Ordinary Room writers need not take the business-file mutex. Reject an
+        // archive assembled across two database states instead of calling it complete.
+        database.withTransaction {
+            require(exportDatabase().contentEquals(rawSnapshot)) { "Business data changed during backup; retry" }
+        }
         return BackupResult(protect(zipBytes, passphrase), snapshotAt, missing.isEmpty(), missing)
     }
 
@@ -861,7 +867,7 @@ class RecoveryPackage(
 
     private fun derive(passphrase: CharArray, salt: ByteArray, iterations: Int) = SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(passphrase, salt, iterations, 256)).encoded, "AES")
     private fun unzip(bytes: ByteArray): Map<String, ByteArray> {
-        validateZipDirectory(bytes)
+        val centralNames = validateZipDirectory(bytes)
         val result = linkedMapOf<String, ByteArray>(); var expanded = 0L
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
@@ -872,9 +878,10 @@ class RecoveryPackage(
                 result[entry.name] = output.toByteArray(); require(result.size <= MAX_ENTRIES)
             }
         }
+        require(result.keys == centralNames) { "Backup ZIP entries disagree with its directory" }
         return result
     }
-    private fun validateZipDirectory(bytes: ByteArray) {
+    private fun validateZipDirectory(bytes: ByteArray): Set<String> {
         // ZipInputStream only reads local headers. A truncated central directory can
         // otherwise leave all visible entries apparently valid after decryption.
         val earliest = (bytes.size - 22 - 65535).coerceAtLeast(0)
@@ -895,6 +902,32 @@ class RecoveryPackage(
             directorySize > 0 && directoryOffset + directorySize == eocd.toLong()) {
             "Backup ZIP directory is invalid"
         }
+        val names = linkedSetOf<String>()
+        var offset = directoryOffset.toInt()
+        repeat(totalCount) {
+            require(offset <= eocd - 46 && ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int == 0x02014b50) {
+                "Backup ZIP directory entry is malformed"
+            }
+            val header = ByteBuffer.wrap(bytes, offset, 46).slice().order(ByteOrder.LITTLE_ENDIAN)
+            header.position(28)
+            val nameLength = header.short.toInt().and(0xffff)
+            val extraLength = header.short.toInt().and(0xffff)
+            val commentLength = header.short.toInt().and(0xffff)
+            val startDisk = header.short.toInt().and(0xffff)
+            header.position(42)
+            val localOffset = header.int.toLong().and(0xffffffffL)
+            val next = offset.toLong() + 46 + nameLength + extraLength + commentLength
+            require(startDisk == 0 && nameLength > 0 && next <= eocd.toLong() &&
+                localOffset <= directoryOffset - 4 &&
+                ByteBuffer.wrap(bytes, localOffset.toInt(), 4).order(ByteOrder.LITTLE_ENDIAN).int == 0x04034b50) {
+                "Backup ZIP directory points outside local entries"
+            }
+            val name = bytes.copyOfRange(offset + 46, offset + 46 + nameLength).toString(Charsets.UTF_8)
+            require(safeArchiveEntry(name) && names.add(name)) { "Unsafe or duplicate ZIP directory entry" }
+            offset = next.toInt()
+        }
+        require(offset == eocd) { "Backup ZIP directory length disagrees with its entries" }
+        return names
     }
     private fun put(zip: ZipOutputStream, name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
     private fun safeArchiveEntry(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') && path.split('/', '\\').none { it.isBlank() || it == "." || it == ".." }
