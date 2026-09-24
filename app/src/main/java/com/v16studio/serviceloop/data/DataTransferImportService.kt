@@ -330,7 +330,8 @@ class DataTransferImportService(private val database: ServiceLoopDatabase, priva
             val evidence=row.optJSONArray("evidence")?:JSONArray()
             val entity=TransferredFinalResultEntity(UUID.randomUUID().toString(),row.getString("originWorkspaceId"),row.getString("sourceVisitId"),row.getString("sourceWorkItemId"),row.getString("sourceFinalRevisionId"),row.getString("logicalResultId"),payload.exporterId,now,refs.first,refs.second,refs.third,
                 row.getJSONObject("customerSnapshot").toString(),row.getJSONObject("siteSnapshot").toString(),subject.toString(),row.getString("visitReference"),row.getString("serviceDate"),row.getString("technicianId"),row.getString("technicianName"),row.optNullable("technicianDesignation"),row.getString("serviceName"),row.getString("outcome"),row.optNullable("workPerformed"),row.optNullable("notPerformedReason"),row.getJSONArray("checklist").toString(),row.getJSONArray("findings").toString(),row.getJSONArray("parts").toString(),row.optNullable("internalNotes"),recurrence.toString(),item.fingerprint,JSONObject().put("recordedAt",row.optString("recordedAt")).put("sourceWorkItemPosition",row.optInt("sourceWorkItemPosition",0)).put("relayExporterId",payload.exporterId).put("evidence",evidence).toString(),
-                sourcePayloadJson = if (payload.familyVersions[DataTransferFamily.PERFORMED_WORK] == 2) row.toString() else null)
+                sourcePayloadJson = if (payload.familyVersions[DataTransferFamily.PERFORMED_WORK] == 2)
+                    FinalSourceSnapshot.encode("PERFORMED_WORK", 2, 2, row) else null)
             dao.insertTransferredFinalResults(listOf(entity))
         }
     }

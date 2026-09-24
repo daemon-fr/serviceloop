@@ -814,7 +814,7 @@ class DailyOperationsIntegrityTest {
             val packageWithFailure = RecoveryPackage(db, root) { reached -> if (reached == point) error("injected $point") }
             assertTrue(runCatching { packageWithFailure.restore(inspection) }.isFailure)
             assertNotEquals(RecoveryPackage.RecoveryResult.RESTRICTED, RecoveryPackage.recoverInterrupted(db, root))
-            if (point in beforeCommit) { assertEquals("Live $point", repo.customer(ids.customer)!!.name); assertTrue(liveFile.exists()) }
+            if (point in beforeCommit) { assertEquals("Live $point", repo.customer(ids.customer)!!.name); assertTrue("Lost original at $point", liveFile.exists()) }
             else { assertEquals("Acme Service Customer", repo.customer(ids.customer)!!.name); assertFalse(liveFile.exists()) }
         }
     }
@@ -846,7 +846,7 @@ class DailyOperationsIntegrityTest {
         foundation(); val privateFile=File(root,"attachments/private.bin").apply { parentFile!!.mkdirs(); writeText("private") }
         val failing=RecoveryPackage(db,root){ if(it==RecoveryPackage.FailurePoint.DURING_ERASE_FILES) error("delete failure") }
         assertTrue(runCatching { failing.eraseDatabaseAndOwnedFiles(UUID.randomUUID().toString()) }.isFailure)
-        assertEquals(1,repo.datasetSummary().customers); assertTrue(privateFile.isFile); assertFalse(repo.datasetSummary().restrictedRecoveryState)
+        assertEquals(1,repo.datasetSummary().customers); assertTrue("Erase rollback lost original", privateFile.isFile); assertFalse(repo.datasetSummary().restrictedRecoveryState)
     }
 
     @Test fun verifiedSnapshotTracksBusinessWritesButNotRecoveryMetadataWrites() = runTest {

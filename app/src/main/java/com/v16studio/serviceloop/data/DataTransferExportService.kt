@@ -321,10 +321,10 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
     private suspend fun partsJson(workItemId: String) = JSONArray().also { array -> dao.finalParts(workItemId).forEach { item -> array.put(JSONObject().put("position", item.position).put("description", item.description).put("quantity", item.quantity).put("unit", item.unit)) } }
 
     private suspend fun encodeRemoteResult(value: RemoteFinalResultEntity, includePrivate: Boolean, localWorkspaceId: String): JSONObject {
-        val accepted = value.sourcePayloadJson?.let(::JSONObject)
+        val accepted = value.sourcePayloadJson
             ?: throw IllegalStateException("This legacy work result needs its original package re-imported before a lossless native relay")
-        require(accepted.getInt("comparisonVersion") == 2) { "This work result needs its original v2 package before native relay" }
-        val source = accepted.getJSONObject("result")
+        require(FinalSourceSnapshot.fingerprintVersion(accepted) == 2) { "This work result needs its original v2 package before native relay" }
+        val source = FinalSourceSnapshot.record(accepted, "WORK_RESULT")
         require(source.has("sourceVisitId") && source.has("sourceWorkItemId") && source.has("sourceFinalRevisionNumber")) {
             "This legacy work result lacks source execution identity; re-import the original v2 package"
         }
@@ -382,7 +382,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
     }
 
     private fun encodeTransferredResult(value: TransferredFinalResultEntity, includePrivate: Boolean): JSONObject {
-        val source = value.sourcePayloadJson?.let(::JSONObject)
+        val source = value.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "PERFORMED_WORK") }
             ?: throw IllegalStateException("This legacy performed record needs its original package re-imported before a lossless native relay")
         if (includePrivate) return source
         return JSONObject(source.toString()).apply {
@@ -408,8 +408,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             if (selection.includePrivate) value.getJSONObject("payload").put("privatePlanningNote", row.privatePlanningNote)
             records.put(value)
         }
-        if (family == "CONTACT_NOTES") dao.allContactNotes().forEach { row ->
-            if (!scopeMatches(selection.scope, row.customerId, row.siteId, row.equipmentId, LocalDate.parse(Instant.ofEpochMilli(row.occurredAtEpochMillis).toString().take(10)).toString())) return@forEach
+        if (family == "CONTACT_NOTES") {
+          val businessZone = java.time.ZoneId.of(dao.businessProfile()?.zoneId ?: "UTC")
+          dao.allContactNotes().forEach { row ->
+            val businessDate = Instant.ofEpochMilli(row.occurredAtEpochMillis).atZone(businessZone).toLocalDate().toString()
+            if (!scopeMatches(selection.scope, row.customerId, row.siteId, row.equipmentId, businessDate)) return@forEach
             addDirectoryDependencies(dependencies, row.customerId, row.siteId, row.equipmentId)
             val value = JSONObject().put("originWorkspaceId", originOf(family, row.id, origin)).put("sourceEntityId", sourceOf(family, row.id))
                 .put("eventDateTime", Instant.ofEpochMilli(row.occurredAtEpochMillis).toString())
@@ -420,6 +423,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     .put("channel", row.channel).put("outcome", row.outcome).put("enteredInError", row.enteredInError).put("errorReason", row.errorReason))
             if (selection.includePrivate) value.getJSONObject("payload").put("privateNote", row.privateNote)
             records.put(value)
+          }
         }
         if (family == "CHANGE_HISTORY") dao.allChangeEntries().forEach { row ->
             if (!scopeMatches(selection.scope, row.customerId.orEmpty(), row.siteId, row.equipmentId, row.eventDate)) return@forEach
@@ -533,7 +537,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!selection.scope.matches(result.customerId.orEmpty(), siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@forEach
             val bytes = readImage(photo.relativePath, photo.sha256, photo.byteSize) ?: error("Imported result photo is missing")
-            val source = result.sourcePayloadJson?.let(::JSONObject)?.optJSONObject("result")
+            val source = result.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
             require(source != null && source.has("sourceVisitId") && source.has("sourceWorkItemId")) {
                 "This legacy result photo lacks source execution identity; re-import the original v2 package before native relay"
             }
@@ -575,14 +579,26 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         return EncodedEvidence(JSONObject().put("version", 1).put("photos", photos).toString().toByteArray(Charsets.UTF_8), binaries)
     }
 
+    private suspend fun sourceBinding(type: String, localId: String): DataTransferBindingEntity? {
+        val aliases = dao.dataTransferBindingsForLocal(type, localId)
+            .sortedWith(compareBy<DataTransferBindingEntity> { it.originWorkspaceId }.thenBy { it.sourceEntityId })
+        require(aliases.map { it.originWorkspaceId }.distinct().size <= 1) {
+            "Several source origins map to this $type; choose an unambiguous source before native export"
+        }
+        return aliases.firstOrNull()
+    }
+
     private suspend fun originOf(type: String, localId: String, localWorkspaceId: String): String =
-        dao.dataTransferBindingsForLocal(type, localId).firstOrNull()?.originWorkspaceId ?: localWorkspaceId
+        sourceBinding(type, localId)?.originWorkspaceId ?: localWorkspaceId
 
     private suspend fun sourceOf(type: String, localId: String): String =
-        dao.dataTransferBindingsForLocal(type, localId).firstOrNull()?.sourceEntityId ?: localId
+        sourceBinding(type, localId)?.sourceEntityId ?: localId
 
-    private suspend fun entityRef(type: String, localId: String, localWorkspaceId: String) = JSONObject()
-        .put("originWorkspaceId", originOf(type, localId, localWorkspaceId)).put("sourceEntityId", sourceOf(type, localId))
+    private suspend fun entityRef(type: String, localId: String, localWorkspaceId: String): JSONObject {
+        val binding = sourceBinding(type, localId)
+        return JSONObject().put("originWorkspaceId", binding?.originWorkspaceId ?: localWorkspaceId)
+            .put("sourceEntityId", binding?.sourceEntityId ?: localId)
+    }
 
     private fun scopeMatches(scope: ServiceLoopScopeFilter, customerId: String, siteId: String?, equipmentId: String?, date: String?): Boolean {
         if (scope.customerId != null && scope.customerId != customerId) return false

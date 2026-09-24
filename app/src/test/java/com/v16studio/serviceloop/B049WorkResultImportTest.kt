@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +80,19 @@ class B049WorkResultImportTest {
 
     private fun packageBytes(id: String, vararg results: WorkResultPackageCodec.Result) = WorkResultPackageCodec.encode(
         WorkResultPackageCodec.Package(id, exporter, issuer, "2026-09-23T10:00:00Z", results.toList()))
+
+    @Test fun twoLegacyRevisionsWithOnlyPackageTimeCannotChooseCurrentReportTruth() = runTest {
+        val service = WorkResultImportService(database, root)
+        service.import(packageBytes("legacy-first", result(2)))
+        val second = result(2).let { it.copy(value = JSONObject(it.value.toString())
+            .put("sourceFinalRevisionId", "revision-2-again").put("publicNote", "Different historical wording")) }
+        service.import(packageBytes("legacy-second", second))
+        val rows = database.serviceLoopDao().appliedRemoteFinalResultsIncludingVoids()
+        assertEquals(2, rows.size)
+        assertTrue(rows.all { JSONObject(it.provenanceJson).getString("chronologyProvenance") == "PACKAGE_GENERATED_AT_FALLBACK" })
+        assertThrows(IllegalArgumentException::class.java) { effectiveImportedFinalResults(rows, emptyList()) }
+        Unit
+    }
 
     @Test fun partialThenCompleteAndRetriesPreserveRemoteTruthAndAdvanceOnce() = runTest {
         val service = WorkResultImportService(database, root)
@@ -239,7 +253,12 @@ class B049WorkResultImportTest {
         val service = WorkResultImportService(database, root)
         assertEquals("APPLIED", service.import(bytes).items.single().status)
         val stored = database.serviceLoopDao().remoteFinalResult(exporter, "result-2", "revision-2")!!
-        val payload = JSONObject(stored.sourcePayloadJson!!).getJSONObject("result")
+        val wrapper = JSONObject(stored.sourcePayloadJson!!)
+        assertEquals(1, wrapper.getInt("snapshotFormatVersion"))
+        assertEquals("WORK_RESULT", wrapper.getString("sourcePurpose"))
+        assertEquals(2, wrapper.getInt("sourcePayloadVersion"))
+        assertEquals(2, wrapper.getInt("fingerprintVersion"))
+        val payload = FinalSourceSnapshot.record(stored.sourcePayloadJson, "WORK_RESULT")
         assertEquals("technician-visit", payload.getString("sourceVisitId"))
         assertEquals("technician-work", payload.getString("sourceWorkItemId"))
         assertEquals(3, payload.getInt("sourceWorkItemPosition"))
@@ -272,7 +291,7 @@ class B049WorkResultImportTest {
         assertNull(database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!.sourcePayloadJson)
         assertEquals("ALREADY_RECEIVED", service.import(packageBytes("retry", source)).items.single().status)
         val restored = database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!
-        assertEquals("source-visit", JSONObject(restored.sourcePayloadJson!!).getJSONObject("result").getString("sourceVisitId"))
+        assertEquals("source-visit", FinalSourceSnapshot.record(restored.sourcePayloadJson!!, "WORK_RESULT").getString("sourceVisitId"))
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
         assertEquals(1, database.serviceLoopDao().appliedWorkResultReceipts("dispatch-v").size)
     }

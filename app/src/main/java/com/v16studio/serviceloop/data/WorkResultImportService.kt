@@ -22,7 +22,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         val status: String, val reason: String?, val committedStatus: String? = null, val recurrenceAppliedNow: Boolean = false,
     )
     data class Preview(val packageId: String, val exporterId: String, val targetIssuerId: String, val items: List<ItemPreview>)
-    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String)
+    private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String, val chronologyProvenance: String)
 
     suspend fun preview(bytes: ByteArray): Preview = preflight(bytes).first
 
@@ -84,9 +84,11 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         json.getJSONObject("recurrence").toString(), JSONObject().put("packageId", preview.packageId).put("exporterId", preview.exporterId)
                         .put("serviceName", work.optString("serviceName"))
                             .put("recordedAt", item.sourceRecordedAt)
+                            .put("chronologyProvenance", item.chronologyProvenance)
                             .put("assignmentGeneration", json.getInt("assignmentGeneration")).put("assignmentMaterialHash", json.getString("assignmentMaterialHash"))
                             .put("assignmentIssuerId", preview.targetIssuerId).toString(), now,
-                        sourcePayloadJson = JSONObject().put("comparisonVersion", 2).put("result", JSONObject(json.toString())).toString(),
+                        sourcePayloadJson = FinalSourceSnapshot.encode("WORK_RESULT", if (json.has("sourceVisitId")) 2 else 1,
+                            2, json),
                     ))
                     dao.insertRemoteResultPhotos(item.result.photos.mapIndexed { index, photo ->
                         RemoteResultPhotoEntity(stable("remote-photo", resultDbId, photo.sourcePhotoId), resultDbId, photo.sourcePhotoId,
@@ -191,8 +193,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             require(authorMayDocument(visitId, itemId, packageValue.exporterId)) { "Result author is not assigned to this work item" }
             val resultId = json.getString("resultId")
             val revisionId = json.getString("sourceFinalRevisionId")
-            val sourceRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
-                ?: packageValue.generatedAt
+            val explicitRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
+            val sourceRecordedAt = explicitRecordedAt ?: packageValue.generatedAt
             val fingerprintObject = JSONObject(json.toString()).apply {
                 remove("photos")
                 put("photos", JSONArray().apply {
@@ -237,7 +239,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                 status == "CONFLICT" -> "Assignment generation is newer than the issuing workspace"
                 else -> null
             }
-            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash, sourceRecordedAt)
+            Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash,
+                sourceRecordedAt, if (explicitRecordedAt == null) "PACKAGE_GENERATED_AT_FALLBACK" else "SOURCE_RECORDED_AT")
         }
         return Preview(packageValue.packageId, packageValue.exporterId, packageValue.targetIssuerId, prepared.map { it.preview }) to prepared
     }
@@ -292,7 +295,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             receipt.assignmentGeneration == source.getInt("assignmentGeneration") &&
             receipt.assignmentMaterialHash == source.getString("assignmentMaterialHash")) { "Previously received assignment facts changed" }
         val comparisonVersion = if (receipt.payloadSha256 == item.payloadHash) 2 else 1
-        val snapshot = JSONObject().put("comparisonVersion", comparisonVersion).put("result", JSONObject(source.toString())).toString()
+        val snapshot = FinalSourceSnapshot.encode("WORK_RESULT", if (source.has("sourceVisitId")) 2 else 1,
+            comparisonVersion, source)
         require(dao.recoverRemoteSourceSnapshot(remote.id, snapshot) == 1) { "Source snapshot recovery raced with another write" }
     }
 

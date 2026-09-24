@@ -247,6 +247,31 @@ class B049ImageCleanupTest {
         assertEquals(2, dao.aggregateSources(service.generate(scope, listOf(selected.key)).reportId).size)
     }
 
+    @Test fun equipmentScopedReportKeepsFrozenLineAfterReferenceEdit() = runTest {
+        val dao = database.serviceLoopDao()
+        dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-OLD", null, "Pump", null, null, null, null)))
+        dao.insertWorkItems(listOf(dao.workItem("final-work")!!.copy(id = "equipment-work", equipmentId = "e",
+            equipmentNameSnapshot = "Pump", equipmentReferenceSnapshot = "EQ-OLD", subjectType = "EQUIPMENT")))
+        dao.insertFinalWorkItems(listOf(dao.finalWorkItems("revision").single().copy(id = "equipment-final", position = 2,
+            sourceWorkItemId = "equipment-work", equipmentId = "e", equipmentName = "Pump",
+            equipmentReference = "EQ-OLD", subjectType = "EQUIPMENT")))
+        database.openHelper.writableDatabase.execSQL("UPDATE equipment SET reference='EQ-NEW' WHERE id='e'")
+        val repository = RoomServiceLoopRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        val service = AggregateReportService(database, repository, context.filesDir,
+            AggregateReportWriter { models, _, _, _, target, _ ->
+                assertEquals(listOf("EQ-OLD"), models.single().lines.map { it.equipmentReference })
+                target.writeBytes("%PDF-frozen-reference".toByteArray())
+                1
+            })
+        val scope = ServiceLoopScopeFilter(customerId = "c", siteId = "s", equipmentId = "e")
+        val selected = service.reportable(scope).single()
+        assertEquals("equipment-final", selected.sources.single().workItemId)
+        service.generate(scope, listOf(selected.key))
+    }
+
     @Test fun aggregateAcceptsTwoVisitsForOneCustomerAndRejectsCrossCustomerSelection() = runTest {
         val dao = database.serviceLoopDao()
         suspend fun addFinalVisit(id: String, customerId: String, siteId: String) {

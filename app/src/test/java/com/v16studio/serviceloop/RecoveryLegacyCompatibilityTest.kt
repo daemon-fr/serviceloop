@@ -78,6 +78,35 @@ class RecoveryLegacyCompatibilityTest {
         assertNull(database.serviceLoopDao().customer("unexpected"))
     }
 
+    @Test fun malformedSourceVersionsFamiliesTypesAndAncestryRejectBeforeAdoption() = runBlocking {
+        val recovery = RecoveryPackage(database, root)
+        val current = recovery.create(password, false).bytes
+        fun table(snapshot: JSONObject, name: String): JSONObject {
+            val tables = snapshot.getJSONArray("tables")
+            return (0 until tables.length()).map(tables::getJSONObject).first { it.getString("name") == name }
+        }
+        val malformed = listOf(
+            sourceFixture(recovery, current, 19) { snapshot -> snapshot.put("schemaVersion", 18) },
+            sourceFixture(recovery, current, 20),
+            sourceFixture(recovery, current, 19) { snapshot ->
+                val tables = snapshot.getJSONArray("tables")
+                val index = (0 until tables.length()).first { tables.getJSONObject(it).getString("name") == "customer_contacts" }
+                tables.remove(index)
+            },
+            sourceFixture(recovery, current, 19) { snapshot ->
+                table(snapshot, "customers").getJSONArray("rows").getJSONObject(0).put("name", 7)
+            },
+            sourceFixture(recovery, current, 19) { snapshot ->
+                table(snapshot, "sites").getJSONArray("rows").getJSONObject(0).put("customerId", "missing-customer")
+            },
+        )
+        malformed.forEachIndexed { index, bytes ->
+            assertThrows("Malformed Recovery variant $index", Exception::class.java) { recovery.inspect(bytes, password) }
+            assertEquals("Historical customer", database.serviceLoopDao().customer("legacy-customer")!!.name)
+            assertEquals("legacy-customer", database.serviceLoopDao().site("legacy-site")!!.customerId)
+        }
+    }
+
     @Test fun incompleteBackupMarksMissingAggregateRenditionWithoutClaimingReadyBytes() = runBlocking {
         val dao = database.serviceLoopDao()
         dao.insertAggregateReport(AggregateReportEntity("aggregate", "legacy-customer", "{}", null, null, null, null, "{}", 1, "ACTIVE"))
@@ -95,6 +124,30 @@ class RecoveryLegacyCompatibilityTest {
         assertEquals("MISSING", restored.status)
         assertEquals(true, restored.failureReason.orEmpty().contains("missing"))
         assertEquals(false, File(root, path).exists())
+    }
+
+    @Test fun orphanAggregateSourceAndRemotePhotoRejectBeforeReplacement() = runBlocking {
+        val recovery = RecoveryPackage(database, root)
+        val current = recovery.create(password, false).bytes
+        fun addRow(snapshot: JSONObject, name: String, row: JSONObject) {
+            val tables = snapshot.getJSONArray("tables")
+            (0 until tables.length()).map(tables::getJSONObject).first { it.getString("name") == name }
+                .getJSONArray("rows").put(row)
+        }
+        val orphanSource = sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "aggregate_report_sources",
+            JSONObject().put("aggregateReportId", "missing-report").put("sourceOrder", 1)
+                .put("sourceFinalRevisionId", "missing-revision").put("sourceKind", "LOCAL")
+                .put("visitId", "missing-visit").put("sourceEntityId", "missing-revision")) }
+        val orphanPhoto = sourceFixture(recovery, current, 19) { snapshot -> addRow(snapshot, "remote_result_photos",
+            JSONObject().put("id", "orphan-photo").put("remoteFinalResultId", "missing-result")
+                .put("sourcePhotoId", "source-photo").put("relativePath", "remote-results/orphan.jpg")
+                .put("sha256", "a".repeat(64)).put("byteSize", 1).put("width", 1).put("height", 1)
+                .put("mimeType", "image/jpeg").put("caption", JSONObject.NULL).put("dispatchItemId", "item")
+                .put("includeInReport", 1).put("visibility", "PUBLIC")) }
+        listOf(orphanSource, orphanPhoto).forEach { bytes ->
+            assertThrows(Exception::class.java) { recovery.inspect(bytes, password) }
+            assertEquals("Historical customer", database.serviceLoopDao().customer("legacy-customer")!!.name)
+        }
     }
 
     private fun sourceFixture(recovery: RecoveryPackage, encrypted: ByteArray, version: Int, alter: (JSONObject) -> Unit = {}): ByteArray {

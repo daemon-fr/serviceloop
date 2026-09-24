@@ -154,7 +154,7 @@ class RecoveryPackage(
         }
         val stage = File(recoveryRoot, "restore-candidate")
         val rollback = File(recoveryRoot, "restore-rollback")
-        check(!journalFile(recoveryRoot).exists()) { "Another recovery operation is unfinished" }
+        check(!journalPresent(journalFile(recoveryRoot))) { "Another recovery operation is unfinished" }
         stage.deleteRecursively(); rollback.deleteRecursively()
         require(stage.mkdirs() && rollback.mkdirs()) { "Unable to create recovery staging" }
         val declared = manifest.getJSONArray("files")
@@ -175,31 +175,31 @@ class RecoveryPackage(
             restrictedQuarantine?.let { initialJournal.put("restrictedQuarantine", it.name) }
             writeJournal(journal, initialJournal)
             failureInjector(FailurePoint.BEFORE_FILE_ADOPTION)
-            writeJournal(journal, JSONObject(journal.readText()).put("phase", "ADOPTING_FILES"))
+            writeJournal(journal, readJournal(journal).put("phase", "ADOPTING_FILES"))
             touchedPaths.forEachIndexed { index, relative ->
                 val current = File(fileRoot, relative)
-                writeJournal(journal, JSONObject(journal.readText()).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
+                writeJournal(journal, readJournal(journal).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
                 if (current.isFile) { val saved = File(rollback, relative); saved.parentFile?.mkdirs(); check(current.renameTo(saved) || runCatching { current.copyTo(saved, overwrite = true); current.delete() }.isSuccess) }
                 val candidate = File(stage, relative)
                 if (candidate.isFile) { val target = File(fileRoot, relative); target.parentFile?.mkdirs(); check(candidate.renameTo(target) || runCatching { candidate.copyTo(target, overwrite = true); candidate.delete() }.getOrDefault(false)) }
-                val state = JSONObject(journal.readText()); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
+                val state = readJournal(journal); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
                 if (index == 0) failureInjector(FailurePoint.DURING_FILE_ADOPTION)
             }
-            writeJournal(journal, JSONObject(journal.readText()).put("phase", "DB_COMMITTING"))
+            writeJournal(journal, readJournal(journal).put("phase", "DB_COMMITTING"))
             failureInjector(FailurePoint.BEFORE_DB_TRANSACTION)
             database.withTransaction { replaceDatabase(databaseObject); failureInjector(FailurePoint.DURING_DB_TRANSACTION) }
             failureInjector(FailurePoint.AFTER_DB_COMMIT)
-            writeJournal(journal, JSONObject(journal.readText()).put("phase", "COMMITTED"))
+            writeJournal(journal, readJournal(journal).put("phase", "COMMITTED"))
             failureInjector(FailurePoint.AFTER_COMMITTED_JOURNAL)
             rollback.deleteRecursively(); stage.deleteRecursively()
             restrictedQuarantine?.let { check(it.deleteRecursively()) { "Damaged recovery quarantine could not be removed" } }
-            journal.delete()
+            check(journal.delete())
             if (inspection.missingFiles.isEmpty()) recoveryRoot.delete()
         } catch (failure: Exception) {
             recoverInterrupted(database, fileRoot)
             throw failure
         } finally {
-            if (!journal.exists()) stage.deleteRecursively()
+            if (!journalPresent(journal)) stage.deleteRecursively()
         }
     }
 
@@ -265,10 +265,25 @@ class RecoveryPackage(
                 val rows = declaration.getJSONArray("rows")
                 require(rows.length() <= MAX_ROWS_PER_TABLE) { "Backup contains too many records" }
                 val expectedColumns = RecoverySourceShapes.columns(sourceVersion, declaration.getString("name"))
+                val columnTypes = mutableMapOf<String, String>()
+                database.openHelper.readableDatabase.query("PRAGMA table_info(\"${declaration.getString("name")}\")").use { cursor ->
+                    while (cursor.moveToNext()) columnTypes[cursor.getString(1)] = cursor.getString(2).uppercase()
+                }
+                require(expectedColumns.all { it in columnTypes }) { "Recovery source has unknown column types" }
                 for (rowIndex in 0 until rows.length()) {
                     val row = rows.getJSONObject(rowIndex)
                     require(row.keys().asSequence().toSet() == expectedColumns) {
                         "Recovery source row has missing or conflicting columns in ${declaration.getString("name")}"
+                    }
+                    expectedColumns.forEach { column ->
+                        val value = row.get(column)
+                        if (value != JSONObject.NULL) require(when (columnTypes.getValue(column)) {
+                            "TEXT" -> value is String
+                            "INTEGER" -> value is Number && value.toString().toLongOrNull() != null
+                            "REAL" -> value is Number
+                            "BLOB" -> value is JSONObject && value.has("blob") && value.get("blob") is String
+                            else -> false
+                        }) { "Recovery source column has an invalid type: ${declaration.getString("name")}.$column" }
                     }
                 }
             }
@@ -338,7 +353,88 @@ class RecoveryPackage(
         }) { "Trusted ServiceLoop IDs are invalid" }
         val visitIds = ids("working_visits")
         require(tableRows(root, "dispatch_visit_bindings").all { it.getString("localVisitId") in visitIds }) { "Dispatch binding points to a missing Visit" }
+        validateImportedGraph(root)
         validateAgainstRoomSchema(root)
+    }
+
+    private fun validateImportedGraph(root: JSONObject) {
+        val receipts = tableRows(root, "work_result_receipts").associateBy {
+            Triple(it.getString("exporterId"), it.getString("resultId"), it.getString("sourceFinalRevisionId"))
+        }
+        val remote = tableRows(root, "remote_final_results")
+        val remoteById = remote.associateBy { it.getString("id") }
+        require(remote.all { row ->
+            val receipt = receipts[Triple(row.getString("technicianId"), row.getString("resultId"), row.getString("sourceFinalRevisionId"))]
+            receipt != null && receipt.getString("dispatchVisitId") == row.getString("dispatchVisitId") &&
+                receipt.getString("dispatchItemId") == row.getString("dispatchItemId")
+        }) { "A received result disagrees with its author-scoped receipt" }
+        require(tableRows(root, "remote_result_photos").all { row ->
+            val owner = remoteById[row.getString("remoteFinalResultId")]
+            owner != null && owner.getString("dispatchItemId") == row.getString("dispatchItemId")
+        }) { "A received photo has the wrong result owner" }
+        remote.forEach { row ->
+            if (!row.isNull("sourcePayloadJson")) {
+                val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "WORK_RESULT")
+                require(source.getString("resultId") == row.getString("resultId") &&
+                    source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
+                    source.getString("technicianId") == row.getString("technicianId") &&
+                    source.getString("dispatchVisitId") == row.getString("dispatchVisitId") &&
+                    source.getString("dispatchItemId") == row.getString("dispatchItemId") &&
+                    source.getString("serviceDate") == row.getString("serviceDate") &&
+                    source.getString("outcome") == row.getString("outcome")) { "Received result source snapshot disagrees with its indexed facts" }
+            }
+        }
+        val transfers = tableRows(root, "transferred_final_results")
+        val transfersById = transfers.associateBy { it.getString("id") }
+        transfers.forEach { row ->
+            if (!row.isNull("sourcePayloadJson")) {
+                val source = FinalSourceSnapshot.record(row.getString("sourcePayloadJson"), "PERFORMED_WORK")
+                require(source.getString("originWorkspaceId") == row.getString("originWorkspaceId") &&
+                    source.getString("sourceVisitId") == row.getString("sourceVisitId") &&
+                    source.getString("sourceWorkItemId") == row.getString("sourceWorkItemId") &&
+                    source.getString("sourceFinalRevisionId") == row.getString("sourceFinalRevisionId") &&
+                    source.getString("serviceDate") == row.getString("serviceDate") &&
+                    source.getString("outcome") == row.getString("outcome")) { "Transferred source snapshot disagrees with its indexed facts" }
+            }
+        }
+        require(tableRows(root, "transferred_evidence").all { evidence ->
+            if (evidence.isNull("transferredFinalResultId")) true else {
+                val owner = transfersById[evidence.getString("transferredFinalResultId")]
+                owner != null && owner.getString("originWorkspaceId") == evidence.getString("originWorkspaceId") &&
+                    owner.getString("sourceVisitId") == evidence.getString("sourceVisitId") &&
+                    owner.getString("sourceWorkItemId") == evidence.getString("sourceWorkItemId") &&
+                    !evidence.isNull("sourceFinalRevisionId") &&
+                    owner.getString("sourceFinalRevisionId") == evidence.getString("sourceFinalRevisionId")
+            }
+        }) { "Transferred evidence is linked to another source execution" }
+        val aggregateIds = tableRows(root, "aggregate_reports").map { it.getString("id") }.toSet()
+        val localRevisions = tableRows(root, "final_record_revisions").associateBy { it.getString("id") }
+        val localRecords = tableRows(root, "final_records").associateBy { it.getString("id") }
+        val localWork = tableRows(root, "final_work_items").associateBy { it.getString("id") }
+        require(tableRows(root, "aggregate_report_sources").all { source ->
+            if (source.getString("aggregateReportId") !in aggregateIds) false else when (source.getString("sourceKind")) {
+                "LOCAL" -> {
+                    val revisionId = source.getString("sourceFinalRevisionId")
+                    val revision = localRevisions[revisionId]
+                    val sourceId = source.getString("sourceEntityId")
+                    revision != null && localRecords[revision.getString("recordId")]?.getString("visitId") == source.getString("visitId") &&
+                        (sourceId == revisionId || (sourceId.startsWith("$revisionId:") &&
+                            localWork[sourceId.removePrefix("$revisionId:")]?.getString("revisionId") == revisionId))
+                }
+                "REMOTE" -> remoteById[source.getString("sourceEntityId")]?.let { remoteRow ->
+                    remoteRow.getString("sourceFinalRevisionId") == source.getString("sourceFinalRevisionId") &&
+                        !remoteRow.isNull("localVisitId") && remoteRow.getString("localVisitId") == source.getString("visitId")
+                } ?: false
+                "TRANSFERRED" -> transfersById[source.getString("sourceEntityId")]?.let { transferRow ->
+                    transferRow.getString("sourceFinalRevisionId") == source.getString("sourceFinalRevisionId") &&
+                        source.getString("visitId") == "TRANSFERRED:${transferRow.getString("originWorkspaceId")}:${transferRow.getString("sourceVisitId")}"
+                } ?: false
+                else -> false
+            }
+        }) { "An aggregate source does not resolve to its exact final revision" }
+        require(tableRows(root, "aggregate_report_renditions").all { it.getString("aggregateReportId") in aggregateIds }) {
+            "An aggregate rendition has no report owner"
+        }
     }
 
     private fun expectedTables(version: Int): List<String> = TABLE_ORDER.filter { table ->
@@ -613,7 +709,7 @@ class RecoveryPackage(
         val recoveryRoot = File(fileRoot, "recovery")
         val rollback = File(recoveryRoot, "restore-rollback")
         val journal = journalFile(recoveryRoot)
-        check(!journal.exists()) { "Another recovery operation is unfinished" }
+        check(!journalPresent(journal)) { "Another recovery operation is unfinished" }
         rollback.deleteRecursively()
         require(rollback.mkdirs()) { "Unable to create erase rollback staging" }
         val paths = ownedBusinessFiles().sorted()
@@ -622,16 +718,16 @@ class RecoveryPackage(
             writeJournal(journal, JSONObject().put("operation", "ERASE").put("adoptionToken", token).put("paths", JSONArray(paths)).put("candidatePaths", JSONArray()).put("adoptedPaths", JSONArray()).put("phase", "ADOPTING_FILES"))
             paths.forEachIndexed { index, relative ->
                 val current = File(fileRoot, relative)
-                writeJournal(journal, JSONObject(journal.readText()).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
+                writeJournal(journal, readJournal(journal).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
                 if (current.isFile) {
                     val saved = File(rollback, relative)
                     saved.parentFile?.mkdirs()
                     check(current.renameTo(saved) || runCatching { current.copyTo(saved, overwrite = true); current.delete() }.getOrDefault(false))
                 }
-                val state = JSONObject(journal.readText()); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
+                val state = readJournal(journal); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
                 if (index == 0) failureInjector(FailurePoint.DURING_ERASE_FILES)
             }
-            writeJournal(journal, JSONObject(journal.readText()).put("phase", "DB_COMMITTING"))
+            writeJournal(journal, readJournal(journal).put("phase", "DB_COMMITTING"))
             database.withTransaction {
                 val db = database.openHelper.writableDatabase
                 val preserved = setOf("recovery_metadata", "technician_identity", "trusted_service_loop_ids")
@@ -652,10 +748,10 @@ class RecoveryPackage(
                 failureInjector(FailurePoint.DURING_DB_TRANSACTION)
             }
             failureInjector(FailurePoint.AFTER_DB_COMMIT)
-            writeJournal(journal, JSONObject(journal.readText()).put("phase", "COMMITTED"))
+            writeJournal(journal, readJournal(journal).put("phase", "COMMITTED"))
             failureInjector(FailurePoint.AFTER_COMMITTED_JOURNAL)
             check(rollback.deleteRecursively()) { "Private file cleanup did not complete" }
-            journal.delete()
+            android.util.AtomicFile(journal).delete()
             ownedRootDirectories().forEach { deleteEmptyTree(it) }
             recoveryRoot.delete()
         } catch (failure: Exception) {
@@ -711,11 +807,19 @@ class RecoveryPackage(
     private fun setAdoptionToken(root: JSONObject, token: String) { recoveryMetadata(root).put("adoptionToken", token).put("restrictedRecoveryState", 0) }
     private fun ownedRootDirectories() = OwnedBusinessFiles.roots.map { File(fileRoot, it) }
     private fun ownedBusinessFiles(): List<String> = OwnedBusinessFiles.existing(fileRoot)
+    private fun journalPresent(file: File) = file.isFile || File(file.path + ".pending").isFile
+    private fun readJournal(file: File) = JSONObject(file.readText(Charsets.UTF_8))
     private fun writeJournal(file: File, value: JSONObject) {
-        file.parentFile?.mkdirs()
-        val temporary = File(file.parentFile, "$JOURNAL.tmp")
-        temporary.writeText(value.toString())
-        check(temporary.renameTo(file) || runCatching { temporary.copyTo(file, overwrite = true); temporary.delete() }.getOrDefault(false))
+        check(file.parentFile?.isDirectory == true || file.parentFile?.mkdirs() == true)
+        val pending = File(file.path + ".pending")
+        check(!pending.exists()) { "An earlier journal write needs recovery" }
+        java.io.FileOutputStream(pending).use { output ->
+            output.write(value.toString().toByteArray(Charsets.UTF_8))
+            output.flush()
+            output.fd.sync()
+        }
+        java.nio.file.Files.move(pending.toPath(), file.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }
     private fun journalFile(root: File) = File(root, JOURNAL)
     private fun deleteEmptyTree(root: File) { if (root.isDirectory) root.walkBottomUp().filter { it.isDirectory && it.list()?.isEmpty() == true }.forEach { it.delete() } }
@@ -792,8 +896,8 @@ class RecoveryPackage(
         /** Resolves a crashed cross-filesystem adoption using the token committed with the database transaction. */
         fun recoverInterrupted(database: ServiceLoopDatabase, fileRoot: File): RecoveryResult {
             val recoveryRoot = File(fileRoot, "recovery"); val journal = File(recoveryRoot, JOURNAL)
-            if (!journal.isFile) return RecoveryResult.NONE
-            val state = runCatching { JSONObject(journal.readText()) }.getOrElse {
+            if (!journal.isFile && !File(journal.path + ".pending").isFile) return RecoveryResult.NONE
+            val state = runCatching { JSONObject(journal.readText(Charsets.UTF_8)) }.getOrElse {
                 markRestricted(database)
                 return RecoveryResult.RESTRICTED
             }
@@ -837,6 +941,7 @@ class RecoveryPackage(
                 check(File(recoveryRoot, "restore-rollback").deleteRecursively())
                 if (candidateWon && quarantine != null) check(quarantine.deleteRecursively())
                 check(journal.delete())
+                check(!journal.isFile && !File(journal.path + ".pending").isFile)
                 recoveryRoot.delete()
                 if (!candidateWon && quarantine != null) {
                     check(!recoveryRoot.exists() && quarantine.renameTo(recoveryRoot))

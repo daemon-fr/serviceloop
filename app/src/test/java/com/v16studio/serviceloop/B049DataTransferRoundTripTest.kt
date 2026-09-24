@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
 import java.util.zip.ZipInputStream
 
 @RunWith(RobolectricTestRunner::class)
@@ -87,6 +88,43 @@ class B049DataTransferRoundTripTest {
         assertEquals("CU-SHARED", customer.reference)
         assertEquals("ST-SHARED", site.reference)
         assertEquals("EQ-SHARED", equipment.reference)
+    }
+
+    @Test fun nativeExportChoosesOneStableAliasPairAndRejectsAmbiguousOrigins() = runBlocking {
+        val dao = a.serviceLoopDao()
+        dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+        val original = TechnicianIdCodec.generate()
+        val other = TechnicianIdCodec.generate()
+        dao.insertDataTransferBinding(DataTransferBindingEntity("alias-z", original, "CUSTOMER", "source-z", "c", "f", 1))
+        dao.insertDataTransferBinding(DataTransferBindingEntity("alias-a", original, "CUSTOMER", "source-a", "c", "f", 2))
+        fun customer(bytes: ByteArray): JSONObject = JSONObject(DataTransferCodec.decode(bytes).families
+            .getValue(DataTransferFamily.REGISTER).toString(Charsets.UTF_8)).getJSONArray("customers").getJSONObject(0)
+        val exported = customer(DataTransferExportService(a, rootA).export(ExportCenterSelection(families = setOf(ExportFamily.CUSTOMERS))))
+        assertEquals(original, exported.getString("originWorkspaceId"))
+        assertEquals("source-a", exported.getString("sourceEntityId"))
+        dao.insertDataTransferBinding(DataTransferBindingEntity("alias-other", other, "CUSTOMER", "source-q", "c", "f", 3))
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { DataTransferExportService(a, rootA).export(ExportCenterSelection(families = setOf(ExportFamily.CUSTOMERS))) }
+        }
+        Unit
+    }
+
+    @Test fun contactNoteDateSelectionUsesBusinessZoneAtMidnight() = runBlocking {
+        val dao = a.serviceLoopDao()
+        dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+        dao.insertContactNote(ContactNoteEntity("note", "CN-1", "c", null, null, "PHONE",
+            Instant.parse("2026-09-24T01:00:00Z").toEpochMilli(), "Reached", null, 1))
+        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Business", technicianName = "Technician",
+            phone = null, email = null, postalAddress = null, zoneId = "Pacific/Honolulu", modifiedAtEpochMillis = 1))
+        suspend fun count(date: String): Int {
+            val scope = ServiceLoopScopeFilter(customerId = "c", fromDate = LocalDate.parse(date), toDate = LocalDate.parse(date))
+            val bytes = DataTransferExportService(a, rootA).export(ExportCenterSelection(scope,
+                families = setOf(ExportFamily.CONTACT_NOTES)))
+            return JSONObject(DataTransferCodec.decode(bytes).families.getValue(DataTransferFamily.CONTACT_NOTES)
+                .toString(Charsets.UTF_8)).getJSONArray("records").length()
+        }
+        assertEquals(1, count("2026-09-23"))
+        assertEquals(0, count("2026-09-24"))
     }
 
     @Test fun customerPlanTemplateAndOrderedContactsMergeIdempotentlyAndDetectDrift() = runBlocking {
@@ -188,6 +226,11 @@ class B049DataTransferRoundTripTest {
         assertEquals(0, dao.allVisits().size)
         assertEquals(2, dao.allTransferredFinalResults().size)
         assertTrue(dao.allTransferredFinalResults().all { it.sourcePayloadJson != null })
+        assertTrue(dao.allTransferredFinalResults().all {
+            val snapshot = JSONObject(it.sourcePayloadJson!!)
+            snapshot.getInt("snapshotFormatVersion") == 1 && snapshot.getString("sourcePurpose") == "PERFORMED_WORK" &&
+                snapshot.getInt("sourcePayloadVersion") == 2 && snapshot.getJSONObject("record").getString("sourceWorkItemId") == it.sourceWorkItemId
+        })
         assertEquals(2, dao.allTransferredEvidence().size)
         assertTrue(dao.allTransferredEvidence().all { File(rootB, it.relativePath).isFile })
         val visit = AggregateReportService(b, RoomServiceLoopRepository(b, ClockBusinessTime(java.time.Clock.fixed(Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneId.of("UTC")), java.time.ZoneId.of("UTC")), attachmentRoot = rootB), rootB)
@@ -275,6 +318,44 @@ class B049DataTransferRoundTripTest {
             assertEquals(2, standaloneB.serviceLoopDao().allTransferredEvidence().size)
             assertTrue(standaloneB.serviceLoopDao().allTransferredEvidence().all { File(rootStandalone, it.relativePath).isFile })
         } finally { standaloneB.close(); rootStandalone.deleteRecursively() }
+    }
+
+    @Test fun evidenceAndPerformedHistoryAssociateInEitherArrivalOrder() = runBlocking {
+        val sourceId = seedCompletedWorkWithEvidence()
+        val history = DataTransferExportService(a, rootA).export(ExportCenterSelection(
+            families = setOf(ExportFamily.SERVICE_RECORDS)))
+        val evidence = DataTransferExportService(a, rootA).export(ExportCenterSelection(
+            families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)))
+        suspend fun importInto(db: ServiceLoopDatabase, root: File, bytes: ByteArray) {
+            val service = DataTransferImportService(db, root)
+            service.import(service.preview(bytes))
+        }
+        trustedReceiver(sourceId)
+        importInto(b, rootB, evidence)
+        assertEquals(2, b.serviceLoopDao().allTransferredEvidence().size)
+        assertTrue(b.serviceLoopDao().allTransferredEvidence().all { it.transferredFinalResultId == null })
+        importInto(b, rootB, history)
+        val linked = b.serviceLoopDao().allTransferredEvidence()
+        assertEquals(2, b.serviceLoopDao().allTransferredFinalResults().size)
+        assertTrue(linked.all { it.transferredFinalResultId != null })
+        importInto(b, rootB, evidence)
+        importInto(b, rootB, history)
+        assertEquals(linked, b.serviceLoopDao().allTransferredEvidence())
+
+        val reverse = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        val reverseRoot = File(context.cacheDir, "b049-reverse-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            ServiceLoopDatabase.configureStage4Tracking(reverse.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureReminderDefaults(reverse.openHelper.writableDatabase)
+            ServiceLoopPeerTrustStore(reverse).add(sourceId, "Original workspace")
+            importInto(reverse, reverseRoot, history)
+            assertEquals(0, reverse.serviceLoopDao().allTransferredEvidence().size)
+            importInto(reverse, reverseRoot, evidence)
+            val reverseEvidence = reverse.serviceLoopDao().allTransferredEvidence()
+            assertEquals(2, reverseEvidence.size)
+            assertTrue(reverseEvidence.all { it.transferredFinalResultId != null })
+            assertEquals(linked.map { it.sourceIdentityKey }.toSet(), reverseEvidence.map { it.sourceIdentityKey }.toSet())
+        } finally { reverse.close(); reverseRoot.deleteRecursively() }
     }
 
     @Test fun nativePlanCannotAttachToStagedOneTimeCustomer() = runBlocking {

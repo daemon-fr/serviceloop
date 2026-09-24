@@ -1,6 +1,8 @@
 package com.v16studio.serviceloop
 
 import androidx.room.Room
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.v16studio.serviceloop.data.*
@@ -18,6 +20,72 @@ import java.time.ZoneId
 
 @RunWith(AndroidJUnit4::class)
 class B049WorkResultEndToEndInstrumentedTest {
+    @Test fun exporterProducedV2PhotoResultIsAppliedAndReplayedWithoutEffects() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
+        val receiver = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()
+        val sourceRoot = File(context.cacheDir, "v2-source-${System.nanoTime()}").apply { mkdirs() }
+        val receiverRoot = File(context.cacheDir, "v2-receiver-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            ServiceLoopDatabase.configureStage4Tracking(source.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase)
+            val technician = TechnicianIdCodec.generate()
+            val issuer = TechnicianIdCodec.generate()
+            val material = "a".repeat(64)
+            val a = source.serviceLoopDao()
+            a.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+            a.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", null, null)))
+            a.insertVisits(listOf(WorkingVisitEntity("source-v", "V-1", "c", "s", "2026-09-23", "Customer", "Site", null, "FINALIZED", 1)))
+            a.insertWorkItems(listOf(WorkItemEntity("source-w", "source-v", null, null, null, null, null, null, "Inspect site", null, null, null, null, false, null, null, subjectType = "SITE")))
+            a.insertFinalRecord(FinalRecordEntity("source-record", "source-v", "source-r", 2))
+            a.insertFinalRevision(FinalRecordRevisionEntity("source-r", "source-record", 1, "V-1", "2026-09-23", 2,
+                "Customer", "Site", null, "Business", "Field technician", null, null, null, "Europe/Bucharest", null))
+            a.insertFinalWorkItems(listOf(FinalWorkItemEntity("source-final", "source-r", 1, "source-w", null, null, null, null,
+                null, null, null, "Inspect site", null, null, "PERFORMED", "Inspected", null, false, null, null,
+                null, null, null, null, subjectType = "SITE")))
+            val bitmap = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
+            val original = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it); bitmap.recycle() }.toByteArray()
+            File(sourceRoot, "attachments").mkdirs()
+            File(sourceRoot, "attachments/original.jpg").writeBytes(original)
+            a.insertFinalPhotos(listOf(FinalPhotoEntryEntity("source-final-photo", "source-final", 1, "photo-1",
+                "attachments/original.jpg", WorkResultPackageCodec.sha256(original), original.size.toLong(), "image/jpeg", "Public photo")))
+            val sourceDispatch = source.dispatchDao()
+            sourceDispatch.insertTechnicianIdentity(TechnicianIdentityEntity("primary", technician, "Field technician", 1, 1))
+            sourceDispatch.insertFinalDispatchVisit(FinalDispatchVisitEntity("source-r", "dispatch-v", 1, null, "Coordinator",
+                technician, "Field technician", material, issuer))
+            sourceDispatch.insertFinalDispatchItems(listOf(FinalDispatchItemEntity("source-final", "dispatch-1", "[]", "ASSIGNED", "TECHNICIAN")))
+            ServiceLoopPeerTrustStore(source).add(issuer, "Coordinator")
+            val bytes = WorkResultExchangeService(source, sourceRoot).exportFinalRevisions(listOf("source-r"))
+            assertEquals("source-w", WorkResultPackageCodec.decode(bytes).results.single().value.getString("sourceWorkItemId"))
+            val b = receiver.serviceLoopDao()
+            b.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+            b.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", null, null)))
+            b.insertVisits(listOf(WorkingVisitEntity("v", "V-1", "c", "s", "2026-09-23", "Customer", "Site", null, "BOOKED", 1)))
+            b.insertWorkItems(listOf(WorkItemEntity("w", "v", null, null, null, null, null, null, "Inspect site", null,
+                null, null, null, false, null, null, subjectType = "SITE")))
+            val receiverDispatch = receiver.dispatchDao()
+            receiverDispatch.insertTechnicianIdentity(TechnicianIdentityEntity("primary", issuer, "Coordinator", 1, 1))
+            receiverDispatch.insertTrustedServiceLoopId(TrustedServiceLoopIdEntity(technician, "Field technician", 1, 1))
+            receiverDispatch.insertTechnician(DispatchTechnicianEntity(technician, "Field technician", 1, 1))
+            receiverDispatch.insertOutboxVisit(DispatchOutboxVisitEntity("dispatch-v", null, "s", "2026-09-23", null,
+                "Europe/Bucharest", null, 1, material, 1, 1, 1, localVisitId = "v"))
+            receiverDispatch.insertOutboxItem(DispatchOutboxItemEntity("dispatch-1", "dispatch-v", 1, null, "Inspect site", null,
+                null, subjectType = "SITE", localWorkItemId = "w"))
+            receiverDispatch.insertOutboxItemAssignees(listOf(DispatchOutboxItemAssigneeEntity("dispatch-1", technician)))
+            val importer = WorkResultImportService(receiver, receiverRoot)
+            val applied = importer.import(bytes).items.single()
+            assertEquals("APPLIED", applied.committedStatus)
+            assertEquals("COMPLETED", b.visit("v")!!.state)
+            val accepted = b.appliedRemoteFinalResultsIncludingVoids().single()
+            assertEquals("source-v", FinalSourceSnapshot.record(accepted.sourcePayloadJson!!, "WORK_RESULT").getString("sourceVisitId"))
+            val photo = b.remoteResultPhotos(accepted.id).single()
+            val retained = File(receiverRoot, photo.relativePath)
+            assertEquals(photo.sha256, WorkResultPackageCodec.sha256(retained.readBytes()))
+            assertEquals("ALREADY_RECEIVED", importer.import(bytes).items.single().status)
+            assertEquals(1, b.appliedWorkResultReceipts("dispatch-v").size)
+        } finally { source.close(); receiver.close(); sourceRoot.deleteRecursively(); receiverRoot.deleteRecursively() }
+    }
+
     @Test fun partialThenCompleteResultsConvergeOnOneCanonicalReportableVisit() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).build()

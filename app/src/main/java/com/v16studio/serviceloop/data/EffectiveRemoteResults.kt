@@ -15,7 +15,7 @@ internal fun effectiveRemoteResults(
     return if (includePreviousRevisions) ordered.filter { it.voidedAtEpochMillis == null }
     else ordered.groupBy { it.technicianId to it.resultId }.values.map { lineage ->
         val numbered = lineage.mapNotNull { row ->
-            row.sourcePayloadJson?.let { raw -> runCatching { JSONObject(raw).getJSONObject("result").getInt("sourceFinalRevisionNumber") }.getOrNull() }
+            row.sourcePayloadJson?.let { raw -> runCatching { FinalSourceSnapshot.record(raw, "WORK_RESULT").getInt("sourceFinalRevisionNumber") }.getOrNull() }
                 ?.let { number -> row to number }
         }
         if (numbered.size != lineage.size) lineage.last() else {
@@ -43,6 +43,7 @@ internal data class EffectiveImportedFinalResult(
     val identityNamespace: String = "SOURCE",
     val voided: Boolean = false,
     val sourceRevisionNumber: Int? = null,
+    val chronologyProvenance: String = "UNKNOWN",
 )
 
 internal fun effectiveImportedFinalResults(
@@ -52,7 +53,7 @@ internal fun effectiveImportedFinalResults(
 ): List<EffectiveImportedFinalResult> {
     val remote = remoteResults.map { row ->
         val provenance = runCatching { JSONObject(row.provenanceJson) }.getOrDefault(JSONObject())
-        val source = row.sourcePayloadJson?.let { runCatching { JSONObject(it).optJSONObject("result") }.getOrNull() }
+        val source = row.sourcePayloadJson?.let { runCatching { FinalSourceSnapshot.record(it, "WORK_RESULT") }.getOrNull() }
         EffectiveImportedFinalResult(
             ImportedFinalKind.WORK_RESULT, row.resultId, row.technicianId,
             source?.optString("sourceVisitId")?.takeIf(String::isNotBlank) ?: row.dispatchVisitId,
@@ -62,6 +63,7 @@ internal fun effectiveImportedFinalResults(
             identityNamespace = if (source?.optString("sourceVisitId").isNullOrBlank() || source?.optString("sourceWorkItemId").isNullOrBlank()) "WORK_RESULT_LEGACY" else "SOURCE",
             voided = row.voidedAtEpochMillis != null,
             sourceRevisionNumber = source?.optInt("sourceFinalRevisionNumber")?.takeIf { it > 0 },
+            chronologyProvenance = provenance.optString("chronologyProvenance", "UNKNOWN"),
         )
     }
     val transfer = transferredResults.map { row ->
@@ -71,7 +73,8 @@ internal fun effectiveImportedFinalResults(
             row.sourceFinalRevisionId, runCatching { Instant.parse(provenance.optString("recordedAt")).toEpochMilli() }.getOrDefault(row.importedAtEpochMillis), transferred = row,
             identityNamespace = if (row.sourcePayloadJson == null) "TRANSFER_LEGACY" else "SOURCE",
             voided = row.voidedAtEpochMillis != null,
-            sourceRevisionNumber = row.sourcePayloadJson?.let { raw -> runCatching { JSONObject(raw).getInt("sourceFinalRevisionNumber") }.getOrNull() },
+            sourceRevisionNumber = row.sourcePayloadJson?.let { raw -> runCatching { FinalSourceSnapshot.record(raw, "PERFORMED_WORK").getInt("sourceFinalRevisionNumber") }.getOrNull() },
+            chronologyProvenance = if (row.sourcePayloadJson == null) "UNKNOWN" else "SOURCE_RECORDED_AT",
         )
     }
     val ordered = (remote + transfer).sortedWith(compareBy<EffectiveImportedFinalResult> { it.chronologyEpochMillis }
@@ -93,7 +96,16 @@ internal fun effectiveImportedFinalResults(
         require(numbered.groupBy { it.sourceRevisionNumber }.values.all { revisionsAtNumber ->
             revisionsAtNumber.map { it.sourceFinalRevisionId }.distinct().size == 1
         }) { "Conflicting source revision numbers in imported work" }
-        if (numbered.isEmpty()) lineage.last() else numbered.maxWith(compareBy<EffectiveImportedFinalResult> { it.sourceRevisionNumber!! }
+        if (numbered.isEmpty()) {
+            val known = lineage.filter { it.chronologyProvenance == "SOURCE_RECORDED_AT" }
+            val newestKnown = known.maxWithOrNull(compareBy<EffectiveImportedFinalResult> { it.chronologyEpochMillis }.thenBy { it.sourceFinalRevisionId })
+            val uncertain = lineage.filter { it.chronologyProvenance != "SOURCE_RECORDED_AT" }
+            require(lineage.size == 1 || (newestKnown != null && uncertain.all { it.chronologyEpochMillis < newestKnown.chronologyEpochMillis } &&
+                known.count { it.chronologyEpochMillis == newestKnown.chronologyEpochMillis } == 1)) {
+                "Legacy final revisions have ambiguous chronology; review source history before reporting"
+            }
+            newestKnown ?: lineage.single()
+        } else numbered.maxWith(compareBy<EffectiveImportedFinalResult> { it.sourceRevisionNumber!! }
             .thenBy { it.chronologyEpochMillis }.thenBy { it.sourceFinalRevisionId })
     }.filterNot { it.voided }
 }
@@ -102,7 +114,8 @@ internal fun effectiveImportedFinalResults(
 private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
     val remote = value.remote
     val transferred = value.transferred
-    val result = remote?.sourcePayloadJson?.let { JSONObject(it).getJSONObject("result") }
+    val result = remote?.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "WORK_RESULT") }
+    val native = transferred?.sourcePayloadJson?.let { FinalSourceSnapshot.record(it, "PERFORMED_WORK") }
     val facts = JSONObject()
     if (result != null) {
         val work = result.getJSONObject("workSnapshot")
@@ -118,6 +131,18 @@ private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
             .put("parts", result.getJSONArray("parts"))
             .put("recurrence", result.getJSONObject("recurrence"))
             .put("serviceDate", result.getString("serviceDate"))
+            .put("visitReference", result.getString("visitReference"))
+            .put("recordedAt", result.getString("recordedAt"))
+            .put("sourceWorkItemPosition", result.getInt("sourceWorkItemPosition"))
+            .put("sourceFinalRevisionNumber", result.getInt("sourceFinalRevisionNumber"))
+            .put("supersedes", result.opt("supersedesSourceFinalRevisionId") ?: JSONObject.NULL)
+            .put("technicianId", result.getString("technicianId"))
+            .put("technicianName", result.getString("technicianName"))
+            .put("technicianDesignation", result.opt("technicianDesignation") ?: JSONObject.NULL)
+            .put("publicNote", result.opt("publicNote") ?: JSONObject.NULL)
+            .put("followUpCaptureState", result.getString("followUpCaptureState"))
+            .put("followUps", publicFollowUpFacts(result.getJSONArray("followUps")))
+            .put("sourcePhotos", publicPhotoFacts(result.getJSONArray("sourcePhotos")))
     } else if (transferred != null) {
         facts.put("customer", JSONObject(transferred.customerSnapshotJson))
             .put("site", JSONObject(transferred.siteSnapshotJson))
@@ -131,6 +156,34 @@ private fun importedPublicFacts(value: EffectiveImportedFinalResult): String {
             .put("parts", org.json.JSONArray(transferred.partsJson))
             .put("recurrence", JSONObject(transferred.recurrenceJson))
             .put("serviceDate", transferred.serviceDate)
+            .put("visitReference", transferred.visitReference)
+            .put("recordedAt", native?.getString("recordedAt"))
+            .put("sourceWorkItemPosition", native?.getInt("sourceWorkItemPosition"))
+            .put("sourceFinalRevisionNumber", native?.getInt("sourceFinalRevisionNumber"))
+            .put("supersedes", native?.opt("supersedesSourceFinalRevisionId") ?: JSONObject.NULL)
+            .put("technicianId", transferred.technicianId)
+            .put("technicianName", transferred.technicianName)
+            .put("technicianDesignation", transferred.technicianDesignation ?: JSONObject.NULL)
+            .put("publicNote", native?.opt("publicNote") ?: JSONObject.NULL)
+            .put("followUpCaptureState", native?.getString("followUpCaptureState"))
+            .put("followUps", native?.getJSONArray("followUps")?.let(::publicFollowUpFacts))
+            .put("sourcePhotos", native?.getJSONArray("sourcePhotos")?.let(::publicPhotoFacts))
     }
     return SourceCanonicalJson.text(facts)
+}
+
+private fun publicFollowUpFacts(records: org.json.JSONArray) = org.json.JSONArray().also { public ->
+    for (index in 0 until records.length()) {
+        val row = records.getJSONObject(index)
+        public.put(JSONObject().put("sourceId", row.opt("sourceId") ?: JSONObject.NULL)
+            .put("type", row.getString("type")).put("title", row.getString("title"))
+            .put("dueDate", row.opt("dueDate") ?: JSONObject.NULL).put("state", row.getString("state")))
+    }
+}
+
+private fun publicPhotoFacts(records: org.json.JSONArray) = org.json.JSONArray().also { public ->
+    for (index in 0 until records.length()) {
+        val row = records.getJSONObject(index)
+        if (row.getString("visibility") == "PUBLIC") public.put(row)
+    }
 }
