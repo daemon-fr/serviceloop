@@ -110,6 +110,46 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
 
     suspend fun reconcile() = BusinessFileCoordinator.mutex.withLock { reconcileInterruptedRenditions() }
 
+    /** A failed rendition keeps its report identity and frozen source/branding selection. */
+    suspend fun retry(reportId: String): AggregateReportResult = BusinessFileCoordinator.mutex.withLock {
+        reconcileInterruptedRenditions()
+        val captured = database.withTransaction {
+            val report = dao.aggregateReport(reportId) ?: error("Aggregate report is missing")
+            require(report.status == "ACTIVE") { "Aggregate report is no longer active" }
+            val sourceRows = dao.aggregateSources(reportId)
+            require(sourceRows.isNotEmpty()) { "Aggregate report has no frozen sources" }
+            val models = sourceRows.groupBy { it.visitId }.map { (visitId, rows) ->
+                val sources = rows.map { row ->
+                    require(row.sourceFinalRevisionId.isNotBlank()) { "Frozen source revision is missing" }
+                    ReportableFinalSource("${row.sourceKind}:${row.sourceEntityId}", row.sourceKind, row.sourceFinalRevisionId,
+                        visitId, report.customerId, "", null, "", "", "", row.sourceEntityId)
+                }
+                val parts = sources.map { source -> modelForSource(source) }
+                val lines = parts.flatMap { model -> model.lines.map { it.copy(documentingTechnicianName = model.technicianName) } }
+                    .mapIndexed { index, line -> line.copy(position = index + 1) }
+                parts.first().copy(recordId = visitId, lines = lines, technicianName = parts.map { it.technicianName }.distinct().joinToString(", "))
+            }
+            val branding = JSONObject(report.businessSnapshotJson)
+            Triple(report, branding, models)
+        }
+        val (report, branding, models) = captured
+        val name = branding.getString("name")
+        val contact = branding.getString("contact")
+        val frozen = models.map { it.copy(businessName = name, businessContact = contact) }
+        verifyPhotos(frozen)
+        val renditionId = UUID.randomUUID().toString()
+        val relative = "aggregate-reports/$reportId/$renditionId.pdf"
+        val generating = AggregateReportRenditionEntity(renditionId, reportId, relative, null, null, null,
+            System.currentTimeMillis(), "GENERATING", null)
+        database.withTransaction {
+            require(dao.aggregateReport(reportId) == report && dao.aggregateSources(reportId).isNotEmpty()) {
+                "Frozen report changed while preparing retry"
+            }
+            dao.insertAggregateRendition(generating)
+        }
+        renderRendition(generating, frozen, name, contact)
+    }
+
     private suspend fun generateLocked(scope: ServiceLoopScopeFilter, selectedKeys: List<String>): AggregateReportResult {
         val customerId = requireNotNull(scope.customerId) { "Choose one Customer" }
         require(selectedKeys.isNotEmpty() && selectedKeys.size <= 100 && selectedKeys.distinct().size == selectedKeys.size) { "Choose up to 100 Visits" }
@@ -120,18 +160,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
           val customer = dao.customer(customerId) ?: error("Customer is missing")
           val business = dao.businessProfile() ?: error("Business identity is missing")
           val models = selected.map { visitSource ->
-            val parts = visitSource.sources.map { source -> when (source.kind) {
-                "LOCAL" -> {
-                    val record = dao.finalRecordForVisit(source.visitId) ?: error("Final record is missing")
-                    val model = repository.finalRecordRevision(record.id, source.revisionId)?.public ?: error("Final revision is missing")
-                    model.copy(lines = model.lines.filter { it.position == source.sourcePosition }.also {
-                        require(it.size == 1) { "Selected final work line changed" }
-                    })
-                }
-                "REMOTE" -> remoteModel(source)
-                "TRANSFERRED" -> transferredModel(source)
-                else -> error("Unknown final source")
-            } }
+            val parts = visitSource.sources.map { modelForSource(it) }
             val lines = parts.flatMap { model -> model.lines.map { it.copy(documentingTechnicianName = model.technicianName) } }
                 .mapIndexed { index, line -> line.copy(position = index + 1) }
             parts.first().copy(recordId = visitSource.visitId, visitReference = visitSource.visitReference,
@@ -145,10 +174,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
         }
         val selected = captured.selected
         val frozen = captured.models
-        frozen.flatMap { it.lines }.flatMap { it.photos }.forEach { photo ->
-            val file = ownedFile(photo.relativePath)
-            require(file.length() == photo.byteSize && WorkResultPackageCodec.sha256(file.readBytes()) == photo.sha256) { "A selected customer-report photo is missing or changed" }
-        }
+        verifyPhotos(frozen)
         val now = System.currentTimeMillis()
         val reportId = UUID.randomUUID().toString()
         val renditionId = UUID.randomUUID().toString()
@@ -167,6 +193,23 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             dao.insertAggregateSources(selected.flatMap { it.sources }.mapIndexed { index, source -> AggregateReportSourceEntity(reportId, index + 1, source.revisionId, source.kind, source.visitId, source.key.substringAfter(':')) })
             dao.insertAggregateRendition(generating)
         }
+        return renderRendition(generating, frozen, captured.businessName, captured.businessContact)
+    }
+
+    private fun verifyPhotos(models: List<PublicReportModel>) {
+        models.flatMap { it.lines }.flatMap { it.photos }.forEach { photo ->
+            val file = ownedFile(photo.relativePath)
+            require(file.length() == photo.byteSize && WorkResultPackageCodec.sha256(file.readBytes()) == photo.sha256) {
+                "A selected customer-report photo is missing or changed"
+            }
+        }
+    }
+
+    private suspend fun renderRendition(generating: AggregateReportRenditionEntity, frozen: List<PublicReportModel>,
+        businessName: String, businessContact: String): AggregateReportResult {
+        val reportId = generating.aggregateReportId
+        val renditionId = generating.id
+        val relative = requireNotNull(generating.relativePath)
         val target = File(filesRoot, relative)
         val temp = File(target.parentFile, "$renditionId.tmp")
         var tempOwned = false
@@ -175,7 +218,7 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
             require(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
             require(!target.exists() && !temp.exists()) { "Aggregate report destination is already in use" }
             tempOwned = true
-            val count = writer.render(frozen, captured.businessName, captured.businessContact, reportId, temp, filesRoot)
+            val count = writer.render(frozen, businessName, businessContact, reportId, temp, filesRoot)
             require(count > 0 && temp.length() > 0) { "Aggregate report is empty" }
             val rendered = temp.readBytes()
             val digest = WorkResultPackageCodec.sha256(rendered)
@@ -225,8 +268,26 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
         }
     }
 
+    private suspend fun modelForSource(source: ReportableFinalSource): PublicReportModel = when (source.kind) {
+        "LOCAL" -> {
+            val revision = dao.finalRevision(source.revisionId) ?: error("Frozen final revision is missing")
+            val model = repository.finalRecordRevision(revision.recordId, revision.id)?.public ?: error("Frozen final record is missing")
+            val workId = source.key.removePrefix("LOCAL:${revision.id}:")
+            require(workId != source.key) { "Frozen final work identity is invalid" }
+            val work = dao.finalWorkItems(revision.id).singleOrNull { it.id == workId } ?: error("Frozen final work is missing")
+            model.copy(lines = model.lines.filter { it.position == work.position }.also {
+                require(it.size == 1) { "Frozen final work line changed" }
+            })
+        }
+        "REMOTE" -> remoteModel(source)
+        "TRANSFERRED" -> transferredModel(source)
+        else -> error("Unknown final source")
+    }
+
     private suspend fun remoteModel(source: ReportableFinalSource): PublicReportModel {
-        val result = dao.reportableRemoteFinalResults().firstOrNull { "REMOTE:${it.id}" == source.key } ?: error("Remote result changed")
+        val result = dao.remoteFinalResultById(source.key.removePrefix("REMOTE:"))
+            ?.takeIf { it.sourceFinalRevisionId == source.revisionId && it.localVisitId == source.visitId }
+            ?: error("Frozen remote result is missing or changed")
         val customer = JSONObject(result.customerSnapshotJson)
         val site = JSONObject(result.siteSnapshotJson)
         val subject = JSONObject(result.subjectSnapshotJson)
@@ -246,7 +307,10 @@ class AggregateReportService(private val database: ServiceLoopDatabase, private 
     }
 
     private suspend fun transferredModel(source: ReportableFinalSource): PublicReportModel {
-        val result = dao.allTransferredFinalResults().firstOrNull { "TRANSFERRED:${it.id}" == source.key } ?: error("Transferred result changed")
+        val result = dao.transferredFinalResultById(source.key.removePrefix("TRANSFERRED:"))
+            ?.takeIf { it.sourceFinalRevisionId == source.revisionId &&
+                source.visitId == "TRANSFERRED:${it.originWorkspaceId}:${it.sourceVisitId}" }
+            ?: error("Frozen transferred result is missing or changed")
         val customer = JSONObject(result.customerSnapshotJson)
         val site = JSONObject(result.siteSnapshotJson)
         val subject = JSONObject(result.subjectSnapshotJson)

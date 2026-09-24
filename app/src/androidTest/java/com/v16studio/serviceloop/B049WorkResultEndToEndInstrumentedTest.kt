@@ -2,6 +2,11 @@ package com.v16studio.serviceloop
 
 import androidx.room.Room
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.os.SystemClock
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -43,20 +48,38 @@ class B049WorkResultEndToEndInstrumentedTest {
             a.insertFinalWorkItems(listOf(FinalWorkItemEntity("source-final", "source-r", 1, "source-w", null, null, null, null,
                 null, null, null, "Inspect site", null, null, "PERFORMED", "Inspected", null, false, null, null,
                 null, null, null, null, subjectType = "SITE")))
-            val bitmap = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
-            val original = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it); bitmap.recycle() }.toByteArray()
             File(sourceRoot, "attachments").mkdirs()
-            File(sourceRoot, "attachments/original.jpg").writeBytes(original)
-            a.insertFinalPhotos(listOf(FinalPhotoEntryEntity("source-final-photo", "source-final", 1, "photo-1",
-                "attachments/original.jpg", WorkResultPackageCodec.sha256(original), original.size.toLong(), "image/jpeg", "Public photo")))
+            val photos = (1..12).map { position ->
+                val bitmap = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                val paint = Paint()
+                repeat(240) { index ->
+                    paint.color = Color.rgb((index * 37 + position * 11) % 256, (index * 71 + position * 19) % 256,
+                        (index * 53 + position * 23) % 256)
+                    val x = (index * 137) % 1600
+                    val y = (index * 97) % 800
+                    canvas.drawRect(x.toFloat(), y.toFloat(), (x + 150).coerceAtMost(1600).toFloat(),
+                        (y + 90).coerceAtMost(800).toFloat(), paint)
+                }
+                val original = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it); bitmap.recycle() }.toByteArray()
+                val path = "attachments/original-$position.jpg"
+                File(sourceRoot, path).writeBytes(original)
+                FinalPhotoEntryEntity("source-final-photo-$position", "source-final", position, "photo-$position",
+                    path, WorkResultPackageCodec.sha256(original), original.size.toLong(), "image/jpeg", "Public photo $position")
+            }
+            a.insertFinalPhotos(photos)
             val sourceDispatch = source.dispatchDao()
             sourceDispatch.insertTechnicianIdentity(TechnicianIdentityEntity("primary", technician, "Field technician", 1, 1))
             sourceDispatch.insertFinalDispatchVisit(FinalDispatchVisitEntity("source-r", "dispatch-v", 1, null, "Coordinator",
                 technician, "Field technician", material, issuer))
             sourceDispatch.insertFinalDispatchItems(listOf(FinalDispatchItemEntity("source-final", "dispatch-1", "[]", "ASSIGNED", "TECHNICIAN")))
             ServiceLoopPeerTrustStore(source).add(issuer, "Coordinator")
+            val exportStart = SystemClock.elapsedRealtime()
             val bytes = WorkResultExchangeService(source, sourceRoot).exportFinalRevisions(listOf("source-r"))
-            assertEquals("source-w", WorkResultPackageCodec.decode(bytes).results.single().value.getString("sourceWorkItemId"))
+            val exportMillis = SystemClock.elapsedRealtime() - exportStart
+            val decoded = WorkResultPackageCodec.decode(bytes)
+            assertEquals("source-w", decoded.results.single().value.getString("sourceWorkItemId"))
+            assertEquals(12, decoded.results.single().photos.size)
             val b = receiver.serviceLoopDao()
             b.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
             b.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", null, null)))
@@ -73,14 +96,22 @@ class B049WorkResultEndToEndInstrumentedTest {
                 null, subjectType = "SITE", localWorkItemId = "w"))
             receiverDispatch.insertOutboxItemAssignees(listOf(DispatchOutboxItemAssigneeEntity("dispatch-1", technician)))
             val importer = WorkResultImportService(receiver, receiverRoot)
+            val importStart = SystemClock.elapsedRealtime()
             val applied = importer.import(bytes).items.single()
+            val importMillis = SystemClock.elapsedRealtime() - importStart
+            val runtime = Runtime.getRuntime()
+            Log.i("ServiceLoopWorkload", "12-photo result bytes=${bytes.size} exportMs=$exportMillis importMs=$importMillis " +
+                "usedHeapBytes=${runtime.totalMemory() - runtime.freeMemory()} maxHeapBytes=${runtime.maxMemory()}")
             assertEquals("APPLIED", applied.committedStatus)
             assertEquals("COMPLETED", b.visit("v")!!.state)
             val accepted = b.appliedRemoteFinalResultsIncludingVoids().single()
             assertEquals("source-v", FinalSourceSnapshot.record(accepted.sourcePayloadJson!!, "WORK_RESULT").getString("sourceVisitId"))
-            val photo = b.remoteResultPhotos(accepted.id).single()
-            val retained = File(receiverRoot, photo.relativePath)
-            assertEquals(photo.sha256, WorkResultPackageCodec.sha256(retained.readBytes()))
+            val acceptedPhotos = b.remoteResultPhotos(accepted.id)
+            assertEquals(12, acceptedPhotos.size)
+            acceptedPhotos.forEach { photo ->
+                val retained = File(receiverRoot, photo.relativePath)
+                assertEquals(photo.sha256, WorkResultPackageCodec.sha256(retained.readBytes()))
+            }
             assertEquals("ALREADY_RECEIVED", importer.import(bytes).items.single().status)
             assertEquals(1, b.appliedWorkResultReceipts("dispatch-v").size)
         } finally { source.close(); receiver.close(); sourceRoot.deleteRecursively(); receiverRoot.deleteRecursively() }
@@ -117,6 +148,12 @@ class B049WorkResultEndToEndInstrumentedTest {
             fun result(item: Int): WorkResultPackageCodec.Result {
                 val first = item == 1
                 val json = JSONObject().put("resultId", "result-$item").put("sourceFinalRevisionId", "revision-$item")
+                    .put("originWorkspaceId", exporter).put("sourceVisitId", "source-v")
+                    .put("sourceWorkItemId", "source-w$item").put("sourceWorkItemPosition", item)
+                    .put("sourceFinalRevisionNumber", 1).put("supersedesSourceFinalRevisionId", JSONObject.NULL)
+                    .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
+                    .put("followUpCaptureState", "UNAVAILABLE_LEGACY").put("sourcePhotos", JSONArray())
+                    .put("visitReference", "V-1").put("recordedAt", "2026-09-23T09:00:00Z")
                     .put("dispatchVisitId", "dispatch-v").put("dispatchItemId", "dispatch-$item")
                     .put("assignmentIssuerId", issuer).put("assignmentGeneration", 1).put("assignmentMaterialHash", material)
                     .put("technicianId", exporter).put("technicianName", "Field technician").put("serviceDate", "2026-09-23")
@@ -141,14 +178,42 @@ class B049WorkResultEndToEndInstrumentedTest {
             assertEquals(2, dao.obligationCount("plan"))
             importer.import(bytes(2))
             assertEquals(2, dao.obligationCount("plan"))
+            val corrected = result(1).let { it.copy(value = JSONObject(it.value.toString())
+                .put("sourceFinalRevisionId", "revision-1-corrected")
+                .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "revision-1")
+                .put("correctionReason", "Clarified field result")
+                .put("recordedAt", "2026-09-24T10:00:00Z")) }
+            val correctionBytes = WorkResultPackageCodec.encode(WorkResultPackageCodec.Package("package-corrected", exporter,
+                issuer, "2026-09-24T11:00:00Z", listOf(corrected)))
+            importer.import(correctionBytes)
+            assertEquals(2, dao.obligationCount("plan"))
             val time = object : BusinessTime {
                 override val zoneId = ZoneId.of("UTC")
                 override fun instant(): Instant = Instant.parse("2026-09-23T12:00:00Z")
             }
             val reports = AggregateReportService(database, RoomServiceLoopRepository(database, time, attachmentRoot = root), root)
+            dao.upsertBusinessProfile(BusinessProfileEntity("primary", "Coordinator Business", "Coordinator", null, null, null, "UTC", 1))
             val visits = reports.reportable(ServiceLoopScopeFilter(customerId = "c"))
             assertEquals(1, visits.size)
             assertEquals(2, visits.single().sources.size)
+            assertEquals(true, visits.single().sources.any { it.revisionId == "revision-1-corrected" })
+            val reportStart = SystemClock.elapsedRealtime()
+            val report = reports.generate(ServiceLoopScopeFilter(customerId = "c"), listOf(visits.single().key))
+            val reportMs = SystemClock.elapsedRealtime() - reportStart
+            val reportFile = File(root, report.relativePath)
+            assertEquals(true, reportFile.isFile && reportFile.length() > 0)
+            val selection = ExportCenterSelection(families = ExportPreset.WORK_PERFORMED.families)
+            val nativeStart = SystemClock.elapsedRealtime()
+            val native = DataTransferExportService(database, root).export(selection)
+            val nativeMs = SystemClock.elapsedRealtime() - nativeStart
+            val readableStart = SystemClock.elapsedRealtime()
+            val readable = ExportCenterService(database, root).export(selection)
+            val readableMs = SystemClock.elapsedRealtime() - readableStart
+            val runtime = Runtime.getRuntime()
+            Log.i("ServiceLoopWorkload", "corrected imported history reportMs=$reportMs nativeMs=$nativeMs readableMs=$readableMs " +
+                "pdfBytes=${reportFile.length()} nativeBytes=${native.size} readableBytes=${readable.size} " +
+                "usedHeapBytes=${runtime.totalMemory() - runtime.freeMemory()} maxHeapBytes=${runtime.maxMemory()}")
         } finally { database.close(); root.deleteRecursively() }
+        Unit
     }
 }

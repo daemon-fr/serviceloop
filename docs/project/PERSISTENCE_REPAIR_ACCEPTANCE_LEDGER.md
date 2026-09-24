@@ -1,0 +1,71 @@
+# Persistence repair acceptance ledger
+
+This ledger belongs to the isolated `codex/persistence-web-foundation-audit` repair branch. Its base is B049 UI pass `13552b917d62a453f1840a5a8121742c9b11e420`. It records implemented contracts, observed checks, and remaining acceptance work. It does not designate this branch as accepted or authorize a protected-branch merge.
+
+## Version and authority
+
+| Contract | Audited | Repair target |
+| --- | ---: | ---: |
+| Room | 19 | 20, additive 19→20 |
+| Recovery schema | 18 | 19, reads 9…19 |
+| Encrypted Recovery container / `.slsync` envelope / DATA_TRANSFER metadata | 2 | 2 |
+| WORK_RESULT / PERFORMED_WORK | 1 | emit 2, read supported 1 and 2 |
+| Other DATA_TRANSFER families | 1 | 1 |
+| FULL_WORKSPACE register / Dispatch | 3 / 5 | unchanged, existing legacy readers retained |
+| App version name/code | 1.3.0 / 5 | unchanged |
+
+The four Room 20 nullable columns are `final_work_items.followUpsSnapshotJson`, `remote_final_results.sourcePayloadJson`, `transferred_final_results.sourcePayloadJson`, and `retained_images.originalDeletionRequestedAtEpochMillis`. The receipt/result unique indexes now include author identity. Null source/follow-up snapshots mean unavailable legacy history; they are not an empty captured history. The `SourceCanonicalJsonTest` fixture pins UTF-8 canonical bytes and a SHA-256 digest for a v2 result record. Its fixed package ID/time are test inputs only; production package/section IDs remain random.
+
+## R/F/D crosswalk and evidence
+
+`IMPLEMENTED` describes code present; `TESTED` names an executed check; `DOMAIN-INSTRUMENTED` means production services in an isolated Android database; `UI-INSTRUMENTED`, `SYSTEM-HANDOFF`, and `HUMAN/RENDERED` are distinct claims. An unmentioned route is **NOT RUN**. The broad JVM/build/lint gate passed after the canonical derivative checkpoint; later Recovery/report changes have focused checks and still require a final broad gate.
+
+| Repair / source findings | Implemented contract and source fixture | Executed evidence | Remaining gate |
+| --- | --- | --- | --- |
+| R01 / D01 | Room 14→15 stages FK closure before parent rebuild; Room 20 generated schema and 19→20 migration. | `RoomPersistenceRepairMigrationTest` on canonical AVD: populated 14→15, 14→20, 18→20, 19→20 and empty 1…19→20, 5 tests PASS; row/hash and FK assertions. | Final schema/device gate after last edit. |
+| R02 / F01,D02 | Recovery 19 validates original source version/table shapes before normalization and accepts 9…19. | `RecoveryLegacyCompatibilityTest`: populated projected 9…19, duplicates, version/table/type/orphan negatives, restore exact values PASS; `RecoveryJournalInstrumentedTest` PASS on AVD. | More authenticated ZIP/path/rollback adversarial variants and actual historical package provenance review. |
+| R03 / F02,D03 | Six durable owned roots, final-only photos, correction evidence, coalesced descriptors, owned-path checks, missing rendition state. | `OwnedBusinessFilesTest`, `B049ImageCleanupTest`, `RecoveryLegacyCompatibilityTest` PASS; live AVD schema 19→20 retained 65 table counts/hash comparisons and two owned files. | Full six-root erase/replace/shared descriptor lifecycle and corrupt alternative matrix. |
+| R04 / D04, D12 device | Appearance-only OS extraction rules; reminder/Calendar/cleanup binding uses dataset plus adoption token. | `OsBackupRulesTest`, device-state JVM suites PASS; merged manifest inspected. | UI/system callback test after same-dataset replacement and rollback. |
+| R05 / F02,D05 | Shared business-file mutex, journal, atomic Recovery moves, staged flush/verify, pending original-deletion reconciliation. | Recovery fault tests and AVD journal PASS; image interrupted-deletion and shared-working-evidence tests PASS. | Concurrent cancellation/after-commit matrix across all writers and startup restricted diagnostics. |
+| R06 / F03,D07 part | Canonical final-photo derivative stored once, verified and reused by result/native export; original remains separate. | Actual Android 12-photo result package/export/import/replay PASS; `B049WorkResultExportTest` restart, cleanup, relay and complete Recovery PASS; EXIF rotate/flip test PASS. | Direct and successive native relay after Recovery with equal bytes under every privacy view. |
+| R07 / F04,F06,D07 part | Revision-time follow-ups, sourcePayload wrappers, v2 identity/chronology fields and code-point canonical JSON. | `B049WorkResultExportTest`, `B049DataTransferRoundTripTest`, `SourceCanonicalJsonTest` PASS. | Full shared source projection field table, privacy/redaction equivalence and all legacy representation recovery cases. |
+| R08 / F07,D06 | v2 semantic/outcome gates, author/issuer/trust/assignment checks and once-only recurrence. | `B049WorkResultImportTest` PASS; exporter-produced v2 Android result PASS. | Complete outcome/eligibility matrix with concurrent authors and captured obligation edits. |
+| R09 / F05,F10,D07,D08 | Complete photo descriptor replay comparison and committed status/recurrence feedback. | Result codec/import suites PASS; Android 12-photo applied then replayed without extra effect. | Mixed-status UI journey and cancellation after durable commit. |
+| R10 / D09 | Typed native entity keys, literal `null`, nullable refs, hierarchy/customer type and alias checks. | `B049DataTransferRoundTripTest`, `B049DataTransferCodecTest` PASS. | Final real-Room collision/null/alias matrix and exact user-facing conflict classification. |
+| R11 / F02,D10 | Graph/source validation and explicit original/derivative/rendition availability. | Recovery orphan and incomplete-repeat-backup tests PASS. | Every polymorphic owner, malformed projection/enumeration and failed-restore rollback case. |
+| R12 / F08,D10 part | Evidence/history reconciliation by source execution in both arrival orders. | `B049DataTransferRoundTripTest` arrival-order/retry tests PASS. | Recovery between stages plus conflicting pre-existing link check. |
+| R13 / F09,D11,D12 chronology | Stable source/line identity, author-scoped effective chronology, frozen aggregate retry, startup rendition reconciliation. | Same-label report line tests PASS; local and remote frozen retry PASS; AVD PDF one page HUMAN/RENDERED with two separately attributed same-label lines. | UI retry/system handoff and full void/ambiguous legacy/source-change matrix. |
+| R14 / D12 | CSV formula guard, business-zone contact-note bounds, bounded scale/device fixtures, portable canonical record files. | 250 branch/120 booking, corrected imported history report/export, 12-photo Android workloads PASS; focused scope/export tests PASS. | Complete store/journey/export snapshot matrix, metadata-only limits, final golden field/privacy notes and final broad gate. |
+
+## Representative Android observations
+
+All figures are one bounded run on the dynamically resolved `Pixel 10a ServiceLoop` AVD (Android instrumentation; isolated in-memory Room databases and cache roots), not a universal performance claim. The physical phone connected to adb was unused. Existing AVD app data was preserved across explicit `assembleDebug` then `adb -s <resolved-serial> install -r` installs; no uninstall, clear, reset or AVD replacement was done.
+
+| Fixture | Result |
+| --- | --- |
+| 12 JPEGs from actual Android `Bitmap` codec, v2 exporter→importer→replay | 664,007-byte package; export 456 ms; import 117 ms; used heap 5,182,144 bytes; max heap 201,326,592 bytes; 12 stored photo hashes verified. |
+| 250 Customer/Site/Equipment/Plan branches, 250 obligations, 120 Booked Visits/WorkItems | setup 593 ms; native Customer Data export 4,073 ms / 13,419 bytes; readable export 229 ms / 9,503 bytes; used heap 11,489,984 bytes. |
+| Two imported v2 work results, later correction, real aggregate PDF plus native/readable export | PDF 65 ms / 47,575 bytes; native 50 ms / 2,527 bytes; readable 24 ms / 1,860 bytes; used heap 8,114,880 bytes. |
+
+Large maximum-size archive/photo/row limits were not allocated on the preserved AVD. Metadata-only boundary tests remain required. The visual PDF QA file was generated by Android, pulled to ignored build output, rendered with Poppler, and inspected: both `Annual service` lines and Alice/Bob attribution are legible with no clipping. The generated AVD QA file was removed after inspection. This visual check is separate from actual UI and Android Sharesheet evidence.
+
+## Persistent store and portability matrix
+
+| Store / owner | Content and authority | Recovery / replacement behavior |
+| --- | --- | --- |
+| `serviceloop.db` / `ServiceLoopDatabase` | Room is authoritative for directory, plans/obligations, drafts, final revisions, receipts, transfer provenance, rendition descriptors, retained-image markers and Recovery metadata. | Encrypted Recovery and FULL_WORKSPACE have distinct replacement contracts; DATA_TRANSFER adds selected content only. |
+| `filesDir/{attachments,reports,retained-images,remote-results,aggregate-reports,transferred-evidence}` / `OwnedBusinessFiles` | Durable app-owned binary evidence and reports, referenced from Room. | Included by explicit descriptor inventory; complete backup fails on missing required bytes; erase/replacement touches only these roots. |
+| `filesDir/recovery` / `RecoveryPackage` | Stage, rollback and atomic journal; operational commit recovery, not business history. | Excluded from portable/OS backup. A damaged or ambiguous journal restricts recovery. |
+| `shared_prefs/serviceloop_appearance.xml` / `AppearancePreferences` | Harmless device appearance. | Only ordinary OS extraction allowlisted item; not business Recovery truth. |
+| `shared_prefs/dispatch_prototype.xml` / role/office settings | Local role capability choice and office report-recipient setting. | Device local; role is not imported server authorization. |
+| `shared_prefs/serviceloop_ui_filter_preferences.xml`, `serviceloop_search_ui_preferences.xml` | Local filter/search convenience. | Device local, not portable business truth. |
+| `shared_prefs/serviceloop_reminder_device.xml` / `ReminderCoordinator` | Notification request/suppression and device binding. | Device local; dataset/adoption mismatch turns stale requests off. |
+| `noBackupFilesDir/calendar-integration.json` / `CalendarDeviceStore` | Android provider event links and selected calendar. | Device local; replacement disables, existing external events are not erased. |
+| `shared_prefs/serviceloop_image_cleanup.xml` / `ImageCleanupService` | Destructive retention choice, binding and last run. | Device local; unmatched/replaced dataset defaults Never and requires reconfirmation. |
+| Android URI grants, picker/share/export cache | External destination permission or disposable handoff state; never domain authority. | Not portable; verified-backup metadata changes only after write/readback/inspection succeeds. |
+
+## Portable fixture and adapter notes
+
+`app/src/test/resources/contracts/work-result-v2-record.json` is synthetic and contains fixed valid technician IDs, separate source/assignment/revision namespaces, a corrected revision lineage, date-only service date versus UTC recorded instant, null public note, distinct work/revision private notes, string decimal quantity, a Unicode Customer name, and explicit known-empty photo/follow-up arrays. `work-result-v2-canonical.json` is the exact UTF-8 key-ordered byte sequence, without BOM or whitespace, and `work-result-v2.sha256` pins its digest. `SourceCanonicalJsonTest` verifies bytes, digest, accepted v2 codec round trip and a rejected `DONE` mutation. No private owner data is in these files.
+
+The fixture illustrates a semantic record, not a raw Room/API schema or a complete encrypted `.slsync` package. A future platform adapter must preserve source IDs, author namespace, revision lineage, nullable/omitted/redacted meaning, original photo facts separately from derivative transport bytes, and the published package versions. It must treat an old null `sourcePayloadJson` as unavailable and require exact source replay before claiming a lossless v2 relay. No web runtime, backend, account model or sync protocol is chosen here.

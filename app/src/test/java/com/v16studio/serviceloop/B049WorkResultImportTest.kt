@@ -445,6 +445,10 @@ class B049WorkResultImportTest {
         importer.import(packageBytes("corrected", corrected))
         assertEquals(setOf("revision-1-corrected", "revision-2"), service.reportable(scope).single().sources.map { it.revisionId }.toSet())
         assertEquals(setOf("revision-1", "revision-2"), dao.aggregateSources(generated.reportId).map { it.sourceFinalRevisionId }.toSet())
+        val retried = service.retry(generated.reportId)
+        assertEquals(generated.reportId, retried.reportId)
+        assertEquals(2, renderedLines)
+        assertEquals(setOf("revision-1", "revision-2"), dao.aggregateSources(generated.reportId).map { it.sourceFinalRevisionId }.toSet())
     }
 
     @Test fun aggregateGenerationReconcilesVerifiedAndIncompletePriorRenditions() = runTest {

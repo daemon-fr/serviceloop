@@ -124,6 +124,11 @@ class RecoveryLegacyCompatibilityTest {
         assertEquals("MISSING", restored.status)
         assertEquals(true, restored.failureReason.orEmpty().contains("missing"))
         assertEquals(false, File(root, path).exists())
+        assertThrows(IllegalStateException::class.java) { runBlocking { recovery.create(password, false) } }
+        val repeated = recovery.create(password, true)
+        assertEquals(false, repeated.complete)
+        assertEquals(listOf(path), repeated.missingFiles)
+        assertEquals("MISSING", dao.aggregateRenditions("aggregate").single().status)
     }
 
     @Test fun orphanAggregateSourceAndRemotePhotoRejectBeforeReplacement() = runBlocking {

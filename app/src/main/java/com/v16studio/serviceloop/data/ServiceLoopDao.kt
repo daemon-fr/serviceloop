@@ -325,6 +325,9 @@ interface ServiceLoopDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAggregateRendition(value: AggregateReportRenditionEntity)
     @Update suspend fun updateAggregateRendition(value: AggregateReportRenditionEntity)
     @Query("SELECT * FROM aggregate_reports WHERE id=:id") suspend fun aggregateReport(id: String): AggregateReportEntity?
+    @Query("SELECT * FROM aggregate_reports WHERE customerId=:customerId ORDER BY createdAtEpochMillis DESC") suspend fun aggregateReportsForCustomer(customerId: String): List<AggregateReportEntity>
+    @Query("SELECT * FROM remote_final_results WHERE id=:id") suspend fun remoteFinalResultById(id: String): RemoteFinalResultEntity?
+    @Query("SELECT * FROM transferred_final_results WHERE id=:id") suspend fun transferredFinalResultById(id: String): TransferredFinalResultEntity?
     @Query("SELECT * FROM aggregate_report_sources WHERE aggregateReportId=:id ORDER BY sourceOrder") suspend fun aggregateSources(id: String): List<AggregateReportSourceEntity>
     @Query("SELECT * FROM aggregate_report_renditions WHERE aggregateReportId=:id ORDER BY generatedAtEpochMillis DESC") suspend fun aggregateRenditions(id: String): List<AggregateReportRenditionEntity>
     @Query("SELECT * FROM aggregate_report_renditions WHERE status='GENERATING'") suspend fun generatingAggregateRenditions(): List<AggregateReportRenditionEntity>

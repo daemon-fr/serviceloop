@@ -51,6 +51,8 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ReportableVisitSource>>(emptyList()) }
+    var failedReportIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var refreshReports by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -62,6 +64,15 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
     LaunchedEffect(effective) {
         selected = emptySet()
         results = if (effective?.customerId == null) emptyList() else withContext(Dispatchers.IO) { service.reportable(effective) }
+    }
+    LaunchedEffect(filter.customerId, refreshReports) {
+        val customerId = filter.customerId
+        failedReportIds = if (customerId == null) emptyList() else withContext(Dispatchers.IO) {
+            val dao = container.database.serviceLoopDao()
+            dao.aggregateReportsForCustomer(customerId).filter { report ->
+                dao.aggregateRenditions(report.id).firstOrNull()?.status == "FAILED"
+            }.map { it.id }
+        }
     }
     LazyColumn(Modifier.padding(padding).testTag("aggregate-report-new"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -108,6 +119,20 @@ internal fun AggregateReportScreen(padding: PaddingValues) {
                 busy = false
             } }, Modifier.fillMaxWidth().testTag("aggregate-generate"), enabled = filter.customerId != null && validDates && selected.isNotEmpty() && !busy, busy = busy)
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        }
+        if (failedReportIds.isNotEmpty()) item { Text("Failed report renditions", style = MaterialTheme.typography.titleMedium) }
+        items(failedReportIds, key = { "retry-$it" }) { reportId ->
+            ServiceLoopPrimaryButton("Retry report ${reportId.take(8)}", { scope.launch {
+                busy = true; message = null
+                runCatching {
+                    val generated = withContext(Dispatchers.IO) { service.retry(reportId) }
+                    val bytes = withContext(Dispatchers.IO) { File(context.filesDir, generated.relativePath).readBytes() }
+                    shareFile(context, "aggregate-reports", "serviceloop-customer-report-${generated.reportId.take(8)}.pdf", "application/pdf", bytes,
+                        "Share customer report", "ServiceLoop aggregate customer report")
+                }.onSuccess { message = "Report retried and ready to share."; refreshReports++ }
+                    .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Report retry failed" }
+                busy = false
+            } }, Modifier.fillMaxWidth().testTag("aggregate-retry-$reportId"), enabled = !busy, busy = busy)
         }
     }
 }

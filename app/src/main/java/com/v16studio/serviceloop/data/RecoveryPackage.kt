@@ -15,6 +15,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.zip.ZipEntry
@@ -168,9 +170,12 @@ class RecoveryPackage(
             entries.filterKeys { it.startsWith("files/") }.forEach { (name, bytes) ->
                 val relative = name.removePrefix("files/")
                 require(safeRelativePath(relative))
-                val target = File(stage, relative).canonicalFile
-                require(target.path.startsWith(stage.canonicalPath + File.separator))
-                target.parentFile?.mkdirs(); target.writeBytes(bytes)
+                val target = OwnedBusinessFiles.resolve(stage, relative)
+                require(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
+                target.outputStream().use { stream -> stream.write(bytes); stream.fd.sync() }
+                require(target.length() == bytes.size.toLong() && sha256(target.readBytes()) == sha256(bytes)) {
+                    "Staged recovery file failed verification"
+                }
             }
             val initialJournal = JSONObject().put("operation", "RESTORE").put("adoptionToken", adoptionToken).put("paths", JSONArray(touchedPaths)).put("candidatePaths", JSONArray(paths)).put("adoptedPaths", JSONArray()).put("phase", "PREPARED")
             restrictedQuarantine?.let { initialJournal.put("restrictedQuarantine", it.name) }
@@ -178,11 +183,19 @@ class RecoveryPackage(
             failureInjector(FailurePoint.BEFORE_FILE_ADOPTION)
             writeJournal(journal, readJournal(journal).put("phase", "ADOPTING_FILES"))
             touchedPaths.forEachIndexed { index, relative ->
-                val current = File(fileRoot, relative)
+                val current = OwnedBusinessFiles.resolve(fileRoot, relative)
                 writeJournal(journal, readJournal(journal).put("processingPath", relative).put("processingOriginalExisted", current.isFile))
-                if (current.isFile) { val saved = File(rollback, relative); saved.parentFile?.mkdirs(); check(current.renameTo(saved) || runCatching { current.copyTo(saved, overwrite = true); current.delete() }.isSuccess) }
-                val candidate = File(stage, relative)
-                if (candidate.isFile) { val target = File(fileRoot, relative); target.parentFile?.mkdirs(); check(candidate.renameTo(target) || runCatching { candidate.copyTo(target, overwrite = true); candidate.delete() }.getOrDefault(false)) }
+                if (current.isFile) {
+                    val saved = OwnedBusinessFiles.resolve(rollback, relative)
+                    require(saved.parentFile!!.isDirectory || saved.parentFile!!.mkdirs())
+                    atomicMove(current, saved)
+                }
+                val candidate = OwnedBusinessFiles.resolve(stage, relative)
+                if (candidate.isFile) {
+                    val target = OwnedBusinessFiles.resolve(fileRoot, relative)
+                    require(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
+                    atomicMove(candidate, target)
+                }
                 val state = readJournal(journal); state.getJSONArray("adoptedPaths").put(relative); state.remove("processingPath"); state.remove("processingOriginalExisted"); writeJournal(journal, state)
                 if (index == 0) failureInjector(FailurePoint.DURING_FILE_ADOPTION)
             }
@@ -863,10 +876,15 @@ class RecoveryPackage(
     private fun put(zip: ZipOutputStream, name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
     private fun safeArchiveEntry(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') && path.split('/', '\\').none { it.isBlank() || it == "." || it == ".." }
     private fun safeRelativePath(path: String) = safeArchiveEntry(path.replace('\\', '/')) && !File(path).isAbsolute
+    private fun atomicMove(source: File, target: File) = Companion.atomicMove(source, target)
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     companion object {
         private const val JOURNAL = "restore-journal.json"
+        private fun atomicMove(source: File, target: File) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            check(!source.exists() && target.isFile) { "Atomic business-file adoption failed" }
+        }
         internal const val SCHEMA_VERSION = 19
         private val SUPPORTED_SCHEMA_VERSIONS = (9..SCHEMA_VERSION).toSet()
         const val FORMAT_VERSION = 2
@@ -910,6 +928,7 @@ class RecoveryPackage(
                 val candidatePaths = state.getJSONArray("candidatePaths").let { array -> List(array.length()) { array.getString(it) } }
                 require(paths.size == paths.toSet().size && paths.all(::safeRelativePathStatic))
                 require(candidatePaths.size == candidatePaths.toSet().size && candidatePaths.all(::safeRelativePathStatic) && candidatePaths.all { it in paths })
+                paths.forEach { OwnedBusinessFiles.resolve(fileRoot, it) }
                 Triple(token, paths, candidatePaths)
             }.getOrElse {
                 markRestricted(database)
@@ -928,12 +947,12 @@ class RecoveryPackage(
             val candidateWon = durableToken == token && state.optString("phase") in setOf("DB_COMMITTING", "COMMITTED")
             val resolved = runCatching {
                 if (!candidateWon) rollbackPaths.forEach { relative ->
-                    val target = File(fileRoot, relative)
-                    val saved = File(recoveryRoot, "restore-rollback/$relative")
+                    val target = OwnedBusinessFiles.resolve(fileRoot, relative)
+                    val saved = OwnedBusinessFiles.resolve(File(recoveryRoot, "restore-rollback"), relative)
                     if (saved.isFile) {
                         if (target.exists()) check(target.delete())
                         target.parentFile?.mkdirs()
-                        check(saved.renameTo(target) || runCatching { saved.copyTo(target, overwrite = true); saved.delete() }.getOrDefault(false))
+                        atomicMove(saved, target)
                     } else if (relative in adoptedPaths || (relative == processingPath && !state.optBoolean("processingOriginalExisted", false))) {
                         if (target.exists()) check(target.delete())
                     }
@@ -958,6 +977,8 @@ class RecoveryPackage(
             return if (candidateWon) RecoveryResult.CANDIDATE_COMMITTED else RecoveryResult.ORIGINAL_RESTORED
         }
         private fun markRestricted(database: ServiceLoopDatabase) = runCatching { database.openHelper.writableDatabase.execSQL("UPDATE recovery_metadata SET restrictedRecoveryState=1 WHERE id='primary'") }
-        private fun safeRelativePathStatic(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') && path.replace('\\', '/').split('/').none { it.isBlank() || it == "." || it == ".." } && !File(path).isAbsolute
+        private fun safeRelativePathStatic(path: String) = !path.startsWith('/') && !path.startsWith('\\') && !path.contains(':') &&
+            path.replace('\\', '/').split('/').none { it.isBlank() || it == "." || it == ".." } && !File(path).isAbsolute &&
+            path.substringBefore('/') in OwnedBusinessFiles.roots && '/' in path
     }
 }

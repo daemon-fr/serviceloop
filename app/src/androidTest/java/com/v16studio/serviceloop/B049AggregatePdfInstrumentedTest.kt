@@ -17,6 +17,24 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class B049AggregatePdfInstrumentedTest {
+    @Test fun rendersTwoIdenticalServiceLabelsAsDistinctAttributedLines() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = requireNotNull(context.getExternalFilesDir(null))
+        val target = File(directory, "aggregate-visual-qa-${System.currentTimeMillis()}.pdf")
+        val lines = listOf(
+            PublicWorkLine(1, "Pump", "EQ-1", null, "Annual service", "PERFORMED", "Inspected seals", null,
+                false, null, null, emptyList(), documentingTechnicianName = "Alice"),
+            PublicWorkLine(2, "Pump", "EQ-1", null, "Annual service", "PERFORMED", "Calibrated pressure", null,
+                false, null, null, emptyList(), documentingTechnicianName = "Bob"),
+        )
+        val model = PublicReportModel("visit-qa", "revision-qa", 1, "Visit-QA", "2026-09-23", 1,
+            "Coordinator Business", "Alice, Bob", "office@example.com", "Customer", "Site A", null, lines)
+        val pages = AggregateReportPdf.render(listOf(model), "Coordinator Business", "office@example.com",
+            "aggregate-visual-qa", target, directory)
+        assertTrue(target.isFile && target.length() > 0)
+        PdfRenderer(ParcelFileDescriptor.open(target, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer -> assertEquals(pages, renderer.pageCount) }
+    }
+
     @Test fun rendersNewMultiVisitPdfWithPhotoPage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val directory = File(context.cacheDir, "b049-aggregate-${System.nanoTime()}").apply { mkdirs() }

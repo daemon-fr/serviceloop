@@ -196,10 +196,12 @@ class B049ImageCleanupTest {
         cleanup.runNow(now)
         val time = object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }
         val repository = RoomServiceLoopRepository(database, time, attachmentRoot = context.filesDir)
+        var failNext = false
         val service = AggregateReportService(database, repository, context.filesDir, AggregateReportWriter { models, businessName, _, _, target, _ ->
             assertEquals("Coordinator Business", businessName)
             assertEquals("Technician", models.single().technicianName)
             assertTrue(models.single().lines.single().photos.single().relativePath.startsWith("retained-images/"))
+            if (failNext) error("Simulated PDF renderer interruption")
             target.writeBytes("%PDF-fixture".toByteArray())
             1
         })
@@ -221,8 +223,22 @@ class B049ImageCleanupTest {
         database.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId='revision-2' WHERE id='record'")
         assertEquals("revision-2", service.reportable(filter).single().revisionId)
         assertEquals("revision", database.serviceLoopDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
+        database.serviceLoopDao().upsertBusinessProfile(daoBusinessProfile().copy(businessName = "Changed live branding"))
+        failNext = true
+        assertTrue(runCatching { service.retry(generated.reportId) }.isFailure)
+        assertTrue(file.isFile)
+        failNext = false
+        val retried = service.retry(generated.reportId)
+        assertEquals(generated.reportId, retried.reportId)
+        assertTrue(retried.relativePath != generated.relativePath)
+        assertEquals(setOf("READY", "FAILED"), database.serviceLoopDao().aggregateRenditions(generated.reportId).map { it.status }.toSet())
+        assertEquals(3, database.serviceLoopDao().aggregateRenditions(generated.reportId).size)
+        assertEquals("revision", database.serviceLoopDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
+        File(context.filesDir, retried.relativePath).delete()
         file.delete()
     }
+
+    private suspend fun daoBusinessProfile() = requireNotNull(database.serviceLoopDao().businessProfile())
 
     @Test fun interruptedDeletionReconcilesWithNeverPolicyAndBeforeCompleteBackup() = runTest {
         val dao = database.serviceLoopDao()
