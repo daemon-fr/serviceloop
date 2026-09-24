@@ -35,6 +35,17 @@ class CalendarIntegrationTest {
     @Before fun setUp(){context=ApplicationProvider.getApplicationContext();store=CalendarDeviceStore(context);store.resetForDatasetReplacement();db=Room.inMemoryDatabaseBuilder(context,ServiceLoopDatabase::class.java).allowMainThreadQueries().build();gateway=FakeCalendarGateway();scope=CoroutineScope(SupervisorJob());coordinator=CalendarCoordinator(context,db,gateway,store,scope);runBlocking{seed("dataset-a")}}
     @After fun tearDown(){scope.cancel();db.close();store.resetForDatasetReplacement()}
 
+    @Test fun adoptionTokenChangeDropsDeviceCalendarLinksEvenForSameDataset() {
+        val first=CalendarDeviceState("dataset-a",enabled=true,selectedCalendarId=9,selectedCalendarLabel="Test",adoptionToken="first")
+        store.write(first)
+        assertTrue(CalendarDeviceStore(context).read("dataset-a","first").enabled)
+        val replacement=CalendarDeviceStore(context).read("dataset-a","second")
+        assertFalse(replacement.enabled)
+        assertNull(replacement.selectedCalendarId)
+        assertTrue(replacement.links.isEmpty())
+        assertEquals("second",CalendarDeviceStore(context).read("dataset-a","second").adoptionToken)
+    }
+
     @Test fun roomObservationUpdatesAndCancelsWithoutExplicitReconcile()=runBlocking{
         coordinator.setEnabled(true);coordinator.select(gateway.calendar);coordinator.start();coordinator.start()
         val eventId=gateway.events.keys.single();val visit=db.serviceLoopDao().visit("visit")!!

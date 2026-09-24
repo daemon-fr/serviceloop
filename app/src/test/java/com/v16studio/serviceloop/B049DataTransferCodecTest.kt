@@ -28,6 +28,7 @@ class B049DataTransferCodecTest {
         val bytes = DataTransferCodec.encode(exporter, families = mapOf(DataTransferFamily.REGISTER to register, DataTransferFamily.EVIDENCE to evidence), binaries = mapOf("binary-photo" to image), sourceWorkspaceId = exporter, options = DataTransferOptions(true, true, true))
         val decoded = DataTransferCodec.decode(bytes)
         assertEquals(setOf(DataTransferFamily.REGISTER, DataTransferFamily.EVIDENCE), decoded.families.keys)
+        assertEquals(mapOf(DataTransferFamily.REGISTER to 1, DataTransferFamily.EVIDENCE to 1), decoded.familyVersions)
         assertArrayEquals(register, decoded.families.getValue(DataTransferFamily.REGISTER))
         assertArrayEquals(image, decoded.binaries.getValue("binary-photo"))
         assertEquals(exporter, decoded.sourceWorkspaceId)

@@ -61,7 +61,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     require(dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId) == null) { "Result changed while importing" }
                     require(dispatch.outboxVisit(item.preview.dispatchVisitId) == item.outbox &&
                         dispatch.outboxItems(item.preview.dispatchVisitId).firstOrNull { it.dispatchItemId == item.preview.dispatchItemId } == item.item &&
-                        dispatch.outboxItemAssignees(item.preview.dispatchItemId).any { it.technicianId == preview.exporterId }) {
+                        authorMayDocument(item.preview.dispatchVisitId, item.preview.dispatchItemId, preview.exporterId)) {
                         "Assignment changed while importing; review the result again"
                     }
                     val json = item.result.value
@@ -184,12 +184,12 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             }
             val outbox = dispatch.outboxVisit(visitId) ?: error("Assigned Dispatch Visit is unknown")
             val item = dispatch.outboxItems(visitId).firstOrNull { it.dispatchItemId == itemId } ?: error("Assigned Dispatch work item is unknown")
-            require(dispatch.outboxItemAssignees(itemId).any { it.technicianId == packageValue.exporterId }) { "Result author is not assigned to this work item" }
+            require(authorMayDocument(visitId, itemId, packageValue.exporterId)) { "Result author is not assigned to this work item" }
             val resultId = json.getString("resultId")
             val revisionId = json.getString("sourceFinalRevisionId")
             val sourceRecordedAt = json.optString("recordedAt").takeIf { value -> runCatching { Instant.parse(value) }.isSuccess }
                 ?: packageValue.generatedAt
-            val content = canonicalJson(JSONObject(json.toString()).apply {
+            val fingerprintObject = JSONObject(json.toString()).apply {
                 remove("photos")
                 put("photos", JSONArray().apply {
                     result.photos.sortedWith(compareBy({ it.workItemId }, { it.sourcePhotoId })).forEach { photo ->
@@ -199,7 +199,9 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                             .put("caption", photo.caption).put("includeInReport", photo.includeInReport).put("visibility", photo.visibility))
                     }
                 })
-            }).toByteArray(Charsets.UTF_8)
+            }
+            val content = if (json.has("originWorkspaceId")) SourceCanonicalJson.bytes(fingerprintObject)
+                else canonicalJson(fingerprintObject).toByteArray(Charsets.UTF_8)
             val payloadHash = WorkResultPackageCodec.sha256(content)
             val prior = dao.workResultReceipt(packageValue.exporterId, resultId, revisionId)
             if (prior != null && prior.payloadSha256 != payloadHash) {
@@ -234,6 +236,12 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         val file = File(root, path).canonicalFile
         require(file.path.startsWith(root.path + File.separator)) { "Unsafe result photo path" }
         return file
+    }
+
+    private suspend fun authorMayDocument(visitId: String, itemId: String, authorId: String): Boolean {
+        val assignees = dispatch.outboxItemAssignees(itemId)
+        if (assignees.isNotEmpty()) return assignees.any { it.technicianId == authorId }
+        return DispatchPackageService(database).outboxParticipants(visitId).first.any { it.technicianId == authorId }
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(

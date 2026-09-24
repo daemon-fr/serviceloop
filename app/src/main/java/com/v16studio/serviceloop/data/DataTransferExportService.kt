@@ -288,23 +288,62 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
     private suspend fun partsJson(workItemId: String) = JSONArray().also { array -> dao.finalParts(workItemId).forEach { item -> array.put(JSONObject().put("position", item.position).put("description", item.description).put("quantity", item.quantity).put("unit", item.unit)) } }
 
     private suspend fun encodeRemoteResult(value: RemoteFinalResultEntity, includePrivate: Boolean, localWorkspaceId: String): JSONObject {
-        val provenance = JSONObject(value.provenanceJson)
+        val accepted = value.sourcePayloadJson?.let(::JSONObject)
+            ?: throw IllegalStateException("This legacy work result needs its original package re-imported before a lossless native relay")
+        require(accepted.getInt("comparisonVersion") == 2) { "This work result needs its original v2 package before native relay" }
+        val source = accepted.getJSONObject("result")
+        require(source.has("sourceVisitId") && source.has("sourceWorkItemId") && source.has("sourceFinalRevisionNumber")) {
+            "This legacy work result lacks source execution identity; re-import the original v2 package"
+        }
+        val sourceWork = source.getJSONObject("workSnapshot")
         val localVisit = value.localVisitId?.let { dao.visit(it) }
         val localWork = value.localWorkItemId?.let { dao.workItem(it) }
-        val work = JSONObject().put("originWorkspaceId", value.technicianId).put("sourceVisitId", value.dispatchVisitId)
-            .put("sourceWorkItemId", value.dispatchItemId).put("sourceFinalRevisionId", value.sourceFinalRevisionId).put("logicalResultId", value.resultId)
-            .put("technicianId", value.technicianId).put("technicianName", value.technicianName).put("technicianDesignation", value.technicianDesignation)
-            .put("visitReference", provenance.optString("visitReference", value.dispatchVisitId.take(12))).put("serviceDate", value.serviceDate)
-            .put("customerSnapshot", JSONObject(value.customerSnapshotJson)).put("siteSnapshot", JSONObject(value.siteSnapshotJson)).put("subjectSnapshot", JSONObject(value.subjectSnapshotJson))
-            .put("serviceName", provenance.optString("serviceName").ifBlank { "Assigned service" }).put("outcome", value.outcome).put("workPerformed", value.workPerformed)
-            .put("notPerformedReason", value.notPerformedReason).put("checklist", JSONArray(value.checklistJson)).put("findings", JSONArray(value.findingsJson))
-            .put("parts", JSONArray(value.partsJson)).put("recurrence", JSONObject(value.recurrenceJson)).put("recordedAt", provenance.optString("recordedAt"))
+        val work = JSONObject().put("originWorkspaceId", source.getString("originWorkspaceId")).put("sourceVisitId", source.getString("sourceVisitId"))
+            .put("sourceWorkItemId", source.getString("sourceWorkItemId")).put("sourceWorkItemPosition", source.getInt("sourceWorkItemPosition"))
+            .put("sourceFinalRevisionId", source.getString("sourceFinalRevisionId"))
+            .put("sourceFinalRevisionNumber", source.getInt("sourceFinalRevisionNumber"))
+            .put("supersedesSourceFinalRevisionId", source.opt("supersedesSourceFinalRevisionId") ?: JSONObject.NULL)
+            .put("logicalResultId", source.getString("resultId"))
+            .put("technicianId", source.getString("technicianId")).put("technicianName", source.getString("technicianName"))
+            .put("technicianDesignation", source.opt("technicianDesignation") ?: JSONObject.NULL)
+            .put("visitReference", source.getString("visitReference")).put("serviceDate", source.getString("serviceDate"))
+            .put("customerSnapshot", source.getJSONObject("customerSnapshot")).put("siteSnapshot", source.getJSONObject("siteSnapshot"))
+            .put("subjectSnapshot", source.getJSONObject("subjectSnapshot"))
+            .put("serviceName", sourceWork.getString("serviceName")).put("outcome", source.getString("outcome"))
+            .put("workPerformed", sourceWork.opt("publicWork") ?: JSONObject.NULL)
+            .put("notPerformedReason", sourceWork.opt("notPerformedReason") ?: JSONObject.NULL)
+            .put("checklist", source.getJSONArray("checklist")).put("findings", source.getJSONArray("findings"))
+            .put("parts", source.getJSONArray("parts")).put("recurrence", source.getJSONObject("recurrence"))
+            .put("recordedAt", source.getString("recordedAt"))
+            .put("followUpCaptureState", source.getString("followUpCaptureState"))
+            .put("followUps", if (includePrivate) source.getJSONArray("followUps") else publicFollowUps(source.getJSONArray("followUps")))
+            .put("sourcePhotos", if (includePrivate) source.getJSONArray("sourcePhotos") else publicSourcePhotos(source.getJSONArray("sourcePhotos")))
+            .put("assignmentProvenance", JSONObject().put("issuerId", source.getString("assignmentIssuerId"))
+                .put("dispatchVisitId", source.getString("dispatchVisitId")).put("dispatchItemId", source.getString("dispatchItemId"))
+                .put("generation", source.getInt("assignmentGeneration")).put("materialHash", source.getString("assignmentMaterialHash")))
             .put("localCustomerId", value.customerId).put("localSiteId", localVisit?.siteId).put("localEquipmentId", localWork?.equipmentId)
         value.customerId?.let { work.put("customer", entityRef("CUSTOMER", it, localWorkspaceId)) }
         localVisit?.let { work.put("site", entityRef("SITE", it.siteId, localWorkspaceId)) }
         localWork?.equipmentId?.let { work.put("equipment", entityRef("EQUIPMENT", it, localWorkspaceId)) }
-        if (includePrivate) work.put("internalNotes", value.internalNotes)
+        if (includePrivate) work.put("internalNotes", sourceWork.opt("privateInternalNote") ?: JSONObject.NULL)
+            .put("finalInternalNote", source.opt("privateInternalNote") ?: JSONObject.NULL)
         return work
+    }
+
+    private fun publicFollowUps(values: JSONArray) = JSONArray().also { public ->
+        for (index in 0 until values.length()) {
+            val row = values.getJSONObject(index)
+            public.put(JSONObject().put("sourceId", row.opt("sourceId") ?: JSONObject.NULL)
+                .put("type", row.getString("type")).put("title", row.getString("title"))
+                .put("dueDate", row.opt("dueDate") ?: JSONObject.NULL).put("state", row.getString("state")))
+        }
+    }
+
+    private fun publicSourcePhotos(values: JSONArray) = JSONArray().also { public ->
+        for (index in 0 until values.length()) {
+            val row = values.getJSONObject(index)
+            if (row.getString("visibility") == "PUBLIC") public.put(row)
+        }
     }
 
     private suspend fun encodeTransferredResult(value: TransferredFinalResultEntity, includePrivate: Boolean, localWorkspaceId: String): JSONObject {
@@ -388,17 +427,25 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         val binaries = linkedMapOf<String, ByteArray>()
         val photos = JSONArray()
         val already = mutableSetOf<String>()
-        fun add(row: JSONObject, bytes: ByteArray): Boolean {
+        fun add(row: JSONObject, bytes: ByteArray, retained: AppOwnedImageNormalizer.TransportDerivative? = null): Boolean {
             val sourceKey = transferEvidenceSourceKey(row.getString("originWorkspaceId"), row.getString("sourcePhotoId"), row.optNullable("sourceFinalRevisionId"))
             if (!selection.includePrivate && row.getString("visibility") != "PUBLIC") return false
             if (!already.add(sourceKey)) return false
-            val derivative = AppOwnedImageNormalizer.workResultDerivative(bytes)
+            val derivative = retained ?: AppOwnedImageNormalizer.workResultDerivative(bytes)
             val name = "binary-${sha256(sourceKey.toByteArray()).take(24)}"
             row.put("binaryName", name).put("sha256", sha256(derivative.bytes)).put("byteSize", derivative.bytes.size)
                 .put("width", derivative.width).put("height", derivative.height).put("mimeType", "image/jpeg")
             binaries[name] = derivative.bytes
             photos.put(row)
             return true
+        }
+        fun verifiedDerivative(bytes: ByteArray, width: Int, height: Int): AppOwnedImageNormalizer.TransportDerivative {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            require(bytes.size in 1..WorkResultPackageCodec.MAX_PHOTO_BYTES && bytes[0] == 0xFF.toByte() &&
+                bytes[1] == 0xD8.toByte() && width in 1..1200 && height in 1..1200 &&
+                bounds.outWidth == width && bounds.outHeight == height) { "Retained evidence derivative is invalid" }
+            return AppOwnedImageNormalizer.TransportDerivative(bytes, width, height)
         }
         // Finalized local photos are revision-frozen and remain distinct across corrections.
         dao.allFinalRecords().filterNot { it.voided }.forEach { record ->
@@ -407,10 +454,11 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             revisions.forEach { revision -> dao.finalWorkItems(revision.id).forEach workLoop@{ work ->
                 if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(revision.actualServiceDate))) return@workLoop
                 dao.finalPhotos(work.id).forEach { photo ->
-                val source = readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
-                    ?: dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
-                    ?: dao.retainedImage("FINAL_PHOTO", photo.id)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
-                    ?: dao.retainedImageByOriginalPath(photo.storedRelativePath)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
+                val retained = dao.retainedImage("ATTACHMENT", photo.sourceAttachmentId)
+                    ?: dao.retainedImage("FINAL_PHOTO", photo.id)
+                    ?: dao.retainedImageByOriginalPath(photo.storedRelativePath)
+                val source = if (retained != null) readImage(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
+                    ?: error("Retained final photo ${photo.id} is missing") else readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
                     ?: error("Final photo ${photo.id} has no verified owned copy")
                 val row = JSONObject().put("originWorkspaceId", origin).put("sourcePhotoId", photo.sourceAttachmentId).put("sourceVisitId", visit.id)
                     .put("sourceWorkItemId", work.sourceWorkItemId).put("sourceFinalRevisionId", revision.id).put("originCustomerSourceId", sourceOf("CUSTOMER", visit.customerId))
@@ -421,7 +469,8 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                     .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                     .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-                if (add(row, source)) addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
+                if (add(row, source, retained?.let { verifiedDerivative(source, it.derivativeWidth, it.derivativeHeight) }))
+                    addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
             } }
             }
         }
@@ -432,8 +481,9 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val work = dao.workItem(photo.ownerId) ?: return@forEach
             val visit = allVisits[work.visitId] ?: return@forEach
             if (!selection.scope.matches(visit.customerId, visit.siteId, work.equipmentId, LocalDate.parse(visit.actualServiceDate))) return@forEach
-            val source = readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
-                ?: dao.retainedImage("ATTACHMENT", photo.id)?.let { readImage(it.derivativeRelativePath, it.derivativeSha256, it.derivativeByteSize) }
+            val retained = dao.retainedImage("ATTACHMENT", photo.id)
+            val source = if (retained != null) readImage(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
+                ?: error("Retained photo ${photo.id} is missing") else readImage(photo.storedRelativePath, photo.sha256, photo.byteSize)
                 ?: error("Photo ${photo.id} has no verified owned copy")
             val row = JSONObject().put("originWorkspaceId", origin).put("sourcePhotoId", photo.id).put("sourceVisitId", visit.id)
                 .put("sourceWorkItemId", work.id).put("sourceFinalRevisionId", JSONObject.NULL).put("originCustomerSourceId", sourceOf("CUSTOMER", visit.customerId))
@@ -444,7 +494,8 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                 .put("customer", entityRef("CUSTOMER",visit.customerId,origin)).put("site",entityRef("SITE",visit.siteId,origin))
                 .put("equipment",work.equipmentId?.let{entityRef("EQUIPMENT",it,origin)})
                 .put("caption", photo.caption).put("visibility", photo.visibility).put("includedInCustomerReport", photo.includedInCustomerReport)
-            if (add(row, source)) addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
+            if (add(row, source, retained?.let { verifiedDerivative(source, it.derivativeWidth, it.derivativeHeight) }))
+                addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, work.equipmentId)
         }
         // Imported WORK_RESULT evidence already owns bounded JPEG derivatives.
         dao.reportableRemoteFinalResults().forEach { result -> dao.remoteResultPhotos(result.id).forEach { photo ->
@@ -452,20 +503,25 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val equipmentId = result.localWorkItemId?.let { dao.workItem(it)?.equipmentId }
             if (!selection.scope.matches(result.customerId.orEmpty(), siteId, equipmentId, LocalDate.parse(result.serviceDate))) return@forEach
             val bytes = readImage(photo.relativePath, photo.sha256, photo.byteSize) ?: error("Imported result photo is missing")
-            val provenance = JSONObject(result.provenanceJson)
-            val row = JSONObject().put("originWorkspaceId", result.technicianId).put("sourcePhotoId", photo.sourcePhotoId).put("sourceVisitId", result.dispatchVisitId)
-                .put("sourceWorkItemId", result.dispatchItemId).put("sourceFinalRevisionId", result.sourceFinalRevisionId)
-                .put("originCustomerSourceId", JSONObject(result.customerSnapshotJson).optString("reference"))
-                .put("originCustomerWorkspaceId", result.technicianId).put("originSiteSourceId", JSONObject(result.siteSnapshotJson).optString("reference"))
-                .put("originSiteWorkspaceId", result.technicianId).put("originEquipmentSourceId", JSONObject(result.subjectSnapshotJson).optString("equipmentReference"))
-                .put("originEquipmentWorkspaceId", result.technicianId).put("serviceDate", result.serviceDate).put("visitReference", provenance.optString("visitReference", result.dispatchVisitId.take(12)))
-                .put("serviceName", provenance.optString("serviceName", "Assigned service")).put("caption", photo.caption).put("visibility", photo.visibility)
+            val source = result.sourcePayloadJson?.let(::JSONObject)?.optJSONObject("result")
+            require(source != null && source.has("sourceVisitId") && source.has("sourceWorkItemId")) {
+                "This legacy result photo lacks source execution identity; re-import the original v2 package before native relay"
+            }
+            val row = JSONObject().put("originWorkspaceId", source.getString("originWorkspaceId")).put("sourcePhotoId", photo.sourcePhotoId)
+                .put("sourceVisitId", source.getString("sourceVisitId")).put("sourceWorkItemId", source.getString("sourceWorkItemId"))
+                .put("sourceFinalRevisionId", source.getString("sourceFinalRevisionId"))
+                .put("originCustomerSourceId", JSONObject.NULL).put("originCustomerWorkspaceId", JSONObject.NULL)
+                .put("originSiteSourceId", JSONObject.NULL).put("originSiteWorkspaceId", JSONObject.NULL)
+                .put("originEquipmentSourceId", JSONObject.NULL).put("originEquipmentWorkspaceId", JSONObject.NULL)
+                .put("serviceDate", source.getString("serviceDate")).put("visitReference", source.getString("visitReference"))
+                .put("serviceName", source.getJSONObject("workSnapshot").getString("serviceName"))
+                .put("caption", photo.caption).put("visibility", photo.visibility)
                 .put("includedInCustomerReport", photo.includeInReport).put("localCustomerId", result.customerId).put("localSiteId", result.localVisitId?.let { dao.visit(it)?.siteId })
                 .put("localEquipmentId", result.localWorkItemId?.let { dao.workItem(it)?.equipmentId })
             result.customerId?.let{row.put("customer",entityRef("CUSTOMER",it,origin))}
             result.localVisitId?.let{dao.visit(it)?.let{visit->row.put("site",entityRef("SITE",visit.siteId,origin))}}
             result.localWorkItemId?.let{dao.workItem(it)?.equipmentId?.let{equipmentId->row.put("equipment",entityRef("EQUIPMENT",equipmentId,origin))}}
-            if (add(row, bytes)) addDirectoryDependencies(dependencies, result.customerId, siteId, equipmentId)
+            if (add(row, bytes, verifiedDerivative(bytes, photo.width, photo.height))) addDirectoryDependencies(dependencies, result.customerId, siteId, equipmentId)
         } }
         dao.allTransferredEvidence().forEach { photo ->
             if (!selection.scope.matches(photo.localCustomerId.orEmpty(), photo.localSiteId, photo.localEquipmentId, LocalDate.parse(photo.serviceDate))) return@forEach
@@ -484,7 +540,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             photo.localCustomerId?.let{row.put("customer",entityRef("CUSTOMER",it,origin))}
             photo.localSiteId?.let{row.put("site",entityRef("SITE",it,origin))}
             photo.localEquipmentId?.let{row.put("equipment",entityRef("EQUIPMENT",it,origin))}
-            if (add(row, bytes)) addDirectoryDependencies(dependencies, photo.localCustomerId, photo.localSiteId, photo.localEquipmentId)
+            if (add(row, bytes, verifiedDerivative(bytes, photo.width, photo.height))) addDirectoryDependencies(dependencies, photo.localCustomerId, photo.localSiteId, photo.localEquipmentId)
         }
         return EncodedEvidence(JSONObject().put("version", 1).put("photos", photos).toString().toByteArray(Charsets.UTF_8), binaries)
     }

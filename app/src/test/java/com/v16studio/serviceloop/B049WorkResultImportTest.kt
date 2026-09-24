@@ -142,6 +142,62 @@ class B049WorkResultImportTest {
         assertEquals(true, replay.reason?.startsWith("CONFLICT"))
     }
 
+    @Test fun everyoneAssignmentAcceptsASelectedTeamParticipant() = runTest {
+        val dispatch = database.dispatchDao()
+        dispatch.insertTeam(DispatchTeamEntity("team", "Service team", 1, 1))
+        dispatch.insertTeamMember(DispatchTeamMemberEntity("team", exporter, false))
+        dispatch.insertOutboxVisitTeams(listOf(DispatchOutboxVisitTeamEntity("dispatch-v", "team")))
+        dispatch.clearOutboxItemAssignees("dispatch-2")
+        val imported = WorkResultImportService(database, root).import(packageBytes("everyone", result(2))).items.single()
+        assertEquals("APPLIED", imported.status)
+        assertEquals("APPLIED", database.serviceLoopDao().workResultReceipt(exporter, "result-2", "revision-2")!!.status)
+    }
+
+    @Test fun legacyResultWithoutSourceWorkIdentityCannotClaimLosslessNativeRelay() = runTest {
+        WorkResultImportService(database, root).import(packageBytes("legacy-v1", result(2)))
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                DataTransferExportService(database, root).export(ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS)))
+            }
+        }
+        assertEquals(true, failure.message.orEmpty().contains("source execution identity"))
+        assertEquals(1, database.serviceLoopDao().reportableRemoteFinalResults().size)
+    }
+
+    @Test fun v2SourceExecutionIdentityIsStoredWithoutCoordinatorSubstitution() = runTest {
+        val source = result(2).let { original ->
+            original.copy(value = JSONObject(original.value.toString())
+                .put("originWorkspaceId", exporter).put("sourceVisitId", "technician-visit")
+                .put("sourceWorkItemId", "technician-work").put("sourceWorkItemPosition", 3)
+                .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "earlier-revision")
+                .put("visitReference", "TECH-1").put("recordedAt", "2026-09-23T09:00:00Z")
+                .put("privateInternalNote", "private revision")
+                .put("workSnapshot", JSONObject(original.value.getJSONObject("workSnapshot").toString()).put("privateInternalNote", "private work"))
+                .put("followUps", JSONArray().put(JSONObject().put("sourceId", "follow-1").put("type", "CALL")
+                    .put("title", "Check access").put("dueDate", "2026-10-01").put("state", "OPEN")
+                    .put("privatePlanningNote", "private follow-up")))
+                .put("followUpCaptureState", "CAPTURED_AT_REVISION").put("sourcePhotos", JSONArray()))
+        }
+        val bytes = packageBytes("v2-source", source)
+        assertEquals(2, ServiceLoopSyncEnvelopeCodec.decode(bytes).manifest.sections.first().version)
+        val service = WorkResultImportService(database, root)
+        assertEquals("APPLIED", service.import(bytes).items.single().status)
+        val stored = database.serviceLoopDao().remoteFinalResult(exporter, "result-2", "revision-2")!!
+        val payload = JSONObject(stored.sourcePayloadJson!!).getJSONObject("result")
+        assertEquals("technician-visit", payload.getString("sourceVisitId"))
+        assertEquals("technician-work", payload.getString("sourceWorkItemId"))
+        assertEquals(3, payload.getInt("sourceWorkItemPosition"))
+        assertEquals("ALREADY_RECEIVED", service.import(packageBytes("v2-retry", source)).items.single().status)
+        val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
+            ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false)))
+        val performed = transfer.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)
+        val relayed = JSONObject(performed).getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)
+        assertEquals("technician-visit", relayed.getString("sourceVisitId"))
+        assertEquals("technician-work", relayed.getString("sourceWorkItemId"))
+        assertEquals(3, relayed.getInt("sourceWorkItemPosition"))
+        assertEquals(false, performed.contains("private revision") || performed.contains("private work") || performed.contains("private follow-up"))
+    }
+
     @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {
         ServiceLoopPeerTrustStore(database).remove(exporter)
         val bytes = packageBytes("untrusted", result(2))

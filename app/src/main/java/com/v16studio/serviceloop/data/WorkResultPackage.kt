@@ -6,13 +6,13 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 
-/** Transport-neutral WORK_RESULT v1 contract. Every photo is a declared envelope entry. */
+/** Transport-neutral WORK_RESULT contract. Every photo is a declared envelope entry. */
 internal object WorkResultPackageCodec {
-    const val VERSION = 1
+    const val VERSION = 2
     const val MAX_PHOTO_BYTES = 10 * 1024 * 1024
     const val MAX_RESULTS = 100
     const val MAX_PHOTOS = 120
-    private val resultSection = ServiceLoopSyncSectionDeclaration("results", VERSION, "results.json")
+    private fun resultSection(version: Int) = ServiceLoopSyncSectionDeclaration("results", version, "results.json")
 
     data class Photo(val sourcePhotoId: String, val bytes: ByteArray, val caption: String?, val includeInReport: Boolean, val visibility: String, val workItemId: String, val width: Int, val height: Int) {
         init {
@@ -31,11 +31,15 @@ internal object WorkResultPackageCodec {
         require(value.targetIssuerId.isNotBlank())
         Instant.parse(value.generatedAt)
         val sections = linkedMapOf<String, ByteArray>()
-        val declarations = mutableListOf(resultSection)
+        val hasV2Source = value.results.map { it.value.has("originWorkspaceId") }
+        require(hasV2Source.all { it } || hasV2Source.none { it }) { "Mixed work-result versions" }
+        val version = if (hasV2Source.all { it }) VERSION else 1
+        val declarations = mutableListOf(resultSection(version))
         val results = JSONArray()
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         value.results.forEach { result ->
-            validateResult(result.value, value.targetIssuerId)
+            validateResult(result.value, value.targetIssuerId, value.exporterId, version)
+            if (version == VERSION) validateSourcePhotos(result.value, result.photos)
             val json = JSONObject(result.value.toString())
             val photos = JSONArray()
             result.photos.forEach { photo ->
@@ -52,7 +56,7 @@ internal object WorkResultPackageCodec {
             json.put("photos", photos)
             results.put(json)
         }
-        sections["results"] = JSONObject().put("version", VERSION).put("targetIssuerId", value.targetIssuerId)
+        sections["results"] = JSONObject().put("version", version).put("targetIssuerId", value.targetIssuerId)
             .put("results", results).toString().toByteArray(Charsets.UTF_8)
         return ServiceLoopSyncEnvelopeCodec.encode(
             ServiceLoopSyncManifest(value.packageId, "ServiceLoop work results", "WORK_RESULT", value.generatedAt, sections = declarations, exporterId = value.exporterId), sections,
@@ -63,9 +67,10 @@ internal object WorkResultPackageCodec {
         val envelope = ServiceLoopSyncEnvelopeCodec.decode(bytes)
         val manifest = envelope.manifest
         require(manifest.formatVersion == 2 && manifest.purpose == "WORK_RESULT") { "Choose a work-result ServiceLoop file" }
-        require(manifest.sections.firstOrNull() == resultSection) { "Unsupported work-result payload" }
+        require(manifest.sections.firstOrNull()?.let { it == resultSection(1) || it == resultSection(VERSION) } == true) { "Unsupported work-result payload" }
         val root = JSONObject(envelope.section("results").toString(Charsets.UTF_8))
-        require(root.getInt("version") == VERSION) { "Unsupported work-result version" }
+        val version = root.getInt("version")
+        require(version in 1..VERSION && manifest.sections.first() == resultSection(version)) { "Unsupported work-result version" }
         val issuerId = root.getString("targetIssuerId")
         require(TechnicianIdCodec.normalize(issuerId) == issuerId) { "Invalid assignment issuer" }
         val resultArray = root.getJSONArray("results")
@@ -75,7 +80,7 @@ internal object WorkResultPackageCodec {
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         val results = (0 until resultArray.length()).map { index ->
             val json = resultArray.getJSONObject(index)
-            validateResult(json, issuerId)
+            validateResult(json, issuerId, manifest.exporterId ?: error("Missing exporter identity"), version)
             require(resultKeys.add(json.getString("resultId") to json.getString("sourceFinalRevisionId"))) { "Duplicate result revision" }
             val photoArray = json.getJSONArray("photos")
             require(photoArray.length() <= MAX_PHOTOS) { "Too many result photos" }
@@ -90,13 +95,14 @@ internal object WorkResultPackageCodec {
                 require(photo.getString("mimeType") == "image/jpeg") { "Unsupported result photo format" }
                 Photo(photoId, data, photo.optString("caption").takeIf { it.isNotBlank() }, photo.getBoolean("includeInReport"), photo.getString("visibility"), photo.getString("workItemId"), photo.getInt("width"), photo.getInt("height"))
             }
+            if (version == VERSION) validateSourcePhotos(json, photos)
             Result(json, photos)
         }
         require(results.sumOf { it.photos.size } <= MAX_PHOTOS && usedSections == manifest.sections.map { it.name }.toSet()) { "Work-result binary declarations do not match" }
         return Package(manifest.syncId, requireNotNull(manifest.exporterId), issuerId, manifest.generatedAt, results)
     }
 
-    private fun validateResult(o: JSONObject, targetIssuerId: String) {
+    private fun validateResult(o: JSONObject, targetIssuerId: String, exporterId: String, version: Int) {
         listOf("resultId", "sourceFinalRevisionId", "dispatchVisitId", "dispatchItemId", "assignmentMaterialHash", "assignmentIssuerId", "technicianId", "technicianName", "serviceDate", "outcome", "customerSnapshot", "siteSnapshot", "subjectSnapshot", "workSnapshot", "checklist", "findings", "parts", "followUps", "recurrence").forEach { key ->
             require(o.has(key) && !o.isNull(key)) { "Missing result $key" }
         }
@@ -105,6 +111,18 @@ internal object WorkResultPackageCodec {
         }
         require(o.get("assignmentGeneration") is Number && o.get("assignmentGeneration").toString().matches(Regex("[1-9][0-9]*"))) { "Invalid assignment generation" }
         require(o.getString("assignmentIssuerId") == targetIssuerId) { "Result issuer mismatch" }
+        if (version == VERSION) {
+            listOf("originWorkspaceId", "sourceVisitId", "sourceWorkItemId", "sourceFinalRevisionId", "visitReference", "recordedAt").forEach { key ->
+                require(o.get(key) is String && o.getString(key).isNotBlank()) { "Missing v2 source identity: $key" }
+            }
+            require(o.getString("originWorkspaceId") == exporterId) { "Result source origin differs from its author" }
+            Instant.parse(o.getString("recordedAt"))
+            require(o.get("sourceWorkItemPosition") is Number && o.getInt("sourceWorkItemPosition") > 0) { "Invalid source work position" }
+            require(o.get("sourceFinalRevisionNumber") is Number && o.getInt("sourceFinalRevisionNumber") > 0) { "Invalid source revision number" }
+            require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String)) { "Invalid source correction lineage" }
+            require(o.has("followUpCaptureState") && o.getString("followUpCaptureState") in setOf("CAPTURED_AT_REVISION", "UNAVAILABLE_LEGACY")) { "Missing source follow-up capture state" }
+            o.getJSONArray("sourcePhotos")
+        }
         require(o.getInt("assignmentGeneration") > 0) { "Invalid assignment generation" }
         require(o.getString("resultId").isNotBlank() && o.getString("sourceFinalRevisionId").isNotBlank())
         require(o.getString("dispatchVisitId").isNotBlank() && o.getString("dispatchItemId").isNotBlank())
@@ -139,6 +157,23 @@ internal object WorkResultPackageCodec {
             }
         } else if (outcome == "PARTLY_PERFORMED") {
             throw IllegalArgumentException("Partial work needs an explicit fulfillment decision")
+        }
+    }
+
+    private fun validateSourcePhotos(result: JSONObject, photos: List<Photo>) {
+        val facts = result.getJSONArray("sourcePhotos")
+        require(facts.length() == photos.size) { "Source photo facts do not match result binaries" }
+        val seen = mutableSetOf<String>()
+        for (index in 0 until facts.length()) {
+            val fact = facts.getJSONObject(index)
+            val sourceId = fact.getString("sourcePhotoId")
+            require(sourceId.isNotBlank() && seen.add(sourceId) && fact.getString("sourceWorkItemId") == result.getString("sourceWorkItemId")) { "Invalid source photo identity" }
+            require(fact.getInt("position") > 0 && fact.getLong("originalByteSize") > 0 &&
+                fact.getString("originalSha256").matches(Regex("[a-fA-F0-9]{64}")) &&
+                fact.getString("originalMimeType").startsWith("image/")) { "Invalid original photo descriptor" }
+            val photo = photos.singleOrNull { it.sourcePhotoId == sourceId } ?: throw IllegalArgumentException("Source photo binary is missing")
+            require(fact.getString("visibility") == photo.visibility && fact.getBoolean("includeInReport") == photo.includeInReport &&
+                (if (fact.isNull("caption")) null else fact.getString("caption")) == photo.caption) { "Source photo flags conflict with binary descriptor" }
         }
     }
 

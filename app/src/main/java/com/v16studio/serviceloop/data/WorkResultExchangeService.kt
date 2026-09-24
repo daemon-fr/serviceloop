@@ -30,7 +30,13 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                 val itemProvenance = dispatchItems[item.id] ?: return@mapNotNull null
                 val value = JSONObject()
                     .put("resultId", stable("work-result", issuer, provenance.dispatchVisitId, itemProvenance.dispatchItemId))
+                    .put("originWorkspaceId", exporterId)
+                    .put("sourceVisitId", visit.id)
+                    .put("sourceWorkItemId", item.sourceWorkItemId)
+                    .put("sourceWorkItemPosition", item.position)
                     .put("sourceFinalRevisionId", revision.id)
+                    .put("sourceFinalRevisionNumber", revision.revisionNumber)
+                    .put("supersedesSourceFinalRevisionId", revision.supersedesRevisionId ?: JSONObject.NULL)
                     .put("dispatchVisitId", provenance.dispatchVisitId)
                     .put("dispatchItemId", itemProvenance.dispatchItemId)
                     .put("assignmentGeneration", provenance.generation)
@@ -62,16 +68,19 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
                     .put("recordedAt", Instant.ofEpochMilli(revision.recordedAtEpochMillis).toString())
                     .put("privateInternalNote", revision.privateInternalNote)
                 val finalPhotos = dao.finalPhotos(item.id)
+                value.put("sourcePhotos", JSONArray().also { array -> finalPhotos.forEach { photo ->
+                    array.put(JSONObject().put("sourcePhotoId", photo.sourceAttachmentId).put("sourceWorkItemId", item.sourceWorkItemId)
+                        .put("position", photo.position).put("originalSha256", photo.sha256).put("originalByteSize", photo.byteSize)
+                        .put("originalMimeType", photo.mimeType).put("caption", photo.caption ?: JSONObject.NULL).put("visibility", photo.visibility)
+                        .put("includeInReport", photo.includedInCustomerReport).put("addedInCorrection", photo.addedInCorrection)
+                        .put("addedAtEpochMillis", photo.addedAtEpochMillis ?: JSONObject.NULL))
+                } })
                 val photos = finalPhotos.map { finalPhoto ->
-                        val bytes = runCatching { readOwnedPhoto(finalPhoto.storedRelativePath, finalPhoto.sha256, finalPhoto.byteSize) }.getOrNull()
-                            ?: run {
-                                val retained = dao.retainedImage("ATTACHMENT", finalPhoto.sourceAttachmentId)
-                                    ?: dao.retainedImage("FINAL_PHOTO", finalPhoto.id)
-                                    ?: dao.retainedImageByOriginalPath(finalPhoto.storedRelativePath)
-                                    ?: error("Final photo has no retained copy")
-                                readOwnedPhoto(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
-                            }
-                        val derivative = AppOwnedImageNormalizer.workResultDerivative(bytes)
+                        val retained = dao.retainedImage("ATTACHMENT", finalPhoto.sourceAttachmentId)
+                            ?: dao.retainedImage("FINAL_PHOTO", finalPhoto.id)
+                            ?: dao.retainedImageByOriginalPath(finalPhoto.storedRelativePath)
+                        val derivative = if (retained != null) readRetainedDerivative(retained) else
+                            AppOwnedImageNormalizer.workResultDerivative(readOwnedPhoto(finalPhoto.storedRelativePath, finalPhoto.sha256, finalPhoto.byteSize))
                         WorkResultPackageCodec.Photo(finalPhoto.sourceAttachmentId, derivative.bytes, finalPhoto.caption,
                             finalPhoto.includedInCustomerReport, finalPhoto.visibility,
                             itemProvenance.dispatchItemId, derivative.width, derivative.height)
@@ -91,6 +100,16 @@ class WorkResultExchangeService(private val database: ServiceLoopDatabase, priva
         val file = File(root, path).canonicalFile
         require(file.path.startsWith(root.path + File.separator) && file.isFile && file.length() == size && size in 1..AppOwnedImageNormalizer.MAX_SOURCE_BYTES.toLong()) { "Final photo is missing or outside app storage" }
         return file.readBytes().also { require(WorkResultPackageCodec.sha256(it) == hash) { "Final photo changed after finalization" } }
+    }
+
+    private fun readRetainedDerivative(retained: RetainedImageEntity): AppOwnedImageNormalizer.TransportDerivative {
+        require(retained.derivativeMimeType == "image/jpeg" && retained.derivativeWidth in 1..1200 && retained.derivativeHeight in 1..1200)
+        val bytes = readOwnedPhoto(retained.derivativeRelativePath, retained.derivativeSha256, retained.derivativeByteSize)
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        require(bytes.size >= 4 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() &&
+            bounds.outWidth == retained.derivativeWidth && bounds.outHeight == retained.derivativeHeight) { "Retained result derivative is invalid" }
+        return AppOwnedImageNormalizer.TransportDerivative(bytes, retained.derivativeWidth, retained.derivativeHeight)
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(parts.joinToString("|").toByteArray(Charsets.UTF_8)).toString()

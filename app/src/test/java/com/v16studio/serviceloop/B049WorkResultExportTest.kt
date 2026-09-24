@@ -52,12 +52,19 @@ class B049WorkResultExportTest {
         val exchange = WorkResultExchangeService(database, root)
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { exchange.exportFinalRevisions(listOf("revision")) } }
         ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
-        val first = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision")))
+        val firstBytes = exchange.exportFinalRevisions(listOf("revision"))
+        assertEquals(2, ServiceLoopSyncEnvelopeCodec.decode(firstBytes).manifest.sections.first().version)
+        val first = WorkResultPackageCodec.decode(firstBytes)
         val second = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision")))
         assertEquals(issuer, first.targetIssuerId)
         assertEquals(technician, first.exporterId)
         assertEquals(first.results.single().value.getString("resultId"), second.results.single().value.getString("resultId"))
         assertEquals("revision", first.results.single().value.getString("sourceFinalRevisionId"))
+        assertEquals("v", first.results.single().value.getString("sourceVisitId"))
+        assertEquals("w", first.results.single().value.getString("sourceWorkItemId"))
+        assertEquals(1, first.results.single().value.getInt("sourceWorkItemPosition"))
+        assertEquals(1, first.results.single().value.getInt("sourceFinalRevisionNumber"))
+        assertTrue(first.results.single().value.isNull("supersedesSourceFinalRevisionId"))
         database.openHelper.writableDatabase.execSQL("UPDATE final_dispatch_visits SET documentingTechnicianId=?, documentingTechnicianName=? WHERE revisionId='revision'", arrayOf(issuer, "Wrong author"))
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { exchange.exportFinalRevisions(listOf("revision")) } }
     }
@@ -128,5 +135,32 @@ class B049WorkResultExportTest {
         assertEquals(1, corrected.photos.size)
         assertEquals("corrected-private", corrected.photos.single().caption)
         assertEquals("revision-2", corrected.value.getString("sourceFinalRevisionId"))
+    }
+
+    @Test fun retainedDerivativeBytesStayIdenticalBeforeAndAfterOriginalRemoval() = runTest {
+        ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
+        val bitmap = Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.MAGENTA) }
+        val original = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it); bitmap.recycle() }.toByteArray()
+        val derivative = AppOwnedImageNormalizer.workResultDerivative(original)
+        val originalPath = "attachments/source.jpg"
+        val derivativePath = "retained-images/source.jpg"
+        File(root, originalPath).apply { parentFile!!.mkdirs(); writeBytes(original) }
+        File(root, derivativePath).apply { parentFile!!.mkdirs(); writeBytes(derivative.bytes) }
+        val dao = database.serviceLoopDao()
+        dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("final-source", "final-work", 1, "source", originalPath,
+            WorkResultPackageCodec.sha256(original), original.size.toLong(), "image/jpeg", "Frozen", includedInCustomerReport = true, visibility = "PUBLIC")))
+        dao.insertRetainedImage(RetainedImageEntity("retained-source", "ATTACHMENT", "source", originalPath, null,
+            derivativePath, WorkResultPackageCodec.sha256(derivative.bytes), derivative.bytes.size.toLong(), derivative.width,
+            derivative.height, "image/jpeg", 1))
+        val exchange = WorkResultExchangeService(database, root)
+        val first = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().photos.single().bytes
+        assertTrue(derivative.bytes.contentEquals(first))
+        File(root, originalPath).delete()
+        dao.updateRetainedImage(dao.retainedImage("ATTACHMENT", "source")!!.copy(originalDeletedAtEpochMillis = 2))
+        val second = WorkResultPackageCodec.decode(exchange.exportFinalRevisions(listOf("revision"))).results.single().photos.single().bytes
+        assertTrue(first.contentEquals(second))
+        val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
+            ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES))))
+        assertTrue(derivative.bytes.contentEquals(transfer.binaries.values.single()))
     }
 }

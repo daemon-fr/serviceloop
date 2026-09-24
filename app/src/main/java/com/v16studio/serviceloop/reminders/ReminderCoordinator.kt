@@ -58,7 +58,17 @@ class ReminderCoordinator(
         }
     }
 
-    fun deliveryRequested(): Boolean = device.getBoolean(KEY_REQUESTED, false)
+    private fun currentBinding(): Pair<String, String>? = runCatching {
+        database.openHelper.readableDatabase.query("SELECT datasetId, adoptionToken FROM recovery_metadata WHERE id='primary'").use { cursor ->
+            if (!cursor.moveToFirst()) null else cursor.getString(0) to (cursor.getString(1) ?: "")
+        }
+    }.getOrNull()
+
+    fun deliveryRequested(): Boolean {
+        val binding = currentBinding() ?: return false
+        return device.getBoolean(KEY_REQUESTED, false) && device.getString(KEY_DATASET_ID, null) == binding.first &&
+            device.getString(KEY_ADOPTION_TOKEN, null) == binding.second
+    }
 
     fun runtimeState(): ReminderRuntimeState {
         val permission = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -68,14 +78,20 @@ class ReminderCoordinator(
     }
 
     fun setDeliveryRequested(value: Boolean) {
-        device.edit().putBoolean(KEY_REQUESTED, value).apply()
-        if (!value) cancelAllAndWithdraw()
+        val binding = if (value) currentBinding() else null
+        val accepted = value && binding != null
+        check(device.edit().putBoolean(KEY_REQUESTED, accepted)
+            .putString(KEY_DATASET_ID, binding?.first).putString(KEY_ADOPTION_TOKEN, binding?.second).commit()) {
+            "Reminder device request could not be saved"
+        }
+        if (!accepted) cancelAllAndWithdraw()
         reconcileAsync()
     }
 
     /** Restore/erase starts a fresh device binding and invalidates old notification ownership. */
     fun resetForDatasetReplacement() {
-        device.edit().putBoolean(KEY_REQUESTED, false).remove(KEY_LAST_SUMMARY).apply()
+        check(device.edit().putBoolean(KEY_REQUESTED, false).remove(KEY_DATASET_ID).remove(KEY_ADOPTION_TOKEN)
+            .remove(KEY_LAST_SUMMARY).commit()) { "Reminder device binding could not be reset" }
         cancelAllAndWithdraw()
     }
 
@@ -219,6 +235,8 @@ class ReminderCoordinator(
         const val EXTRA_DATASET = "serviceloop.reminder.DATASET"
         private const val DEVICE_PREFS = "serviceloop_reminder_device"
         private const val KEY_REQUESTED = "delivery_requested"
+        private const val KEY_DATASET_ID = "delivery_dataset_id"
+        private const val KEY_ADOPTION_TOKEN = "delivery_adoption_token"
         private const val KEY_LAST_SUMMARY = "last_summary_identity"
         private const val KEY_SCHEDULED_SUMMARY_DATE = "scheduled_summary_date"
         private const val KEY_SCHEDULING_ERROR = "scheduling_error"
