@@ -83,12 +83,17 @@ class B049WorkResultImportTest {
     @Test fun partialThenCompleteAndRetriesPreserveRemoteTruthAndAdvanceOnce() = runTest {
         val service = WorkResultImportService(database, root)
         val first = packageBytes("package-1", result(1))
-        service.import(first)
+        val firstOutcome = service.import(first).items.single()
+        assertEquals("APPLIED", firstOutcome.committedStatus)
+        assertEquals(true, firstOutcome.recurrenceAppliedNow)
         assertEquals(1, database.serviceLoopDao().appliedWorkResultReceipts("dispatch-v").size)
         assertEquals("DISPATCHED", database.dispatchDao().outboxVisit("dispatch-v")!!.outboxStatus.name)
         assertEquals("2027-09-01", database.serviceLoopDao().plan("plan")!!.currentDueDate)
         assertEquals("BOOKED", database.serviceLoopDao().visit("v")!!.state)
-        assertEquals("ALREADY_RECEIVED", service.import(first).items.single().status)
+        val repeated = service.import(first).items.single()
+        assertEquals("ALREADY_RECEIVED", repeated.status)
+        assertEquals("APPLIED", repeated.committedStatus)
+        assertEquals(false, repeated.recurrenceAppliedNow)
         assertEquals("ALREADY_RECEIVED", service.import(packageBytes("package-retry", result(1))).items.single().status)
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
         val correction = result(1).let { it.copy(value = JSONObject(it.value.toString()).put("sourceFinalRevisionId", "revision-1-corrected").put("recordedAt", "2026-09-24T10:00:00Z").put("publicNote", "Corrected wording")) }
@@ -123,6 +128,19 @@ class B049WorkResultImportTest {
         assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { service.import(wrong) } }
     }
 
+    @Test fun canceledDispatchRetainsSourceWithoutCompletingVisitOrAdvancingPlan() = runTest {
+        val dispatch = database.dispatchDao()
+        val outbox = dispatch.outboxVisit("dispatch-v")!!
+        dispatch.updateOutboxVisit(outbox.copy(canceledAtEpochMillis = 10, cancellationReason = "Canceled by coordinator"))
+        val result = WorkResultImportService(database, root).import(packageBytes("canceled", result(1))).items.single()
+        assertEquals("STALE", result.committedStatus)
+        assertEquals(false, result.recurrenceAppliedNow)
+        assertEquals("STALE", database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1")!!.status)
+        assertEquals("CANCELED", dispatch.outboxVisit("dispatch-v")!!.outboxStatus.name)
+        assertEquals("BOOKED", database.serviceLoopDao().visit("v")!!.state)
+        assertEquals(1, database.serviceLoopDao().obligationCount("plan"))
+    }
+
     @Test fun correctionChangingAppliedRecurrenceReportsItsCommittedConflict() = runTest {
         val service = WorkResultImportService(database, root)
         service.import(packageBytes("original", result(1)))
@@ -134,12 +152,16 @@ class B049WorkResultImportTest {
         }
         val committed = service.import(packageBytes("correction", correction)).items.single()
         assertEquals("CONFLICT", committed.status)
+        assertEquals("CONFLICT", committed.committedStatus)
+        assertEquals(false, committed.recurrenceAppliedNow)
         assertEquals("CONFLICT", database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1-conflicting")!!.status)
         assertEquals("2027-09-01", database.serviceLoopDao().plan("plan")!!.currentDueDate)
         assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
         val replay = service.import(packageBytes("correction-replay", correction)).items.single()
         assertEquals("ALREADY_RECEIVED", replay.status)
-        assertEquals(true, replay.reason?.startsWith("CONFLICT"))
+        assertEquals("CONFLICT", replay.committedStatus)
+        assertEquals(false, replay.recurrenceAppliedNow)
+        assertEquals(true, replay.reason?.contains("recurrence"))
     }
 
     @Test fun everyoneAssignmentAcceptsASelectedTeamParticipant() = runTest {
@@ -170,6 +192,7 @@ class B049WorkResultImportTest {
                 .put("originWorkspaceId", exporter).put("sourceVisitId", "technician-visit")
                 .put("sourceWorkItemId", "technician-work").put("sourceWorkItemPosition", 3)
                 .put("sourceFinalRevisionNumber", 2).put("supersedesSourceFinalRevisionId", "earlier-revision")
+                .put("correctionReason", JSONObject.NULL).put("publicNote", JSONObject.NULL)
                 .put("visitReference", "TECH-1").put("recordedAt", "2026-09-23T09:00:00Z")
                 .put("privateInternalNote", "private revision")
                 .put("workSnapshot", JSONObject(original.value.getJSONObject("workSnapshot").toString()).put("privateInternalNote", "private work"))
@@ -196,6 +219,47 @@ class B049WorkResultImportTest {
         assertEquals("technician-work", relayed.getString("sourceWorkItemId"))
         assertEquals(3, relayed.getInt("sourceWorkItemPosition"))
         assertEquals(false, performed.contains("private revision") || performed.contains("private work") || performed.contains("private follow-up"))
+    }
+
+    @Test fun exactReplayRecoversMissingV2SnapshotWithoutRepeatingBusinessEffects() = runTest {
+        val source = result(1).let { original ->
+            original.copy(value = JSONObject(original.value.toString())
+                .put("originWorkspaceId", exporter).put("sourceVisitId", "source-visit")
+                .put("sourceWorkItemId", "source-work").put("sourceWorkItemPosition", 1)
+                .put("sourceFinalRevisionNumber", 1).put("supersedesSourceFinalRevisionId", JSONObject.NULL)
+                .put("recordedAt", "2026-09-23T09:00:00Z").put("sourcePhotos", JSONArray())
+                .put("visitReference", "TECH-1").put("correctionReason", JSONObject.NULL)
+                .put("publicNote", JSONObject.NULL).put("followUpCaptureState", "CAPTURED_AT_REVISION"))
+        }
+        val service = WorkResultImportService(database, root)
+        service.import(packageBytes("first", source))
+        val remote = database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE remote_final_results SET sourcePayloadJson=NULL WHERE id=?", arrayOf(remote.id))
+        assertNull(database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!.sourcePayloadJson)
+        assertEquals("ALREADY_RECEIVED", service.import(packageBytes("retry", source)).items.single().status)
+        val restored = database.serviceLoopDao().remoteFinalResult(exporter, "result-1", "revision-1")!!
+        assertEquals("source-visit", JSONObject(restored.sourcePayloadJson!!).getJSONObject("result").getString("sourceVisitId"))
+        assertEquals(2, database.serviceLoopDao().obligationCount("plan"))
+        assertEquals(1, database.serviceLoopDao().appliedWorkResultReceipts("dispatch-v").size)
+    }
+
+    @Test fun contradictoryResultSemanticsRejectBeforeAnyReceiptOrObligationEffect() = runTest {
+        fun reject(value: JSONObject) {
+            assertThrows(IllegalArgumentException::class.java) {
+                packageBytes("invalid", WorkResultPackageCodec.Result(value, emptyList()))
+            }
+        }
+        reject(JSONObject(result(1).value.toString()).put("outcome", "DONE"))
+        reject(JSONObject(result(1).value.toString()).put("outcome", "NOT_PERFORMED"))
+        reject(JSONObject(result(1).value.toString()).put("workSnapshot",
+            JSONObject(result(1).value.getJSONObject("workSnapshot").toString()).put("fulfilledObligation", "true")))
+        reject(JSONObject(result(1).value.toString()).put("recurrence",
+            JSONObject(result(1).value.getJSONObject("recurrence").toString()).put("nextDueDate", "2026-08-01")))
+        reject(JSONObject(result(1).value.toString()).put("recurrence",
+            JSONObject(result(1).value.getJSONObject("recurrence").toString()).put("fulfilledObligation", false)))
+        assertNull(database.serviceLoopDao().workResultReceipt(exporter, "result-1", "revision-1"))
+        assertEquals(1, database.serviceLoopDao().obligationCount("plan"))
     }
 
     @Test fun untrustedResultLeavesNoReceiptOrRemoteFinalTruth() = runTest {

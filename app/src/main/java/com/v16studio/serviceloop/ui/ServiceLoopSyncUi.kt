@@ -78,6 +78,18 @@ import java.io.InputStream
 
 private data class DecodedImport(val envelope: ServiceLoopSyncEnvelope, val trust: ServiceLoopTrustDecision, val fullWorkspace: ServiceLoopSyncPackage? = null, val workPreview: DispatchPreview? = null, val templatePreview: InspectionTemplateImportPreview? = null, val workResultPreview: WorkResultImportService.Preview? = null, val workResultBytes: ByteArray? = null, val dataTransferPreview: DataTransferImportPreview? = null, val dataTransferBytes: ByteArray? = null)
 
+internal fun workResultCommitMessage(result: WorkResultImportService.Preview): String {
+    val applied = result.items.count { it.status != "ALREADY_RECEIVED" && it.committedStatus == "APPLIED" }
+    val stale = result.items.count { it.status != "ALREADY_RECEIVED" && it.committedStatus == "STALE" }
+    val conflicts = result.items.count { it.status != "ALREADY_RECEIVED" && it.committedStatus == "CONFLICT" }
+    val repeated = result.items.count { it.status == "ALREADY_RECEIVED" }
+    val advanced = result.items.count { it.recurrenceAppliedNow }
+    val summary = "Applied $applied; stale $stale; conflicts $conflicts; already received $repeated; service plans advanced $advanced."
+    val reasons = result.items.filter { it.committedStatus in setOf("STALE", "CONFLICT") }
+        .mapNotNull { item -> item.reason?.let { "${item.dispatchItemId}: $it" } }
+    return if (reasons.isEmpty()) summary else "$summary ${reasons.joinToString(" ")}"
+}
+
 @Composable
 internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewModel: ServiceLoopViewModel, nav: NavHostController, incomingUri: String?) {
     val context = LocalContext.current
@@ -282,7 +294,7 @@ internal fun ServiceLoopSyncScreen(state: UiState, padding: PaddingValues, viewM
                     Text("Received results retain the documenting technician and assignment provenance. Stale or conflicting work is kept for review without advancing the service plan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!capabilities.canAssignWork) ServiceLoopNotice("Unavailable for this Team role", "Only a coordinator can receive work results.", ServiceLoopNoticeKind.Error)
                 }
-                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import final results", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { workResults.import(requireNotNull(current.workResultBytes)) } }.onSuccess { result -> message = "Received ${result.items.count { it.status != "ALREADY_RECEIVED" }} final results."; decoded = null; viewModel.loadVisits() }.onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing these results. Try again.") }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-result-import"), enabled = current.trust.canImport && capabilities.canAssignWork && !busy && !state.restrictedRecoveryState, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
+                item { ServiceLoopActionStack { ServiceLoopPrimaryButton("Import final results", { scope.launch { busy = true; runCatching { withContext(Dispatchers.IO) { workResults.import(requireNotNull(current.workResultBytes)) } }.onSuccess { result -> message = workResultCommitMessage(result); decoded = null; viewModel.loadVisits() }.onFailure { failure -> if (failure is CancellationException) throw failure else error = ImportErrorPresentation("Import could not be completed", failure.message ?: "ServiceLoop could not finish importing these results. Try again.") }; busy = false } }, Modifier.fillMaxWidth().testTag("sync-work-result-import"), enabled = current.trust.canImport && capabilities.canAssignWork && !busy && !state.restrictedRecoveryState, busy = busy); TextButton({ decoded = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Cancel") } } }
             }
         }
     }

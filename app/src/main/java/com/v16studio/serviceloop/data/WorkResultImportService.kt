@@ -17,7 +17,10 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
     private val dao = database.serviceLoopDao()
     private val dispatch = database.dispatchDao()
 
-    data class ItemPreview(val resultId: String, val sourceFinalRevisionId: String, val dispatchVisitId: String, val dispatchItemId: String, val status: String, val reason: String?)
+    data class ItemPreview(
+        val resultId: String, val sourceFinalRevisionId: String, val dispatchVisitId: String, val dispatchItemId: String,
+        val status: String, val reason: String?, val committedStatus: String? = null, val recurrenceAppliedNow: Boolean = false,
+    )
     data class Preview(val packageId: String, val exporterId: String, val targetIssuerId: String, val items: List<ItemPreview>)
     private data class Prepared(val result: WorkResultPackageCodec.Result, val preview: ItemPreview, val outbox: DispatchOutboxVisitEntity, val item: DispatchOutboxItemEntity, val localWork: WorkItemEntity?, val payloadHash: String, val sourceRecordedAt: String)
 
@@ -55,7 +58,8 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                     if (item.preview.status == "ALREADY_RECEIVED") {
                         val receipt = dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId)
                             ?: error("Received result disappeared before commit")
-                        outcomes += item.preview.copy(reason = receipt.status + (receipt.conflictReason?.let { ": $it" } ?: ""))
+                        recoverMissingSourceSnapshot(preview.exporterId, item, receipt)
+                        outcomes += item.preview.copy(reason = receipt.conflictReason, committedStatus = receipt.status)
                         return@forEach
                     }
                     require(dao.workResultReceipt(preview.exporterId, item.preview.resultId, item.preview.sourceFinalRevisionId) == null) { "Result changed while importing" }
@@ -128,7 +132,7 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
                         item.preview.dispatchVisitId, item.preview.dispatchItemId, json.getInt("assignmentGeneration"), json.getString("assignmentMaterialHash"),
                         now, item.payloadHash, status, reason, if (status == "APPLIED") now else null, recurrenceAt,
                     ))
-                    outcomes += item.preview.copy(status = status, reason = reason)
+                    outcomes += item.preview.copy(status = status, reason = reason, committedStatus = status, recurrenceAppliedNow = recurrenceAt != null)
                 }
                 prepared.map { it.outbox.dispatchVisitId }.distinct().forEach { visitId ->
                     val outbox = dispatch.outboxVisit(visitId) ?: return@forEach
@@ -221,11 +225,18 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
             }
             val status = when {
                 prior != null -> "ALREADY_RECEIVED"
+                outbox.outboxStatus == DispatchOutboxStatus.CANCELED || outbox.localVisitId?.let { dao.visit(it)?.state == "CANCELED" } == true -> "STALE"
                 outbox.lastExportedMaterialHash != json.getString("assignmentMaterialHash") -> "STALE"
                 json.getInt("assignmentGeneration") > (outbox.lastExportedGeneration ?: 0) -> "CONFLICT"
                 else -> "APPLIED"
             }
-            val reason = when (status) { "STALE" -> "Assignment content changed after this result was prepared"; "CONFLICT" -> "Assignment generation is newer than the issuing workspace"; else -> null }
+            val reason = when {
+                status == "STALE" && outbox.outboxStatus == DispatchOutboxStatus.CANCELED -> "The assigned Visit was canceled"
+                status == "STALE" && outbox.localVisitId?.let { dao.visit(it)?.state == "CANCELED" } == true -> "The linked Visit was canceled"
+                status == "STALE" -> "Assignment content changed after this result was prepared"
+                status == "CONFLICT" -> "Assignment generation is newer than the issuing workspace"
+                else -> null
+            }
             Prepared(result, ItemPreview(resultId, revisionId, visitId, itemId, status, reason), outbox, item, item.localWorkItemId?.let { dao.workItem(it) }, payloadHash, sourceRecordedAt)
         }
         return Preview(packageValue.packageId, packageValue.exporterId, packageValue.targetIssuerId, prepared.map { it.preview }) to prepared
@@ -242,6 +253,47 @@ class WorkResultImportService(private val database: ServiceLoopDatabase, private
         val assignees = dispatch.outboxItemAssignees(itemId)
         if (assignees.isNotEmpty()) return assignees.any { it.technicianId == authorId }
         return DispatchPackageService(database).outboxParticipants(visitId).first.any { it.technicianId == authorId }
+    }
+
+    private suspend fun recoverMissingSourceSnapshot(authorId: String, item: Prepared, receipt: WorkResultReceiptEntity) {
+        val remote = dao.remoteFinalResult(authorId, item.preview.resultId, item.preview.sourceFinalRevisionId)
+            ?: error("Received result has no durable source record")
+        if (remote.sourcePayloadJson != null) return
+        val source = item.result.value
+        val work = source.getJSONObject("workSnapshot")
+        fun same(saved: String, incoming: Any) = canonicalJson(JSONObject(saved)) == canonicalJson(incoming)
+        fun sameArray(saved: String, incoming: Any) = canonicalJson(JSONArray(saved)) == canonicalJson(incoming)
+        require(remote.dispatchVisitId == item.preview.dispatchVisitId && remote.dispatchItemId == item.preview.dispatchItemId &&
+            remote.technicianId == authorId && remote.technicianName == source.getString("technicianName") &&
+            remote.technicianDesignation == source.optString("technicianDesignation").takeIf { it.isNotBlank() } &&
+            remote.serviceDate == source.getString("serviceDate") && remote.outcome == source.getString("outcome") &&
+            remote.workPerformed == work.optString("publicWork").takeIf { it.isNotBlank() } &&
+            remote.notPerformedReason == work.optString("notPerformedReason").takeIf { it.isNotBlank() } &&
+            remote.internalNotes == listOfNotNull(source.optString("privateInternalNote").takeIf { it.isNotBlank() },
+                work.optString("privateInternalNote").takeIf { it.isNotBlank() }).joinToString("\n").takeIf { it.isNotBlank() } &&
+            same(remote.customerSnapshotJson, source.getJSONObject("customerSnapshot")) &&
+            same(remote.siteSnapshotJson, source.getJSONObject("siteSnapshot")) &&
+            same(remote.subjectSnapshotJson, source.getJSONObject("subjectSnapshot")) &&
+            same(remote.recurrenceJson, source.getJSONObject("recurrence")) &&
+            sameArray(remote.checklistJson, source.getJSONArray("checklist")) &&
+            sameArray(remote.findingsJson, source.getJSONArray("findings")) &&
+            sameArray(remote.partsJson, source.getJSONArray("parts")) &&
+            sameArray(remote.followUpsJson, source.getJSONArray("followUps"))) {
+            "Previously received result no longer matches its durable source fields"
+        }
+        val storedPhotos = dao.remoteResultPhotos(remote.id)
+        require(storedPhotos.size == item.result.photos.size && item.result.photos.all { photo ->
+            storedPhotos.any { stored -> stored.sourcePhotoId == photo.sourcePhotoId && stored.dispatchItemId == photo.workItemId &&
+                stored.sha256 == WorkResultPackageCodec.sha256(photo.bytes) && stored.byteSize == photo.bytes.size.toLong() &&
+                stored.width == photo.width && stored.height == photo.height && stored.mimeType == "image/jpeg" &&
+                stored.caption == photo.caption && stored.visibility == photo.visibility && stored.includeInReport == photo.includeInReport }
+        }) { "Previously received photo metadata changed" }
+        require(receipt.exporterId == authorId && receipt.assignmentIssuerId == source.getString("assignmentIssuerId") &&
+            receipt.assignmentGeneration == source.getInt("assignmentGeneration") &&
+            receipt.assignmentMaterialHash == source.getString("assignmentMaterialHash")) { "Previously received assignment facts changed" }
+        val comparisonVersion = if (receipt.payloadSha256 == item.payloadHash) 2 else 1
+        val snapshot = JSONObject().put("comparisonVersion", comparisonVersion).put("result", JSONObject(source.toString())).toString()
+        require(dao.recoverRemoteSourceSnapshot(remote.id, snapshot) == 1) { "Source snapshot recovery raced with another write" }
     }
 
     private fun stable(vararg parts: String): String = UUID.nameUUIDFromBytes(

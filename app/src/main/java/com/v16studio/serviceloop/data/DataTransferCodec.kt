@@ -30,7 +30,9 @@ data class DataTransferOptions(
 
 object DataTransferCodec {
     const val VERSION = 2
-    private val supportedFamilyVersions: Map<DataTransferFamily, Set<Int>> = DataTransferFamily.entries.associateWith { setOf(1) }
+    private val supportedFamilyVersions: Map<DataTransferFamily, Set<Int>> = DataTransferFamily.entries.associateWith {
+        if (it == DataTransferFamily.PERFORMED_WORK) setOf(1, 2) else setOf(1)
+    }
 
     private fun familyVersion(family: DataTransferFamily, bytes: ByteArray): Int {
         val body = JSONObject(bytes.toString(Charsets.UTF_8))

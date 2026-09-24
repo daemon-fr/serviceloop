@@ -6,6 +6,7 @@ import android.graphics.Color
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.v16studio.serviceloop.data.*
+import org.json.JSONObject
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -162,5 +163,64 @@ class B049WorkResultExportTest {
         val transfer = DataTransferCodec.decode(DataTransferExportService(database, root).export(
             ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES))))
         assertTrue(derivative.bytes.contentEquals(transfer.binaries.values.single()))
+    }
+
+    @Test fun directPerformedAndWorkResultRelayHaveOneSourceFingerprint() = runTest {
+        ServiceLoopPeerTrustStore(database).add(issuer, "Coordinator")
+        val image = Bitmap.createBitmap(24, 18, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
+        val sourcePhoto = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it); image.recycle() }.toByteArray()
+        File(root, "bridge-photo.jpg").writeBytes(sourcePhoto)
+        database.serviceLoopDao().insertFinalPhotos(listOf(FinalPhotoEntryEntity("bridge-final-photo", "final-work", 1,
+            "bridge-source-photo", "bridge-photo.jpg", WorkResultPackageCodec.sha256(sourcePhoto), sourcePhoto.size.toLong(),
+            "image/jpeg", "Frozen photo", includedInCustomerReport = true, visibility = "PUBLIC")))
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val coordinator = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        val receiver = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        val coordinatorRoot = File(context.cacheDir, "b049-bridge-b-${System.nanoTime()}").apply { mkdirs() }
+        val receiverRoot = File(context.cacheDir, "b049-bridge-c-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            ServiceLoopDatabase.configureStage4Tracking(coordinator.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureStage4Tracking(receiver.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureReminderDefaults(receiver.openHelper.writableDatabase)
+            val b = coordinator.serviceLoopDao()
+            val dispatch = coordinator.dispatchDao()
+            b.insertCustomers(listOf(CustomerEntity("bc", "CU-1", "Customer")))
+            b.insertSites(listOf(SiteEntity("bs", "bc", "ST-1", "Site", null, null)))
+            dispatch.insertTechnicianIdentity(TechnicianIdentityEntity("primary", issuer, "Coordinator", 1, 1))
+            dispatch.insertTechnician(DispatchTechnicianEntity(technician, "Tech", 1, 1))
+            dispatch.insertOutboxVisit(DispatchOutboxVisitEntity("dispatch-v", null, "bs", "2026-09-23", null,
+                "Europe/Bucharest", null, 1, "a".repeat(64), 1, 1, 1))
+            dispatch.insertOutboxItem(DispatchOutboxItemEntity("dispatch-i", "dispatch-v", 1, null, "Site inspection", null,
+                null, subjectType = "SITE"))
+            dispatch.insertOutboxItemAssignees(listOf(DispatchOutboxItemAssigneeEntity("dispatch-i", technician)))
+            ServiceLoopPeerTrustStore(coordinator).add(technician, "Technician")
+            val returned = WorkResultExchangeService(database, root).exportFinalRevisions(listOf("revision"))
+            assertEquals("APPLIED", WorkResultImportService(coordinator, coordinatorRoot).import(returned).items.single().status)
+            val selection = ExportCenterSelection(families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false)
+            val direct = DataTransferExportService(database, root).export(selection)
+            val relay = DataTransferExportService(coordinator, coordinatorRoot).export(selection)
+            fun firstSource(bytes: ByteArray): JSONObject = JSONObject(DataTransferCodec.decode(bytes).families
+                .getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8))
+                .getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)
+            val directSource = firstSource(direct)
+            val relaySource = firstSource(relay)
+            val transportHints = setOf("customer", "site", "equipment", "localCustomerId", "localSiteId", "localEquipmentId", "logicalResultId", "evidence", "binaryName")
+            val fields = (directSource.keys().asSequence().toSet() + relaySource.keys().asSequence().toSet()) - transportHints
+            val differences = fields.filter { key ->
+                if (!directSource.has(key) || !relaySource.has(key)) true
+                else SourceCanonicalJson.text(directSource.get(key)) != SourceCanonicalJson.text(relaySource.get(key))
+            }
+            assertEquals(emptyList<String>(), differences)
+            ServiceLoopPeerTrustStore(receiver).add(technician, "Technician")
+            ServiceLoopPeerTrustStore(receiver).add(issuer, "Coordinator")
+            val importer = DataTransferImportService(receiver, receiverRoot)
+            importer.import(importer.preview(direct))
+            val preview = importer.preview(relay)
+            assertTrue(preview.items.toString(), preview.canImport())
+            assertEquals(DataTransferClassification.ALREADY_IMPORTED,
+                preview.items.single { it.family == DataTransferFamily.PERFORMED_WORK }.classification)
+        } finally {
+            coordinator.close(); receiver.close(); coordinatorRoot.deleteRecursively(); receiverRoot.deleteRecursively()
+        }
     }
 }

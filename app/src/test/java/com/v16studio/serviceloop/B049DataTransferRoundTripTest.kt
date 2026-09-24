@@ -177,6 +177,7 @@ class B049DataTransferRoundTripTest {
         val workSelection = ExportCenterSelection(families = setOf(ExportFamily.VISITS, ExportFamily.SERVICE_RECORDS, ExportFamily.CHECKLIST, ExportFamily.PARTS, ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES), includePrivate = false)
         val bytes = DataTransferExportService(a, rootA).export(workSelection)
         val decoded = DataTransferCodec.decode(bytes)
+        assertEquals(2, decoded.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
         val evidencePhotos = JSONObject(decoded.families.getValue(DataTransferFamily.EVIDENCE).toString(Charsets.UTF_8)).getJSONArray("photos")
         assertEquals(2, evidencePhotos.length())
         assertTrue((0 until evidencePhotos.length()).map { evidencePhotos.getJSONObject(it).getString("visibility") }.all { it == "PUBLIC" })
@@ -186,6 +187,7 @@ class B049DataTransferRoundTripTest {
         val dao = b.serviceLoopDao()
         assertEquals(0, dao.allVisits().size)
         assertEquals(2, dao.allTransferredFinalResults().size)
+        assertTrue(dao.allTransferredFinalResults().all { it.sourcePayloadJson != null })
         assertEquals(2, dao.allTransferredEvidence().size)
         assertTrue(dao.allTransferredEvidence().all { File(rootB, it.relativePath).isFile })
         val visit = AggregateReportService(b, RoomServiceLoopRepository(b, ClockBusinessTime(java.time.Clock.fixed(Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneId.of("UTC")), java.time.ZoneId.of("UTC")), attachmentRoot = rootB), rootB)
@@ -223,10 +225,41 @@ class B049DataTransferRoundTripTest {
 
         val relayBytes = DataTransferExportService(b, rootB).export(workSelection)
         val relay = DataTransferCodec.decode(relayBytes)
+        assertEquals(2, relay.familyVersions.getValue(DataTransferFamily.PERFORMED_WORK))
         val relayedRows = JSONObject(relay.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)).getJSONArray("visits").getJSONObject(0).getJSONArray("records")
         assertEquals(2, relayedRows.length())
         assertTrue((0 until relayedRows.length()).all { relayedRows.getJSONObject(it).getString("originWorkspaceId") == sourceId })
         assertEquals("visit", JSONObject(relay.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8)).getJSONArray("visits").getJSONObject(0).getString("sourceVisitId"))
+
+        val comparison = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()
+        val comparisonRoot = File(context.cacheDir, "b049-transfer-compare-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            ServiceLoopDatabase.configureStage4Tracking(comparison.openHelper.writableDatabase)
+            ServiceLoopDatabase.configureReminderDefaults(comparison.openHelper.writableDatabase)
+            ServiceLoopPeerTrustStore(comparison).add(sourceId, "Original workspace")
+            ServiceLoopPeerTrustStore(comparison).add(relay.exporterId, "Relay workspace")
+            val compareImporter = DataTransferImportService(comparison, comparisonRoot)
+            compareImporter.import(compareImporter.preview(bytes))
+            val historyOnly = DataTransferExportService(a, rootA).export(ExportCenterSelection(
+                families = setOf(ExportFamily.SERVICE_RECORDS), includePrivate = false))
+            assertTrue(compareImporter.preview(historyOnly).items.filter { it.family == DataTransferFamily.PERFORMED_WORK }
+                .all { it.classification == DataTransferClassification.ALREADY_IMPORTED })
+            val replay = compareImporter.preview(relayBytes)
+            assertTrue(replay.items.toString(), replay.canImport())
+            assertTrue(replay.items.filter { it.family == DataTransferFamily.PERFORMED_WORK }
+                .all { it.classification == DataTransferClassification.ALREADY_IMPORTED })
+            val altered = JSONObject(decoded.families.getValue(DataTransferFamily.PERFORMED_WORK).toString(Charsets.UTF_8))
+            altered.getJSONArray("visits").getJSONObject(0).getJSONArray("records").getJSONObject(0)
+                .put("unrecognizedSourceMeaning", "changed")
+            val alteredFamilies = decoded.families.toMutableMap().apply {
+                put(DataTransferFamily.PERFORMED_WORK, altered.toString().toByteArray(Charsets.UTF_8))
+            }
+            val alteredPackage = DataTransferCodec.encode(sourceId, families = alteredFamilies, binaries = decoded.binaries,
+                sourceWorkspaceId = decoded.sourceWorkspaceId, options = decoded.options)
+            assertTrue(compareImporter.preview(alteredPackage).items.any {
+                it.family == DataTransferFamily.PERFORMED_WORK && it.classification == DataTransferClassification.CONFLICT
+            })
+        } finally { comparison.close(); comparisonRoot.deleteRecursively() }
 
         val standalone = DataTransferExportService(a, rootA).export(ExportCenterSelection(families = setOf(ExportFamily.PHOTO_METADATA, ExportFamily.IMAGE_FILES)))
         val standaloneB = Room.inMemoryDatabaseBuilder(context, ServiceLoopDatabase::class.java).allowMainThreadQueries().build()

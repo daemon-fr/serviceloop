@@ -2,6 +2,7 @@ package com.v16studio.serviceloop.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONException
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
@@ -38,7 +39,7 @@ internal object WorkResultPackageCodec {
         val results = JSONArray()
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         value.results.forEach { result ->
-            validateResult(result.value, value.targetIssuerId, value.exporterId, version)
+            validateResultSafe(result.value, value.targetIssuerId, value.exporterId, version)
             if (version == VERSION) validateSourcePhotos(result.value, result.photos)
             val json = JSONObject(result.value.toString())
             val photos = JSONArray()
@@ -80,7 +81,7 @@ internal object WorkResultPackageCodec {
         val photoIds = mutableSetOf<Triple<String, String, String>>()
         val results = (0 until resultArray.length()).map { index ->
             val json = resultArray.getJSONObject(index)
-            validateResult(json, issuerId, manifest.exporterId ?: error("Missing exporter identity"), version)
+            validateResultSafe(json, issuerId, manifest.exporterId ?: error("Missing exporter identity"), version)
             require(resultKeys.add(json.getString("resultId") to json.getString("sourceFinalRevisionId"))) { "Duplicate result revision" }
             val photoArray = json.getJSONArray("photos")
             require(photoArray.length() <= MAX_PHOTOS) { "Too many result photos" }
@@ -102,6 +103,14 @@ internal object WorkResultPackageCodec {
         return Package(manifest.syncId, requireNotNull(manifest.exporterId), issuerId, manifest.generatedAt, results)
     }
 
+    private fun validateResultSafe(o: JSONObject, targetIssuerId: String, exporterId: String, version: Int) {
+        try {
+            validateResult(o, targetIssuerId, exporterId, version)
+        } catch (failure: JSONException) {
+            throw IllegalArgumentException("Malformed work-result semantics: ${failure.message}", failure)
+        }
+    }
+
     private fun validateResult(o: JSONObject, targetIssuerId: String, exporterId: String, version: Int) {
         listOf("resultId", "sourceFinalRevisionId", "dispatchVisitId", "dispatchItemId", "assignmentMaterialHash", "assignmentIssuerId", "technicianId", "technicianName", "serviceDate", "outcome", "customerSnapshot", "siteSnapshot", "subjectSnapshot", "workSnapshot", "checklist", "findings", "parts", "followUps", "recurrence").forEach { key ->
             require(o.has(key) && !o.isNull(key)) { "Missing result $key" }
@@ -119,7 +128,8 @@ internal object WorkResultPackageCodec {
             Instant.parse(o.getString("recordedAt"))
             require(o.get("sourceWorkItemPosition") is Number && o.getInt("sourceWorkItemPosition") > 0) { "Invalid source work position" }
             require(o.get("sourceFinalRevisionNumber") is Number && o.getInt("sourceFinalRevisionNumber") > 0) { "Invalid source revision number" }
-            require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String)) { "Invalid source correction lineage" }
+            require(o.has("supersedesSourceFinalRevisionId") && (o.isNull("supersedesSourceFinalRevisionId") || o.get("supersedesSourceFinalRevisionId") is String) &&
+                o.has("correctionReason") && o.has("publicNote")) { "Invalid source correction lineage or note" }
             require(o.has("followUpCaptureState") && o.getString("followUpCaptureState") in setOf("CAPTURED_AT_REVISION", "UNAVAILABLE_LEGACY")) { "Missing source follow-up capture state" }
             o.getJSONArray("sourcePhotos")
         }
@@ -142,22 +152,30 @@ internal object WorkResultPackageCodec {
             require(work.get("publicWork") is String)
             require(work.getString("publicWork").isNotBlank()) { "Performed work needs a description" }
         }
-        if (work.has("fulfilledObligation")) {
+        val fulfilled = if (work.has("fulfilledObligation")) {
             require(work.get("fulfilledObligation") is Boolean) { "Invalid fulfillment decision" }
-            val fulfilled = work.getBoolean("fulfilledObligation")
-            require(outcome != "NOT_PERFORMED" || !fulfilled) { "Not performed cannot fulfill an obligation" }
-            if (recurrence.has("fulfilledObligation")) {
-                require(recurrence.get("fulfilledObligation") is Boolean) { "Invalid recurrence fulfillment" }
-                require(recurrence.getBoolean("fulfilledObligation") == fulfilled) { "Result recurrence contradicts work" }
-            }
-            if (fulfilled) {
-                require(recurrence.getString("oldDueDate").isNotBlank() && recurrence.getString("nextDueDate").isNotBlank()) { "Fulfilled result needs due dates" }
-                java.time.LocalDate.parse(recurrence.getString("oldDueDate"))
-                java.time.LocalDate.parse(recurrence.getString("nextDueDate"))
-            }
-        } else if (outcome == "PARTLY_PERFORMED") {
-            throw IllegalArgumentException("Partial work needs an explicit fulfillment decision")
+            work.getBoolean("fulfilledObligation")
+        } else {
+            require(version != VERSION && outcome != "PARTLY_PERFORMED") { "Result needs an explicit fulfillment decision" }
+            false
         }
+        if (recurrence.has("fulfilledObligation")) {
+            require(recurrence.get("fulfilledObligation") is Boolean && recurrence.getBoolean("fulfilledObligation") == fulfilled) {
+                "Result recurrence contradicts work"
+            }
+        } else require(version != VERSION) { "Result recurrence needs a fulfillment decision" }
+        require(outcome != "NOT_PERFORMED" || !fulfilled) { "Not performed cannot fulfill an obligation" }
+        fun nullableDate(value: JSONObject, key: String): String? {
+            if (!value.has(key) || value.isNull(key)) return null
+            require(value.get(key) is String) { "Invalid $key date type" }
+            return value.getString(key).also { java.time.LocalDate.parse(it) }
+        }
+        val oldDue = nullableDate(recurrence, "oldDueDate")
+        val nextDue = nullableDate(recurrence, "nextDueDate")
+        if (work.has("oldDueDate")) require(nullableDate(work, "oldDueDate") == oldDue) { "Captured old due date differs from recurrence" }
+        if (work.has("nextDueDate")) require(nullableDate(work, "nextDueDate") == nextDue) { "Captured next due date differs from recurrence" }
+        if (fulfilled) require(oldDue != null && nextDue != null && nextDue > oldDue) { "Fulfilled result needs a later due date" }
+        if (outcome == "NOT_PERFORMED") require(nextDue == null) { "Not performed result cannot advance recurrence" }
     }
 
     private fun validateSourcePhotos(result: JSONObject, photos: List<Photo>) {

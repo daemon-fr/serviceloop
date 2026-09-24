@@ -238,7 +238,12 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                     addDirectoryDependencies(dependencies, visit.customerId, visit.siteId, item.equipmentId)
                     val payload = JSONObject().put("originWorkspaceId", origin).put("sourceVisitId", visit.id).put("sourceWorkItemId", item.sourceWorkItemId).put("sourceWorkItemPosition", item.position)
                         .put("sourceFinalRevisionId", revision.id).put("logicalResultId", "$origin:${visit.id}:${item.sourceWorkItemId}")
-                        .put("technicianId", origin).put("technicianName", revision.technicianName).put("technicianDesignation", revision.technicianDesignation)
+                        .put("sourceFinalRevisionNumber", revision.revisionNumber)
+                        .put("supersedesSourceFinalRevisionId", revision.supersedesRevisionId ?: JSONObject.NULL)
+                        .put("correctionReason", revision.correctionReason ?: JSONObject.NULL)
+                        .put("publicNote", revision.publicNote ?: JSONObject.NULL)
+                        .put("technicianId", origin).put("technicianName", revision.technicianName)
+                        .put("technicianDesignation", revision.technicianDesignation ?: JSONObject.NULL)
                         .put("visitReference", revision.visitReference).put("serviceDate", revision.actualServiceDate)
                         .put("customerSnapshot", customer).put("siteSnapshot", site)
                         .put("subjectSnapshot", JSONObject().put("type", item.subjectType).put("equipmentName", item.equipmentName).put("equipmentReference", item.equipmentReference)
@@ -246,11 +251,39 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
                         .put("serviceName", item.serviceName).put("outcome", item.outcome).put("workPerformed", item.publicWorkNote)
                         .put("customer", entityRef("CUSTOMER", visit.customerId, origin)).put("site", entityRef("SITE", visit.siteId, origin))
                         .put("equipment", item.equipmentId?.let { entityRef("EQUIPMENT", it, origin) })
-                        .put("notPerformedReason", item.notPerformedReason).put("checklist", checklistJson(item.id)).put("findings", findingsJson(item.id))
-                        .put("parts", partsJson(item.id)).put("recurrence", JSONObject().put("fulfilledObligation", item.fulfilledObligation)
-                            .put("oldDueDate", item.oldDueDate).put("nextDueDate", item.nextDueDate).put("intervalCount", item.intervalCount).put("intervalUnit", item.intervalUnit))
+                        .put("notPerformedReason", item.notPerformedReason ?: JSONObject.NULL)
+                        .put("checklist", checklistJson(item.id)).put("findings", findingsJson(item.id))
+                        .put("parts", partsJson(item.id)).put("recurrence", JSONObject().put("planId", item.planId)
+                            .put("capturedObligationId", item.capturedObligationId).put("fulfilledObligation", item.fulfilledObligation)
+                            .put("oldDueDate", item.oldDueDate).put("nextDueDate", item.nextDueDate)
+                            .put("intervalCount", item.intervalCount).put("intervalUnit", item.intervalUnit)
+                            .put("nextDueDateCalculated", item.nextDueDateCalculated).put("nextDueOverrideReason", item.nextDueOverrideReason))
                         .put("recordedAt", Instant.ofEpochMilli(revision.recordedAtEpochMillis).toString())
-                    if (selection.includePrivate) payload.put("internalNotes", item.privateInternalNote).put("finalInternalNote", revision.privateInternalNote)
+                    payload.put("followUpCaptureState", if (item.followUpsSnapshotJson == null) "UNAVAILABLE_LEGACY" else "CAPTURED_AT_REVISION")
+                    payload.put("followUps", item.followUpsSnapshotJson?.let(FinalFollowUpSnapshot::records)?.let {
+                        if (selection.includePrivate) it else publicFollowUps(it)
+                    } ?: JSONArray())
+                    payload.put("sourcePhotos", JSONArray().also { array -> dao.finalPhotos(item.id).forEach { photo ->
+                        if (selection.includePrivate || photo.visibility == "PUBLIC") array.put(JSONObject()
+                            .put("sourcePhotoId", photo.sourceAttachmentId).put("sourceWorkItemId", item.sourceWorkItemId)
+                            .put("position", photo.position).put("originalSha256", photo.sha256)
+                            .put("originalByteSize", photo.byteSize).put("originalMimeType", photo.mimeType)
+                            .put("caption", photo.caption ?: JSONObject.NULL).put("visibility", photo.visibility)
+                            .put("includeInReport", photo.includedInCustomerReport).put("addedInCorrection", photo.addedInCorrection)
+                            .put("addedAtEpochMillis", photo.addedAtEpochMillis ?: JSONObject.NULL))
+                    } })
+                    val assignment = database.dispatchDao().finalDispatchVisit(revision.id)
+                    val assignedItem = database.dispatchDao().finalDispatchItems(revision.id).firstOrNull { it.finalWorkItemId == item.id }
+                    if (assignment != null && assignedItem != null) {
+                        val binding = database.dispatchDao().visitBinding(assignment.dispatchVisitId)
+                        payload.put("assignmentProvenance", JSONObject()
+                            .put("issuerId", assignment.assignmentIssuerId ?: binding?.assignmentIssuerId ?: JSONObject.NULL)
+                            .put("dispatchVisitId", assignment.dispatchVisitId).put("dispatchItemId", assignedItem.dispatchItemId)
+                            .put("generation", assignment.generation)
+                            .put("materialHash", assignment.assignmentMaterialHash ?: binding?.appliedMaterialHash ?: JSONObject.NULL))
+                    }
+                    if (selection.includePrivate) payload.put("internalNotes", item.privateInternalNote ?: JSONObject.NULL)
+                        .put("finalInternalNote", revision.privateInternalNote ?: JSONObject.NULL)
                     val sourceOrigin = originOf("PERFORMED_WORK", item.sourceWorkItemId, origin)
                     payload.put("originWorkspaceId", sourceOrigin)
                     val sourceVisit = if (sourceOrigin == origin) visit.id else sourceOf("VISIT", visit.id)
@@ -263,7 +296,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             val result = imported.transferred ?: imported.remote ?: return@forEach
             val service = when (imported.kind) {
                 ImportedFinalKind.WORK_RESULT -> encodeRemoteResult(result as RemoteFinalResultEntity, selection.includePrivate, origin)
-                ImportedFinalKind.DATA_TRANSFER -> encodeTransferredResult(result as TransferredFinalResultEntity, selection.includePrivate, origin)
+                ImportedFinalKind.DATA_TRANSFER -> encodeTransferredResult(result as TransferredFinalResultEntity, selection.includePrivate)
                 else -> null
             } ?: return@forEach
             val customerId = service.optString("localCustomerId").takeIf { it.isNotBlank() }
@@ -277,7 +310,7 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             addResult(service, originId, visitId, service.getString("visitReference"), date,
                 JSONObject(service.getString("customerSnapshot")), JSONObject(service.getString("siteSnapshot")))
         }
-        return JSONObject().put("version", 1).put("visits", JSONArray(groups.values.toList())).toString().toByteArray(Charsets.UTF_8)
+        return JSONObject().put("version", 2).put("visits", JSONArray(groups.values.toList())).toString().toByteArray(Charsets.UTF_8)
     }
 
     private suspend fun checklistJson(workItemId: String) = JSONArray().also { array -> dao.finalChecklistItems(workItemId).forEach { item ->
@@ -303,6 +336,8 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
             .put("sourceFinalRevisionId", source.getString("sourceFinalRevisionId"))
             .put("sourceFinalRevisionNumber", source.getInt("sourceFinalRevisionNumber"))
             .put("supersedesSourceFinalRevisionId", source.opt("supersedesSourceFinalRevisionId") ?: JSONObject.NULL)
+            .put("correctionReason", source.opt("correctionReason") ?: JSONObject.NULL)
+            .put("publicNote", source.opt("publicNote") ?: JSONObject.NULL)
             .put("logicalResultId", source.getString("resultId"))
             .put("technicianId", source.getString("technicianId")).put("technicianName", source.getString("technicianName"))
             .put("technicianDesignation", source.opt("technicianDesignation") ?: JSONObject.NULL)
@@ -346,21 +381,16 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
         }
     }
 
-    private suspend fun encodeTransferredResult(value: TransferredFinalResultEntity, includePrivate: Boolean, localWorkspaceId: String): JSONObject {
-        val result = JSONObject().put("originWorkspaceId", value.originWorkspaceId).put("sourceVisitId", value.sourceVisitId)
-            .put("sourceWorkItemId", value.sourceWorkItemId).put("sourceFinalRevisionId", value.sourceFinalRevisionId).put("logicalResultId", value.logicalResultId)
-            .put("technicianId", value.technicianId).put("technicianName", value.technicianName).put("technicianDesignation", value.technicianDesignation)
-            .put("visitReference", value.visitReference).put("serviceDate", value.serviceDate).put("customerSnapshot", JSONObject(value.customerSnapshotJson))
-            .put("siteSnapshot", JSONObject(value.siteSnapshotJson)).put("subjectSnapshot", JSONObject(value.subjectSnapshotJson)).put("serviceName", value.serviceName)
-            .put("outcome", value.outcome).put("workPerformed", value.workPerformed).put("notPerformedReason", value.notPerformedReason)
-            .put("checklist", JSONArray(value.checklistJson)).put("findings", JSONArray(value.findingsJson)).put("parts", JSONArray(value.partsJson))
-            .put("recurrence", JSONObject(value.recurrenceJson)).put("localCustomerId", value.localCustomerId).put("localSiteId", value.localSiteId).put("localEquipmentId", value.localEquipmentId)
-            .put("recordedAt", JSONObject(value.provenanceJson).optString("recordedAt"))
-        value.localCustomerId?.let { result.put("customer", entityRef("CUSTOMER", it, localWorkspaceId)) }
-        value.localSiteId?.let { result.put("site", entityRef("SITE", it, localWorkspaceId)) }
-        value.localEquipmentId?.let { result.put("equipment", entityRef("EQUIPMENT", it, localWorkspaceId)) }
-        if (includePrivate) result.put("internalNotes", value.internalNotes)
-        return result
+    private fun encodeTransferredResult(value: TransferredFinalResultEntity, includePrivate: Boolean): JSONObject {
+        val source = value.sourcePayloadJson?.let(::JSONObject)
+            ?: throw IllegalStateException("This legacy performed record needs its original package re-imported before a lossless native relay")
+        if (includePrivate) return source
+        return JSONObject(source.toString()).apply {
+            remove("internalNotes")
+            remove("finalInternalNote")
+            put("followUps", publicFollowUps(source.getJSONArray("followUps")))
+            put("sourcePhotos", publicSourcePhotos(source.getJSONArray("sourcePhotos")))
+        }
     }
 
     private suspend fun encodeTransferredContext(selection: ExportCenterSelection, origin: String, family: String, dependencies: DirectoryDependencies): ByteArray {
@@ -573,5 +603,5 @@ class DataTransferExportService(private val database: ServiceLoopDatabase, priva
     private fun String.toJsonObject() = runCatching { JSONObject(this) }.getOrDefault(JSONObject())
     private fun JSONObject.optNullable(key: String): String? = if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotBlank() && it != "null" }
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-    private fun transferEvidenceSourceKey(origin: String, photo: String, revision: String?) = "$origin|$photo|${revision ?: "standalone"}"
+    private fun transferEvidenceSourceKey(origin: String, photo: String, revision: String?) = SourceIdentityKeys.evidence(origin, photo, revision)
 }
