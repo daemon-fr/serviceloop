@@ -1,0 +1,37 @@
+{
+  "package": "Owner-adopted V16 Service UI/UX Reference v1.0",
+  "canonicalManual": "V16Service_UI_UX_Implementation_Reference_v1_0.md",
+  "mechanicalCompanions": [
+    "V16Service_UI_Tokens_v1_0.json",
+    "V16Service_UI_Coverage_v1_0.csv"
+  ],
+  "presentationAuthority": "Adopted; product semantics and owner amendments remain higher authority.",
+  "branch": "codex/b051-v16-service-identity",
+  "currentCommit": "See docs/project/IMPLEMENTATION_STATE.md",
+  "images": [
+    {
+      "name": "mockup_outbox.png",
+      "title": "Outbox unselected",
+      "width": 618,
+      "height": 1328,
+      "sha256": "993b5c8376eebf052c9df01e97932b1d77da3572f853733f97b2e2a165bc7184"
+    },
+    {
+      "name": "mockup_selected.png",
+      "title": "Outbox selected",
+      "width": 618,
+      "height": 1328,
+      "sha256": "cdabb353913d28486ee7979a0a17e77037153c200a92e9781fabbf8005ac5616"
+    },
+    {
+      "name": "mockup_editor.png",
+      "title": "New Dispatch Visit",
+      "width": 618,
+      "height": 1328,
+      "sha256": "3e81229e7c921fea9d475dedcba91e4ff4c5ac2811b2009d51053988b8dcdb20"
+    }
+  ],
+  "htmlReadingEdition": "Removed; Markdown is canonical.",
+  "runtimeTestsPerformed": false,
+  "pilotCompleted": false
+}

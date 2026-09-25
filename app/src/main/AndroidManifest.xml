@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <application
-        android:name=".ServiceLoopApplication"
+        android:name=".V16ServiceApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -16,12 +16,12 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ServiceLoop">
+        android:theme="@style/Theme.V16Service">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ServiceLoop"
+            android:theme="@style/Theme.V16Service"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -32,19 +32,19 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="application/vnd.serviceloop.sync+zip" />
+                <data android:mimeType="application/vnd.v16studio.v16service+zip" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" android:host="*" android:pathPattern=".*\.slsync" />
-                <data android:scheme="file" android:pathPattern=".*\.slsync" />
+                <data android:scheme="content" android:host="*" android:pathPattern=".*\.v16service" />
+                <data android:scheme="file" android:pathPattern=".*\.v16service" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/vnd.serviceloop.sync+zip" />
+                <data android:mimeType="application/vnd.v16studio.v16service+zip" />
             </intent-filter>
         </activity>
         <provider

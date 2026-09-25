@@ -1,0 +1,773 @@
+package com.v16studio.v16service
+
+import android.graphics.Bitmap
+import android.graphics.Color
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.room.Room
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.v16studio.v16service.data.*
+import com.v16studio.v16service.domain.BusinessTime
+import com.v16studio.v16service.ui.V16ServiceApp
+import com.v16studio.v16service.ui.V16ServiceViewModel
+import com.v16studio.v16service.ui.theme.V16ServiceTheme
+import java.time.Instant
+import java.time.ZoneId
+import java.io.ByteArrayOutputStream
+import java.io.File
+import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class CompletionUiSemanticTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private lateinit var database: V16ServiceDatabase
+
+    @Before fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        database = Room.inMemoryDatabaseBuilder(context, V16ServiceDatabase::class.java).allowMainThreadQueries().build()
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertCustomers(listOf(CustomerEntity("c", "CU-1", "Customer")))
+            dao.insertSites(listOf(SiteEntity("s", "c", "ST-1", "Site", "Address", null)))
+            dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-1", "TECH-1", "Equipment", "Maker", "Model", "Serial", null)))
+            dao.insertPlans(listOf(ServicePlanEntity("p", "e", "P-1", "Service", 3, "MONTHS", "2026-09-01", "ACTIVE", "o")))
+            dao.insertObligations(listOf(ServiceObligationEntity("o", "p", 1, "2026-09-01", 1)))
+            dao.insertVisits(listOf(WorkingVisitEntity("v", "V-UI", "c", "s", "2026-09-05", "Customer", "Site", "Address", "WORKING", 1, "CU-1", "ST-1", "Business", "Technician", null, null, null, "Europe/Bucharest")))
+            dao.insertWorkItems(listOf(WorkItemEntity("w", "v", "e", "p", "o", null, "Equipment", "EQ-1", "Service", "P-1", "2026-09-01", 3, "MONTHS", false, null, false, equipmentIdentifierSnapshot = "TECH-1", equipmentMakeSnapshot = "Maker", equipmentModelSnapshot = "Model", equipmentSerialSnapshot = "Serial")))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("w", "Completed service")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("w", "")))
+        }
+    }
+
+    @After fun tearDown() {
+        compose.runOnUiThread { compose.activity.setContent {} }
+        compose.waitForIdle()
+        database.close()
+    }
+
+    @Test fun noChecklistBlockerLinksRevealCompletionControls() {
+        assertCompletionBlockerNavigation("OUTCOME", false)
+    }
+
+    @Test fun checklistBlockerLinksRevealCompletionControls() {
+        assertCompletionBlockerNavigation("OUTCOME", true)
+    }
+
+    @Test fun noChecklistNotPerformedReasonLinkRevealsReason() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", false)
+    }
+
+    @Test fun checklistNotPerformedReasonLinkRevealsReason() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", true)
+    }
+
+    @Test fun noChecklistNextDueLinkRevealsFulfillment() {
+        assertCompletionBlockerNavigation("NEXT_DUE", false)
+    }
+
+    @Test fun checklistNextDueLinkRevealsFulfillmentAtLargeText() {
+        assertCompletionBlockerNavigation("NEXT_DUE", true, largeText = true)
+    }
+
+    @Test fun performedMissingNextDueWithoutChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PERFORMED", withChecklist = false)
+    }
+
+    @Test fun performedMissingNextDueWithChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PERFORMED", withChecklist = true)
+    }
+
+    @Test fun fulfilledPartlyMissingNextDueWithoutChecklistCanBeRecoveredFromReview() {
+        assertMissingNextDueRecovery("PARTLY_PERFORMED", withChecklist = false)
+    }
+
+    @Test fun fulfilledPartlyMissingNextDueWithChecklistCanBeRecoveredFromReviewAtLargeTextInDarkTheme() {
+        assertMissingNextDueRecovery("PARTLY_PERFORMED", withChecklist = true, largeText = true, dark = true)
+    }
+
+    @Test fun noChecklistReasonLinkRevealsControlInDarkTheme() {
+        assertCompletionBlockerNavigation("NOT_PERFORMED_REASON", false, dark = true)
+    }
+
+    private fun assertCompletionBlockerNavigation(kind: String, withChecklist: Boolean, largeText: Boolean = false, dark: Boolean = false) {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            if (withChecklist) {
+                dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("snapshot", null, "Fixture checklist", 1, 1)))
+                dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("question", "snapshot", 1, "Optional check", "STATUS", null, false, null)))
+            }
+            dao.updateWorkItem(dao.workItem("w")!!.copy(
+                templateSnapshotId = if (withChecklist) "snapshot" else null,
+                outcome = when (kind) { "NOT_PERFORMED_REASON" -> "NOT_PERFORMED"; "NEXT_DUE" -> "PARTLY_PERFORMED"; else -> null },
+                fulfillsCurrentObligation = if (kind == "NOT_PERFORMED_REASON") false else null,
+            ))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme(darkTheme = dark) {
+            if (largeText) {
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) { V16ServiceApp(viewModel, "review/v") }
+            } else V16ServiceApp(viewModel, "review/v")
+        } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        val blockerTag = "completion-blocker-w-$kind-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).assertIsDisplayed().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        when (kind) {
+            "NOT_PERFORMED_REASON" -> compose.onNodeWithTag("not-performed-reason").assertIsDisplayed()
+            "NEXT_DUE" -> compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
+            else -> compose.onNodeWithTag("outcome-w-PERFORMED").assertIsDisplayed()
+        }
+    }
+
+    private fun assertMissingNextDueRecovery(
+        outcome: String,
+        withChecklist: Boolean,
+        largeText: Boolean = false,
+        dark: Boolean = false,
+    ) {
+        val before = runBlocking {
+            val dao = database.v16ServiceDao()
+            if (withChecklist) {
+                dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("missing-date-snapshot", null, "Fixture checklist", 1, 1)))
+                dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("missing-date-question", "missing-date-snapshot", 1, "Optional check", "STATUS", null, false, null)))
+            }
+            dao.updateWorkItem(dao.workItem("w")!!.copy(
+                templateSnapshotId = if (withChecklist) "missing-date-snapshot" else null,
+                outcome = outcome,
+                fulfillsCurrentObligation = true,
+                confirmedNextDueDate = null,
+                nextDueDateCalculated = null,
+                nextDueOverrideReason = null,
+            ))
+            listOf(dao.workItem("w"), dao.visit("v"), dao.obligation("o"), dao.plan("p"))
+        }
+        val repository = RoomV16ServiceRepository(database, fixedTime())
+        val preFixLine = runBlocking { repository.completionLines("v").single() }
+        org.junit.Assert.assertEquals("Confirm the next due date", preFixLine.blockers.single { it.kind.name == "NEXT_DUE" }.message)
+        org.junit.Assert.assertEquals(true, preFixLine.fulfillsCurrentObligation)
+        org.junit.Assert.assertNull(preFixLine.confirmedNextDueDate)
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent {
+            V16ServiceTheme(darkTheme = dark) {
+                if (largeText) {
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) { V16ServiceApp(viewModel, "review/v") }
+                } else V16ServiceApp(viewModel, "review/v")
+            }
+        }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithText("Confirm the next due date").assertIsDisplayed()
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("use-calculated-next-due").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("use-calculated-next-due").assertIsDisplayed()
+        compose.onNodeWithText("Calculated date · 5 Dec 2026 (not saved)").assertIsDisplayed()
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            org.junit.Assert.assertEquals(before[0], dao.workItem("w"))
+            org.junit.Assert.assertEquals(before[1], dao.visit("v"))
+            org.junit.Assert.assertEquals(before[2], dao.obligation("o"))
+            org.junit.Assert.assertEquals(before[3], dao.plan("p"))
+        }
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.confirmedNextDueDate == "2026-12-05" } }
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            val saved = dao.workItem("w")!!
+            org.junit.Assert.assertEquals(outcome, saved.outcome)
+            org.junit.Assert.assertEquals(true, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertEquals("2026-12-05", saved.confirmedNextDueDate)
+            org.junit.Assert.assertEquals(true, saved.nextDueDateCalculated)
+            org.junit.Assert.assertEquals("WORKING", dao.visit("v")!!.state)
+            org.junit.Assert.assertEquals(before[2], dao.obligation("o"))
+            org.junit.Assert.assertEquals(before[3], dao.plan("p"))
+            val reloaded = RoomV16ServiceRepository(database, fixedTime()).completionLines("v").single()
+            org.junit.Assert.assertEquals("2026-12-05", reloaded.confirmedNextDueDate)
+            org.junit.Assert.assertFalse(reloaded.blockers.any { it.kind.name == "NEXT_DUE" && it.message == "Confirm the next due date" })
+        }
+        compose.waitUntil(10_000) {
+            viewModel.state.value.completionLines.singleOrNull()?.blockers?.none {
+                it.kind.name == "NEXT_DUE" && it.message == "Confirm the next due date"
+            } == true
+        }
+    }
+
+    @Test fun pendingOverrideDraftsTakePrecedenceOverCalculatedRecovery() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.updateWorkItem(dao.workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null))
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("w", com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_DATE, "2026-12-20", 2))
+            dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("w", com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_REASON, "Customer requested later date", 3))
+        }
+        val repository = RoomV16ServiceRepository(database, fixedTime())
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("override-date").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("override-date").assertIsDisplayed().assertTextContains("2026-12-20")
+        compose.onNodeWithTag("override-reason").assertTextContains("Customer requested later date")
+        compose.onAllNodesWithTag("use-calculated-next-due").assertCountEquals(0)
+        org.junit.Assert.assertNull(runBlocking { database.v16ServiceDao().workItem("w")!!.confirmedNextDueDate })
+    }
+
+    @Test fun failedCalculatedRecoveryStaysBlockedAndRetrySucceeds() {
+        runBlocking { database.v16ServiceDao().updateWorkItem(database.v16ServiceDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomV16ServiceRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        val blockerTag = "completion-blocker-w-NEXT_DUE-"
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag(blockerTag))
+        compose.onNodeWithTag(blockerTag).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("use-calculated-next-due").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value.values.any { it is com.v16studio.v16service.ui.service.ServiceDraftFieldState.Failed } }
+        org.junit.Assert.assertNull(runBlocking { database.v16ServiceDao().workItem("w")!!.confirmedNextDueDate })
+        org.junit.Assert.assertTrue(runBlocking { repository.completionLines("v").single().blockers.any { it.message == "Confirm the next due date" } })
+        fail.set(false)
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")!!.confirmedNextDueDate == "2026-12-05" } }
+        org.junit.Assert.assertEquals("WORKING", runBlocking { database.v16ServiceDao().visit("v")!!.state })
+    }
+
+    @Test fun failedCalculatedRecoveryRetryCannotRestorePerformedAfterNewNotPerformedDecision() {
+        runBlocking { database.v16ServiceDao().updateWorkItem(database.v16ServiceDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomV16ServiceRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } && compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("use-calculated-next-due"))
+        compose.onNodeWithTag("use-calculated-next-due").performClick()
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value[com.v16studio.v16service.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")] is com.v16studio.v16service.ui.service.ServiceDraftFieldState.Failed }
+        fail.set(false)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-NOT_PERFORMED"))
+        compose.onNodeWithTag("outcome-w-NOT_PERFORMED").performClick()
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.outcome == "NOT_PERFORMED" } }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("not-performed-reason"))
+        compose.onNodeWithTag("not-performed-reason", useUnmergedTree = true).performTextReplacement("Access unavailable")
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.notPerformedReason == "Access unavailable" } }
+
+        compose.onAllNodesWithTag("retry-service-edits").assertCountEquals(0)
+        viewModel.retryFailedServiceEdits("w")
+        runBlocking { org.junit.Assert.assertTrue(viewModel.flushServiceDraft("w").success) }
+        compose.waitForIdle()
+        viewModel.loadInspection("w")
+        compose.waitUntil(10_000) { viewModel.state.value.inspection?.workItemId == "w" }
+        runBlocking {
+            val saved = database.v16ServiceDao().workItem("w")!!
+            org.junit.Assert.assertEquals("NOT_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertEquals("Access unavailable", saved.notPerformedReason)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.v16service.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
+    }
+
+    @Test fun failedCalculatedRecoveryRetryCannotTurnPartlyKeepDueBackIntoFulfill() {
+        runBlocking { database.v16ServiceDao().updateWorkItem(database.v16ServiceDao().workItem("w")!!.copy(outcome = "PARTLY_PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomV16ServiceRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+
+        viewModel.useCalculatedNextDue("w", "v")
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value[com.v16studio.v16service.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")] is com.v16studio.v16service.ui.service.ServiceDraftFieldState.Failed }
+        fail.set(false)
+        viewModel.chooseFulfillment("w", "v", false)
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.fulfillsCurrentObligation == false } }
+
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.v16ServiceDao().workItem("w")!!
+            org.junit.Assert.assertEquals("PARTLY_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.v16service.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
+    }
+
+    @Test fun failedRecoveryCannotReplaceNewManualOverrideOrRawOverrideIntent() {
+        runBlocking { database.v16ServiceDao().updateWorkItem(database.v16ServiceDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val fail = AtomicBoolean(true)
+        val repository = RoomV16ServiceRepository(database, fixedTime(), DraftWriteGate { if (fail.get()) error("controlled recovery failure") })
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        viewModel.useCalculatedNextDue("w", "v")
+        compose.waitUntil(10_000) { viewModel.serviceDraftStates.value.values.any { it is com.v16studio.v16service.ui.service.ServiceDraftFieldState.Failed } }
+        fail.set(false)
+
+        viewModel.scheduleRecurrenceOverrideDate("w", "2026-1")
+        viewModel.scheduleRecurrenceOverrideReason("w", " exact raw reason ")
+        compose.waitUntil(10_000) { runBlocking { repository.workingInputBuffers("w")[com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_REASON] == " exact raw reason " } }
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            org.junit.Assert.assertNull(database.v16ServiceDao().workItem("w")!!.confirmedNextDueDate)
+            org.junit.Assert.assertEquals("2026-1", repository.workingInputBuffers("w")[com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_DATE])
+            org.junit.Assert.assertEquals(" exact raw reason ", repository.workingInputBuffers("w")[com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_REASON])
+        }
+
+        viewModel.scheduleRecurrenceOverrideDate("w", "2026-12-20")
+        viewModel.scheduleRecurrenceOverrideReason("w", "Customer requested later")
+        compose.waitUntil(10_000) { runBlocking { repository.workingInputBuffers("w")[com.v16studio.v16service.domain.ServiceDraftFieldKeys.OVERRIDE_DATE] == "2026-12-20" } }
+        viewModel.applyRecurrenceOverride("w", "v", "2026-12-20", "Customer requested later")
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.confirmedNextDueDate == "2026-12-20" } }
+        viewModel.retryFailedServiceEdits("w")
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.v16ServiceDao().workItem("w")!!
+            org.junit.Assert.assertEquals("2026-12-20", saved.confirmedNextDueDate)
+            org.junit.Assert.assertEquals(false, saved.nextDueDateCalculated)
+            org.junit.Assert.assertEquals("Customer requested later", saved.nextDueOverrideReason)
+        }
+    }
+
+    @Test fun inFlightRecoveryIsCancelledBeforeNewOutcomeWrites() {
+        runBlocking { database.v16ServiceDao().updateWorkItem(database.v16ServiceDao().workItem("w")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null)) }
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = AtomicBoolean(true)
+        val repository = RoomV16ServiceRepository(database, fixedTime(), DraftWriteGate {
+            if (first.compareAndSet(true, false)) {
+                entered.complete(Unit)
+                release.await()
+            }
+        })
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        viewModel.useCalculatedNextDue("w", "v")
+        runBlocking { entered.await() }
+        viewModel.chooseOutcome("w", "v", "NOT_PERFORMED")
+        release.complete(Unit)
+        compose.waitUntil(10_000) { runBlocking { database.v16ServiceDao().workItem("w")?.outcome == "NOT_PERFORMED" } }
+        compose.waitForIdle()
+        runBlocking {
+            val saved = database.v16ServiceDao().workItem("w")!!
+            org.junit.Assert.assertEquals("NOT_PERFORMED", saved.outcome)
+            org.junit.Assert.assertEquals(false, saved.fulfillsCurrentObligation)
+            org.junit.Assert.assertNull(saved.confirmedNextDueDate)
+        }
+        org.junit.Assert.assertFalse(viewModel.serviceDraftStates.value.containsKey(com.v16studio.v16service.ui.service.ServiceDraftFieldId("w", "result:nextDueRecovery")))
+    }
+
+    private fun fixedTime() = object : BusinessTime {
+        override val zoneId = ZoneId.of("Europe/Bucharest")
+        override fun instant() = Instant.parse("2026-09-05T10:00:00Z")
+    }
+
+    @Test fun workingVisitIdentityAndActionsAreSeparated() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-identity").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-identity").assertIsDisplayed()
+        compose.onNodeWithText("V-UI · Working").assertIsDisplayed()
+        org.junit.Assert.assertTrue(compose.onAllNodesWithText("Customer").fetchSemanticsNodes().isNotEmpty())
+        org.junit.Assert.assertTrue(compose.onAllNodesWithText("Site").fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithText("Address").assertIsDisplayed()
+        compose.onNodeWithTag("visit-date-landmark-label").assertTextContains("SERVICE DATE")
+        compose.onNodeWithTag("visit-date-landmark-value").assertTextContains("5 Sep 2026")
+        compose.onAllNodesWithText("Service date 2026-09-05").assertCountEquals(0)
+        compose.onNodeWithTag("visit-relationship-actions").assertIsDisplayed()
+        compose.onNodeWithTag("visit-customer-link").assertIsDisplayed()
+        compose.onNodeWithTag("visit-site-link").assertIsDisplayed()
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").assertIsDisplayed()
+        compose.onNodeWithTag("visit-review").assertIsDisplayed()
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasText("Inspection checklist"))
+        compose.onNodeWithText("Inspection checklist").assertIsDisplayed()
+        compose.onAllNodesWithText("Checklist template").assertCountEquals(0)
+    }
+
+    @Test fun reviewWaitsForOutcomeBeforeShowingFulfillmentAndKeepsIdentityCompact() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "review/v") } }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.isNotEmpty() }
+        compose.onNodeWithText("Review the service details before finalizing.").assertIsDisplayed()
+        compose.onAllNodesWithText("Checklist completion records inspection facts.").assertCountEquals(0)
+        compose.onAllNodesWithText("Service outcome and recurring fulfillment remain separate decisions.").assertCountEquals(0)
+        compose.onNodeWithText("Report identity").assertIsDisplayed()
+        compose.onNodeWithText("Business · Technician").assertIsDisplayed()
+        compose.onNodeWithText("Update from current profile").assertIsDisplayed()
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasText("Choose an outcome"))
+        compose.onNodeWithText("Choose an outcome").assertIsDisplayed()
+        compose.onAllNodesWithText("null work", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Fulfillment unavailable", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun currentRecurringNotPerformedShowsItsOutstandingDueDateInService() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("Remains due · 1 Sep 2026").assertIsDisplayed()
+    }
+
+    @Test fun currentRecurringNotPerformedShowsItsOutstandingDueDateInReview() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "review/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        compose.onNodeWithText("Remains due · 1 Sep 2026").assertIsDisplayed()
+    }
+
+    @Test fun oneOffNotPerformedDoesNotShowARecurringDueConsequence() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertWorkItems(listOf(WorkItemEntity("oneoff-not-performed", "v", "e", null, null, null, "Equipment", "EQ-1", "One-off repair", null, null, null, null, false, null, null, subjectType = "EQUIPMENT")))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("oneoff-not-performed", "")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("oneoff-not-performed", "")))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        runBlocking { repository.saveCompletionDraft("oneoff-not-performed", "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/oneoff-not-performed") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("No recurring due date for this Service.").assertIsDisplayed()
+        compose.onAllNodesWithText("Remains due", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun historyOnlyNotPerformedDoesNotShowACurrentDueConsequence() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        val historyVisit = runBlocking { repository.createVisit(listOf("p"), "HISTORICAL", "2026-08-01") }
+        val historyWork = runBlocking { database.v16ServiceDao().visitWorkItems(historyVisit).single().id }
+        runBlocking { repository.saveCompletionDraft(historyWork, "NOT_PERFORMED", false, "Access unavailable", null, null, null) }
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/$historyWork") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("History only — current due date is unchanged.").assertIsDisplayed()
+        compose.onAllNodesWithText("Remains due", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun checklistHeaderUsesRequiredCountWithoutPageLevelFindingWarning() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("checklist-template", null, "Inspection", 1, 1)))
+            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("checklist-question", "checklist-template", 1, "Guard", "STATUS", null, true, null)))
+            dao.updateWorkItem(dao.workItem("w")!!.copy(templateSnapshotId = "checklist-template"))
+            dao.upsertResponses(listOf(WorkingResponseEntity("checklist-response", "w", "checklist-question", "ISSUE_FOUND", null, null, null, 1)))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "inspection/w") } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("checklist-section"))
+        compose.onNodeWithText("Required complete 0 of 1").assertIsDisplayed()
+        compose.onAllNodesWithText("Issue findings require a public description before checklist completion.").assertCountEquals(0)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("question-checklist-question"))
+        compose.onNodeWithText("Required for checklist completion.").assertIsDisplayed()
+    }
+
+    @Test fun actualCompletionControlsFinalizeAndNavigateToFinalRecord() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-PERFORMED"))
+        compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
+        compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.fulfillsCurrentObligation == true }
+        compose.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-05" }
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-w").assertCountEquals(0)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("change-next-due"))
+        compose.onNodeWithTag("change-next-due").assertIsDisplayed()
+        compose.onAllNodesWithTag("override-date").assertCountEquals(0)
+        compose.onNodeWithTag("change-next-due").performClick()
+        compose.onNodeWithTag("override-date").performTextReplacement("2026-12-20")
+        compose.onNodeWithTag("override-reason").performTextReplacement("Customer requested later date")
+        compose.onNodeWithTag("override-date").assertTextContains("2026-12-20")
+        compose.onNodeWithTag("override-reason").assertTextContains("Customer requested later date")
+        org.junit.Assert.assertEquals("v", viewModel.state.value.completionVisitId)
+        compose.onNodeWithTag("apply-override").assertIsEnabled()
+        org.junit.Assert.assertEquals("2026-12-05", viewModel.state.value.completionLines.single().confirmedNextDueDate)
+        org.junit.Assert.assertEquals("2026-12-05", runBlocking { repository.completionLines("v").single().confirmedNextDueDate })
+        compose.onNodeWithTag("apply-override").performScrollTo().assertIsDisplayed().performClick()
+        compose.onAllNodesWithTag("override-date").assertCountEquals(0)
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.confirmedNextDueDate == "2026-12-20" }
+        compose.onNodeWithTag("review-visit").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("completion-review-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithTag("outcome-w-PERFORMED").assertCountEquals(0)
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(hasTestTag("finalize-record"))
+        compose.onNodeWithTag("finalize-record").performClick()
+        compose.waitUntil(timeoutMillis = 15_000) { runBlocking { database.v16ServiceDao().finalRecordForVisit("v") != null } }
+        compose.waitUntil(timeoutMillis = 15_000) { viewModel.state.value.finalRecord != null }
+        compose.onNodeWithText("Final service record").assertIsDisplayed()
+    }
+
+    @Test fun largeTextKeepsServiceOutcomeAndFulfillmentChoicesSeparatelyReachable() {
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent {
+            V16ServiceTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                    V16ServiceApp(viewModel, "visit/v")
+                }
+            }
+        }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+        compose.onNodeWithTag("resume-service").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.any { it.workItemId == "w" } }
+        listOf("PERFORMED", "PARTLY_PERFORMED", "NOT_PERFORMED").forEach { outcome ->
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-w-$outcome"))
+            compose.onNodeWithTag("outcome-w-$outcome").assertIsDisplayed()
+        }
+        compose.onNodeWithTag("outcome-w-PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PERFORMED" }
+        compose.onAllNodesWithTag("fulfill-w").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-w").assertCountEquals(0)
+        compose.onNodeWithTag("outcome-w-PARTLY_PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.completionLines.singleOrNull()?.outcome == "PARTLY_PERFORMED" }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("fulfill-w"))
+        compose.onNodeWithTag("fulfill-w").assertIsDisplayed()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("keep-due-w"))
+        compose.onNodeWithTag("keep-due-w").assertIsDisplayed()
+    }
+
+    @Test fun oneOffServiceCanBeReadyWithoutARecurringFulfillmentChoice() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertWorkItems(listOf(WorkItemEntity("oneoff", "v", null, null, null, null, null, null, "Site repair", null, null, null, null, false, null, null, subjectType = "SITE")))
+            dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("oneoff", "Repaired the door closer")))
+            dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("oneoff", "")))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("visit-line-oneoff"))
+        compose.onNodeWithTag("visit-line-oneoff").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-parts"))
+        compose.onNodeWithTag("add-part").assertExists()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-photos"))
+        compose.onNodeWithTag("choose-photo").assertExists()
+        compose.onNodeWithTag("take-photo").assertExists()
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("outcome-oneoff-PERFORMED"))
+        compose.onNodeWithTag("outcome-oneoff-PERFORMED").performClick()
+        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.firstOrNull { it.workItemId == "oneoff" }?.status == com.v16studio.v16service.domain.ServiceEntryStatus.READY }
+        compose.onAllNodesWithTag("fulfill-oneoff").assertCountEquals(0)
+        compose.onAllNodesWithTag("keep-due-oneoff").assertCountEquals(0)
+        compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("service-outcome"))
+        compose.onNodeWithText("No recurring due date for this Service.").assertExists()
+    }
+
+    @Test fun incompleteChecklistBlocksPartlyAndNotPerformedServicesUntilCompleted() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("progress-template", null, "Optional inspection", 1, 1)))
+            dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("progress-question", "progress-template", 1, "Optional check", "STATUS", null, true, null)))
+            dao.updateWorkItem(dao.workItem("w")!!.copy(templateSnapshotId = "progress-template"))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time)
+        runBlocking {
+            repository.savePublicWork("w", "Partly serviced")
+            repository.saveCompletionDraft("w", "PARTLY_PERFORMED", false, null, null, null, null)
+            org.junit.Assert.assertEquals(
+                com.v16studio.v16service.domain.ServiceEntryStatus.IN_PROGRESS,
+                repository.serviceVisitProgress("v").items.single().status,
+            )
+        }
+        val viewModel = V16ServiceViewModel(repository) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+        compose.waitUntil(10_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.v16service.domain.ServiceEntryStatus.IN_PROGRESS }
+        compose.onNodeWithText("In progress").assertIsDisplayed()
+
+        runBlocking {
+            repository.saveCompletionDraft("w", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+            org.junit.Assert.assertEquals(
+                com.v16studio.v16service.domain.ServiceEntryStatus.IN_PROGRESS,
+                repository.serviceVisitProgress("v").items.single().status,
+            )
+        }
+        viewModel.loadVisit("v")
+        compose.waitUntil(5_000) { viewModel.state.value.serviceProgress?.items?.singleOrNull()?.status == com.v16studio.v16service.domain.ServiceEntryStatus.IN_PROGRESS }
+        compose.onNodeWithText("In progress").assertIsDisplayed()
+    }
+
+    @Test fun inlinePhotoDetailsPersistAndRemovalRequiresConfirmation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val repository = RoomV16ServiceRepository(database, time, attachmentRoot = context.filesDir)
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
+        val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val photoId = runBlocking { repository.savePhoto("w", bytes, "test.png", "image/png", false, null) }
+        val path = runBlocking { database.v16ServiceDao().attachment(photoId)!!.storedRelativePath }
+        try {
+            val viewModel = V16ServiceViewModel(repository) {}
+            compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "visit/v") } }
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("visit-detail-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("visit-detail-list").performScrollToNode(hasTestTag("resume-service"))
+            compose.onNodeWithTag("resume-service").performClick()
+            compose.waitUntil(10_000) { viewModel.state.value.fieldEvidenceWorkItemId == "w" && compose.onAllNodesWithTag("service-list").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("service-list").performScrollToNode(hasTestTag("photo-$photoId"))
+            compose.onNodeWithTag("photo-report-$photoId").performScrollTo().assertIsOff().performClick()
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").single().includedInReport } }
+            compose.onNodeWithTag("photo-caption-$photoId").performScrollTo().performTextReplacement("Inspection view")
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").single().caption == "Inspection view" } }
+            compose.onNodeWithTag("remove-photo-$photoId").performScrollTo().performClick()
+            compose.onNodeWithText("Remove photo?").assertIsDisplayed()
+            org.junit.Assert.assertTrue(File(context.filesDir, path).isFile)
+            compose.onNodeWithTag("confirm-remove-photo-$photoId").performClick()
+            compose.waitUntil(5_000) { runBlocking { repository.photos("w").isEmpty() } }
+            org.junit.Assert.assertFalse(File(context.filesDir, path).exists())
+        } finally { File(context.filesDir, path).delete() }
+    }
+
+    @Test fun readyMetadataWithMissingPdfKeepsStructuredTextAndDisablesShare() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.insertFinalRecord(FinalRecordEntity("r", "v", "rev", 2))
+            dao.insertFinalRevision(FinalRecordRevisionEntity("rev", "r", 1, "V-UI", "2026-09-05", 2, "Customer", "Site", "Address", "Business", "Technician", null, null, null, "Europe/Bucharest", null, "CU-1", "ST-1"))
+            dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("fw", "rev", 1, "w", "e", "Equipment", "EQ-1", "TECH-1", "Maker", "Model", "Serial", "Service", "p", "P-1", "NOT_PERFORMED", null, "Access unavailable", false, "2026-09-01", null, 3, "MONTHS", "o", null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
+            dao.insertReportRendition(ReportRenditionEntity("rr", "rev", 1, 3, "reports/r/missing.pdf", "hash", 10, 1, "READY", "ORIGINAL", null))
+            dao.finalizeVisit("v", 2)
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel) } }
+        compose.onNodeWithText("Work").performClick()
+        compose.onNodeWithText("Visits").performClick()
+        compose.onNodeWithTag("visit-date-selector").performClick()
+        compose.onNodeWithTag("visit-date-selector-option-all").performClick()
+        compose.onNodeWithTag("work-visits-list").performScrollToNode(androidx.compose.ui.test.hasText("V-UI"))
+        compose.onNodeWithText("V-UI").performClick()
+        compose.waitUntil(5_000){compose.onAllNodesWithText("Recorded on", substring = true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("Recorded on", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("View report text").performScrollTo().performClick()
+        compose.waitUntil(5_000){compose.onAllNodesWithTag("report-view-tabs").fetchSemanticsNodes().isNotEmpty()}
+        compose.waitUntil(5_000){compose.onAllNodesWithText("File missing",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("File missing", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("content-tab-Text view").assertIsSelected()
+        compose.onNodeWithText("Service record V-UI · Revision 1").assertIsDisplayed()
+        compose.onNodeWithTag("share-pdf").assertIsNotEnabled()
+    }
+
+    @Test fun homeRendersTrueMultipleWorkingAndDueSoonCounts() {
+        runBlocking {
+            database.v16ServiceDao().insertVisits(listOf(
+                WorkingVisitEntity("v2", "V-UI-2", "c", "s", "2026-09-06", "Customer", "Site", null, "WORKING", 3),
+                WorkingVisitEntity("b1", "B-1", "c", "s", "2026-09-07", "Customer", "Site", null, "BOOKED", 2),
+                WorkingVisitEntity("b2", "B-2", "c", "s", "2026-09-08", "Customer", "Site", null, "BOOKED", 2),
+                WorkingVisitEntity("b3", "B-3", "c", "s", "2026-09-09", "Customer", "Site", null, "BOOKED", 2),
+            ))
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel) } }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("operational-section-header-visit-in_progress").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithTag("operational-section-header-visit-due_soon").fetchSemanticsNodes().isNotEmpty()
+        }
+        val inProgress = compose.onNodeWithTag("operational-section-header-visit-in_progress")
+        val dueSoon = compose.onNodeWithTag("operational-section-header-visit-due_soon")
+        inProgress.assertIsDisplayed()
+        dueSoon.assertIsDisplayed()
+        org.junit.Assert.assertEquals(
+            listOf("Visits - In progress · 2; Collapse section"),
+            inProgress.fetchSemanticsNode().config[SemanticsProperties.ContentDescription],
+        )
+        org.junit.Assert.assertEquals(
+            listOf("Visits - Due soon · 3; Expand section"),
+            dueSoon.fetchSemanticsNode().config[SemanticsProperties.ContentDescription],
+        )
+    }
+
+    @Test fun historyDateFieldsShowErrorsAndClearWithoutApplyingInvalidRanges() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time, attachmentRoot = context.filesDir)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel) } }
+        compose.onNodeWithText("Settings").performClick(); compose.onNodeWithText("History").performClick()
+        compose.onNodeWithTag("history-from").performTextReplacement("not-a-date"); compose.onNodeWithText("Use YYYY-MM-DD").assertIsDisplayed()
+        compose.onNodeWithTag("history-from").performTextReplacement("2026-09-10"); compose.onNodeWithTag("history-to").performTextReplacement("2026-09-01")
+        compose.onNodeWithText("From must not be after To").assertIsDisplayed(); compose.onNodeWithText("To must not be before From").assertIsDisplayed()
+        compose.onNodeWithTag("history-clear-dates").performClick(); compose.onNodeWithText("From must not be after To").assertDoesNotExist(); compose.onNodeWithText("To must not be before From").assertDoesNotExist()
+    }
+
+    @Test fun staleObligationIsUnavailableInCompletionReview() {
+        runBlocking {
+            val dao = database.v16ServiceDao()
+            dao.updateCompletionDraft("w", "PERFORMED", true, null, "2026-12-05", true, null)
+            dao.insertObligations(listOf(ServiceObligationEntity("o2", "p", 2, "2026-12-05", 2)))
+            dao.setCurrentObligationForTest("p", "o2")
+        }
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+        val viewModel = V16ServiceViewModel(RoomV16ServiceRepository(database, time)) {}
+        compose.setContent { V16ServiceTheme { V16ServiceApp(viewModel, "review/v") } }
+        compose.waitUntil(5_000){viewModel.state.value.completionLines.isNotEmpty()}
+        val unavailable = androidx.compose.ui.test.hasText("Current service obligation changed — this Service cannot advance the current due date.")
+        compose.onNodeWithTag("completion-review-list").performScrollToNode(unavailable)
+        compose.onNode(unavailable).assertIsDisplayed()
+        compose.onAllNodesWithTag("fulfills-w").assertCountEquals(0)
+    }
+}

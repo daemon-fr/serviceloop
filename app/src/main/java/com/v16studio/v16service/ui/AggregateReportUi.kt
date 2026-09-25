@@ -1,0 +1,138 @@
+package com.v16studio.v16service.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import com.v16studio.v16service.V16ServiceApplication
+import com.v16studio.v16service.data.AggregateReportService
+import com.v16studio.v16service.data.CustomerEntity
+import com.v16studio.v16service.data.EquipmentEntity
+import com.v16studio.v16service.data.ReportableVisitSource
+import com.v16studio.v16service.data.SiteEntity
+import com.v16studio.v16service.domain.V16ServiceScopeFilter
+import com.v16studio.v16service.ui.designsystem.V16ServiceNotice
+import com.v16studio.v16service.ui.designsystem.V16ServiceNoticeKind
+import com.v16studio.v16service.ui.designsystem.V16ServicePrimaryButton
+import com.v16studio.v16service.ui.designsystem.V16ServiceSelectionOption
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.LocalDate
+
+@Composable
+internal fun AggregateReportScreen(padding: PaddingValues) {
+    val context = LocalContext.current
+    val container = remember { (context.applicationContext as V16ServiceApplication).container }
+    val service = remember { AggregateReportService(container.database, container.repository, context.filesDir) }
+    val scope = rememberCoroutineScope()
+    var customers by remember { mutableStateOf<List<CustomerEntity>>(emptyList()) }
+    var sites by remember { mutableStateOf<List<SiteEntity>>(emptyList()) }
+    var equipment by remember { mutableStateOf<List<EquipmentEntity>>(emptyList()) }
+    var filter by remember { mutableStateOf(V16ServiceScopeFilter()) }
+    var fromText by remember { mutableStateOf("") }
+    var toText by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<ReportableVisitSource>>(emptyList()) }
+    var failedReportIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var refreshReports by remember { mutableStateOf(0) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(container.database) { withContext(Dispatchers.IO) { Triple(container.database.v16ServiceDao().allCustomers(), container.database.v16ServiceDao().allSites(), container.database.v16ServiceDao().allEquipment()) }.let { (c,s,e) -> customers=c; sites=s; equipment=e } }
+    val from = runCatching { fromText.takeIf(String::isNotBlank)?.let(LocalDate::parse) }.getOrNull()
+    val to = runCatching { toText.takeIf(String::isNotBlank)?.let(LocalDate::parse) }.getOrNull()
+    val validDates = (fromText.isBlank() || from != null) && (toText.isBlank() || to != null) && (from == null || to == null || !from.isAfter(to))
+    val effective = if (validDates) filter.copy(fromDate = from, toDate = to) else null
+    LaunchedEffect(effective) {
+        selected = emptySet()
+        results = if (effective?.customerId == null) emptyList() else withContext(Dispatchers.IO) { service.reportable(effective) }
+    }
+    LaunchedEffect(filter.customerId, refreshReports) {
+        val customerId = filter.customerId
+        failedReportIds = if (customerId == null) emptyList() else withContext(Dispatchers.IO) {
+            val dao = container.database.v16ServiceDao()
+            dao.aggregateReportsForCustomer(customerId).filter { report ->
+                dao.aggregateRenditions(report.id).firstOrNull()?.status == "FAILED"
+            }.map { it.id }
+        }
+    }
+    LazyColumn(Modifier.padding(padding).testTag("aggregate-report-new"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Aggregate customer report", style = MaterialTheme.typography.headlineSmall)
+                    Text("Select one Customer and the concluded Visits to include.")
+                }
+                V16ServiceScopeDateFilter(
+                    title = "Scope and dates",
+                    filter = filter,
+                    customers = customers,
+                    sites = sites,
+                    equipment = equipment,
+                    onFilterChange = { filter = it },
+                    fromText = fromText,
+                    onFromTextChange = { fromText = it },
+                    toText = toText,
+                    onToTextChange = { toText = it },
+                    fromLabel = "From service date (YYYY-MM-DD)",
+                    toLabel = "Through service date (YYYY-MM-DD)",
+                    testTagPrefix = "aggregate",
+                )
+            }
+            if (!validDates) V16ServiceNotice("Check dates", "Use YYYY-MM-DD and keep From on or before Through.", V16ServiceNoticeKind.Error)
+            if (filter.customerId == null) V16ServiceNotice("Choose a Customer", "One Customer is required to generate a report.", V16ServiceNoticeKind.Warning)
+        }
+        item { Text("Visits · ${results.size}", style = MaterialTheme.typography.titleMedium) }
+        items(results, key = { it.key }) { source ->
+            V16ServiceSelectionOption(source.key in selected, { selected = if (source.key in selected) selected - source.key else selected + source.key },
+                "${source.visitReference} · ${source.serviceDate} · ${source.technicians.joinToString(", ")}", Modifier.testTag("aggregate-source-${source.key.replace(':','-')}"), selectedCheck = true)
+        }
+        item {
+            V16ServicePrimaryButton("Generate customer PDF", { scope.launch {
+                busy = true; message = null
+                runCatching {
+                    val generated = withContext(Dispatchers.IO) { service.generate(requireNotNull(effective), selected.toList()) }
+                    val bytes = withContext(Dispatchers.IO) { File(context.filesDir, generated.relativePath).readBytes() }
+                    shareFile(context, "aggregate-reports", "v16service-customer-report-${generated.reportId.take(8)}.pdf", "application/pdf", bytes,
+                        "Share customer report", "V16 Service aggregate customer report")
+                    generated
+                }.onSuccess { message = "Report generated and ready to share." }
+                    .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Report generation failed" }
+                busy = false
+            } }, Modifier.fillMaxWidth().testTag("aggregate-generate"), enabled = filter.customerId != null && validDates && selected.isNotEmpty() && !busy, busy = busy)
+            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        }
+        if (failedReportIds.isNotEmpty()) item { Text("Failed report renditions", style = MaterialTheme.typography.titleMedium) }
+        items(failedReportIds, key = { "retry-$it" }) { reportId ->
+            V16ServicePrimaryButton("Retry report ${reportId.take(8)}", { scope.launch {
+                busy = true; message = null
+                runCatching {
+                    val generated = withContext(Dispatchers.IO) { service.retry(reportId) }
+                    val bytes = withContext(Dispatchers.IO) { File(context.filesDir, generated.relativePath).readBytes() }
+                    shareFile(context, "aggregate-reports", "v16service-customer-report-${generated.reportId.take(8)}.pdf", "application/pdf", bytes,
+                        "Share customer report", "V16 Service aggregate customer report")
+                }.onSuccess { message = "Report retried and ready to share."; refreshReports++ }
+                    .onFailure { if (it is CancellationException) throw it else message = it.message ?: "Report retry failed" }
+                busy = false
+            } }, Modifier.fillMaxWidth().testTag("aggregate-retry-$reportId"), enabled = !busy, busy = busy)
+        }
+    }
+}

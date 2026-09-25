@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "com.v16studio.serviceloop"
+    namespace = "com.v16studio.v16service"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.v16studio.serviceloop"
+        applicationId = "com.v16studio.v16service"
         minSdk = 29
         targetSdk = 37
         versionCode = 5

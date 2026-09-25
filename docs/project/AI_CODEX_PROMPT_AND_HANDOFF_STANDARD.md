@@ -1,9 +1,9 @@
-# ServiceLoop — AI Codex Prompt, Execution, Review, and Handoff Standard
+# V16 Service — AI Codex Prompt, Execution, Review, and Handoff Standard
 
 **Version:** 2.1
 **Status:** ACTIVE PROCESS AUTHORITY  
-**Project:** ServiceLoop  
-**Purpose:** Define how ServiceLoop AI orchestrators turn adopted product intent and current repository reality into execution-level Codex assignments, how Codex is expected to execute them, how evidence is classified, how completed work is independently reviewed, and how interrupted or fresh-thread work is handed off without owner reconstruction.
+**Project:** V16 Service
+**Purpose:** Define how V16 Service AI orchestrators turn adopted product intent and current repository reality into execution-level Codex assignments, how Codex is expected to execute them, how evidence is classified, how completed work is independently reviewed, and how interrupted or fresh-thread work is handed off without owner reconstruction.
 
 ---
 
@@ -15,7 +15,7 @@ The central rule is:
 
 The prompt author is responsible for reducing avoidable ambiguity before delegation.
 
-A strong ServiceLoop Codex prompt should allow the least expensive approved execution model reasonably intended for the task — normally **Luna High** — to execute correctly without having to rediscover product architecture, infer business meaning, reconstruct accepted decisions, or ask the owner routine implementation questions.
+A strong V16 Service Codex prompt should allow the least expensive approved execution model reasonably intended for the task — normally **Luna High** — to execute correctly without having to rediscover product architecture, infer business meaning, reconstruct accepted decisions, or ask the owner routine implementation questions.
 
 A stronger execution model may be used, but stronger model capability is not permission to write a weaker prompt.
 
@@ -27,13 +27,13 @@ If a prompt merely says “fix these things,” “improve this screen,” “ma
 
 ---
 
-## 2. Relationship to other ServiceLoop authority
+## 2. Relationship to other V16 Service authority
 
 This document is **process authority**. It governs delegation, execution, review, evidence, and continuity.
 
 It does not define product behavior by itself and does not outrank product/source-of-truth authority.
 
-Use the repository authority order defined by ServiceLoop, normally:
+Use the repository authority order defined by V16 Service, normally:
 
 1. current repository + authoritative `/docs`;
 2. explicit owner decisions and accepted amendments;
@@ -237,10 +237,10 @@ Every significant prompt should normally contain:
 
 ```text
 Repository:
-    D:\Repeater\ServiceLoop
+    <repository root from git rev-parse --show-toplevel>
 
 Remote:
-    daemon-fr/serviceloop
+    <URL from git remote get-url origin>
 
 Expected branch:
     <exact>
@@ -388,7 +388,7 @@ State:
 - defaults/backfill;
 - indexes/constraints;
 - Recovery consequences;
-- `.slsync` consequences;
+- `.v16service` consequences;
 - generated schema implications;
 - preserved-device implications.
 
@@ -471,7 +471,7 @@ Approximation drift is a defect when exact reuse is the requirement.
 
 Negative boundaries materially improve execution reliability.
 
-Typical ServiceLoop examples:
+Typical V16 Service examples:
 
 - no backend;
 - no accounts;
@@ -518,7 +518,7 @@ Do not dump giant source excerpts unnecessarily.
 
 Prefer:
 
-> “`WorkspacePolicy.kt` currently owns X; `ServiceLoopNavigation.kt` gates Y with Z.”
+> “`WorkspacePolicy.kt` currently owns X; `V16ServiceNavigation.kt` gates Y with Z.”
 
 over pasting hundreds of lines.
 
@@ -722,7 +722,7 @@ Potential examples:
 - Equipment breadcrumb;
 - business timezone;
 - Export Center;
-- `.slsync` native transfer;
+- `.v16service` native transfer;
 - image cleanup;
 - Settings IA.
 
@@ -732,7 +732,7 @@ Use the actual task subset, not every screen mechanically.
 
 Canonical display name:
 
-> `Pixel 10a ServiceLoop`
+> `Pixel 10a V16 Service`
 
 Resolve the adb serial dynamically every run.
 
@@ -801,7 +801,7 @@ Do not:
 
 ---
 
-## 22. Known ServiceLoop tooling fallbacks
+## 22. Known V16 Service tooling fallbacks
 
 Carry these into relevant prompts so every Codex run does not rediscover them.
 
@@ -1346,15 +1346,15 @@ Better:
 
 ## 34. Canonical substantial-prompt skeleton
 
-Use this skeleton as the starting structure for future significant ServiceLoop Codex assignments.
+Use this skeleton as the starting structure for future significant V16 Service Codex assignments.
 
 ```text
-SERVICELOOP — <TASK NAME>
+V16 SERVICE — <TASK NAME>
 =========================
 
 ROLE / EXECUTION MODE
 ---------------------
-You are the execution-level Android developer for ServiceLoop.
+You are the execution-level Android developer for V16 Service.
 Complete the full authorized assignment.
 Do not restart product discovery.
 Do not ask the owner routine implementation questions.
@@ -1469,7 +1469,7 @@ exists, do not return a final handoff. Continue working.
 ## 35. Canonical correction-prompt skeleton
 
 ```text
-SERVICELOOP — <MILESTONE> INDEPENDENT-REVIEW CORRECTION
+V16 SERVICE — <MILESTONE> INDEPENDENT-REVIEW CORRECTION
 =======================================================
 
 START
@@ -1603,7 +1603,7 @@ Do not accept merely because the suite is green.
 
 ---
 
-## 38. Stable ServiceLoop business safeguards for prompt reuse
+## 38. Stable V16 Service business safeguards for prompt reuse
 
 When relevant, copy these directly into implementation prompts.
 
@@ -1668,7 +1668,7 @@ When this document changes in the repository:
 
 ## 40. Closing rule
 
-ServiceLoop’s AI workflow succeeds when:
+V16 Service’s AI workflow succeeds when:
 
 - Chat resolves meaning;
 - prompts remove ambiguity;

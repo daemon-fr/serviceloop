@@ -1,130 +1,43 @@
-# AGENTS.md — ServiceLoop
+# AGENTS.md — V16 Service
 
-This file defines persistent implementation-agent rules for the ServiceLoop repository.
+Persistent implementation rules for this repository.
 
 ## Authority
 
-Read `docs/project/SOURCE_OF_TRUTH.md` first. Explicit owner amendments in `docs/project/BASELINE_DECISIONS.md` outrank the adopted product/UI documents. Current code and tests establish implementation state, not new requirements.
+Read `docs/project/SOURCE_OF_TRUTH.md` first. Explicit owner decisions in `docs/project/BASELINE_DECISIONS.md` outrank adopted product/UI documents. Current code and tests establish implementation state, not new requirements. Do not combine adopted requirements with conflicting unadopted proposals.
 
-Do not silently combine the adopted Conceptual App Map with conflicting policies from the reference Complete Functional App Map.
-
-## AI prompt and handoff process
-
-When operating as the ServiceLoop orchestrator/reviewer, or when preparing a substantial Codex implementation prompt, correction prompt, or new-thread handoff, read and apply:
-
-    docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md
-
-That standard is mandatory process authority for AI-to-AI delegation, execution, independent review, evidence classification, and continuity. Write execution assignments for the least expensive intended execution model (normally Luna High): inspect current source first, name known code/data hotspots, state exact implementation semantics and failure cases, prescribe concrete tests/runtime evidence, and end with an exhaustive acceptance checklist. Do not make a prompt less explicit merely because a stronger Codex model is selected.
-
-An implementation agent executing an already-finished task does not need the prompt-authoring standard unless it is also asked to author a subsequent prompt. It must still obey this file, the task contract, and the relevant product/milestone authority.
+When acting as orchestrator/reviewer or authoring a substantial implementation prompt or handoff, read `docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md`. Name source/data hotspots, exact semantics and failure cases, concrete tests/runtime evidence, and an exhaustive acceptance checklist.
 
 ## Product boundary
 
-ServiceLoop is a local-first service book for solo technicians and small service companies. It includes the explicitly adopted local/file-based Dispatch and role workflows. Preserve the loop:
-
-Customer → site → equipment → service plan → due work/arrangements → working visit → service record/report → next obligation/follow-up.
-
-Do not turn it into a generic task manager or full enterprise field-service-management suite. Still prohibited without explicit adoption: backend/accounts, live/cloud sync, team sync, billing/accounting, inventory, customer portal, or unrelated enterprise scope.
+V16 Service is a local-first service book for solo technicians and small service companies. Preserve the loop: Customer → site → equipment → service plan → due work/arrangements → working Visit → service record/report → next obligation/follow-up. Dispatch and the five-role workspace are adopted local/file-based workflows. Backend/accounts, live/cloud/team sync, billing/accounting, inventory, customer portal, and unrelated enterprise scope require explicit adoption.
 
 ## Implementation discipline
 
-Own ordinary engineering decisions inside the authorized scope. Prefer simple dependable implementations and coherent vertical slices. Do not build speculative frameworks or generic engines.
+Own routine engineering decisions in the authorized scope. Prefer dependable vertical slices and avoid speculative frameworks. Authorized substantial work runs to completion; commits, pushed checkpoints, passing stages, or remaining work size are not stopping points. Repair ordinary low-risk defects whose behavior is established. Stop only for an external execution blocker, unsafe repository discrepancy, destructive action, or genuine owner/data-integrity/security decision outside existing authority.
 
-Task sizing: Codex is trusted with substantial coherent assignments. Do not fragment work merely because it is large. Split only at meaningful workflow, integrity, platform-risk, or review boundaries. Do not cross the explicitly authorized task boundary.
-
-Substantial authorized Codex tasks are intended to run unattended. Use reasonable engineering judgment and repair ordinary, low-risk scope-adjacent defects whose correct behavior is already established instead of pausing for routine approval.
-
-A clean commit, pushed checkpoint, passing verification stage, or the agent's judgment that remaining authorized work is large is **not** permission to stop. Commits are recovery points, not handoff points. Continue through the complete authorized assignment unless the execution environment itself prevents progress, repository state cannot be safely reconciled, or a genuine owner/data-integrity/security decision lies outside existing authority. Before a final response, re-read the task acceptance checklist; if required implementation remains and no such blocker exists, continue working.
-
-Ordinary build, test, adb, helper, selector, synchronization, and other execution failures are not reasons to stop when the task remains well-defined. Reproduce, diagnose, fix the correct layer, rerun the affected check, and continue. Escalate only for genuinely consequential ambiguity, unexpected repository state, destructive action, or an architectural/data-integrity problem outside the task's authority.
-
-History, durable drafts, attachment ownership, migration safety, and truthful save/finalize semantics are architectural concerns from the foundation onward even when their full user workflows arrive later.
-
-For intensive milestones, separate responsibilities where practical: a development AI model owns architecture-heavy implementation to a clean checkpoint; a testing AI model owns exhaustive regression/runtime/debugging and may repair localized defects. Architectural redesign discovered during verification returns to the development role. Prompts should describe these roles rather than attempting to switch model/configuration from inside the task.
+History, durable drafts, attachment ownership, migration safety, and truthful save/finalize semantics are foundation concerns.
 
 ## Android/toolchain
 
-Current generated baseline:
+Current baseline: minSdk 29; compile/target SDK 37; AGP 9.3.2; Gradle 9.5.0; Gradle JVM/project JDK 20; Java 11; Kotlin 2.2.10; Compose BOM 2026.02.01. Do not casually change working tooling. Keep the full Gradle wrapper distribution filename. Do not reuse other apps' business logic, visual identity, scheduler assumptions, or permissions without an explicit requirement.
 
-- minSdk 29
-- compileSdk/targetSdk 37
-- AGP 9.3.2
-- Gradle 9.5.0
-- Gradle JVM/project JDK 20
-- Java source/target 11
-- Kotlin 2.2.10
-- Compose BOM 2026.02.01
+The canonical emulator is identified by display name `Pixel 10a V16 Service`. Use `tools/resolve-canonical-avd.ps1` to match its display-name metadata to its AVD ID and running serial on every run. Every device-directed command uses `adb -s <resolved-serial>`. Never substitute another emulator or a physical device; do not wipe/recreate the AVD without explicit authorization. Build APKs first and install with `adb -s <resolved-serial> install -r <apk>`; do not use `installDebug` as the normal evidence path.
 
-Do not casually modernize or downgrade working tooling. Keep the exact full Gradle wrapper distribution filename. ServiceLoop may reuse proven development practices from Routine Repeater, but never its application logic, visual identity, scheduler assumptions, or permissions without an explicit ServiceLoop requirement.
+## Architecture and integrity
 
-For device testing, the canonical ServiceLoop AVD is the one whose display name is `Pixel 10a ServiceLoop`. Resolve its current adb serial dynamically from that AVD identity on every run; never assume `emulator-5554` or another fixed serial. Every device-directed adb command must use explicit `-s <resolved-serial>`. Do not substitute another emulator or a physical phone, and do not reset or recreate the AVD without explicit owner authorization.
+Default to one Android module, Kotlin/Compose/Material 3, Room as business persistence, DataStore for preferences/platform-request state, ViewModels over repositories/domain services, simple manual injection, injectable `java.time` business clock/time zone, and app-private owned attachments. No backend abstraction for hypothetical sync.
 
-Build the APK first, then install it explicitly with `adb -s <resolved-serial> install -r <apk>`. Do not use `installDebug` as the normal validation path when separate build/install evidence is available.
-
-## Architecture defaults
-
-Unless current accepted code establishes a better equivalent within scope:
-
-- single Android app module initially;
-- Kotlin + Jetpack Compose + Material 3;
-- Room as authoritative business persistence;
-- DataStore only for preferences/platform-request state;
-- ViewModels/state holders over repositories/domain services;
-- simple constructor/manual application-container injection before adding a DI framework;
-- `java.time` behind an injectable business clock/time-zone provider for deterministic rules;
-- app-private persistent ownership for durable attachments;
-- versioned/append-style historical records rather than silently mutating issued history.
-
-No network/backend abstraction merely for hypothetical future sync.
-
-## Integrity rules
-
-Never show a successful save/finalize state before durable persistence succeeds. A failed save must stay visibly failed and preserve the last durable checkpoint.
-
-Do not allow master-data/template edits to rewrite historical inspection/report meaning. Use snapshots/version identity where the adopted model requires historical stability.
-
-Keep public/customer report data structurally separated from private/access/internal content; privacy must not depend only on hiding fields in UI.
-
-Completion/finalization, recurrence advancement, PDF generation, correction, import, and restore must be designed so retries cannot repeat business effects or silently replace good data.
-
-Do not use destructive Room migration fallback over real data.
-
-For the owner-authorized B050 pre-release clean-slate baseline, Room, Recovery, and current unreleased exchange formats are deliberately current-only version 1. Room ships schema `1` with no migration registrations or destructive fallback. Recovery validates only its current v1 container/schema and exact current table/column shapes. `.slsync`, FULL_WORKSPACE sections, DATA_TRANSFER families, WORK_RESULT, Dispatch WorkPackage, and `.sltech` emit and accept only their current v1 contract; template exchange travels as DATA_TRANSFER. Do not add pre-release compatibility readers or backfills. B050 authorizes clearing only the ServiceLoop package data on the canonical AVD before fresh-state validation and once after instrumentation to leave it clean; it does not authorize wiping or recreating the AVD.
+Never report save/finalize success before durable persistence. Failed saves remain visibly failed and preserve the last durable checkpoint. Master-data/template edits cannot rewrite historical report meaning. Keep customer-report data structurally separate from private/access/internal content. Completion, recurrence, PDF, correction, import, and restore retries must not repeat business effects or replace good data. Never use destructive Room migration fallback over real data.
 
 ## Verification
 
-Use truthful evidence. For relevant changes run the repository's established commands, normally including:
+For relevant changes use established checks, normally `gradlew.bat :app:testDebugUnitTest`, `:app:assembleDebug`, and `:app:lintDebug`; add instrumentation/rendered evidence where behavior requires it. Report each check PASS, FAIL, or NOT RUN accurately. Tests validate adopted meaning. Diagnose stale selectors, lazy composition, synchronization, or IME interference before changing production code for UI-test failure.
 
-- `gradlew.bat :app:testDebugUnitTest`
-- `gradlew.bat :app:assembleDebug`
-- `gradlew.bat :app:lintDebug`
-
-Use instrumented/device tests and actual rendered-screen inspection when the behavior requires them. Report each important check PASS, FAIL, or NOT RUN with a reason. Never claim device/emulator/rendered/PDF evidence that did not occur.
-
-Tests must validate adopted business meaning rather than merely mirror implementation. Do not weaken a correct requirement to make a test pass. When a legacy test assumption is obsolete, replace it with a stable semantic assertion that preserves the intended coverage.
-
-Before changing production code for a UI-test failure, determine whether the problem is actually a stale selector, lazy-list composition, timing/synchronization, IME interference, or a real product defect. A test-harness failure is not automatically a production failure.
-
-Select checks by task risk and changed inputs using [the canonical prompt and handoff standard](docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md). Only checks affected by a later edit lose validity. A broad suite, lint, release build, or device run is required when its risk or inputs justify it, not merely because another commit exists. Record the broad checkpoint and each impact-scoped rerun honestly.
-
-## Execution/tooling fallbacks
-
-- If the managed patch/filesystem helper first fails with a sandbox refresh, access, or path-helper error, switch immediately to the functioning approved local shell/editing path. Do not investigate sandbox internals or retry path spellings; inspect `git diff` after shell edits and run `git diff --check` before commit.
-- If an interrupted run may have left processes alive, inspect the worktree/diff and running processes before resuming. Terminate only a clearly orphaned task-specific build/test process when necessary; do not kill the adb server, Android Studio, Gradle, Git, or unrelated processes indiscriminately.
-- Treat `.idea/deploymentTargetSelector.xml` and `.idea/gradle.xml` as known Android Studio noise only when their diffs contain the previously observed IDE-generated device-selection/Gradle-migration metadata. Restore or ignore those exact known diffs for the task, never stage/commit them, and do not enter a repeated restore loop. Any materially different content remains significant.
-- Never delete `.git/index.lock` blindly. First verify no Git operation is actively using this ServiceLoop repository. If the lock is clearly stale, remove only that lock file; otherwise wait or report the genuine permission/process problem.
-- For ServiceLoop-owned Compose UI, prefer stable `testTag`, `contentDescription`, or visible-label semantics and Compose actions such as `performClick`, `performTextInput`, `performTextReplacement`, `performTextClearance`, `performScrollTo`, `performScrollToNode`, and `performImeAction` over coordinate tapping or `adb input text`.
-- Lazy containers are special: an off-screen `LazyColumn` child may not yet exist in the semantics tree. Scroll the owning lazy list with `performScrollToNode(...)` using a stable semantic matcher, then interact with the child. Do not first wait for an off-screen child to be composed.
-- If handwriting, stylus, or IME UI intercepts coordinate text entry, switch promptly to semantic Compose instrumentation. Do not reset or globally reconfigure the canonical AVD for text entry. A production repository/domain instrumentation path is valid DOMAIN-INSTRUMENTED evidence, but remains distinct from UI-INSTRUMENTED and HUMAN/RENDERED evidence.
-- Use stable domain-backed semantic anchors for persistent journeys (for example IDs/testTags tied to a visit/work item) rather than ambiguous text that may appear multiple times.
-- System surfaces such as the Sharesheet, picker, settings, or another app require actual system-handoff evidence when the handoff itself matters; a domain substitution is not equivalent.
+Prefer stable Compose tags/content descriptions and semantic actions to coordinate taps or `adb input text`. Scroll the owning lazy list before interacting with off-screen items. System surfaces such as picker/Sharesheet require actual handoff evidence when that handoff matters. Never claim evidence that did not occur.
 
 ## Git and handoff
 
-Inspect `git status`, branch and starting revision before substantial work. Verify the exact authorized branch/SHA, remote parity/divergence, protected baseline revision, and worktree state before edits. Keep diffs reviewable, preserve unrelated behavior, do not rewrite history, force-push, destructively reset known-good work, publish, or merge into the protected owner baseline unless explicitly authorized.
+Before substantial work inspect status, branch, starting revision, remote parity, protected refs, and worktree state. Preserve unrelated edits. Keep diffs reviewable; do not rewrite history, force-push, destructively reset, publish, or merge the protected baseline unless explicitly authorized. Ordinary staging, commits, fetching, and push of a specifically authorized branch are permitted.
 
-On an explicitly authorized milestone branch, ordinary Git staging, coherent commits, fetching, status/diff inspection, and pushing that designated branch do not require separate owner approval. This authority does not permit force-push, destructive reset/history rewrite, deletion or movement of protected accepted history, merging into master, or moving master merely because a milestone branch is complete.
-
-At the final Git gate, verify the required tests/build/lint for the task, `git diff --check`, local HEAD equals the designated remote branch, divergence is `0 0`, the real source/docs worktree is clean, and protected baseline branches remain unmoved.
-
-At handoff report starting/ending revision, files materially changed, behavior implemented, verification actually run, known gaps, deviations, and the exact branch/commit/diff for independent review. Distinguish IMPLEMENTED, TESTED, DOMAIN-INSTRUMENTED, UI-INSTRUMENTED, SYSTEM-HANDOFF, HUMAN/RENDERED, and NOT RUN rather than overstating evidence.
+At final acceptance check required evidence, `git diff --check`, exact local/upstream SHA, `0 0` divergence, clean task worktree, and unmoved protected refs. Report starting/ending revision, material changes, behavior, actual evidence, gaps/deviations, and exact review branch/commit. Distinguish TESTED, DOMAIN-INSTRUMENTED, UI-INSTRUMENTED, SYSTEM-HANDOFF, HUMAN/RENDERED, and NOT RUN.

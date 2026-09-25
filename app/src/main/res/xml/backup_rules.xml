@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <!-- Only harmless appearance survives ordinary OS backup on Android 11 and below. -->
-    <include domain="sharedpref" path="serviceloop_appearance.xml" />
+    <include domain="sharedpref" path="v16service_appearance.xml" />
 </full-backup-content>

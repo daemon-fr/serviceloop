@@ -1,6 +1,6 @@
 {
   "resultId": "assignment:result-1",
-  "originWorkspaceId": "SLT-0000-0000-0001-58",
+  "originWorkspaceId": "V16S-0000-0000-0001-19",
   "sourceVisitId": "visit:alpha",
   "sourceWorkItemId": "work|one",
   "sourceWorkItemPosition": 2,
@@ -13,8 +13,8 @@
   "dispatchItemId": "dispatch:item",
   "assignmentGeneration": 3,
   "assignmentMaterialHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "assignmentIssuerId": "SLT-0000-0000-0002-9M",
-  "technicianId": "SLT-0000-0000-0001-58",
+  "assignmentIssuerId": "V16S-0000-0000-0002-6D",
+  "technicianId": "V16S-0000-0000-0001-19",
   "technicianName": "Ada",
   "technicianDesignation": "Engineer",
   "serviceDate": "2026-09-24",

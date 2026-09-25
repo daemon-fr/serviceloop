@@ -54,6 +54,9 @@ class PhosphorToolTest(unittest.TestCase):
                 "check-square": {"SelectionChecked", "SelectionEmpty"},
                 "plus": {"Add", "PlusBold"},
                 "warning-circle": {"WarningCircle", "Error"},
+                "camera": {"Camera", "ContactOtherCamera"},
+                "wrench": {"Equipment", "HomeService"},
+                "list-checks": {"HomeVisit", "InspectionTemplates"},
             },
             duplicates,
         )
@@ -89,17 +92,17 @@ class PhosphorToolTest(unittest.TestCase):
 
     def test_second_generation_is_byte_identical(self):
         phosphor_tool.generate()
-        paths = sorted(phosphor_tool.OUTPUT.glob("ic_sl_*.xml")) + [phosphor_tool.API]
+        paths = sorted(phosphor_tool.OUTPUT.glob("ic_v16s_*.xml")) + [phosphor_tool.API]
         first = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).digest()
         phosphor_tool.generate()
         second = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).digest()
         self.assertEqual(first, second)
 
     def test_root_navigation_has_no_unicode_icon_standins(self):
-        source = (phosphor_tool.ROOT.parent.parent / "app" / "src" / "main" / "java" / "com" / "v16studio" / "serviceloop" / "ui" / "ServiceLoopApp.kt").read_text(encoding="utf-8")
+        source = (phosphor_tool.ROOT.parent.parent / "app" / "src" / "main" / "java" / "com" / "v16studio" / "v16service" / "ui" / "V16ServiceApp.kt").read_text(encoding="utf-8")
         for standin in ("⌂", "✓", "◎"):
             self.assertNotIn(standin, source)
-        for alias in ("ServiceLoopIcons.Home", "ServiceLoopIcons.Work", "ServiceLoopIcons.Customers"):
+        for alias in ("V16ServiceIcons.Home", "V16ServiceIcons.Work", "V16ServiceIcons.Customers"):
             self.assertIn(alias, source)
 
 

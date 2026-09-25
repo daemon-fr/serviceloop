@@ -1,0 +1,349 @@
+package com.v16studio.v16service
+
+import android.content.Context
+import android.graphics.Bitmap
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.v16studio.v16service.data.*
+import com.v16studio.v16service.domain.BusinessTime
+import com.v16studio.v16service.domain.V16ServiceScopeFilter
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.util.zip.ZipInputStream
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class B049ImageCleanupTest {
+    private val context get() = ApplicationProvider.getApplicationContext<Context>()
+    private lateinit var database: V16ServiceDatabase
+    private lateinit var directory: File
+    private lateinit var cleanup: ImageCleanupService
+    private val old = Instant.parse("2025-01-01T00:00:00Z").toEpochMilli()
+    private val now = Instant.parse("2026-09-23T00:00:00Z").toEpochMilli()
+
+    @Before fun setup() = kotlinx.coroutines.runBlocking {
+        database = Room.inMemoryDatabaseBuilder(context, V16ServiceDatabase::class.java).allowMainThreadQueries().build()
+        V16ServiceDatabase.configureStage4Tracking(database.openHelper.writableDatabase); V16ServiceDatabase.configureReminderDefaults(database.openHelper.writableDatabase)
+        directory = File(context.filesDir, "attachments/b049-retention-${System.nanoTime()}").apply { mkdirs() }
+        cleanup = ImageCleanupService(context, database)
+        cleanup.savePreference(ImageRetention.NEVER)
+        val dao = database.v16ServiceDao()
+        dao.upsertBusinessProfile(BusinessProfileEntity("primary","Coordinator Business","Coordinator",null,null,null,"UTC",old))
+        dao.insertCustomers(listOf(CustomerEntity("c","CU-1","Customer")))
+        dao.insertSites(listOf(SiteEntity("s","c","ST-1","Site",null,null)))
+        dao.insertVisits(listOf(
+            WorkingVisitEntity("final-visit","V-1","c","s","2025-01-01","Customer","Site",null,"COMPLETED",old),
+            WorkingVisitEntity("working-visit","V-2","c","s","2025-01-01","Customer","Site",null,"WORKING",old),
+        ))
+        dao.insertWorkItems(listOf(
+            WorkItemEntity("final-work","final-visit",null,null,null,null,null,null,"Inspect",null,null,null,null,false,null,null,subjectType="SITE"),
+            WorkItemEntity("working-work","working-visit",null,null,null,null,null,null,"Inspect",null,null,null,null,false,null,null,subjectType="SITE"),
+        ))
+        dao.insertFinalRecord(FinalRecordEntity("record","final-visit","revision",old))
+        dao.insertFinalRevision(FinalRecordRevisionEntity("revision","record",1,"V-1","2025-01-01",old,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-item","revision",1,"final-work",null,null,null,null,null,null,null,"Inspect",null,null,"DONE",null,null,false,null,null,null,null,null,null,null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
+        val image = Bitmap.createBitmap(2400, 1200, Bitmap.Config.ARGB_8888)
+        val bytes = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it); image.recycle() }.toByteArray()
+        val finalFile = File(directory, "final.jpg").apply { writeBytes(bytes); setLastModified(old) }
+        val excludedFile = File(directory, "excluded.jpg").apply { writeBytes(bytes); setLastModified(old) }
+        val workingFile = File(directory, "working.jpg").apply { writeBytes(bytes); setLastModified(old) }
+        dao.insertAttachments(listOf(
+            AttachmentEntity("final-photo","WORK_ITEM","final-work",relative(finalFile),WorkResultPackageCodec.sha256(bytes),null,"image/jpeg",true,"PRESENT",bytes.size.toLong(),"Final image"),
+            AttachmentEntity("excluded-photo","WORK_ITEM","final-work",relative(excludedFile),WorkResultPackageCodec.sha256(bytes),null,"image/jpeg",false,"PRESENT",bytes.size.toLong(),"Operational evidence"),
+            AttachmentEntity("working-photo","WORK_ITEM","working-work",relative(workingFile),WorkResultPackageCodec.sha256(bytes),null,"image/jpeg",false,"PRESENT",bytes.size.toLong(),"Working image"),
+        ))
+        dao.insertFinalPhotos(listOf(
+            FinalPhotoEntryEntity("final-photo-entry","final-item",1,"final-photo",relative(finalFile),WorkResultPackageCodec.sha256(bytes),bytes.size.toLong(),"image/jpeg","Final image"),
+            FinalPhotoEntryEntity("excluded-photo-entry","final-item",2,"excluded-photo",relative(excludedFile),WorkResultPackageCodec.sha256(bytes),bytes.size.toLong(),"image/jpeg","Operational evidence", includedInCustomerReport = false),
+        ))
+    }
+
+    @After fun teardown() {
+        cleanup.savePreference(ImageRetention.NEVER)
+        database.close()
+        directory.deleteRecursively()
+    }
+
+    @Test fun neverKeepsAllAndAgedFinalGetsVerifiedCopyBeforeRemoval() = runTest {
+        val finalFile = File(directory, "final.jpg")
+        val excludedFile = File(directory, "excluded.jpg")
+        val workingFile = File(directory, "working.jpg")
+        assertEquals(0, cleanup.runNow(now).originalsRemoved)
+        assertTrue(finalFile.isFile)
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        val result = cleanup.runNow(now)
+        assertEquals(2, result.originalsRemoved)
+        assertFalse(finalFile.exists())
+        assertFalse(excludedFile.exists())
+        assertTrue(workingFile.isFile)
+        val retained = database.v16ServiceDao().retainedImage("ATTACHMENT", "final-photo")
+        assertNotNull(retained)
+        assertNotNull(database.v16ServiceDao().retainedImage("ATTACHMENT", "excluded-photo"))
+        val derivative = File(context.filesDir, retained!!.derivativeRelativePath)
+        assertTrue(derivative.isFile)
+        assertEquals(retained.derivativeSha256, WorkResultPackageCodec.sha256(derivative.readBytes()))
+        assertTrue(maxOf(retained.derivativeWidth, retained.derivativeHeight) <= 1200)
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }
+        val public = RoomV16ServiceRepository(database, time, attachmentRoot = context.filesDir).finalRecordRevision("record", "revision")!!.public
+        assertEquals(retained.derivativeRelativePath, public.lines.single().photos.single().relativePath)
+        val archive = ExportCenterService(database, context.filesDir).export(ExportCenterSelection(V16ServiceScopeFilter(customerId = "c"), ExportPreset.IMAGE_ARCHIVE.families))
+        val entries = linkedMapOf<String, ByteArray>()
+        ZipInputStream(archive.inputStream()).use { zip -> while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() } }
+        assertTrue(entries.keys.any { it.startsWith("images/") })
+        assertTrue(entries.getValue("photos.csv").toString(Charsets.UTF_8).contains("DERIVATIVE"))
+        assertTrue(entries.getValue("photos.csv").toString(Charsets.UTF_8).contains("Operational evidence"))
+        assertTrue(entries.getValue("photos.csv").toString(Charsets.UTF_8).contains("ORIGINAL"))
+        derivative.delete()
+    }
+
+    @Test fun cleanupDerivativeSurvivesCompleteRecoveryRoundTrip() = runTest {
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        assertEquals(2, cleanup.runNow(now).originalsRemoved)
+        val passphrase = "retained history backup".toCharArray()
+        val backup = RecoveryPackage(database, context.filesDir).create(passphrase, false)
+        assertTrue(backup.complete)
+        val restoredRoot = File(context.filesDir, "b049-restored-${System.nanoTime()}").apply { mkdirs() }
+        val restoredDb = Room.inMemoryDatabaseBuilder(context, V16ServiceDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val recovery = RecoveryPackage(restoredDb, restoredRoot)
+            recovery.restore(recovery.inspect(backup.bytes, passphrase))
+            val retained = restoredDb.v16ServiceDao().retainedImage("ATTACHMENT", "final-photo")!!
+            assertTrue(File(restoredRoot, retained.derivativeRelativePath).isFile)
+            assertFalse(File(restoredRoot, relative(File(directory, "final.jpg"))).exists())
+            assertEquals(retained.derivativeRelativePath,
+                RoomV16ServiceRepository(restoredDb, object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }, attachmentRoot = restoredRoot)
+                    .finalRecordRevision("record", "revision")!!.public.lines.single().photos.single().relativePath)
+            val archive = ExportCenterService(restoredDb, restoredRoot).export(ExportCenterSelection(V16ServiceScopeFilter(customerId = "c"), ExportPreset.IMAGE_ARCHIVE.families))
+            assertTrue(archive.isNotEmpty())
+        } finally {
+            restoredDb.close()
+            restoredRoot.deleteRecursively()
+        }
+    }
+
+    @Test fun imageArchiveSeparatesVisibilityFromReportChoice() = runTest {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("UPDATE attachments SET visibility='PRIVATE', includedInCustomerReport=0 WHERE id='excluded-photo'")
+        db.execSQL("UPDATE final_photo_entries SET visibility='PRIVATE', includedInCustomerReport=0 WHERE id='excluded-photo-entry'")
+        val service = ExportCenterService(database, context.filesDir)
+        suspend fun exportedIds(includePrivate: Boolean): String {
+            val archive = service.export(ExportCenterSelection(V16ServiceScopeFilter(customerId = "c"), ExportPreset.IMAGE_ARCHIVE.families, includePrivate = includePrivate))
+            ZipInputStream(archive.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.name == "photos.csv") return zip.readBytes().toString(Charsets.UTF_8)
+                }
+            }
+            error("Missing photo metadata")
+        }
+        assertFalse(exportedIds(false).contains("excluded-photo-entry"))
+        assertTrue(exportedIds(false).contains("final-photo-entry"))
+        assertTrue(exportedIds(true).contains("excluded-photo-entry"))
+    }
+
+    @Test fun photoActionsPersistIndependentVisibilityAndReportFlags() = runTest {
+        val repository = RoomV16ServiceRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        repository.setPhotoReportInclusion("working-work", "working-photo", false)
+        assertEquals("PUBLIC", database.v16ServiceDao().attachment("working-photo")!!.visibility)
+        assertFalse(database.v16ServiceDao().attachment("working-photo")!!.includedInCustomerReport)
+        repository.setPhotoPrivacy("working-work", listOf("working-photo"), "PRIVATE", false)
+        assertEquals("PRIVATE", database.v16ServiceDao().attachment("working-photo")!!.visibility)
+        assertFalse(database.v16ServiceDao().attachment("working-photo")!!.includedInCustomerReport)
+        repository.setPhotoReportInclusion("working-work", "working-photo", true)
+        assertEquals("PUBLIC", database.v16ServiceDao().attachment("working-photo")!!.visibility)
+        assertTrue(database.v16ServiceDao().attachment("working-photo")!!.includedInCustomerReport)
+    }
+
+    @Test fun inactiveOptionDoesNotResurrectVoidedPerformedWork() = runTest {
+        val dao = database.v16ServiceDao()
+        dao.insertVisits(listOf(WorkingVisitEntity("void-visit","V-VOID","c","s","2025-01-01","Customer","Site",null,"COMPLETED",old)))
+        dao.insertWorkItems(listOf(WorkItemEntity("void-work","void-visit",null,null,null,null,null,null,"Voided service",null,null,null,null,false,null,null,subjectType="SITE")))
+        dao.insertFinalRecord(FinalRecordEntity("void-record","void-visit","void-revision",old,voided=true))
+        dao.insertFinalRevision(FinalRecordRevisionEntity("void-revision","void-record",1,"V-VOID","2025-01-01",old,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null))
+        dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("void-final","void-revision",1,"void-work",null,null,null,null,null,null,null,"Voided service",null,null,"DONE",null,null,false,null,null,null,null,null,null, followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
+        for (inactive in listOf(false, true)) {
+            val archive = ExportCenterService(database, context.filesDir).export(ExportCenterSelection(V16ServiceScopeFilter(customerId = "c"), ExportPreset.WORK_PERFORMED.families, includeInactive = inactive))
+            ZipInputStream(archive.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.name in setOf("visits.csv", "service_records.csv", "checklist.csv", "parts.csv")) {
+                        assertFalse("${entry.name} resurrected voided work", zip.readBytes().toString(Charsets.UTF_8).contains("void-revision"))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun aggregateFreezesExactSourceAndCreatesNewPdfFromRetainedTruth() = runTest {
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        cleanup.runNow(now)
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }
+        val repository = RoomV16ServiceRepository(database, time, attachmentRoot = context.filesDir)
+        var failNext = false
+        val service = AggregateReportService(database, repository, context.filesDir, AggregateReportWriter { models, businessName, _, _, target, _ ->
+            assertEquals("Coordinator Business", businessName)
+            assertEquals("Technician", models.single().technicianName)
+            assertTrue(models.single().lines.single().photos.single().relativePath.startsWith("retained-images/"))
+            if (failNext) error("Simulated PDF renderer interruption")
+            target.writeBytes("%PDF-fixture".toByteArray())
+            1
+        })
+        val filter = V16ServiceScopeFilter(customerId = "c")
+        val sources = service.reportable(filter)
+        assertEquals(listOf("VISIT:final-visit"), sources.map { it.key })
+        val generated = service.generate(filter, sources.map { it.key })
+        val file = File(context.filesDir, generated.relativePath)
+        assertTrue(file.isFile && file.length() > 0)
+        assertTrue(file.readBytes().copyOfRange(0, 4).contentEquals("%PDF".toByteArray()))
+        assertEquals("revision", database.v16ServiceDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
+        val rendition = database.v16ServiceDao().aggregateRenditions(generated.reportId).single()
+        assertEquals("READY", rendition.status)
+        assertEquals(file.length(), rendition.byteSize)
+        assertEquals(WorkResultPackageCodec.sha256(file.readBytes()), rendition.sha256)
+        database.v16ServiceDao().insertFinalRevision(FinalRecordRevisionEntity("revision-2","record",2,"V-1","2025-01-01",now,"Customer","Site",null,"Business","Technician",null,null,null,"UTC",null,supersedesRevisionId="revision"))
+        val revisedWork = database.v16ServiceDao().finalWorkItems("revision").single().copy(id = "final-work-2", revisionId = "revision-2")
+        database.v16ServiceDao().insertFinalWorkItems(listOf(revisedWork))
+        database.openHelper.writableDatabase.execSQL("UPDATE final_records SET currentRevisionId='revision-2' WHERE id='record'")
+        assertEquals("revision-2", service.reportable(filter).single().revisionId)
+        assertEquals("revision", database.v16ServiceDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
+        database.v16ServiceDao().upsertBusinessProfile(daoBusinessProfile().copy(businessName = "Changed live branding"))
+        failNext = true
+        assertTrue(runCatching { service.retry(generated.reportId) }.isFailure)
+        assertTrue(file.isFile)
+        failNext = false
+        val retried = service.retry(generated.reportId)
+        assertEquals(generated.reportId, retried.reportId)
+        assertTrue(retried.relativePath != generated.relativePath)
+        assertEquals(setOf("READY", "FAILED"), database.v16ServiceDao().aggregateRenditions(generated.reportId).map { it.status }.toSet())
+        assertEquals(3, database.v16ServiceDao().aggregateRenditions(generated.reportId).size)
+        assertEquals("revision", database.v16ServiceDao().aggregateSources(generated.reportId).single().sourceFinalRevisionId)
+        File(context.filesDir, retried.relativePath).delete()
+        file.delete()
+    }
+
+    private suspend fun daoBusinessProfile() = requireNotNull(database.v16ServiceDao().businessProfile())
+
+    @Test fun interruptedDeletionReconcilesWithNeverPolicyAndBeforeCompleteBackup() = runTest {
+        val dao = database.v16ServiceDao()
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        cleanup.runNow(now)
+        val retained = dao.retainedImage("ATTACHMENT", "final-photo")!!
+        dao.updateRetainedImage(retained.copy(originalDeletedAtEpochMillis = null))
+        cleanup.savePreference(ImageRetention.NEVER)
+        assertEquals(null, cleanup.runIfDue(now + 1))
+        assertNotNull(dao.retainedImage("ATTACHMENT", "final-photo")!!.originalDeletedAtEpochMillis)
+
+        val second = dao.retainedImage("ATTACHMENT", "excluded-photo")!!
+        dao.updateRetainedImage(second.copy(originalDeletedAtEpochMillis = null))
+        assertTrue(RecoveryPackage(database, context.filesDir).create("pending retained copy".toCharArray(), false).complete)
+        assertNotNull(dao.retainedImage("ATTACHMENT", "excluded-photo")!!.originalDeletedAtEpochMillis)
+    }
+
+    @Test fun cleanupPreservesOriginalSharedWithWorkingEvidence() = runTest {
+        val dao = database.v16ServiceDao()
+        val working = dao.attachment("working-photo")!!
+        dao.insertFinalPhotos(listOf(FinalPhotoEntryEntity("working-photo-entry", "final-item", 3,
+            working.id, working.storedRelativePath, working.sha256, working.byteSize, working.mimeType, "Shared image")))
+        cleanup.savePreference(ImageRetention.ONE_MONTH)
+        val result = cleanup.runNow(now)
+        assertTrue(File(directory, "working.jpg").isFile)
+        assertEquals(null, dao.retainedImage("FINAL_PHOTO", "working-photo-entry"))
+        assertEquals(2, result.originalsRemoved)
+    }
+
+    @Test fun aggregateKeepsDistinctSameNameSiteWorkLines() = runTest {
+        val dao = database.v16ServiceDao()
+        dao.insertWorkItems(listOf(dao.workItem("final-work")!!.copy(id = "second-work")))
+        dao.insertFinalWorkItems(listOf(dao.finalWorkItems("revision").single().copy(
+            id = "second-final-item", position = 2, sourceWorkItemId = "second-work")))
+        val repository = RoomV16ServiceRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        val service = AggregateReportService(database, repository, context.filesDir,
+            AggregateReportWriter { models, _, _, _, target, _ ->
+                assertEquals(2, models.single().lines.size)
+                assertEquals(listOf("Inspect", "Inspect"), models.single().lines.map { it.serviceName })
+                target.writeBytes("%PDF-two-lines".toByteArray())
+                1
+            })
+        val scope = V16ServiceScopeFilter(customerId = "c")
+        val selected = service.reportable(scope).single()
+        assertEquals(2, selected.sources.size)
+        assertEquals(2, selected.sources.map { it.key }.distinct().size)
+        assertEquals(2, dao.aggregateSources(service.generate(scope, listOf(selected.key)).reportId).size)
+    }
+
+    @Test fun equipmentScopedReportKeepsFrozenLineAfterReferenceEdit() = runTest {
+        val dao = database.v16ServiceDao()
+        dao.insertEquipment(listOf(EquipmentEntity("e", "s", "EQ-OLD", null, "Pump", null, null, null, null)))
+        dao.insertWorkItems(listOf(dao.workItem("final-work")!!.copy(id = "equipment-work", equipmentId = "e",
+            equipmentNameSnapshot = "Pump", equipmentReferenceSnapshot = "EQ-OLD", subjectType = "EQUIPMENT")))
+        dao.insertFinalWorkItems(listOf(dao.finalWorkItems("revision").single().copy(id = "equipment-final", position = 2,
+            sourceWorkItemId = "equipment-work", equipmentId = "e", equipmentName = "Pump",
+            equipmentReference = "EQ-OLD", subjectType = "EQUIPMENT")))
+        database.openHelper.writableDatabase.execSQL("UPDATE equipment SET reference='EQ-NEW' WHERE id='e'")
+        val repository = RoomV16ServiceRepository(database, object : BusinessTime {
+            override val zoneId = ZoneId.of("UTC")
+            override fun instant() = Instant.ofEpochMilli(now)
+        }, attachmentRoot = context.filesDir)
+        val service = AggregateReportService(database, repository, context.filesDir,
+            AggregateReportWriter { models, _, _, _, target, _ ->
+                assertEquals(listOf("EQ-OLD"), models.single().lines.map { it.equipmentReference })
+                target.writeBytes("%PDF-frozen-reference".toByteArray())
+                1
+            })
+        val scope = V16ServiceScopeFilter(customerId = "c", siteId = "s", equipmentId = "e")
+        val selected = service.reportable(scope).single()
+        assertEquals("equipment-final", selected.sources.single().workItemId)
+        service.generate(scope, listOf(selected.key))
+    }
+
+    @Test fun aggregateAcceptsTwoVisitsForOneCustomerAndRejectsCrossCustomerSelection() = runTest {
+        val dao = database.v16ServiceDao()
+        suspend fun addFinalVisit(id: String, customerId: String, siteId: String) {
+            dao.insertVisits(listOf(WorkingVisitEntity(id, id, customerId, siteId, "2025-01-02", "Customer", "Site", null, "COMPLETED", old)))
+            dao.insertWorkItems(listOf(WorkItemEntity("work-$id", id, null, null, null, null, null, null, "Inspect", null, null, null, null, false, null, null, subjectType = "SITE")))
+            dao.insertFinalRecord(FinalRecordEntity("record-$id", id, "revision-$id", old))
+            dao.insertFinalRevision(FinalRecordRevisionEntity("revision-$id", "record-$id", 1, id, "2025-01-02", old, "Customer", "Site", null, "Business", "Technician", null, null, null, "UTC", null))
+            dao.insertFinalWorkItems(listOf(FinalWorkItemEntity("final-$id", "revision-$id", 1, "work-$id", null, null, null, null, null, null, null, "Inspect", null, null, "DONE", "Inspected", null, false, null, null, null, null, null, null, subjectType = "SITE", followUpsSnapshotJson = FinalFollowUpSnapshot.capture(0, emptyList()))))
+        }
+        addFinalVisit("second", "c", "s")
+        dao.insertCustomers(listOf(CustomerEntity("other-c", "CU-2", "Other customer")))
+        dao.insertSites(listOf(SiteEntity("other-s", "other-c", "ST-2", "Other site", null, null)))
+        addFinalVisit("foreign", "other-c", "other-s")
+        val time = object : BusinessTime { override val zoneId = ZoneId.of("UTC"); override fun instant() = Instant.ofEpochMilli(now) }
+        val repository = RoomV16ServiceRepository(database, time, attachmentRoot = context.filesDir)
+        val service = AggregateReportService(database, repository, context.filesDir, AggregateReportWriter { models, _, _, _, target, _ ->
+            assertEquals(2, models.size)
+            target.writeBytes("%PDF-fixture".toByteArray())
+            1
+        })
+        val scope = V16ServiceScopeFilter(customerId = "c")
+        val keys = service.reportable(scope).map { it.key }
+        assertEquals(2, keys.size)
+        val report = service.generate(scope, keys)
+        assertEquals(2, dao.aggregateSources(report.reportId).size)
+        val foreign = service.reportable(V16ServiceScopeFilter(customerId = "other-c")).single().key
+        assertTrue(runCatching { service.generate(scope, keys + foreign) }.isFailure)
+        File(context.filesDir, report.relativePath).delete()
+    }
+
+    private fun relative(file: File) = context.filesDir.toPath().relativize(file.toPath()).toString().replace('\\','/')
+}

@@ -75,9 +75,9 @@ jobs:
       - name: Focused Work-filter tests
         run: >-
           ./gradlew --no-daemon :app:testDebugUnitTest
-          --tests com.v16studio.serviceloop.VisitWorkFilterScheduleTruthTest
-          --tests com.v16studio.serviceloop.WorkFiltersTest
-          --tests com.v16studio.serviceloop.WorkFilterSelectorStyleTest
+          --tests com.v16studio.v16service.VisitWorkFilterScheduleTruthTest
+          --tests com.v16studio.v16service.WorkFiltersTest
+          --tests com.v16studio.v16service.WorkFilterSelectorStyleTest
 
       - name: Full debug unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
@@ -163,7 +163,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: >-
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.v16studio.serviceloop.WorkFilterSelectorUiTest,com.v16studio.serviceloop.DueServicesProjectionUiTest,com.v16studio.serviceloop.ServiceLoopAdaptiveTabsTest,com.v16studio.serviceloop.CanonicalDueServicesProjectionTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.v16studio.v16service.WorkFilterSelectorUiTest,com.v16studio.v16service.DueServicesProjectionUiTest,com.v16studio.v16service.V16ServiceAdaptiveTabsTest,com.v16studio.v16service.CanonicalDueServicesProjectionTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

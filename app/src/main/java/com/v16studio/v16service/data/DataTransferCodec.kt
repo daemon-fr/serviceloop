@@ -1,0 +1,142 @@
+package com.v16studio.v16service.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.Instant
+import java.util.UUID
+
+/** Versioned selective v16service-to-V16 Service payload inside the shared envelope. */
+enum class DataTransferFamily(val section: String) {
+    REGISTER("register"), SERVICE_PLANS("plans"), INSPECTION_TEMPLATES("inspections"),
+    PERFORMED_WORK("performed"), FOLLOW_UPS("followups"), CONTACT_NOTES("contactnotes"),
+    CHANGE_HISTORY("history"), EVIDENCE("evidence"),
+}
+
+data class DataTransferPayload(
+    val packageId: String,
+    val exporterId: String,
+    val sourceWorkspaceId: String,
+    val options: DataTransferOptions,
+    val families: Map<DataTransferFamily, ByteArray>,
+    val binaries: Map<String, ByteArray>,
+    val familyVersions: Map<DataTransferFamily, Int>,
+)
+
+data class DataTransferOptions(
+    val includePrivate: Boolean = false,
+    val includeInactive: Boolean = false,
+    val includePreviousRevisions: Boolean = false,
+)
+
+object DataTransferCodec {
+    const val VERSION = 1
+    private val supportedFamilyVersions: Map<DataTransferFamily, Set<Int>> =
+        DataTransferFamily.entries.associateWith { setOf(1) }
+
+    private fun familyVersion(family: DataTransferFamily, bytes: ByteArray): Int {
+        val body = JSONObject(bytes.toString(Charsets.UTF_8))
+        val version = if (family == DataTransferFamily.INSPECTION_TEMPLATES) body.getInt("formatVersion")
+            else body.getInt("version")
+        require(version in supportedFamilyVersions.getValue(family)) { "Unsupported ${family.name} family version" }
+        return version
+    }
+
+    fun encode(
+        exporterId: String,
+        generatedAt: String = Instant.now().toString(),
+        families: Map<DataTransferFamily, ByteArray>,
+        binaries: Map<String, ByteArray> = emptyMap(),
+        sourceWorkspaceId: String,
+        options: DataTransferOptions = DataTransferOptions(),
+    ): ByteArray {
+        require(families.isNotEmpty()) { "Choose data to share" }
+        require(TechnicianIdCodec.normalize(exporterId) != null) { "A valid exporter ID is required" }
+        require(TechnicianIdCodec.normalize(sourceWorkspaceId) != null) { "A valid source workspace ID is required" }
+        require(binaries.isEmpty() || DataTransferFamily.EVIDENCE in families) { "Evidence bytes need an evidence family" }
+        require(binaries.keys.all { validBinaryName(it) }) { "Unsafe evidence path" }
+        require(binaries.values.all { it.isNotEmpty() }) { "Evidence file is empty" }
+        require(1 + 1 + families.size + binaries.size <= V16ServiceSyncEnvelopeCodec.MAX_ENTRIES) { "Too many transfer entries" }
+        val familyVersions = families.mapValues { (family, bytes) -> familyVersion(family, bytes) }
+        val familyMetadata = JSONArray().also { array ->
+            families.keys.sortedBy { it.ordinal }.forEach { family ->
+                array.put(JSONObject().put("name", family.name).put("version", familyVersions.getValue(family)).put("section", family.section))
+            }
+        }
+        val binaryMetadata = JSONArray().also { array ->
+            binaries.toSortedMap().forEach { (name, bytes) ->
+                array.put(JSONObject().put("name", name).put("size", bytes.size).put("sha256", WorkResultPackageCodec.sha256(bytes)))
+            }
+        }
+        val metadata = JSONObject().put("version", VERSION).put("families", familyMetadata)
+            .put("binaries", binaryMetadata).put("sourceWorkspaceId", TechnicianIdCodec.normalize(sourceWorkspaceId))
+            .put("options", JSONObject().put("includePrivate", options.includePrivate)
+                .put("includeInactive", options.includeInactive).put("includePreviousRevisions", options.includePreviousRevisions))
+        val sections = linkedMapOf("transfer" to metadata.toString().toByteArray(Charsets.UTF_8))
+        val declarations = mutableListOf(V16ServiceSyncSectionDeclaration("transfer", VERSION, "transfer.json"))
+        families.keys.sortedBy { it.ordinal }.forEach { family ->
+            sections[family.section] = families.getValue(family)
+            declarations += V16ServiceSyncSectionDeclaration(family.section, familyVersions.getValue(family), "${family.section}.json")
+        }
+        binaries.toSortedMap().forEach { (name, bytes) ->
+            sections[name] = bytes
+            declarations += V16ServiceSyncSectionDeclaration(name, 1, "$name.bin")
+        }
+        return V16ServiceSyncEnvelopeCodec.encode(
+            V16ServiceSyncManifest(UUID.randomUUID().toString(), "Shared V16 Service data", "DATA_TRANSFER", generatedAt,
+                sections = declarations, exporterId = exporterId), sections)
+    }
+
+    fun decode(bytes: ByteArray): DataTransferPayload {
+        val envelope = V16ServiceSyncEnvelopeCodec.decode(bytes)
+        require(envelope.manifest.purpose == "DATA_TRANSFER") { "This is not a data transfer" }
+        val transferDeclaration = V16ServiceSyncSectionDeclaration("transfer", VERSION, "transfer.json")
+        require(envelope.manifest.sections.firstOrNull() == transferDeclaration) { "Unsupported transfer metadata" }
+        val metadata = JSONObject(envelope.section("transfer").toString(Charsets.UTF_8))
+        require(metadata.getInt("version") == VERSION) { "Unsupported data-transfer version" }
+        val sourceWorkspaceId = TechnicianIdCodec.normalize(metadata.getString("sourceWorkspaceId"))
+            ?: throw IllegalArgumentException("A valid source workspace ID is required")
+        val optionJson = metadata.getJSONObject("options")
+        val options = DataTransferOptions(
+            optionJson.getBoolean("includePrivate"),
+            optionJson.getBoolean("includeInactive"),
+            optionJson.getBoolean("includePreviousRevisions"),
+        )
+        val listed = metadata.getJSONArray("families")
+        require(listed.length() in 1..DataTransferFamily.entries.size) { "Invalid transfer families" }
+        val families = linkedMapOf<DataTransferFamily, ByteArray>()
+        val familyVersions = linkedMapOf<DataTransferFamily, Int>()
+        val expected = mutableListOf(transferDeclaration)
+        repeat(listed.length()) { index ->
+            val entry = listed.getJSONObject(index)
+            val family = DataTransferFamily.entries.firstOrNull { it.name == entry.getString("name") }
+                ?: error("Unsupported transfer family")
+            val version = entry.getInt("version")
+            require(version in supportedFamilyVersions.getValue(family) && entry.getString("section") == family.section) { "Unsupported transfer family version" }
+            require(family !in families) { "Duplicate transfer family" }
+            val declaration = V16ServiceSyncSectionDeclaration(family.section, version, "${family.section}.json")
+            expected += declaration
+            val familyBytes = envelope.section(family.section)
+            require(familyVersion(family, familyBytes) == version) { "Transfer family body version disagrees with the manifest" }
+            families[family] = familyBytes
+            familyVersions[family] = version
+        }
+        val binaries = linkedMapOf<String, ByteArray>()
+        val listedBinaries = metadata.optJSONArray("binaries") ?: JSONArray()
+        require(listedBinaries.length() <= 128) { "Too many evidence files" }
+        repeat(listedBinaries.length()) { index ->
+            val entry = listedBinaries.getJSONObject(index)
+            val name = entry.getString("name")
+            require(validBinaryName(name) && name !in binaries && DataTransferFamily.EVIDENCE in families) { "Invalid evidence declaration" }
+            val data = envelope.section(name)
+            require(data.size.toLong() == entry.getLong("size") && WorkResultPackageCodec.sha256(data) == entry.getString("sha256")) { "Evidence integrity check failed" }
+            expected += V16ServiceSyncSectionDeclaration(name, 1, "$name.bin")
+            binaries[name] = data
+        }
+        require(envelope.manifest.sections.toSet() == expected.toSet() && envelope.manifest.sections.size == expected.size) { "Transfer sections do not match family declarations" }
+        require(expected.size + 1 <= V16ServiceSyncEnvelopeCodec.MAX_ENTRIES) { "Too many transfer entries" }
+        require(envelope.manifest.sections == expected) { "Transfer sections are not in canonical order" }
+        return DataTransferPayload(envelope.manifest.syncId, requireNotNull(envelope.manifest.exporterId), sourceWorkspaceId, options, families, binaries, familyVersions)
+    }
+
+    private fun validBinaryName(name: String) = name.matches(Regex("binary-[a-zA-Z0-9_-]{1,80}"))
+}

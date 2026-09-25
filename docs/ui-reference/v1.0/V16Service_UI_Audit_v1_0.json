@@ -1,0 +1,23 @@
+{
+  "specVersion": "1.0",
+  "status": "Static design-document audit; not runtime or accessibility certification.",
+  "sourceManifest": "V16Service_Source_Manifest_v1_0.json",
+  "countsFromOwnerSuppliedReference": {
+    "namedConceptualActionGroups": 357,
+    "currentAdditionalActionGroups": 93,
+    "compoundVariants": 282,
+    "explicitInputs": 183,
+    "surfaceContracts": 73,
+    "componentContracts": 36,
+    "layoutPatterns": 12,
+    "interactionPatterns": 20,
+    "semanticStateMappings": 129,
+    "themeColorRoles": 37,
+    "contrastChecks": 263,
+    "acceptanceScenarioFamilies": 20
+  },
+  "runtimeTestsPerformed": false,
+  "nativeAccessibilityTested": false,
+  "romanianPilotCompleted": false,
+  "note": "Counts describe the design reference inventory and do not certify app implementation."
+}

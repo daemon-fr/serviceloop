@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ServiceLoop"
+rootProject.name = "V16 Service"
 include(":app")
  

@@ -1,0 +1,542 @@
+package com.v16studio.v16service
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.v16studio.v16service.data.*
+import com.v16studio.v16service.domain.*
+import com.v16studio.v16service.report.AndroidReportService
+import com.v16studio.v16service.report.PdfWriteGate
+import com.v16studio.v16service.report.ReportWriter
+import com.v16studio.v16service.report.ReportMetadataGate
+import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class PersistenceIntegrityContractTest {
+    private lateinit var db: V16ServiceDatabase
+    private val context get() = ApplicationProvider.getApplicationContext<Context>()
+    private val time = object : BusinessTime { override val zoneId = ZoneId.of("Europe/Bucharest"); override fun instant() = Instant.parse("2026-09-05T10:00:00Z") }
+
+    @Before fun setup() { db = Room.inMemoryDatabaseBuilder(context, V16ServiceDatabase::class.java).allowMainThreadQueries().build() }
+    @After fun close() = db.close()
+
+    @Test fun recurrenceUsesCompletionDateWithCalendarClipping() {
+        assertEquals(LocalDate.parse("2026-02-28"), RecurrenceCalculator.nextDate(LocalDate.parse("2026-01-31"), 1, "MONTHS"))
+        assertEquals(LocalDate.parse("2025-02-28"), RecurrenceCalculator.nextDate(LocalDate.parse("2024-02-29"), 1, "YEARS"))
+        assertEquals(LocalDate.parse("2026-09-19"), RecurrenceCalculator.nextDate(LocalDate.parse("2026-09-05"), 2, "WEEKS"))
+        assertEquals(LocalDate.parse("2026-09-08"), RecurrenceCalculator.nextDate(LocalDate.parse("2026-09-05"), 3, "DAYS"))
+    }
+
+    @Test fun recurrenceBoundaryTableClipsOnlyAsCalendarArithmeticRequires() {
+        val cases = listOf(
+            Triple("2024-01-31", 1 to "MONTHS", "2024-02-29"),
+            Triple("2025-01-31", 1 to "MONTHS", "2025-02-28"),
+            Triple("2024-02-29", 12 to "MONTHS", "2025-02-28"),
+            Triple("2024-02-29", 4 to "YEARS", "2028-02-29"),
+            Triple("2026-12-31", 2 to "MONTHS", "2027-02-28"),
+            Triple("2026-04-30", 1 to "MONTHS", "2026-05-30"),
+            Triple("2026-12-31", 1 to "DAYS", "2027-01-01"),
+            Triple("2026-12-31", 1 to "WEEKS", "2027-01-07"),
+        )
+        cases.forEach { (start, interval, expected) ->
+            assertEquals(start, expected, LocalDate.parse(expected).let { _ ->
+                RecurrenceCalculator.nextDate(LocalDate.parse(start), interval.first, interval.second).toString()
+            })
+        }
+
+        val maxMonths = Int.MAX_VALUE
+        val expectedLargeMonthDate = LocalDate.of(1 + maxMonths / 12, 1 + maxMonths % 12, 1)
+        assertEquals(expectedLargeMonthDate, RecurrenceCalculator.nextDate(LocalDate.of(1, 1, 1), maxMonths, "MONTHS"))
+        assertEquals(LocalDate.of(999_999_999, 1, 1), RecurrenceCalculator.nextDate(LocalDate.of(1, 1, 1), 999_999_998, "YEARS"))
+        assertTrue(runCatching { RecurrenceCalculator.nextDate(LocalDate.of(2026, 1, 1), 0, "MONTHS") }.isFailure)
+        assertTrue(runCatching { RecurrenceCalculator.nextDate(LocalDate.of(2026, 1, 1), 1, "FORTNIGHTS") }.isFailure)
+    }
+
+    @Test fun missingNextDueRecoveryIsConditionalDateOnlyAndDuplicateSafe() = runTest {
+        seed(); val dao = db.v16ServiceDao(); val repository = repo()
+        suspend fun missing(outcome: String) {
+            dao.updateWorkItem(dao.workItem("work-1")!!.copy(outcome = outcome, fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null, nextDueOverrideReason = null))
+        }
+        fun request(outcome: String) = NextDueRecoveryRequest("work-1", "visit-1", outcome, "obligation-1", "2026-12-05")
+
+        missing("PERFORMED")
+        assertTrue(repository.recoverMissingCalculatedNextDue(request("PERFORMED")) is NextDueRecoveryResult.Applied)
+        assertEquals("PERFORMED", dao.workItem("work-1")!!.outcome)
+        assertEquals("2026-12-05", dao.workItem("work-1")!!.confirmedNextDueDate)
+
+        dao.updateWorkItem(dao.workItem("work-1")!!.copy(confirmedNextDueDate = "2027-01-10", nextDueDateCalculated = false, nextDueOverrideReason = "Customer request"))
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request("PERFORMED")))
+        assertEquals("2027-01-10", dao.workItem("work-1")!!.confirmedNextDueDate)
+        assertEquals(false, dao.workItem("work-1")!!.nextDueDateCalculated)
+        assertEquals("Customer request", dao.workItem("work-1")!!.nextDueOverrideReason)
+
+        missing("PARTLY_PERFORMED")
+        assertTrue(repository.recoverMissingCalculatedNextDue(request("PARTLY_PERFORMED")) is NextDueRecoveryResult.Applied)
+        assertEquals("PARTLY_PERFORMED", dao.workItem("work-1")!!.outcome)
+        assertEquals(true, dao.workItem("work-1")!!.fulfillsCurrentObligation)
+    }
+
+    @Test fun missingNextDueRecoveryRetiresChangedIntentRawDraftAndEligibility() = runTest {
+        seed(); val dao = db.v16ServiceDao(); val repository = repo()
+        val request = NextDueRecoveryRequest("work-1", "visit-1", "PERFORMED", "obligation-1", "2026-12-05")
+        suspend fun resetMissing() = dao.updateWorkItem(dao.workItem("work-1")!!.copy(outcome = "PERFORMED", fulfillsCurrentObligation = true, confirmedNextDueDate = null, nextDueDateCalculated = null, nextDueOverrideReason = null))
+
+        resetMissing(); repository.saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertEquals("NOT_PERFORMED", dao.workItem("work-1")!!.outcome)
+
+        resetMissing(); dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE, "2026-1", 2))
+        dao.upsertWorkingInputBuffer(WorkingInputBufferEntity("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON, " exact raw reason ", 3))
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertNull(dao.workItem("work-1")!!.confirmedNextDueDate)
+        assertEquals("2026-1", dao.workingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE)!!.rawValue)
+        assertEquals(" exact raw reason ", dao.workingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON)!!.rawValue)
+
+        dao.deleteWorkingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_DATE); dao.deleteWorkingInputBuffer("work-1", ServiceDraftFieldKeys.OVERRIDE_REASON)
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-new", "plan-1", 2, "2026-10-01", 4)))
+        dao.setCurrentObligationForTest("plan-1", "obligation-new")
+        assertEquals(NextDueRecoveryResult.Superseded, repository.recoverMissingCalculatedNextDue(request))
+        assertNull(dao.workItem("work-1")!!.confirmedNextDueDate)
+    }
+
+    @Test fun checklistReviewRequiresCompleteFindingAndSavedEditInvalidatesReview() = runTest {
+        seed(withChecklist = true); val repository = repo()
+        try { repository.markChecklistReviewed("work-1"); fail("Expected incomplete review") } catch (_: IllegalArgumentException) {}
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.ISSUE_FOUND, null, "Public finding")
+        repository.markChecklistReviewed("work-1")
+        assertTrue(repository.inspection("work-1")!!.checklistReviewed)
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        assertTrue(repository.inspection("work-1")!!.checklistReviewed)
+    }
+
+    @Test fun fulfilledFinalizationIsAtomicIdempotentAndSnapshotBased() = runTest {
+        seed(); val repository = repo(); repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        val first = repository.finalizeVisit("visit-1") as FinalizeResult.Success
+        val again = repo().finalizeVisit("visit-1") as FinalizeResult.Success
+        assertEquals(first.recordId, again.recordId); assertEquals(1, db.v16ServiceDao().finalRecordCount()); assertEquals(1, db.v16ServiceDao().finalRevisionCount()); assertEquals(2, db.v16ServiceDao().obligationCount("plan-1"))
+        assertEquals("2026-12-05", db.v16ServiceDao().plan("plan-1")!!.currentDueDate); assertNotNull(db.v16ServiceDao().obligation("obligation-1")!!.consumedByRevisionId)
+        db.v16ServiceDao().renameCustomer("customer-1", "Renamed customer"); db.v16ServiceDao().renameEquipment("equipment-1", "Renamed equipment")
+        val frozen = repository.finalRecord(first.recordId)!!
+        assertEquals("Captured customer", frozen.public.customerName); assertEquals("Captured equipment", frozen.public.lines.single().equipmentName)
+        assertFalse(frozen.public.toString().contains("PRIVATE_ACCESS_SENTINEL")); assertFalse(frozen.public.toString().contains("PRIVATE_INTERNAL_SENTINEL")); assertTrue(frozen.privateNotes.contains("PRIVATE_INTERNAL_SENTINEL"))
+    }
+
+    @Test fun staleCapturedObligationBlocksWithoutPartialRecord() = runTest {
+        seed(); val dao = db.v16ServiceDao(); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-2", "plan-1", 2, "2026-10-01", 2))); dao.setCurrentObligationForTest("plan-1", "obligation-2")
+        val projection = repo().completionLines("visit-1").single()
+        assertEquals(FulfillmentEligibility.CURRENT_OBLIGATION_CHANGED, projection.fulfillmentEligibility); assertFalse(projection.fulfillsCurrentObligation == true); assertNull(projection.proposedNextDueDate); assertNull(projection.confirmedNextDueDate)
+        val result = repo().finalizeVisit("visit-1") as FinalizeResult.Blocked
+        assertTrue(result.message.contains("obligation changed")); assertEquals(0, dao.finalRecordCount()); assertNull(dao.obligation("obligation-1")!!.consumedAtEpochMillis); assertNull(dao.obligation("obligation-2")!!.consumedAtEpochMillis); assertEquals("WORKING", dao.visit("visit-1")!!.state)
+    }
+
+    @Test fun controlledFinalizationFailureRollsBackEverything() = runTest {
+        seed(); val dao = db.v16ServiceDao(); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        val failing = RoomV16ServiceRepository(db, time, finalizationWriteGate = FinalizationWriteGate { error("controlled") })
+        try { failing.finalizeVisit("visit-1"); fail("Expected failure") } catch (_: IllegalStateException) {}
+        assertEquals(0, dao.finalRecordCount()); assertEquals(1, dao.obligationCount("plan-1")); assertEquals("obligation-1", dao.plan("plan-1")!!.currentObligationId); assertEquals("2026-09-01", dao.plan("plan-1")!!.currentDueDate); assertEquals("WORKING", dao.visit("visit-1")!!.state)
+    }
+
+    @Test fun failureAfterFinalWorkInsertRollsBackHistoryAndRetryIsExact() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_after_final_work",
+            "CREATE TRIGGER fail_after_final_work AFTER INSERT ON final_work_items BEGIN SELECT RAISE(ABORT, 'injected after final work'); END",
+        )
+    }
+
+    @Test fun failureDuringPlanAdvanceRollsBackConsumedAndNewObligation() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_plan_advance",
+            "CREATE TRIGGER fail_plan_advance BEFORE UPDATE ON service_plans WHEN OLD.id='plan-1' BEGIN SELECT RAISE(ABORT, 'injected plan advance'); END",
+        )
+    }
+
+    @Test fun failureAfterPlanAdvanceRollsBackWhenVisitCompletionIsBlocked() = runTest {
+        assertFinalizationFaultRollsBackAndRetries(
+            "fail_visit_completion",
+            "CREATE TRIGGER fail_visit_completion BEFORE UPDATE ON working_visits WHEN OLD.id='visit-1' BEGIN SELECT RAISE(ABORT, 'injected visit completion'); END",
+        )
+    }
+
+    @Test fun partlyNotPerformedUnfulfilledAndOneOffRemainHistoryOnly() = runTest {
+        seed(); val dao = db.v16ServiceDao(); val repository = repo()
+        repository.saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        repository.saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        insertLine("work-partial", "PARTLY_PERFORMED", "Partial public work")
+        insertLine("work-not", "NOT_PERFORMED", "", reason = "Could not access equipment")
+        insertLine("work-one-off", "PERFORMED", "One-off public work", oneOff = true)
+        val recordId = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        assertEquals("2026-09-01", dao.plan("plan-1")!!.currentDueDate); assertEquals(1, dao.obligationCount("plan-1")); assertNull(dao.obligation("obligation-1")!!.consumedAtEpochMillis)
+        val lines = repository.finalRecord(recordId)!!.public.lines
+        assertEquals(4, lines.size); assertTrue(lines.none { it.fulfilledObligation }); assertTrue(lines.any { it.outcome == "PARTLY_PERFORMED" }); assertTrue(lines.any { it.outcome == "NOT_PERFORMED" })
+    }
+
+    @Test fun fulfillingOneOfTwoPlansDoesNotAdvanceTheOther() = runTest {
+        seed(); val dao = db.v16ServiceDao(); val repository = repo()
+        dao.insertPlans(listOf(ServicePlanEntity("plan-2", "equipment-1", "P-2", "Other service", 6, "MONTHS", "2026-09-02", "ACTIVE", "obligation-2")))
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-2", "plan-2", 1, "2026-09-02", 1)))
+        dao.insertWorkItems(listOf(WorkItemEntity("work-2", "visit-1", "equipment-1", "plan-2", "obligation-2", null, "Captured equipment", "EQ-1", "Other service", "P-2", "2026-09-02", 6, "MONTHS", false, "PERFORMED", false)))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-2", "Other work"))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-2", "")))
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        repository.saveCompletionDraft("work-2", "PARTLY_PERFORMED", false, null, null, null, null)
+        repository.saveCompletionDraft("work-2", "PARTLY_PERFORMED", false, null, null, null, null)
+        repository.finalizeVisit("visit-1")
+        assertEquals("2026-12-05", dao.plan("plan-1")!!.currentDueDate); assertEquals("2026-09-02", dao.plan("plan-2")!!.currentDueDate); assertNull(dao.obligation("obligation-2")!!.consumedAtEpochMillis)
+    }
+
+    @Test fun pdfFailureAndRetryNeverRepeatBusinessEffects() = runTest {
+        seed(); val repository = repo(); repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val due = db.v16ServiceDao().plan("plan-1")!!.currentDueDate
+        try { AndroidReportService(context, db, repository, PdfWriteGate { error("controlled PDF failure") }).generate(record); fail("Expected PDF failure") } catch (_: IllegalStateException) {}
+        assertEquals(due, db.v16ServiceDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.v16ServiceDao().obligationCount("plan-1"))
+        val fakeWriter = ReportWriter { _, _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val ready = AndroidReportService(context, db, repository, writer = fakeWriter).generate(record)
+        assertEquals("READY", ready.status); assertTrue(ready.byteSize!! > 0); assertEquals(64, ready.sha256!!.length); assertTrue(ready.pageCount!! >= 1)
+        assertEquals(due, db.v16ServiceDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.v16ServiceDao().obligationCount("plan-1"))
+        AndroidReportService(context, db, repository, writer = fakeWriter).file(ready.relativePath).delete()
+        val recreated = AndroidReportService(context, db, repository, writer = fakeWriter).generate(record)
+        assertEquals(2, recreated.versionNumber)
+        assertNotEquals(ready.id, recreated.id)
+        assertEquals("RECREATED", db.v16ServiceDao().reportRendition(repository.finalRecord(record)!!.public.revisionId)!!.kind)
+        assertEquals(due, db.v16ServiceDao().plan("plan-1")!!.currentDueDate); assertEquals(2, db.v16ServiceDao().obligationCount("plan-1"))
+    }
+
+    @Test fun missingHistoricalRenditionIsRecreatedFromItsFixedRevision() = runTest {
+        seed(); val repository = RoomV16ServiceRepository(db, time, attachmentRoot = context.filesDir); repository.saveCompletionDraft("work-1", "PERFORMED", false, null, null, null, null); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val renderedRevisions = mutableListOf<String>(); val writer = ReportWriter { model, _, _, _, file -> renderedRevisions += model.revisionId; FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }; val reports = AndroidReportService(context, db, repository, writer = writer)
+        val original = reports.generate(record); val draft = repository.openCorrection(record); repository.saveCorrection(draft.copy(reason = "Correct public text", publicNote = "Corrected note")); val correctedRevision = repository.commitCorrection(record); reports.generate(record)
+        reports.file(original.relativePath).delete(); val recreated = reports.generateRevision(record, original.revisionId)
+        assertEquals(original.revisionId, recreated.revisionId); assertEquals(2, recreated.versionNumber); assertEquals("RECREATED", recreated.kind); assertEquals(listOf(original.revisionId, correctedRevision, original.revisionId), renderedRevisions)
+    }
+
+    @Test fun reportGenerationRequiresExactDecodableImmutablePhotoBytes() = runTest {
+        seed(); val repository = RoomV16ServiceRepository(db, time, attachmentRoot = context.filesDir)
+        val attachmentId = repository.savePhoto("work-1", testImageBytes(Color.BLUE), "evidence.png", "image/png", true, "Evidence")
+        val attachment = db.v16ServiceDao().attachment(attachmentId)!!; val source = File(context.filesDir, attachment.storedRelativePath); val exact = source.readBytes()
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
+        val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId; val historicalRevision = repository.finalRecord(record)!!.public.revisionId
+        val correction = repository.openCorrection(record); repository.saveCorrection(correction.copy(reason = "Create a newer revision", publicNote = "Newer revision")); repository.commitCorrection(record)
+        var renders = 0; val writer = ReportWriter { _, _, _, _, file -> renders++; FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val reports = AndroidReportService(context, db, repository, writer = writer); val ready = reports.generateRevision(record, historicalRevision)
+        assertEquals(1, renders); reports.file(ready.relativePath).delete()
+        assertTrue(source.delete()); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.parentFile!!.mkdirs(); source.writeBytes(exact + 1); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.writeBytes(exact.clone().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }); assertEquals(exact.size.toLong(), source.length()); assertTrue(runCatching { reports.generateRevision(record, historicalRevision) }.exceptionOrNull()!!.message!!.contains("missing or no longer matches")); assertEquals(1, renders)
+        source.writeBytes(exact); val recreated = reports.generateRevision(record, historicalRevision); assertEquals("READY", recreated.status); assertEquals(2, renders)
+    }
+
+    @Test fun optionalIssueWithoutDescriptionCannotBeReviewedOrFinalized() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional", "template-1", 2, "Optional visual", "STATUS", null, false, null)))
+        repo().saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repo().saveResponse("work-1", "check-optional", ResponseDisposition.ISSUE_FOUND, null, "")
+        assertFails { repo().markChecklistReviewed("work-1") }
+        assertTrue((repo().finalizeVisit("visit-1") as FinalizeResult.Blocked).message.contains("description"))
+    }
+
+    @Test fun optionalTextClearingReturnsToUnansweredAndDoesNotProjectNotApplicable() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional-text", "template-1", 2, "Additional observation", "TEXT", null, false, "Template guidance")))
+        val repository = repo()
+        repository.saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        repository.saveResponse("work-1", "check-optional-text", ResponseDisposition.VALUE, "Initial observation", null)
+        assertEquals("Initial observation", dao.responses("work-1").single { it.checklistItemSnapshotId == "check-optional-text" }.textValue)
+
+        repository.saveQuestionTransition("work-1", "check-optional-text", ResponseDisposition.UNANSWERED, null, null, null, null)
+        val cleared = dao.responses("work-1").single { it.checklistItemSnapshotId == "check-optional-text" }
+        assertEquals("UNANSWERED", cleared.disposition)
+        assertNull(cleared.textValue)
+        assertNull(cleared.reason)
+        assertTrue(repository.checklistCompleteness("work-1").complete)
+
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
+        val recordId = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val projected = repository.finalRecord(recordId)!!.public.lines.single().checklist.single { it.label == "Additional observation" }
+        assertEquals("UNANSWERED", projected.disposition)
+        assertNull(projected.value)
+        assertNull(projected.reason)
+        assertTrue(projected.disposition != "NOT_APPLICABLE")
+    }
+
+    @Test fun legacyOptionalTextNotApplicableRemainsInMutableWorkingData() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-optional-text", "template-1", 2, "Additional observation", "TEXT", null, false, null)))
+        repo().saveResponse("work-1", "check-1", ResponseDisposition.OK, null, null)
+        dao.upsertResponses(listOf(WorkingResponseEntity("legacy", "work-1", "check-optional-text", "NOT_APPLICABLE", null, null, "Technician recorded no access", 2, notApplicableReasonDraft = "Technician recorded no access")))
+
+        val question = repo().inspection("work-1")!!.questions.single { it.snapshotItemId == "check-optional-text" }
+        assertEquals(ResponseDisposition.NOT_APPLICABLE, question.disposition)
+        assertEquals("Technician recorded no access", question.reason)
+        assertEquals("Technician recorded no access", question.notApplicableReasonDraft)
+        assertTrue(repo().checklistCompleteness("work-1").complete)
+        assertEquals(0, db.v16ServiceDao().finalRecordCount())
+    }
+
+    @Test fun requiredIncompleteChecklistBlocksPartlyAndNotPerformedUntilCompleted() = runTest {
+        seed(withChecklist = true)
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+
+        db.close(); setup(); seed(withChecklist = true)
+        db.v16ServiceDao().insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Required note", "TEXT", null, true, null)))
+        repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+
+        db.close(); setup(); seed(withChecklist = true)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun numericAnswersRequireFiniteSignedDecimal() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-1", 2, "Reading", "NUMBER", "bar", true, null)))
+        listOf("abc", "NaN", "Infinity", "--1", "", "1.2.3").forEach { invalid -> assertFails { repo().saveResponse("work-1", "check-number", ResponseDisposition.VALUE, invalid, null) } }
+        listOf("0", "12", "-12", "+12.5", "0.125", "-0.5").forEach { valid -> repo().saveResponse("work-1", "check-number", ResponseDisposition.VALUE, valid, null) }
+    }
+
+    @Test fun completionNormalizationClearsStaleFieldsDerivesProvenanceAndSkipsNoOpWrite() = runTest {
+        seed(); val dao = db.v16ServiceDao(); var writes = 0
+        val repository = RoomV16ServiceRepository(db, time, DraftWriteGate { writes++ })
+        repository.saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        repository.saveCompletionDraft("work-1", "PERFORMED", false, "stale", "2027-01-01", false, "stale")
+        var item = dao.workItem("work-1")!!
+        assertNull(item.notPerformedReason); assertEquals("2026-12-05", item.confirmedNextDueDate); assertEquals(true, item.nextDueDateCalculated); assertNull(item.nextDueOverrideReason)
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", false, "stale")
+        item = dao.workItem("work-1")!!; assertEquals(true, item.nextDueDateCalculated); assertNull(item.nextDueOverrideReason)
+        val before = writes
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        assertEquals(before, writes)
+    }
+
+    @Test fun malformedPersistedNextDueProvenanceBlocksFinalization() = runTest {
+        seed(); val dao = db.v16ServiceDao()
+        dao.updateCompletionDraft("work-1", "PERFORMED", true, null, "2027-01-01", true, null)
+        assertEquals("Review the confirmed next due date", (repo().finalizeVisit("visit-1") as FinalizeResult.Blocked).message)
+        assertEquals(0, dao.finalRecordCount()); assertEquals("2026-09-01", dao.plan("plan-1")!!.currentDueDate)
+    }
+
+    @Test fun equipmentAndBusinessIdentityAreFrozenUnlessVisitIdentityExplicitlyRefreshed() = runTest {
+        seed(); val dao = db.v16ServiceDao()
+        dao.updateEquipmentIdentity("equipment-1", "T-B", "Maker B", "Model B", "Serial B")
+        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Business B", technicianName = "Tech B", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 2))
+        repo().saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
+        val first = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val frozen = repo().finalRecord(first)!!
+        assertEquals("T-1 · Maker A · Model A · Serial A", frozen.public.lines.single().equipmentIdentification)
+        assertEquals("Service Business", frozen.public.businessName)
+        assertEquals("CU-1", frozen.public.customerReference); assertEquals("ST-1", frozen.public.siteReference)
+
+        db.close(); setup(); seed(); db.v16ServiceDao().upsertBusinessProfile(BusinessProfileEntity(businessName = "Business B", technicianName = "Tech B", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 2)); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null)
+        repo().refreshVisitReportIdentity("visit-1")
+        val refreshed = (repo().finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        assertEquals("Business B", repo().finalRecord(refreshed)!!.public.businessName)
+    }
+
+    @Test fun eachWorkingVisitSummaryCarriesItsOwnResumeTarget() = runTest {
+        seed(); val dao = db.v16ServiceDao()
+        dao.insertVisits(listOf(WorkingVisitEntity("visit-2", "V-2", "customer-1", "site-1", "2026-09-06", "Customer 2", "Site 2", null, "WORKING", 2)))
+        dao.insertWorkItems(listOf(WorkItemEntity("work-2", "visit-2", "equipment-1", null, null, null, "Equipment 2", "EQ-2", "One off", null, null, null, null, false, null, false)))
+        val visits = repo().visits().associateBy { it.id }
+        assertEquals("work-1", visits.getValue("visit-1").resumeWorkItemId); assertEquals("work-2", visits.getValue("visit-2").resumeWorkItemId)
+    }
+
+    @Test fun simultaneousFinalizationIsIdempotentAndConsumesOnce() = runTest {
+        seed(); repo().saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        val results = listOf(async { repo().finalizeVisit("visit-1") }, async { repo().finalizeVisit("visit-1") }).awaitAll()
+        val ids = results.map { (it as FinalizeResult.Success).recordId }.distinct()
+        assertEquals(1, ids.size); assertEquals(1, db.v16ServiceDao().finalRecordCount()); assertEquals(1, db.v16ServiceDao().finalRevisionCount()); assertEquals(2, db.v16ServiceDao().obligationCount("plan-1"))
+    }
+
+    @Test fun reportMetadataFailureRemovesAdoptedOrphanAndRetryIsSafe() = runTest {
+        seed(); val repository = repo(); repository.saveCompletionDraft("work-1", "PERFORMED", true, null, null, null, null); val record = (repository.finalizeVisit("visit-1") as FinalizeResult.Success).recordId
+        val fakeWriter = ReportWriter { _, _, _, _, file -> FileOutputStream(file).use { it.write("%PDF-1.4\n%%EOF".toByteArray()) }; 1 }
+        val failing = AndroidReportService(context, db, repository, writer = fakeWriter, metadataGate = ReportMetadataGate { error("metadata") })
+        assertFails { failing.generate(record) }
+        val failed = db.v16ServiceDao().reportRendition(repository.finalRecord(record)!!.public.revisionId)!!
+        assertEquals("FAILED", failed.status); assertFalse(failing.file(failed.relativePath).exists())
+        assertEquals("READY", AndroidReportService(context, db, repository, writer = fakeWriter).generate(record).status)
+    }
+
+    @Test fun blankCapturedBusinessNameBlocksFinalization() = runTest {
+        seed(businessName = "   ")
+        assertIdentityBlocked()
+    }
+
+    @Test fun blankCapturedTechnicianNameBlocksFinalization() = runTest {
+        seed(technicianName = " ")
+        assertIdentityBlocked()
+    }
+
+    @Test fun missingCapturedCustomerReferenceBlocksFinalization() = runTest {
+        seed(customerReference = null)
+        assertIdentityBlocked()
+    }
+
+    @Test fun missingCapturedSiteReferenceBlocksFinalization() = runTest {
+        seed(siteReference = null)
+        assertIdentityBlocked()
+    }
+
+    @Test fun malformedExplicitNotApplicableCannotFreezePartialWork() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-1", "NOT_APPLICABLE", null, null, " ", 2)))
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun malformedExplicitTextCannotFreezeNotPerformedWork() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Text", "TEXT", null, true, null)))
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-text", "VALUE", " ", null, null, 2)))
+        repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun malformedExplicitNumberCannotFreezePartialWork() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-1", 2, "Reading", "NUMBER", "bar", true, null)))
+        dao.upsertResponses(listOf(WorkingResponseEntity("bad", "work-1", "check-number", "VALUE", null, "NaN", null, 2)))
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun explicitIncompleteResponsesBlockPartialAndNotPerformed() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao()
+        dao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-1", "NOT_CHECKED", null, null, null, 2)))
+        repo().saveCompletionDraft("work-1", "PARTLY_PERFORMED", false, null, null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+
+        db.close(); setup(); seed(withChecklist = true); val secondDao = db.v16ServiceDao()
+        secondDao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-text", "template-1", 2, "Text", "TEXT", null, true, null)))
+        secondDao.upsertResponses(listOf(WorkingResponseEntity("incomplete", "work-1", "check-text", "UNANSWERED", null, null, null, 2)))
+        repo().saveCompletionDraft("work-1", "NOT_PERFORMED", false, "Access unavailable", null, null, null)
+        assertTrue(repo().finalizeVisit("visit-1") is FinalizeResult.Blocked)
+    }
+
+    @Test fun responseAndPublicWorkWhitespaceNormalizeBeforeNoOpComparison() = runTest {
+        seed(withChecklist = true); val dao = db.v16ServiceDao(); var writes = 0
+        dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-number", "template-1", 2, "Reading", "NUMBER", "bar", false, null), ChecklistItemSnapshotEntity("check-text", "template-1", 3, "Note", "TEXT", null, false, null)))
+        val repository = RoomV16ServiceRepository(db, time, DraftWriteGate { writes++ })
+        repository.saveResponse("work-1", "check-number", ResponseDisposition.VALUE, " 12 ", null)
+        assertEquals("12", dao.responses("work-1").first { it.checklistItemSnapshotId == "check-number" }.numberValue)
+        val numericCheckpoint = dao.visit("visit-1")!!.modifiedAtEpochMillis
+        repository.saveResponse("work-1", "check-number", ResponseDisposition.VALUE, " 12 ", null)
+        assertEquals(1, writes); assertEquals(numericCheckpoint, dao.visit("visit-1")!!.modifiedAtEpochMillis)
+        repository.saveResponse("work-1", "check-text", ResponseDisposition.VALUE, " note ", null)
+        assertEquals("note", dao.responses("work-1").first { it.checklistItemSnapshotId == "check-text" }.textValue)
+        repository.saveResponse("work-1", "check-text", ResponseDisposition.VALUE, " note ", null)
+        assertEquals(2, writes)
+        repository.savePublicWork("work-1", " Done ")
+        assertEquals("Done", dao.inspection("work-1")!!.workPerformed); assertEquals(3, writes)
+        val workCheckpoint = dao.visit("visit-1")!!.modifiedAtEpochMillis
+        repository.savePublicWork("work-1", " Done ")
+        assertEquals(3, writes); assertEquals(workCheckpoint, dao.visit("visit-1")!!.modifiedAtEpochMillis)
+    }
+
+    @Test fun homeCountsAllWorkingAndBookedVisitsWhileKeepingDeterministicPreviews() = runTest {
+        seed(); val dao = db.v16ServiceDao()
+        dao.insertVisits(listOf(
+            WorkingVisitEntity("visit-2", "V-2", "customer-1", "site-1", "2026-09-06", "Customer", "Site", null, "WORKING", 10),
+            WorkingVisitEntity("booked-2", "B-2", "customer-1", "site-1", "2026-09-08", "Customer", "Site", null, "BOOKED", 2),
+            WorkingVisitEntity("booked-1", "B-1", "customer-1", "site-1", "2026-09-07", "Customer", "Site", null, "BOOKED", 2),
+            WorkingVisitEntity("booked-3", "B-3", "customer-1", "site-1", "2026-09-09", "Customer", "Site", null, "BOOKED", 2),
+        ))
+        val home = repo().home()
+        assertEquals(2, home.workingVisitCount); assertEquals(3, home.bookedVisitCount); assertEquals("V-2", home.workingVisitReference); assertEquals("B-1", home.bookedVisitReference)
+    }
+
+    @Test fun businessProfileProjectionKeepsItsOwnTimestampAndSemanticNoOp() = runTest {
+        seed(); var writes = 0; val repository = RoomV16ServiceRepository(db, time, DraftWriteGate { writes++ })
+        assertEquals(1L, repository.businessProfile()!!.modifiedAtEpochMillis)
+        assertEquals(1L, repository.saveBusinessProfile(BusinessProfile(" Service Business ", " Technician ", zoneId = " Europe/Bucharest ")))
+        assertEquals(0, writes)
+    }
+
+    private fun repo() = RoomV16ServiceRepository(db, time)
+
+    private suspend fun assertFinalizationFaultRollsBackAndRetries(triggerName: String, createTriggerSql: String) {
+        seed()
+        val dao = db.v16ServiceDao()
+        val repository = repo()
+        repository.saveCompletionDraft("work-1", "PERFORMED", true, null, "2026-12-05", true, null)
+        val planBefore = dao.plan("plan-1")!!
+        val obligationBefore = dao.obligation("obligation-1")!!
+        val claimBefore = dao.claimForObligation("obligation-1")
+        db.openHelper.writableDatabase.execSQL(createTriggerSql)
+
+        assertTrue(runCatching { repository.finalizeVisit("visit-1") }.isFailure)
+        assertEquals(0, dao.finalRecordCount())
+        assertEquals(0, dao.finalRevisionCount())
+        assertEquals(0, finalWorkItemCount())
+        assertEquals(planBefore, dao.plan("plan-1"))
+        assertEquals(obligationBefore, dao.obligation("obligation-1"))
+        assertEquals(claimBefore, dao.claimForObligation("obligation-1"))
+        assertEquals("WORKING", dao.visit("visit-1")!!.state)
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER $triggerName")
+        val finalized = repository.finalizeVisit("visit-1") as FinalizeResult.Success
+        assertEquals(1, dao.finalRecordCount())
+        assertEquals(1, dao.finalRevisionCount())
+        assertEquals(1, finalWorkItemCount())
+        assertEquals("COMPLETED", dao.visit("visit-1")!!.state)
+        assertEquals("2026-12-05", dao.plan("plan-1")!!.currentDueDate)
+        assertEquals(2, dao.obligationCount("plan-1"))
+        assertNotNull(dao.obligation("obligation-1")!!.consumedByRevisionId)
+        assertEquals(finalized.recordId, repository.finalizeVisit("visit-1").let { (it as FinalizeResult.Success).recordId })
+        assertEquals(1, dao.finalRecordCount())
+        assertEquals(1, dao.finalRevisionCount())
+        assertEquals(2, dao.obligationCount("plan-1"))
+    }
+
+    private fun finalWorkItemCount(): Int = db.openHelper.readableDatabase
+        .query("SELECT COUNT(*) FROM final_work_items")
+        .use { cursor -> check(cursor.moveToFirst()); cursor.getInt(0) }
+
+    private fun testImageBytes(color: Int): ByteArray = ByteArrayOutputStream().also { output -> Bitmap.createBitmap(16, 12, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }.compress(Bitmap.CompressFormat.PNG, 100, output) }.toByteArray()
+
+    private suspend fun insertLine(id: String, outcome: String, work: String, reason: String? = null, oneOff: Boolean = false) {
+        val dao = db.v16ServiceDao()
+        dao.insertWorkItems(listOf(WorkItemEntity(id, "visit-1", "equipment-1", if (oneOff) null else "plan-1", if (oneOff) null else "obligation-1", null, "Captured equipment", "EQ-1", if (oneOff) "One-off service" else "Captured service", if (oneOff) null else "P-1", if (oneOff) null else "2026-09-01", if (oneOff) null else 3, if (oneOff) null else "MONTHS", false, outcome, false, notPerformedReason = reason)))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity(id, work))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity(id, "")))
+    }
+
+    private suspend fun assertIdentityBlocked() {
+        val result = repo().finalizeVisit("visit-1") as FinalizeResult.Blocked
+        assertTrue(result.message.contains("identity is incomplete")); assertEquals(0, db.v16ServiceDao().finalRecordCount())
+    }
+
+    private suspend fun seed(withChecklist: Boolean = false, businessName: String? = "Service Business", technicianName: String? = "Technician", customerReference: String? = "CU-1", siteReference: String? = "ST-1") {
+        val dao = db.v16ServiceDao()
+        dao.insertCustomers(listOf(CustomerEntity("customer-1", "CU-1", "Current customer")))
+        dao.insertSites(listOf(SiteEntity("site-1", "customer-1", "ST-1", "Current site", "Current address", "PRIVATE_ACCESS_SENTINEL")))
+        dao.insertEquipment(listOf(EquipmentEntity("equipment-1", "site-1", "EQ-1", "T-1", "Current equipment", "Maker", "Model", "Serial", "Private machine")))
+        dao.insertPlans(listOf(ServicePlanEntity("plan-1", "equipment-1", "P-1", "Inspection", 3, "MONTHS", "2026-09-01", "ACTIVE", "obligation-1")))
+        dao.insertObligations(listOf(ServiceObligationEntity("obligation-1", "plan-1", 1, "2026-09-01", 1)))
+        if (withChecklist) { dao.insertTemplateSnapshots(listOf(TemplateSnapshotEntity("template-1", null, "Template", 1, 1))); dao.insertChecklistItems(listOf(ChecklistItemSnapshotEntity("check-1", "template-1", 1, "Guard", "STATUS", null, true, "Private guidance"))) }
+        dao.insertVisits(listOf(WorkingVisitEntity("visit-1", "V-1", "customer-1", "site-1", "2026-09-05", "Captured customer", "Captured site", "Captured address", "WORKING", 1, customerReference, siteReference, businessName, technicianName, null, null, null, "Europe/Bucharest")))
+        dao.insertWorkItems(listOf(WorkItemEntity("work-1", "visit-1", "equipment-1", "plan-1", "obligation-1", if (withChecklist) "template-1" else null, "Captured equipment", "EQ-1", "Captured service", "P-1", "2026-09-01", 3, "MONTHS", !withChecklist, "PERFORMED", false, equipmentIdentifierSnapshot = "T-1", equipmentMakeSnapshot = "Maker A", equipmentModelSnapshot = "Model A", equipmentSerialSnapshot = "Serial A")))
+        dao.insertPublicDrafts(listOf(WorkItemPublicDraftEntity("work-1", "Public work completed"))); dao.insertPrivateDrafts(listOf(WorkItemPrivateDraftEntity("work-1", "PRIVATE_INTERNAL_SENTINEL")))
+        dao.upsertBusinessProfile(BusinessProfileEntity(businessName = "Service Business", technicianName = "Technician", phone = null, email = null, postalAddress = null, zoneId = "Europe/Bucharest", modifiedAtEpochMillis = 1))
+    }
+
+    private suspend fun assertFails(block: suspend () -> Unit) {
+        try { block(); fail("Expected failure") } catch (_: IllegalArgumentException) {} catch (_: IllegalStateException) {}
+    }
+}
