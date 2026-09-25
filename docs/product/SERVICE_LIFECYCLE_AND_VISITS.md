@@ -31,3 +31,19 @@ Customer reports include public facts only. Private notes, access/internal detai
 ## Failure and retry
 
 Durable persistence is the success boundary. No UI success precedes the durable write. Completion, finalization, recurrence, import, report rendition, image ownership, and correction retries are idempotent. Recovery and failed-file operations preserve the last known-good dataset. Exact v1 shapes and rejection rules are in the [persistence contract](../project/PERSISTENCE_DATA_CONTRACT.md).
+
+## Adopted outcome, readiness, and draft rules
+
+For eligible captured recurring work, PERFORMED selects fulfillment automatically. PARTLY_PERFORMED retains an undecided fulfillment value until the technician explicitly chooses Fulfill or Keep due. NOT_PERFORMED never fulfills and requires a reason. Non-recurring work cannot manufacture an obligation; only known Equipment under a STANDARD customer may carry recurring plans and obligations. Only finalized eligible true fulfillment consumes the captured obligation and advances its plan, and retries do not repeat that effect. The next due date is calculated from the actual service date and captured interval. A different date requires a nonblank override reason; the ordinary calculated date needs no second confirmation.
+
+Checklist readiness is derived from the captured checklist and active Working responses. Incomplete work blocks Review and finalization for every outcome. The compatibility checklistReviewed value and a manual Mark checklist reviewed action are not readiness authority. Incompleteness does not erase the stored outcome or fulfillment choice.
+
+Raw autosave buffers remain separate from canonical facts and are versioned so stale asynchronous writes cannot replace newer input. Raw buffers never become final history or report content. Saved drafts for inactive answer dispositions survive switching, but only the selected disposition and its applicable detail satisfy the active answer and enter final history. Before finalization, draft work is flushed and completeness and eligibility are recomputed against the captured context before history is frozen. These are the adopted B-007, B-014, and B-025 overrides to the starting map.
+
+## Retained history, cancellation, flexible work, and pilot rules
+
+A mistaken saved contact note is retained as history and marked Entered in error with a reason; it is not ordinarily hard-deleted. Restoring a locally canceled booking is allowed only when its cancellation provenance permits restoration. In the same Visit, the operation revalidates and reacquires every captured active, current, unconsumed, unclaimed obligation atomically, or reacquires none. It preserves cancellation history and does not fulfill work or change due dates.
+
+Work subjects distinguish SITE, known EQUIPMENT, and unidentified EQUIPMENT. Known Equipment retains its identity snapshot; unidentified Equipment carries its bounded description. Only known Equipment for a STANDARD customer may have a recurring plan or obligation. SITE and unidentified Equipment work remain flexible/ad-hoc and cannot gain recurrence through completion.
+
+The late release/pilot gate remains: a pilot-ready, Romanian-localized, functionally complete representative workflow and customer report must be evaluated by a real technician/trade user. AI, owner/developer, automated, and emulator agreement does not satisfy that external evidence. This records the existing gate; it does not schedule localization or a pilot.

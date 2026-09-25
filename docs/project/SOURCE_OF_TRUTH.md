@@ -11,7 +11,7 @@
 5. Current specialist contracts linked below define persistence, lifecycle, roles, exchange, reports, platform, presentation, and quality details.
 6. Current code, tests, and verification establish implementation; divergence alone creates no new requirement.
 
-The adopted Conceptual App Map controls where another proposal conflicts. Unadopted proposals do not become authority through detail or length. Matching HTML is a reading format, not a separate requirement.
+The adopted Conceptual App Map remains the starting functional baseline. Where a topic is specifically amended, the recorded owner decision and the current specialist contract carrying that amendment override conflicting map text; see the [lifecycle](../product/SERVICE_LIFECYCLE_AND_VISITS.md), [role/Dispatch](../product/ROLE_AND_DISPATCH_WORKFLOWS.md), [exchange/output](../product/WORK_EXCHANGE_REPORTING_AND_OUTPUTS.md), [Calendar](PLATFORM_REMINDERS_AND_CALENDAR.md), [persistence](PERSISTENCE_DATA_CONTRACT.md), and [quality](ARCHITECTURE_AND_QUALITY_CONTRACT.md) contracts. Elsewhere the map controls. Unadopted proposals do not become authority through detail or length. Matching HTML is a reading format, not a separate requirement.
 
 ## Current specialist contracts
 

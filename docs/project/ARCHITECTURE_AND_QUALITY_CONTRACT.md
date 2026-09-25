@@ -20,3 +20,7 @@ Completion, recurrence advancement, report generation, correction, import, image
 Tests assert adopted business meaning, not just implementation structure. Use focused unit/domain tests for deterministic rules and instrumentation for app/database/runtime behavior. Use actual system surfaces when picker, Sharesheet, or another-app handoff itself matters. Visual claims require rendered evidence and inspection.
 
 Report evidence accurately: TESTED, DOMAIN-INSTRUMENTED, UI-INSTRUMENTED, SYSTEM-HANDOFF, HUMAN/RENDERED, and NOT RUN. Use the toolchain in [`AGENTS.md`](../../AGENTS.md). Discover the canonical AVD by display name `Pixel 10a V16 Service` and resolve its adb serial for every run. Never direct device commands to an implicit/default serial.
+
+## Late Romanian technician pilot gate
+
+Before release preparation is product-valid, a Romanian-localized, functionally complete representative service workflow and customer report must be evaluated by a real technician/trade user. AI agreement, owner/developer review, automated checks, and emulator evidence do not replace this external evidence. The existing sequence remains functional completion and hardening, whole-product UI/UX overhaul, Romanian localization and copy freeze, then the real-technician pilot. This gate does not authorize doing localization or running the pilot as part of unrelated corrections.

@@ -10,12 +10,20 @@ Device-local reminder delivery intent is excluded from portable Recovery. Datase
 
 ## Android Calendar projection
 
-Calendar is an optional one-way local projection through Android Calendar Provider, off by default. The user deliberately grants platform permission and selects a writable calendar. No Calendar content is synchronized to a server.
+Calendar is an optional one-way local projection through Android Calendar Provider, off by default. The user deliberately grants platform permission and selects a writable calendar. V16 Service has no app-owned cloud or two-way Calendar synchronization; the selected calendar account or provider may independently synchronize created events.
 
-Only timed Booked Visits create managed events. One Visit has at most one managed link. Schedule/details update the same event. External deletion is shown as Missing; recreation is deliberate. Per-Visit Remove suppresses projection; Add explicitly reenables it. Working, finalized, and participation-complete Visit history is retained. Cancellation or withdrawn Dispatch work removes a managed event where possible.
+Only timed Booked Visits create managed events. One Visit has at most one managed link. Schedule/details update the same event. External deletion is shown as Missing; recreation is deliberate. Per-Visit Remove suppresses projection; Add explicitly reenables it. Working and Completed Visit history is retained. Cancellation or withdrawn Dispatch work removes a managed event where possible.
 
 Calendar selection and event identity are device-local, stored in `noBackupFilesDir`, scoped to the current dataset ID, and excluded from Recovery. Dataset replacement/erase turns integration Off without deleting unrelated existing events. Room-driven reconciliation reads current Visits, Customers, and Sites. Provider failures remain visible/pending; the projection does not claim attendance, completion, or service delivery.
 
 ## Evidence boundary
 
 Calendar provider writes, reminder permission, and notification posting are Android system behavior. They need device evidence when those handoffs are part of acceptance; domain tests alone do not prove them.
+
+## Retained B-016 Calendar semantics
+
+Only timed BOOKED Visits project automatically; date-only bookings do not become all-day events. The displayed block is 60 minutes. Event content is limited to the Visit reference, site/customer context, and captured site address where available. It excludes private notes, findings, checklist answers, contact data, report content, Dispatch instructions, and opaque Technician IDs. The app inserts no Calendar reminder rows.
+
+V16 Service remains authoritative. External event edits never change domain truth. Provider failures remain visible or pending and never roll back a committed Book, reschedule, cancel, Start, finalization, Dispatch import/update, or withdrawal. An externally deleted event is Missing until deliberate Recreate. Per-Visit Remove suppresses projection until deliberate Add clears suppression. Global Disable stops active projection while keeping external events and bindings. Changing the preferred calendar affects new or unlinked events; existing links stay with their original calendar. Cancellation cleanup is best effort; Working and Completed history remains.
+
+Calendar selection, event links, suppression, and provider state remain local and outside Recovery. The app-private no-backup state is scoped to the current dataset ID and adoption token, so bindings belong to that local dataset/adoption generation and are not portable.

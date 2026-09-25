@@ -41,3 +41,7 @@ Prefer stable Compose tags/content descriptions and semantic actions to coordina
 Before substantial work inspect status, branch, starting revision, remote parity, protected refs, and worktree state. Preserve unrelated edits. Keep diffs reviewable; do not rewrite history, force-push, destructively reset, publish, or merge the protected baseline unless explicitly authorized. Ordinary staging, commits, fetching, and push of a specifically authorized branch are permitted.
 
 At final acceptance check required evidence, `git diff --check`, exact local/upstream SHA, `0 0` divergence, clean task worktree, and unmoved protected refs. Report starting/ending revision, material changes, behavior, actual evidence, gaps/deviations, and exact review branch/commit. Distinguish TESTED, DOMAIN-INSTRUMENTED, UI-INSTRUMENTED, SYSTEM-HANDOFF, HUMAN/RENDERED, and NOT RUN.
+
+## Risk-based evidence validity
+
+Use focused checks during editing: prior evidence is invalidated only when its inputs or behavior are affected. Broad suites are not required after every edit or commit; repeat them when shared or high-risk inputs genuinely invalidate broad evidence. Follow section 23 of the prompt and handoff standard at docs/project/AI_CODEX_PROMPT_AND_HANDOFF_STANDARD.md.

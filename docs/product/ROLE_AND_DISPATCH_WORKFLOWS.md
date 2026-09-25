@@ -38,10 +38,32 @@ Assignments preserve stable work-item IDs, explicit Everyone versus eligible-Tec
 
 ## Receiver workflow
 
-The receiver selects a `.v16service` file. MIME/name only identifies a candidate. The bounded decoder checks the exact outer marker, version, purpose, declared entries, sizes, checksums, and payload before mutation. The receiver reviews issuer trust and preview, then explicitly applies. Invalid, unsupported, mismatched, untrusted, stale, or unreadable files fail without business mutation.
+The receiver selects a `.v16service` file. MIME/name only identifies a candidate. The bounded decoder checks the exact outer marker, version, purpose, declared entries, sizes, checksums, and payload before mutation. The receiver reviews issuer trust and preview, then explicitly applies. Malformed, unsupported, wrong-target, untrusted, unreadable packages, and contradictory contents under one immutable revision are rejected before business mutation. A structurally valid trusted WORK_RESULT with a stale or conflicting assignment/recurrence application may retain its immutable source, owned evidence, receipt, and status, but cannot apply an ineligible completion or recurrence effect. Exact retries do not duplicate history or business effects.
 
 Imported work remains remote assignment context. It becomes locally performed only when the receiver records technician work and finalizes through the normal lifecycle. Results preserve source identity, revision, chronology, evidence, and provenance. Administrative conclusion is distinct from technician completion.
 
 ## Platform and scope
 
 Dispatch uses local files and Android one-time picker/share handoffs. There is no backend, account, live sync, central acknowledgement, automatic conflict resolution, or cloud delivery claim. FileProvider authority stays derived from `${applicationId}.reports`, and URI access remains limited to the handoff.
+
+## Canonical Visit and Dispatch truth
+
+Persisted technician Visit states are BOOKED, WORKING, COMPLETED, and CANCELED. Finalization and PDF creation are separate; Dispatch Draft, Dispatched, Canceled, and Concluded are coordinator-side states. COMPLETED alone does not prove that a local final record or PDF exists.
+
+Creating and assigning new work saves canonical working_visits and work_items together with their linked Dispatch overlay in one atomic operation. The overlay is not a second mutable Visit truth, and composing or exporting a package does not mean a technician performed work. Coordinator may create, book, and assign, but cannot Start or document field work. Employee cannot create arbitrary Visits. Team Leader can perform technician work and coordinate it.
+
+A Dispatch-linked canonical Visit is not marked COMPLETED by result handling, and its Outbox is not Concluded, until every relevant Dispatch item has either eligible applied remote result truth or locally finalized work. Manual Outbox conclusion enforces the same item-level test. Partial or stale receipts leave that Visit non-complete; retries do not reapply recurrence or completion. The local technician Complete visit action remains a separate status action and does not fabricate a service record, PDF, recurrence effect, or Coordinator status return. Administrative conclusion never fabricates technician performance or a local final record.
+
+## Detailed Team action visibility
+
+This action matrix is narrower than the general role capability table above and preserves the separately adopted daily-action and management actions.
+
+| Role | Import work | Export results | Dispatch work | Import results | Generate report | Business identity | Role | ID / Trusted IDs | Technicians / Teams | Import shared data | Export data |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Solo | No | No | No | No | No | Yes | Yes | No | No | No | No |
+| Subcontractor | Yes | Yes | No | No | No | Yes | Yes | Yes | No | Yes | Yes |
+| Employee | Yes | Yes | No | No | No | No | Yes | Yes | No | Yes | No |
+| Team Leader | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Coordinator | No | No | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+
+Visibility does not imply that an unfinished workflow is implemented. Import/export results, generic shared-data import/export, and Business identity management are distinct actions and keep the matrix above.

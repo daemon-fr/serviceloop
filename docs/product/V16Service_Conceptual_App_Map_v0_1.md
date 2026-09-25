@@ -1,7 +1,7 @@
 # V16 Service — Complete Conceptual App Map
 
 **Version:** 0.1 · **Prepared:** 5 September 2026  
-**Status:** PROPOSAL READY FOR PRODUCT REVIEW — not an approved specification or implementation authorization.  
+**Status:** Adopted starting functional map, subject to explicit owner amendments and current specialist contracts where specifically amended. It is not a complete implementation authorization.
 **Platform verification:** Official Android and Google Play documentation checked on 5 September 2026; see Section G.  
 **Basis:** `V16Service_Functional_App_Map_Prompt_v1_1.md` [B1] and the complete `V16Service_Research_and_Product_Context.md`, including Appendix A [B2].
 
@@ -196,9 +196,9 @@ Every main record has a stable reference visible on its detail screen and includ
 | Equipment | **In service / Retired**. Retired means outside the current servicing workflow, not deleted or proven unusable. |
 | Plan | **Active / Paused / Ended**. Paused retains its due date but produces no current reminder; Ended has no future active obligation. |
 | Active obligation | **Overdue** if due date is before today; **Due today** on today; **Due soon** tomorrow through the selected horizon; **Upcoming** beyond it. Booked is an additional badge, not a replacement due state. |
-| Visit | **Booked / Working / Finalized / Cancelled**. A final record can additionally be **Voided**. Past booked dates are labelled **Appointment passed — outcome not recorded**, never auto-completed or auto-cancelled. |
-| Work outcome | **Performed / Partly performed / Not performed**. A separate **Fulfills current obligation** decision controls recurrence; Performed alone does not. |
-| Checklist | **Not started / In progress / Reviewed**. Reviewed requires the explicit review action and all required responses accounted for. It does not mean every response was OK. |
+| Visit | Persisted technician states are **BOOKED / WORKING / COMPLETED / CANCELED**. Finalization/PDF creation and Dispatch **Draft / Dispatched / Canceled / Concluded** are separate concepts; **COMPLETED** alone does not prove a local final record or PDF exists. Past booked dates are labelled **Appointment passed — outcome not recorded**, never auto-completed or auto-cancelled. |
+| Work outcome | **Performed / Partly performed / Not performed**. Eligible captured recurring work is fulfilled automatically by Performed; Partly performed requires explicit Fulfill or Keep due; Not performed never fulfills and requires a reason. Non-recurring work cannot create an obligation. |
+| Checklist | **Not started / In progress / ready for Review**. Readiness derives from the captured checklist and active responses, and blocks Review/finalization for every outcome while incomplete. A manual Mark checklist reviewed flag is not authority; readiness does not mean every response was OK. |
 | Status answer | **OK / Issue found / Not applicable / Not checked**. Not checked is the initial state; blanks are never interpreted as OK. |
 | Follow-up | **Open / Resolved / Cancelled**; a due/overdue badge is computed separately. |
 | Saving | **Saving… / Saved on this device [time] / Not saved — action needed**. “Saved” never means backed up or uploaded. |

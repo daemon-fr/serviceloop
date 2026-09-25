@@ -17,12 +17,12 @@ This document carries forward the authorized clean-slate pre-release contract. A
 | FULL_WORKSPACE | Payload and each section are strict version 1; declared section names/versions exactly match the current contract. | No older section adapter or omitted-field backfill. |
 | DATA_TRANSFER | Metadata and families use strict version 1; templates use the inspection-template family. | No legacy family adapter or template-only public format. |
 | WORK_RESULT | Body and results section use version 1. Origin workspace, source Visit/work-item, source revision identity/number, and source `recordedAt` are required. | No reduced record shape, inferred lineage, or package-generation chronology fallback. |
-| Dispatch payloads | Current v1 WorkPackage and Technician identity codecs live inside a supported native purpose. | No purpose-specific public file extensions. |
+| Dispatch payloads | The v1 WorkPackage codec is inside WORK_ASSIGNMENT; the inspection-template codec is inside DATA_TRANSFER. Technician IDs use manual/Copy ID and directory identity semantics; no standalone Technician identity payload codec exists. | No purpose-specific public file extensions or new native purpose. |
 | Immutable snapshots | Wrapper, source payload, and fingerprint are strict version 1; exact shape and purpose are checked before use. | No raw-record fallback, version negotiation, replay backfill, or inferred fingerprint. |
 
 ## Room and Recovery agreement
 
-The generated Room schema at `app/schemas/com.v16studio.v16service.data.V16ServiceDatabase/1.json` is the source for Recovery table/column declarations. Recovery validates exact table sets, column order/name/type, required values, JSON shapes, graph links, and owned-file declarations before replacement. Empty tables are declared and validated. A rejected package leaves durable data untouched. Replacement uses current staging, transactions, journal, and rollback rules.
+The generated Room schema at `app/schemas/com.v16studio.v16service.data.V16ServiceDatabase/1.json` is the source for Recovery table/column declarations. Recovery validates exact table sets, column order/name/type, required values, JSON shapes, graph links, and owned-file declarations before replacement. Empty tables are declared and validated. A rejected package leaves durable data untouched. Replacement uses current staging, transactions, operational journals, and rollback rules. Transient journal files coordinate safe replacement and are not portable business archive entries.
 
 The trust entity/table is `TrustedV16ServiceIdEntity` / `trusted_v16_service_ids`. Room v1 uses a fresh `v16service.db`; this is not a rename migration.
 

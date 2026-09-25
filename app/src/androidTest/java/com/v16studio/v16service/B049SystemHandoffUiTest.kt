@@ -1,6 +1,9 @@
 package com.v16studio.v16service
 
 import android.content.ContentValues
+import android.content.ClipData
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.accessibilityservice.AccessibilityService
 import android.net.Uri
 import android.os.Environment
@@ -128,30 +131,8 @@ class B049SystemHandoffUiTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-team").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("home-team").performScrollToNode(hasTestTag("team-import"))
 
-        val exporter = TechnicianIdCodec.generate()
-        fixtureTrustedPeer = exporter
-        runBlocking { V16ServicePeerTrustStore(database).add(exporter, "B049 system handoff fixture") }
-        val reference = "B049-${java.util.UUID.randomUUID().toString().take(8)}"
-        val register = JSONObject().put("version", 1).put("customers", JSONArray().put(
-            JSONObject().put("originWorkspaceId", exporter).put("sourceEntityId", "source-$reference")
-                .put("reference", reference).put("name", "Generated native handoff fixture")
-                .put("customerType", "STANDARD").put("state", "ACTIVE")
-        )).put("contacts", JSONArray()).put("sites", JSONArray()).put("equipment", JSONArray())
-        val packageBytes = DataTransferCodec.encode(
-            exporter,
-            families = mapOf(DataTransferFamily.REGISTER to register.toString().toByteArray()),
-            sourceWorkspaceId = exporter,
-        )
-        val filename = "b049-generated-v1-${reference.lowercase()}.v16service"
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        fixtureDownload = requireNotNull(target.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
-        target.contentResolver.openOutputStream(requireNotNull(fixtureDownload), "w")!!.use { it.write(packageBytes) }
-        target.contentResolver.update(requireNotNull(fixtureDownload), ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        val fixture = createV1TransferFixture()
+        val filename = fixture.filename
 
         compose.onNodeWithTag("team-import").performClick()
         compose.onNodeWithTag("choose-v16service-file").performClick()
@@ -187,7 +168,7 @@ class B049SystemHandoffUiTest {
         compose.onNodeWithText("Full workspace", substring = true).assertDoesNotExist()
         assertTrue(automation.rootInActiveWindow?.packageName?.toString()?.contains("v16service", ignoreCase = true) == true)
 
-        val opaqueUri = requireNotNull(fixtureDownload)
+        val opaqueUri = fixture.uri
         assertFalse(opaqueUri.lastPathSegment.orEmpty().endsWith(".v16service", ignoreCase = true))
         assertEquals("application/octet-stream", target.contentResolver.getType(opaqueUri))
         assertEquals(filename, com.v16studio.v16service.queryOpenableDisplayName(target.contentResolver, opaqueUri))
@@ -200,6 +181,7 @@ class B049SystemHandoffUiTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-team").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnUiThread {
+            // Handler-only coverage: generic MIME direct delivery does not prove Android filter matching.
             compose.activity.onNewIntent(android.content.Intent(android.content.Intent.ACTION_VIEW)
                 .setDataAndType(opaqueUri, "application/octet-stream"))
         }
@@ -209,6 +191,7 @@ class B049SystemHandoffUiTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-team").fetchSemanticsNodes().isNotEmpty() }
         compose.runOnUiThread {
+            // Handler-only coverage: generic MIME direct delivery does not prove Android filter matching.
             compose.activity.onNewIntent(android.content.Intent(android.content.Intent.ACTION_SEND)
                 .setType("application/octet-stream")
                 .putExtra(android.content.Intent.EXTRA_STREAM, opaqueUri))
@@ -217,6 +200,103 @@ class B049SystemHandoffUiTest {
         compose.onNodeWithText("Register · 1", substring = true).assertIsDisplayed()
     }
 
+    @Test fun supportedVendorMimeViewAndSendResolveAndDeliverThroughAndroid() {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = (target.applicationContext as V16ServiceApplication).container.database
+        val fixture = createV1TransferFixture()
+
+        assertFalse(fixture.uri.lastPathSegment.orEmpty().endsWith(".v16service", ignoreCase = true))
+        assertEquals("application/octet-stream", target.contentResolver.getType(fixture.uri))
+        assertEquals(fixture.filename, queryOpenableDisplayName(target.contentResolver, fixture.uri))
+
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-tab-TEAM").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("home-tab-TEAM").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-team").fetchSemanticsNodes().isNotEmpty() }
+
+        fun assertFilterMatch(intent: Intent, actionName: String) {
+            assertFalse("The " + actionName + " intent must stay implicit at the activity level", intent.component != null)
+            val matches = compose.activity.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            assertTrue(
+                "The declared " + actionName + " vendor-MIME filter must resolve MainActivity; resolved=" + matches.map { it.activityInfo.name },
+                matches.any {
+                    it.activityInfo.packageName == target.packageName &&
+                        it.activityInfo.name == MainActivity::class.java.name
+                },
+            )
+        }
+
+        fun deliverAndAssertPreview(intent: Intent, actionName: String) {
+            assertFilterMatch(intent, actionName)
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+            compose.activity.startActivity(intent)
+            compose.waitUntil(20_000) {
+                compose.onAllNodesWithTag("sync-data-transfer-import").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Selected data · additive merge").assertIsDisplayed()
+            compose.onNodeWithText("Register · 1", substring = true).assertIsDisplayed()
+            assertFalse(
+                "Previewing the fixture must not insert its Customer before Apply",
+                runBlocking { database.v16ServiceDao().allCustomers().any { it.reference == fixture.reference } },
+            )
+            compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("home-team").fetchSemanticsNodes().isNotEmpty() }
+        }
+
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(fixture.uri, V16_SERVICE_SYNC_MIME)
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            setPackage(target.packageName)
+            clipData = ClipData.newUri(target.contentResolver, "V16 Service import", fixture.uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        deliverAndAssertPreview(viewIntent, "ACTION_VIEW")
+
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            setType(V16_SERVICE_SYNC_MIME)
+            putExtra(Intent.EXTRA_STREAM, fixture.uri)
+            setPackage(target.packageName)
+            clipData = ClipData.newUri(target.contentResolver, "V16 Service import", fixture.uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        deliverAndAssertPreview(sendIntent, "ACTION_SEND")
+    }
+
+    private data class NativeImportFixture(val uri: Uri, val reference: String, val filename: String)
+
+    private fun createV1TransferFixture(): NativeImportFixture {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = (target.applicationContext as V16ServiceApplication).container.database
+        val exporter = TechnicianIdCodec.generate()
+        fixtureTrustedPeer = exporter
+        runBlocking { V16ServicePeerTrustStore(database).add(exporter, "B051 vendor-MIME fixture") }
+        val reference = "B051-" + java.util.UUID.randomUUID().toString().take(8)
+        val register = JSONObject().put("version", 1).put("customers", JSONArray().put(
+            JSONObject().put("originWorkspaceId", exporter).put("sourceEntityId", "source-" + reference)
+                .put("reference", reference).put("name", "Generated native handoff fixture")
+                .put("customerType", "STANDARD").put("state", "ACTIVE")
+        )).put("contacts", JSONArray()).put("sites", JSONArray()).put("equipment", JSONArray())
+        val packageBytes = DataTransferCodec.encode(
+            exporter,
+            families = mapOf(DataTransferFamily.REGISTER to register.toString().toByteArray()),
+            sourceWorkspaceId = exporter,
+        )
+        val filename = "b051-generated-v1-" + reference.lowercase() + ".v16service"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = requireNotNull(target.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        fixtureDownload = uri
+        target.contentResolver.openOutputStream(uri, "w")!!.use { it.write(packageBytes) }
+        target.contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        return NativeImportFixture(uri, reference, filename)
+    }
     private fun visibleSystemText(root: AccessibilityNodeInfo?): List<String> {
         if (root == null) return emptyList()
         val result = mutableListOf<String>()

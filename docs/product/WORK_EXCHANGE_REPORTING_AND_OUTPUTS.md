@@ -39,3 +39,13 @@ Aggregate customer reports freeze selected effective source revisions. Public re
 Recovery is encrypted `.v16backup` with `V16B` magic, authentication, schema, manifest, validation, staged replacement, journal, rollback, and retry rules. It is not a fifth native purpose or native-import route.
 
 VIEW/SEND/GetContent/DocumentsUI and FileProvider handoffs use one-time URI access. For content URIs, routing checks declared/resolved MIME and provider `OpenableColumns.DISPLAY_NAME`; URI path is not treated as the display name. Query failure is an ordinary unsupported/unreadable outcome. Repeated `onNewIntent` deliveries are handled without persistent grants. Decoder validation, trust review, preview, and explicit apply remain required.
+
+## Stale result evidence and customer sharing
+
+Package validation rejects malformed, unsupported, untrusted, wrong-target input and contradictory contents for one immutable revision before business mutation. A structurally valid trusted WORK_RESULT can still be stale or conflicting against the current assignment or recurrence state. Such a result may retain its immutable source, owned evidence, receipt, and status, while an ineligible recurrence or completion effect is not applied. An exact retry does not duplicate history or business effects.
+
+A voided original PDF remains viewable and exportable as historical evidence, but ordinary customer Share is disabled for that voided version. The current correction or void notice is the customer handoff. A superseded but not voided version retains its warning.
+
+## External Android filter boundary
+
+The app matches only its supported vendor-MIME VIEW and SEND filters. Android cannot use an opaque content provider DISPLAY_NAME to match a generic-MIME URI before delivering it; the in-app picker can still accept a generic-provider file and check its name after selection. Direct generic-MIME handler checks do not prove PackageManager filter matching or Android delivery.
